@@ -1956,6 +1956,8 @@ ne partent jamais sur GitHub.
 | `status` | `String` | `sending` → `received` → `analyzed` → `validated` → `in_progress` → `delivered` ; fins `refused`, `answered` |
 | `status_changed_at` | `Timestamp` | Dernier changement visible du suivi : changement de statut, ou réponse arrivée sur un ticket déjà clos. Allume la pastille de notification du compte quand `status` ≠ `sending` et que `seen_by_author_at` est absent ou antérieur |
 | `seen_by_author_at` | `Timestamp?` | Posé par l'auteur à l'ouverture du détail, à `request.time` (seule écriture client permise) |
+| `delivered_pr_number` | `int?` | Numéro de la PR fusionnée qui a fermé l'Issue, écrit par le serveur (`recordDeliveredPr`) quand le ticket est `delivered`. Lu par l'auteur et l'admin : la PR est publique et ne contient aucune donnée privée. Effacé (`FieldValue.delete()`) quand le ticket quitte `delivered` (`applyGithubUpdate`). Absent si l'Issue a été fermée à la main, sans PR |
+| `delivered_pr_url` | `String?` | Adresse de cette PR, seulement `https://github.com/<dépôt>/pull/N` (`safePullRequestUrl`). Le client revérifie `https` et `github.com` avant d'ouvrir le lien |
 | `github_issue_number` | `int?` | Numéro de l'Issue, `null` tant que l'envoi n'a pas abouti |
 | `github_url` | `String?` | Adresse de l'Issue, montrée à l'administrateur seulement |
 | `send_attempts` | `int` | Essais d'envoi en échec. À 10 (`TICKET_MAX_SEND_ATTEMPTS`) sans numéro d'Issue, le ticket est « en anomalie » et la tâche horaire ne le reprend plus. Un jeton GitHub absent ou refusé n'use pas les essais |
@@ -2092,6 +2094,14 @@ client, Admin › Tickets trie sur `created_at` seul, et les requêtes serveur (
 besoin d'être semé (§3.13). `tickets/{id}/admin/launches` n'existe que pour les tickets qui ont
 reçu un lancement (v0.23.64) : document absent, la section « Lancements » est vide. Les analyses publiées sur GitHub avant v0.23.62 se relèvent par le
 backfill ponctuel `ticket_analyses` (Admin › Backfills › « Analyses des tickets », §7.10).
+Les tickets livrés avant v0.23.78 n'ont pas `delivered_pr_number` : le backfill ponctuel
+`ticket_delivered_pr` (« PR des tickets livrés ») les reprend ; un ticket fermé à la main, sans
+PR, reste sans numéro et figure dans « À revoir ». **PR de livraison :** à la fermeture de
+l'Issue, `recordDeliveredPr` lit les événements de l'Issue (`GET /issues/{n}/events`) pour le
+commit du dernier événement `closed`, puis `GET /commits/{sha}/pulls`, et retient la dernière
+PR fusionnée de ce dépôt, d'un auteur de confiance, dont le corps ferme l'Issue
+(`pickDeliveredPr`). Appelé par le webhook (`issues` `closed`), par `resyncTicket` et par
+`ticketsSyncSchedule` (ticket livré depuis moins de trois jours sans numéro).
 Jusque-là, la fiche d'un ticket Analysé ou plus avancé affiche « Analyse pas encore relevée. ».
 
 **Index.** Le compteur « à traiter » (`status in ['received', 'analyzed', 'validated']`,
@@ -2152,7 +2162,7 @@ est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/back
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
 récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach`, `move_meals_to_group`,
-`ticket_analyses` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
+`ticket_analyses`, `ticket_delivered_pr` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
 rend un reste inconnu (`remaining: null`), il n'est donc jamais marqué terminé tout seul, et
 il n'a pas de point de reprise — chaque passage relit les repas de sa période. Il partage son verrou avec `group_planning_reach` (`LOCK_GROUPS`) : les deux écrivent
 `planned_meals.group_id`, et l'un refuse de partir pendant que l'autre tourne. Les ponctuels `recipe_protein`,
@@ -3643,6 +3653,7 @@ lancements et la réponse), `routine.ts`
 | `launchTicketDevelopment` | Callable (`timeoutSeconds: 120`) | `requireAdmin` | Même contrat. Lance la routine de développement sur un ticket `validated` avec Issue, d'un autre type que `question`, qui n'est pas bloqué (`launch_needs_answer`, ci-dessous). Monte `GITHUB_TICKETS_TOKEN`, `TICKETS_ROUTINE_DEV_ID` et `TICKETS_ROUTINE_DEV_TOKEN`. Deux callables plutôt qu'une seule avec un champ `action` : chacune ne monte que les secrets de sa routine |
 | `launchTicketDelivery` | Callable (`timeoutSeconds: 180`) | `requireAdmin` | Même contrat (v0.23.75). « Livrer » : lance la routine de **développement** avec le texte `livraison #N` sur un ticket `in_progress` avec Issue, d'un autre type que `question`. Monte `GITHUB_TICKETS_TOKEN`, `TICKETS_ROUTINE_DEV_ID` et `TICKETS_ROUTINE_DEV_TOKEN` : aucun nouveau jeton. Contrôles avant tout comptage et refus propres : « Livrer » ci-dessous |
 | `backfillTicketAnalysesFn` | Callable | `requireAdmin` | ponctuel `ticket_analyses` d'Admin › Backfills (§7.10) |
+| `backfillTicketDeliveredPrFn` | Callable | `requireAdmin` | ponctuel `ticket_delivered_pr` d'Admin › Backfills : écrit `delivered_pr_number` et `delivered_pr_url` sur les tickets livrés |
 | `githubTicketWebhook` | HTTPS (`onRequest`, `invoker: "public"`) | signature `X-Hub-Signature-256` | voir ci-dessous |
 | `ticketsSyncSchedule` | Cloud Scheduler, toutes les heures | — | reprise des envois, resynchronisation |
 
@@ -3976,7 +3987,7 @@ lecture, Actions lecture (v0.23.75 : runs de la CI d'une PR pour « Livrer » ; 
 secondaire (en-tête `retry-after`, `x-ratelimit-remaining: 0` ou message « secondary rate
 limit ») est classé limite de débit, jamais jeton refusé (`classifyGithubFailure`) ; attaché à `submitTicket`,
 `retryTicketSend`, `validateTicket`, `refuseTicket`,
-`answerTicketAnalysis`, `backfillTicketAnalysesFn`, `ticketsSyncSchedule` et `githubTicketWebhook` (relecture des
+`answerTicketAnalysis`, `backfillTicketAnalysesFn`, `backfillTicketDeliveredPrFn`, `ticketsSyncSchedule` et `githubTicketWebhook` (relecture des
 commentaires pour les analyses). Les permissions existantes suffisent : poser et retirer une
 étiquette, commenter, fermer une Issue et lire ses événements relèvent de « Issues
 lecture-écriture ».
@@ -5648,6 +5659,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillMoveMealsToGroupFn` | `admin` | ponctuel paramétré `move_meals_to_group`, « Déplacer mes repas vers un groupe ». Entrée `{ groupId, fromDay, toDay, startAt, endAt, appVersion? }` : identifiant de groupe au format sûr (`[A-Za-z0-9_-]{1,128}`), jours `AAAA-MM-JJ` inclusifs, `fromDay <= toDay`, 62 jours au plus ; `startAt` et `endAt` sont les instants (ms) du minuit local du premier jour et du lendemain du dernier, calculés par l'appareil (`MoveMealsRequest`), et doivent tomber à moins de quatorze heures des jours annoncés. Le fuseau de l'appareil fait foi : le serveur ne le devine pas. Entrée invalide : `invalid-argument`, avant le verrou. Le passage lit `groups/{groupId}` : absent, `not-found` ; `owner_id` différent de l'appelant, `permission-denied`. L'appelant est administrateur non révoqué (`requireAdmin`), donc planificateur, et ses groupes sont actifs. Sélection : `uid == appelant` et `startAt <= planned_at < endAt` (index `uid` + `planned_at`, 2 000 repas lus au plus), puis les repas dont `group_id` est nul ou absent ; un repas déjà dans un groupe est compté « ignoré ». Chaque repas s'écrit dans une **transaction** qui relit `groups/{groupId}` (présent, `owner_id` = appelant) et le repas (présent, `uid` = appelant, `group_id` nul ou absent), puis pose `group_id: groupId`. Un groupe supprimé ou cédé pendant le passage l'arrête (`groupeIndisponible: true`) : aucun repas n'est rattaché à un groupe que `deleteGroupMeals` a déjà vidé. Un repas qui a changé entre la lecture et la transaction est compté « ignoré ». Rien d'autre n'est écrit : ni `uid`, ni `base_portions`, ni `target_portions`, ni la recette. 500 repas déplacés par passage, arrêt sur trois échecs de suite. Compte rendu : `groupId`, période (`du`, `au`), examinés, déplacés, ignorés, en erreur, restants, `lectureTronquee`, `groupeIndisponible` — **ni nom de groupe ni titre de recette** : il est recopié dans `app_config/backfill_run_move_meals_to_group`, que tout administrateur lit. Réentrant sans curseur : un repas déplacé n'est plus sélectionné. Jamais marqué terminé tout seul (`summarizeMoveMealsToGroup`, `remaining: null`), et le menu ⋮ de sa tuile ne propose pas de le marquer (`reusable` au registre client, `backfillOffersDoneMenu`). Verrou commun avec `group_planning_reach`. Sans appel de modèle |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
 | `backfillTicketAnalysesFn` | `admin` | ponctuel `ticket_analyses`, « Analyses des tickets » (v0.23.62). Lit tous les `tickets` une fois ; pour chaque ticket qui a un numéro d'Issue et pas encore de sous-document `tickets/{id}/admin/analysis`, relit les commentaires de l'Issue (`GET /issues/{n}/comments`, un appel par tranche de cent) et écrit le sous-document (`writeTicketAnalyses`, §3.12 bis). Un ticket sans Issue est compté « sans Issue » ; un ticket déjà relevé est sauté. 200 tickets écrits par appel, arrêt sur trois échecs de suite, sur un jeton refusé (`token_invalid_since` posé) ou sur la limite de débit de GitHub. Un ticket en échec rejoint la liste « À revoir » (nature `ticket`, libellé « Issue #N », ouvert dans Admin › Tickets des membres). Monte `GITHUB_TICKETS_TOKEN`. Sans appel de modèle. À lancer une fois après le déploiement de v0.23.62 ; le webhook, la tâche horaire et les décisions tiennent ensuite les analyses à jour |
+| `backfillTicketDeliveredPrFn` | `admin` | ponctuel `ticket_delivered_pr`, « PR des tickets livrés » (v0.23.78). Lit les tickets `delivered` ; pour chacun sans `delivered_pr_number`, appelle `recordDeliveredPr` (un à deux appels GitHub). Ticket sans PR retrouvable : compté « sans PR » et listé dans « À revoir » (le backfill ne se marque donc pas terminé tout seul). 100 tickets repris par passage, trois échecs de suite ou jeton refusé ou limite de débit : arrêt. Aucun appel de modèle |
 
 Trois reprises ponctuelles, menées au bout en production, sont retirées en v0.23.52 avec leur
 callable : `backfillRecipeProteinFn` (« Protéine et féculent des plats »),

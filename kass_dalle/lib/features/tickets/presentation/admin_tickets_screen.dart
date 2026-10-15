@@ -1005,7 +1005,15 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
             now: now,
           )
         : null;
-    final prLink = delivery?.openablePrLink;
+    // Numéro et lien viennent de la même source : le ticket livré d'abord,
+    // sinon l'état de livraison.
+    final deliveredLink = ticket.deliveredPrLink;
+    final useTicketPr =
+        ticket.status == TicketStatus.delivered && deliveredLink != null;
+    final prLink = useTicketPr ? deliveredLink : delivery?.openablePrLink;
+    final prNumber = useTicketPr
+        ? ticket.shownDeliveredPrNumber
+        : delivery?.prNumber;
     // À l'échéance du lancement en cours, ou du verrou tenu par un autre
     // ticket, la fiche se redessine.
     _armRunTimer(decisions.runningUntil ?? lockElsewhere?.retryAfter);
@@ -1045,6 +1053,10 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
               ),
           ],
         ),
+        if (ticket.shownDeliveredPrNumber != null) ...[
+          const SizedBox(height: 8),
+          TicketDeliveredPrLine(ticket: ticket),
+        ],
         if (url != null) ...[
           const SizedBox(height: 12),
           Wrap(
@@ -1063,7 +1075,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
                 OutlinedButton.icon(
                   onPressed: () => _openGithub(prLink.toString()),
                   icon: const Icon(Icons.open_in_new),
-                  label: Text('Ouvrir la PR #${delivery?.prNumber}'),
+                  label: Text('Ouvrir la PR #$prNumber'),
                 ),
               IconButton(
                 onPressed: () => _copyLink(url),

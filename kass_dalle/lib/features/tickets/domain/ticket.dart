@@ -54,6 +54,11 @@ class Ticket {
   final DateTime? statusChangedAt;
   final DateTime? seenByAuthorAt;
 
+  /// PR fusionnée qui a fermé l'Issue, écrite par le serveur à la livraison
+  /// (`delivered_pr_number`, `delivered_pr_url`). `null` sans PR retrouvable.
+  final int? deliveredPrNumber;
+  final String? deliveredPrUrl;
+
   const Ticket({
     required this.id,
     required this.type,
@@ -75,6 +80,8 @@ class Ticket {
     required this.replyText,
     required this.statusChangedAt,
     required this.seenByAuthorAt,
+    this.deliveredPrNumber,
+    this.deliveredPrUrl,
   });
 
   factory Ticket.fromMap(String id, Map<String, dynamic> data) {
@@ -106,7 +113,25 @@ class Ticket {
       replyText: optStr(data['reply_text']),
       statusChangedAt: parseTicketDate(data['status_changed_at']),
       seenByAuthorAt: parseTicketDate(data['seen_by_author_at']),
+      deliveredPrNumber: optInt(data['delivered_pr_number']),
+      deliveredPrUrl: optStr(data['delivered_pr_url']),
     );
+  }
+
+  /// Numéro de la PR de livraison, affiché seulement sur un ticket livré.
+  int? get shownDeliveredPrNumber =>
+      status == TicketStatus.delivered ? deliveredPrNumber : null;
+
+  /// Adresse de la PR de livraison, seulement en `https` sur `github.com`,
+  /// sur un ticket livré ; `null` sinon (la ligne s'affiche alors sans lien).
+  Uri? get deliveredPrLink {
+    final href = deliveredPrUrl;
+    if (shownDeliveredPrNumber == null || href == null) return null;
+    final uri = Uri.tryParse(href.trim());
+    if (uri == null || uri.scheme != 'https' || uri.host != 'github.com') {
+      return null;
+    }
+    return uri;
   }
 
   /// Fin du parcours : Livré, Refusé ou Répondu.

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
+import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
 import '../domain/ticket.dart';
 import 'tickets_providers.dart';
@@ -360,6 +363,55 @@ class TicketInfoLine extends StatelessWidget {
         text,
         style: theme.textTheme.bodyMedium?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// « Livré par la PR #N » sur un ticket livré. Rien sans PR retrouvable.
+/// [withLink] : le numéro ouvre la PR (écran du membre) ; l'écran admin a son
+/// propre bouton « Ouvrir la PR ».
+class TicketDeliveredPrLine extends StatelessWidget {
+  final Ticket ticket;
+  final bool withLink;
+  const TicketDeliveredPrLine({
+    super.key,
+    required this.ticket,
+    this.withLink = false,
+  });
+
+  Future<void> _open(BuildContext context, Uri uri) async {
+    const failure = 'Impossible d\'ouvrir GitHub.';
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) context.showErrorSnackBar(failure);
+    } catch (e, st) {
+      reportUnexpectedError(
+        feature: 'tickets',
+        error: e,
+        stackTrace: st,
+        context: {'step': 'open_delivered_pr', 'ticket_id': ticket.id},
+      );
+      if (context.mounted) context.showErrorSnackBar(failure);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final number = ticket.shownDeliveredPrNumber;
+    if (number == null) return const SizedBox.shrink();
+    final text = 'Livré par la PR #$number';
+    final link = ticket.deliveredPrLink;
+    if (!withLink || link == null) return TicketInfoLine(text);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => _open(context, link),
+          icon: const Icon(Icons.open_in_new),
+          label: Text(text),
         ),
       ),
     );

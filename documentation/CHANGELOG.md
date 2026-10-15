@@ -20,9 +20,28 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
-### v0.23.78 — fonctionnel
+### v0.23.79 — fonctionnel
 
 Les pastilles de tickets affichent un nombre. La puce du compte (barre du haut) porte une pastille chiffrée à la place du point : invitations de groupe en attente plus tickets distincts à lire ou, pour l'administrateur, à traiter (`99+` au-delà de 99). « Mes tickets » reçoit une pastille pour tout ticket dont le statut a changé depuis sa dernière ouverture, y compris Analysé, Validé et En cours, et plus seulement pour Répondu, Refusé ou Livré ; « Envoi en cours » est exclu. L'entrée du menu s'écrit « Tickets à traiter », sans le nombre entre parenthèses : il reste sur la pastille de l'icône. Ticket #90.
+
+### v0.23.78 — fonctionnel
+
+Un ticket livré indique la PR qui l'a livré : « Livré par la PR #N », avec un lien vers GitHub,
+dans la fiche du membre (Mes tickets) et dans Admin › Tickets, où le bouton « Ouvrir la PR #N »
+reste disponible après la fusion. Un ticket fermé à la main, sans PR, n'affiche rien de plus.
+Les tickets déjà livrés se reprennent par Admin › Backfills, « PR des tickets livrés » (ticket #91).
+
+### v0.23.78 — technique
+
+Deux champs sur `tickets/{id}` : `delivered_pr_number` et `delivered_pr_url`, écrits par les
+Functions seules (les règles Firestore ne changent pas ; un test de `rules-tests/` vérifie que
+l'auteur ne peut pas les écrire). `recordDeliveredPr` lit le commit de fermeture de l'Issue
+(`/issues/{n}/events`) puis les PR de ce commit (`/commits/{sha}/pulls`) et retient la dernière PR
+fusionnée de confiance qui ferme l'Issue. Appelé par le webhook (`issues` `closed`), par
+`resyncTicket` et par `ticketsSyncSchedule` (tickets livrés depuis moins de trois jours sans
+numéro). Les champs sont effacés quand le ticket quitte `delivered`. Nouveau backfill ponctuel
+`ticket_delivered_pr` (`backfillTicketDeliveredPrFn`), ajouté aux deux registres et à la fixture
+`backfill_schedule.json`. Aucun poste d'IA.
 
 ### v0.23.77 — fonctionnel
 

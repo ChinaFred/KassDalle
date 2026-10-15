@@ -27,7 +27,59 @@ Ticket _ticket({
   'github_issue_number': issue,
 });
 
+Ticket _delivered({String status = 'delivered', Object? number, Object? url}) =>
+    Ticket.fromMap('t1', {
+      'type': 'evolution',
+      'title': 'Un titre',
+      'status': status,
+      'delivered_pr_number': number,
+      'delivered_pr_url': url,
+    });
+
 void main() {
+  group('PR de livraison', () {
+    test('ticket livré avec PR : numéro et lien', () {
+      final t = _delivered(
+        number: 57,
+        url: 'https://github.com/ChinaFred/KassDalle/pull/57',
+      );
+      expect(t.shownDeliveredPrNumber, 57);
+      expect(
+        t.deliveredPrLink.toString(),
+        'https://github.com/ChinaFred/KassDalle/pull/57',
+      );
+    });
+
+    test('ticket livré sans PR : rien', () {
+      final t = _delivered();
+      expect(t.shownDeliveredPrNumber, isNull);
+      expect(t.deliveredPrLink, isNull);
+    });
+
+    test('adresse hors github.com ou en http : numéro sans lien', () {
+      for (final url in [
+        'https://evil.example/pull/57',
+        'http://github.com/ChinaFred/KassDalle/pull/57',
+      ]) {
+        final t = _delivered(number: 57, url: url);
+        expect(t.shownDeliveredPrNumber, 57);
+        expect(t.deliveredPrLink, isNull);
+      }
+    });
+
+    test('ticket refusé, répondu ou en cours : aucune PR affichée', () {
+      for (final status in ['refused', 'answered', 'in_progress']) {
+        final t = _delivered(
+          status: status,
+          number: 57,
+          url: 'https://github.com/ChinaFred/KassDalle/pull/57',
+        );
+        expect(t.shownDeliveredPrNumber, isNull);
+        expect(t.deliveredPrLink, isNull);
+      }
+    });
+  });
+
   group('Ticket.fromMap', () {
     test('lit un document complet', () {
       final t = Ticket.fromMap('abc', {
