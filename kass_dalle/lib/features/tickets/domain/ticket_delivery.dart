@@ -2,8 +2,9 @@ import 'ticket.dart';
 import 'ticket_launch.dart';
 
 /// Raison serveur d'une livraison refusée parce que la PR modifie un fichier
-/// sensible (`.github/`, `.claude/`, `CLAUDE.md`, `deploy.ps1`,
-/// `kass_dalle/firebase.json`) : la boîte grise alors « Livrer »
+/// sensible (`.github/`, `.claude/`, `deploy.ps1`, `kass_dalle/firebase.json`,
+/// tout `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json`) : la boîte grise alors
+/// « Livrer »
 /// (`DELIVERY_SENSITIVE_REASON`). Verrouillée par
 /// `test-fixtures/ticket_decisions.json`.
 const kTicketDeliverySensitiveReason = 'delivery_sensitive_files';

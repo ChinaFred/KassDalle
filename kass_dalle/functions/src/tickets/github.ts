@@ -58,15 +58,29 @@ export function githubToken(): string | null {
   return token.length > 0 ? token : null;
 }
 
-/** Classe une réponse en échec. Pure, testée. */
+/**
+ * Classe une réponse en échec. Pure, testée.
+ *
+ * Un 403 est une limite de débit, et non un jeton refusé, quand le quota est
+ * épuisé (`x-ratelimit-remaining: 0`), quand GitHub annonce un délai
+ * (`retry-after`, limite secondaire) ou quand son message parle de
+ * « secondary rate limit » : déclarer le jeton invalide arrêterait la tâche
+ * horaire et afficherait un faux bandeau.
+ */
 export function classifyGithubFailure(
   status: number,
   rateLimitRemaining: string | null,
   repoLevel: boolean,
+  extra: { retryAfter?: string | null; message?: string | null } = {},
 ): GithubErrorKind {
   if (status === 401) return "token";
   if (status === 429) return "rate_limit";
-  if (status === 403) return rateLimitRemaining === "0" ? "rate_limit" : "token";
+  if (status === 403) {
+    const secondary =
+      (typeof extra.retryAfter === "string" && extra.retryAfter.trim().length > 0) ||
+      /secondary rate limit/i.test(extra.message ?? "");
+    return rateLimitRemaining === "0" || secondary ? "rate_limit" : "token";
+  }
   if (status === 404) return repoLevel ? "token" : "not_found";
   return "other";
 }
@@ -110,6 +124,7 @@ async function request<T>(
       response.status,
       response.headers.get("x-ratelimit-remaining"),
       opts.repoLevel === true,
+      { retryAfter: response.headers.get("retry-after"), message: detail },
     );
     throw new GithubError(
       kind,

@@ -4452,7 +4452,7 @@ sequenceDiagram
     F-->>C: refus sans décompte (delivery_no_pr / delivery_multiple_prs)
   end
   F->>G: GET /pulls/M/files
-  alt .github/, .claude/, CLAUDE.md, deploy.ps1, kass_dalle/firebase.json
+  alt .github/, .claude/, deploy.ps1, kass_dalle/firebase.json, tout CLAUDE.md, CLAUDE.local.md, .mcp.json
     F-->>C: « La PR #M modifie … : fusionnez-la vous-même après relecture. »<br/>(delivery_sensitive_files ; la boîte grise « Livrer »)
   end
   alt dernier run « CI » pas vert

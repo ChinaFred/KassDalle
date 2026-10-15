@@ -50,12 +50,14 @@ import {
   REGION,
 } from "../config";
 import { logError, logInfo, logWarn, newCorrelationId } from "../logging";
-import { refreshTicketDelivery } from "./delivery";
+import { refreshTicketDelivery, type OpenPullRequests } from "./delivery";
 import {
   GITHUB_REPO_FULL_NAME,
   GithubError,
   getPullRequest,
   githubToken,
+  listOpenPullRequests,
+  readPullRequest,
   readRemoteIssue,
 } from "./github";
 import {
@@ -66,6 +68,7 @@ import {
   replyFromComment,
   statusFromIssue,
   verifyGithubSignature,
+  type PullRequestView,
 } from "./rules";
 import {
   applyGithubUpdate,
@@ -244,16 +247,34 @@ export function analysisRefreshFromEvent(event: string, payload: Payload): numbe
   return user?.id === GITHUB_TICKETS_MAINTAINER_ID ? issue.number : null;
 }
 
+/** Issues (ou PR) relues au plus par événement pour « Livrer ». */
+export const DELIVERY_EVENT_MAX = 5;
+
+/**
+ * Vrai si une PR peut concerner une livraison : tête dans ce dépôt et auteur
+ * `GITHUB_TICKETS_MAINTAINER_ID`. Toute autre PR (copie du dépôt, autre
+ * compte, même `OWNER` ou `COLLABORATOR`) ne déclenche aucune relecture.
+ * La règle « En cours » (`updatesFromEvent`) n'en dépend pas. Pure.
+ */
+export function isDeliveryCandidatePr(pr: PullRequestView | null): boolean {
+  return (
+    pr !== null &&
+    pr.authorId === GITHUB_TICKETS_MAINTAINER_ID &&
+    typeof pr.headRepoFullName === "string" &&
+    pr.headRepoFullName.toLowerCase() === GITHUB_REPO_FULL_NAME.toLowerCase()
+  );
+}
+
 /**
  * Ce qu'un événement demande de relire pour « Livrer », ou `null`. Pure.
  *
- * - `pull_request` (`DELIVERY_PR_ACTIONS`) : les Issues citées par un mot-clé
- *   de fermeture dans le corps, et dans l'ancien corps d'un `edited` (un
- *   renvoi retiré rend la PR inéligible pour cette Issue). Tout auteur : la
- *   relecture applique elle-même l'éligibilité.
+ * - `pull_request` (`DELIVERY_PR_ACTIONS`) d'une PR candidate
+ *   (`isDeliveryCandidatePr`) : les Issues citées par un mot-clé de fermeture
+ *   dans le corps, et dans l'ancien corps d'un `edited` (un renvoi retiré rend
+ *   la PR inéligible pour cette Issue). `DELIVERY_EVENT_MAX` au plus.
  * - `workflow_run` `completed` du workflow « CI » : les PR du dépôt qu'il
- *   porte (`workflow_run.pull_requests`, vide pour une copie du dépôt), dont
- *   l'appelant relit le corps.
+ *   porte (`workflow_run.pull_requests`, vide pour une copie du dépôt),
+ *   `DELIVERY_EVENT_MAX` au plus, dont l'appelant relit le corps et l'auteur.
  */
 export function deliveryRefreshFromEvent(
   event: string,
@@ -266,7 +287,7 @@ export function deliveryRefreshFromEvent(
   const action = typeof payload.action === "string" ? payload.action : "";
   if (event === "pull_request" && DELIVERY_PR_ACTIONS.has(action)) {
     const pr = payload.pull_request as Payload | undefined;
-    if (!pr) return null;
+    if (!pr || !isDeliveryCandidatePr(readPullRequest(pr))) return null;
     const changes = payload.changes as { body?: { from?: unknown } } | undefined;
     const bodies = [pr.body, changes?.body?.from].filter((b): b is string => typeof b === "string");
     const issues = new Set<number>();
@@ -275,7 +296,10 @@ export function deliveryRefreshFromEvent(
     }
     return issues.size === 0
       ? null
-      : { issueNumbers: [...issues].sort((a, b) => a - b), prNumbers: [] };
+      : {
+          issueNumbers: [...issues].sort((a, b) => a - b).slice(0, DELIVERY_EVENT_MAX),
+          prNumbers: [],
+        };
   }
   if (event === "workflow_run" && action === "completed") {
     const run = payload.workflow_run as Payload | undefined;
@@ -285,7 +309,12 @@ export function deliveryRefreshFromEvent(
       const n = (raw as { number?: unknown } | null)?.number;
       if (typeof n === "number" && Number.isSafeInteger(n) && n > 0) prs.add(n);
     }
-    return prs.size === 0 ? null : { issueNumbers: [], prNumbers: [...prs].sort((a, b) => a - b) };
+    return prs.size === 0
+      ? null
+      : {
+          issueNumbers: [],
+          prNumbers: [...prs].sort((a, b) => a - b).slice(0, DELIVERY_EVENT_MAX),
+        };
   }
   return null;
 }
@@ -484,11 +513,15 @@ export const githubTicketWebhook = onRequest(
         const issues = new Set(delivery.issueNumbers);
         for (const prNumber of delivery.prNumbers) {
           const pr = await getPullRequest(token, prNumber);
+          if (!isDeliveryCandidatePr(pr)) continue;
           for (const n of closingIssueNumbers(pr.body, GITHUB_REPO_FULL_NAME)) issues.add(n);
         }
-        for (const issueNumber of issues) {
+        // Liste des PR ouvertes lue une fois pour l'événement, partagée.
+        let openPrs: OpenPullRequests | null = null;
+        for (const issueNumber of [...issues].slice(0, DELIVERY_EVENT_MAX)) {
           for (const ticketId of await ticketIdsForIssue(issueNumber)) {
-            const state = await refreshTicketDelivery(token, ticketId, issueNumber);
+            openPrs ??= await listOpenPullRequests(token);
+            const state = await refreshTicketDelivery(token, ticketId, issueNumber, openPrs);
             changed++;
             await logInfo({
               message: `githubTicketWebhook : état « PR prête » du ticket ${ticketId} relu (Issue #${issueNumber}, ${event}, prête : ${state?.ready === true})`,

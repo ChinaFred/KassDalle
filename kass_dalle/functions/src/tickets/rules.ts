@@ -1375,7 +1375,8 @@ export interface PullRequestView {
  * Vrai si cette PR peut être livrée pour l'Issue `issueNumber` : ouverte, pas
  * brouillon, écrite par le mainteneur (identifiant numérique), branche
  * `claude/…` de ce dépôt (une copie du dépôt ne compte pas), et « Closes #N »
- * (ou un autre mot-clé de fermeture) dans son corps. Pure.
+ * (ou un autre mot-clé de fermeture) dans son corps, pour cette Issue seule :
+ * les Issues fermées par le corps valent exactement `[N]`. Pure.
  */
 export function isEligibleDeliveryPr(
   pr: PullRequestView,
@@ -1394,7 +1395,9 @@ export function isEligibleDeliveryPr(
   if (typeof pr.headRef !== "string" || !pr.headRef.startsWith(DELIVERY_BRANCH_PREFIX)) {
     return false;
   }
-  return closingIssueNumbers(pr.body, repoFullName).includes(issueNumber);
+  // Une PR qui ferme aussi d'autres Issues ne se livre pas pour celle-ci.
+  const closes = closingIssueNumbers(pr.body, repoFullName);
+  return closes.length === 1 && closes[0] === issueNumber;
 }
 
 /** Un run de workflow GitHub Actions, tel que la livraison le lit. */
@@ -1512,19 +1515,33 @@ export interface PullRequestFileView {
   previousFilename: string | null;
 }
 
+/** Dossiers sensibles, à la racine du dépôt. */
 const SENSITIVE_PREFIXES = [".github/", ".claude/"];
-const SENSITIVE_FILES = ["claude.md", "deploy.ps1", "kass_dalle/firebase.json"];
+/** Chemins sensibles exacts, depuis la racine. */
+const SENSITIVE_FILES = ["deploy.ps1", "kass_dalle/firebase.json"];
+/**
+ * Noms de fichier sensibles où qu'ils soient : un `CLAUDE.md` ou un
+ * `CLAUDE.local.md` d'un sous-dossier est lu par Claude Code comme des
+ * instructions, et `.mcp.json` déclare des serveurs MCP.
+ */
+const SENSITIVE_BASENAMES = ["claude.md", "claude.local.md", ".mcp.json"];
 
 /** Vrai si ce chemin est un fichier qu'une livraison ne fusionne jamais. Pure. */
 export function isSensitiveDeliveryPath(path: string): boolean {
   const lower = path.toLowerCase();
-  return SENSITIVE_PREFIXES.some((p) => lower.startsWith(p)) || SENSITIVE_FILES.includes(lower);
+  const basename = lower.slice(lower.lastIndexOf("/") + 1);
+  return (
+    SENSITIVE_PREFIXES.some((p) => lower.startsWith(p)) ||
+    SENSITIVE_FILES.includes(lower) ||
+    SENSITIVE_BASENAMES.includes(basename)
+  );
 }
 
 /**
  * Le premier fichier sensible que touche la PR (`.github/`, `.claude/`,
- * `CLAUDE.md`, `deploy.ps1`, `kass_dalle/firebase.json`, ancien chemin d'un
- * renommage compris), ou `null`. Pure.
+ * `deploy.ps1`, `kass_dalle/firebase.json`, et tout fichier nommé
+ * `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json` où qu'il soit — casse
+ * ignorée —, ancien chemin d'un renommage compris), ou `null`. Pure.
  */
 export function sensitiveDeliveryPath(files: readonly PullRequestFileView[]): string | null {
   for (const f of files) {

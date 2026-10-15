@@ -41,8 +41,12 @@ import {
   type PullRequestView,
 } from "../tickets/rules";
 import { routineConfig } from "../tickets/routine";
-import { readCiRun, readPullRequest } from "../tickets/github";
-import { deliveryRefreshFromEvent } from "../tickets/webhook";
+import { classifyGithubFailure, readCiRun, readPullRequest } from "../tickets/github";
+import {
+  DELIVERY_EVENT_MAX,
+  deliveryRefreshFromEvent,
+  isDeliveryCandidatePr,
+} from "../tickets/webhook";
 
 const REPO = "ChinaFred/KassDalle";
 const MAINTAINER = 16348852;
@@ -146,6 +150,14 @@ describe("PR éligible", () => {
     assert.equal(ok(pr({ body: "Voir #42" })), false);
     assert.equal(ok(pr({ body: "Closes #43" })), false);
     assert.equal(ok(pr({ body: "Closes autre/depot#42" })), false);
+  });
+
+  test("le corps ne ferme que cette Issue", () => {
+    assert.equal(ok(pr({ body: "Closes #42\nCloses #43" })), false);
+    assert.equal(ok(pr({ body: "Fixes #41, closes #42" })), false);
+    assert.equal(ok(pr({ body: "Closes #42\nVoir aussi #43" })), true);
+    assert.equal(ok(pr({ body: "Closes #42\nCloses #42" })), true);
+    assert.equal(ok(pr({ body: "Closes #42\nCloses autre/depot#43" })), true);
   });
 
   test("lecture d'une PR de l'API", () => {
@@ -328,6 +340,12 @@ describe("fichiers sensibles", () => {
       "deploy.ps1",
       "kass_dalle/firebase.json",
       "Claude.md",
+      "kass_dalle/CLAUDE.md",
+      "documentation/CLAUDE.md",
+      "x/CLAUDE.local.md",
+      "CLAUDE.local.md",
+      ".mcp.json",
+      "kass_dalle/functions/.mcp.json",
     ]) {
       assert.equal(sensitiveDeliveryPath([f(path)]), path);
     }
@@ -336,7 +354,9 @@ describe("fichiers sensibles", () => {
 
   test("un nom proche n'est pas sensible", () => {
     for (const path of [
-      "documentation/CLAUDE.md",
+      "documentation/CLAUDE.md.bak",
+      "docs/notes-claude.md",
+      "mcp.json",
       "kass_dalle/firebase.json.bak",
       "github/x",
       "kass_dalle/functions/firebase.json",
@@ -425,13 +445,67 @@ describe("verrou libéré par un blocage", () => {
 
 describe("deliveryRefreshFromEvent", () => {
   const repository = { full_name: REPO };
+  const candidate = (over: Record<string, unknown>) => ({
+    user: { id: MAINTAINER },
+    head: { ref: "claude/x", sha: SHA, repo: { full_name: REPO } },
+    ...over,
+  });
+
+  test("pull_request d'une copie du dépôt ou d'un autre auteur : rien", () => {
+    for (const over of [
+      { head: { ref: "claude/x", sha: SHA, repo: { full_name: "intrus/KassDalle" } } },
+      { head: { ref: "claude/x", sha: SHA, repo: null } },
+      { user: { id: 1 }, author_association: "COLLABORATOR" },
+      { user: null },
+    ]) {
+      assert.equal(
+        deliveryRefreshFromEvent("pull_request", {
+          action: "synchronize",
+          repository,
+          pull_request: candidate({ number: 57, body: "Closes #42", ...over }),
+        }),
+        null,
+        JSON.stringify(over),
+      );
+    }
+  });
+
+  test("cinq Issues au plus par événement", () => {
+    const body = Array.from({ length: 8 }, (_, i) => `Closes #${i + 1}`).join("\n");
+    assert.deepEqual(
+      deliveryRefreshFromEvent("pull_request", {
+        action: "edited",
+        repository,
+        pull_request: candidate({ number: 57, body }),
+      })?.issueNumbers,
+      [1, 2, 3, 4, 5],
+    );
+    assert.equal(
+      deliveryRefreshFromEvent("workflow_run", {
+        action: "completed",
+        repository,
+        workflow_run: {
+          name: "CI",
+          pull_requests: Array.from({ length: 8 }, (_, i) => ({ number: i + 1 })),
+        },
+      })?.prNumbers.length,
+      DELIVERY_EVENT_MAX,
+    );
+  });
+
+  test("candidate : auteur mainteneur, tête dans le dépôt", () => {
+    assert.equal(isDeliveryCandidatePr(pr()), true);
+    assert.equal(isDeliveryCandidatePr(pr({ authorId: 1 })), false);
+    assert.equal(isDeliveryCandidatePr(pr({ headRepoFullName: "intrus/KassDalle" })), false);
+    assert.equal(isDeliveryCandidatePr(null), false);
+  });
 
   test("pull_request : Issues citées, ancien corps compris", () => {
     assert.deepEqual(
       deliveryRefreshFromEvent("pull_request", {
         action: "edited",
         repository,
-        pull_request: { number: 57, body: "Closes #42" },
+        pull_request: candidate({ number: 57, body: "Closes #42" }),
         changes: { body: { from: "Closes #41" } },
       }),
       { issueNumbers: [41, 42], prNumbers: [] },
@@ -440,7 +514,7 @@ describe("deliveryRefreshFromEvent", () => {
       deliveryRefreshFromEvent("pull_request", {
         action: "synchronize",
         repository,
-        pull_request: { number: 57, body: "Closes #42" },
+        pull_request: candidate({ number: 57, body: "Closes #42" }),
       }),
       { issueNumbers: [42], prNumbers: [] },
     );
@@ -448,7 +522,7 @@ describe("deliveryRefreshFromEvent", () => {
       deliveryRefreshFromEvent("pull_request", {
         action: "labeled",
         repository,
-        pull_request: { number: 57, body: "Closes #42" },
+        pull_request: candidate({ number: 57, body: "Closes #42" }),
       }),
       null,
     );
@@ -456,7 +530,7 @@ describe("deliveryRefreshFromEvent", () => {
       deliveryRefreshFromEvent("pull_request", {
         action: "closed",
         repository,
-        pull_request: { number: 57, body: "Rien" },
+        pull_request: candidate({ number: 57, body: "Rien" }),
       }),
       null,
     );
@@ -488,9 +562,27 @@ describe("deliveryRefreshFromEvent", () => {
       deliveryRefreshFromEvent("pull_request", {
         action: "opened",
         repository: { full_name: "autre/depot" },
-        pull_request: { number: 1, body: "Closes #42" },
+        pull_request: candidate({ number: 1, body: "Closes #42" }),
       }),
       null,
     );
+  });
+});
+
+describe("403 de GitHub : limite secondaire ou jeton", () => {
+  test("une limite secondaire n'est pas un jeton refusé", () => {
+    assert.equal(classifyGithubFailure(403, "12", false, { retryAfter: "60" }), "rate_limit");
+    assert.equal(
+      classifyGithubFailure(403, null, false, {
+        message: "You have exceeded a secondary rate limit.",
+      }),
+      "rate_limit",
+    );
+    assert.equal(classifyGithubFailure(403, "0", false), "rate_limit");
+    assert.equal(
+      classifyGithubFailure(403, "12", false, { retryAfter: " ", message: "Bad credentials" }),
+      "token",
+    );
+    assert.equal(classifyGithubFailure(403, null, false), "token");
   });
 });

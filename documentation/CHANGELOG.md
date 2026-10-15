@@ -28,8 +28,8 @@ le … » et le bouton « Livrer ». Une session Claude Code met alors la PR à 
 la fusionne et suit le déploiement ; appuyer sur « Livrer » vaut accord de fusion. Sinon, une
 seule ligne dit ce qui manque : plusieurs PR, conflit, CI en échec ou en cours, aucune PR
 prête, ou livraison d'un autre ticket en cours (une seule à la fois, avec « Ouvrir le ticket
-#K »). Une PR qui modifie `.github/`, `.claude/`, `CLAUDE.md`, `deploy.ps1` ou `firebase.json`
-est refusée sans décompte : elle se fusionne à la main. La fiche ajoute « Ouvrir la PR #M » et
+#K »). Une PR qui modifie `.github/`, `.claude/`, `deploy.ps1`, `firebase.json`, ou un fichier
+nommé `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json` où qu'il soit, est refusée sans décompte : elle se fusionne à la main. La fiche ajoute « Ouvrir la PR #M » et
 une section « Livraison (N) » avec les comptes rendus de la session (« Blocage du … »,
 « Livraison terminée le … ») ; après un blocage ou trois heures sans fusion, « Relancer la
 livraison ». La liste porte une puce « PR prête ». Une livraison compte comme un lancement
@@ -51,7 +51,13 @@ ajoutés. Logique dupliquée : `ticket_decisions.json` gagne `can_deliver`, les 
 permission « Actions : Read-only » sur le jeton « KassDalle ticket », événement « Workflow
 runs » du webhook. Reste à faire après le déploiement : recoller le prompt de la routine de
 développement (aiguillage `developpement` / `livraison`). `CLAUDE.md` : règles de
-`livraison #N`, et l'appui sur « Livrer » vaut « fusionne ».
+`livraison #N`, et l'appui sur « Livrer » vaut « fusionne ». Après la relecture `securite` :
+fichiers sensibles élargis à tout `CLAUDE.md`, `CLAUDE.local.md` et `.mcp.json` ; PR éligible
+seulement si son corps ne ferme que l'Issue du ticket ; le webhook ne relit la livraison que
+pour une PR du mainteneur dont la tête est dans le dépôt, cinq Issues au plus par événement,
+liste des PR lue une fois ; un 403 de limite secondaire n'est plus classé « jeton refusé » ;
+prompt de livraison avec un point L0 (entrées non fiables), une fusion au sha poussé après un
+second contrôle des fichiers, et une durée bornée à 2 h 30.
 
 ### v0.23.74 — fonctionnel
 
