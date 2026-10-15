@@ -169,11 +169,16 @@ class _InvitedHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      child: Text(
-        'Invités, pas encore connectés ($count)',
-        style: theme.textTheme.titleSmall,
+    return Semantics(
+      header: true,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+        child: Text(
+          'Invités, pas encore connectés ($count)',
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
       ),
     );
   }
@@ -195,9 +200,12 @@ class _InvitedTile extends StatelessWidget {
       leading: const Icon(Icons.mail_outline),
       title: Text(invitation.email),
       subtitle: Text(
-        failed ? 'Envoi échoué' : 'Invité, pas encore connecté',
+        failed
+            ? EmailInvitationStatus.sendFailed.label
+            : 'Invité, pas encore connecté',
         style: failed ? TextStyle(color: theme.colorScheme.error) : null,
       ),
+      trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
     );
   }
