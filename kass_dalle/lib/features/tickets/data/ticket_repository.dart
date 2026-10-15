@@ -11,6 +11,7 @@ import '../../../core/services/gemini_service.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../domain/ticket.dart';
 import '../domain/ticket_analysis.dart';
+import '../domain/ticket_delivery.dart';
 import '../domain/ticket_form.dart';
 import '../domain/ticket_launch.dart';
 
@@ -141,8 +142,26 @@ class TicketRepository {
     );
   }
 
-  /// `app_config/tickets_status` : jetons refusés (GitHub, routines) et
-  /// compteurs des lancements. Lisible par l'administrateur seul.
+  /// L'état de livraison de [ticketId] (`tickets/{ticketId}/admin/delivery` :
+  /// « PR prête », comptes rendus), ou `null` tant que le serveur ne l'a pas
+  /// écrit. Lisible par l'administrateur seul.
+  Stream<TicketDelivery?> watchDelivery(String ticketId) {
+    return _reported(
+      _col.doc(ticketId).collection('admin').doc('delivery').snapshots().map((
+        snap,
+      ) {
+        final data = snap.data();
+        return snap.exists && data != null
+            ? TicketDelivery.fromMap(data)
+            : null;
+      }),
+      step: 'watch_delivery',
+    );
+  }
+
+  /// `app_config/tickets_status` : jetons refusés (GitHub, routines),
+  /// compteurs des lancements et verrou des livraisons. Lisible par
+  /// l'administrateur seul.
   Stream<TicketsStatus> watchStatus() {
     return _reported(
       _db
@@ -436,6 +455,9 @@ class TicketRepository {
         ),
         TicketLaunchAction.development =>
           await _callables.launchTicketDevelopment(ticketId),
+        TicketLaunchAction.delivery => await _callables.launchTicketDelivery(
+          ticketId,
+        ),
       };
       return TicketLaunchResult.fromMap(data);
     } on GeminiCallableException catch (e, st) {
@@ -449,7 +471,14 @@ class TicketRepository {
         message: e.message,
         details: e.details,
       );
-      if (known != null) throw TicketLaunchError(known.message);
+      final details = e.details;
+      final reason = details is Map ? details['reason'] : null;
+      if (known != null) {
+        throw TicketLaunchError(
+          known.message,
+          reason: reason is String ? reason : null,
+        );
+      }
       rethrow;
     } catch (e, st) {
       await _errorReportService.reportError(

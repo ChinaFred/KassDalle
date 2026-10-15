@@ -1,15 +1,16 @@
 /**
- * Lecture des sous-documents `tickets/{id}/admin/*` sans supposer leur forme.
+ * Lecture des sous-documents `tickets/{id}/admin/*` et du verrou des
+ * livraisons sans supposer leur forme.
  *
- * Partagé par les lancements (`tickets/launch.ts`) et la réponse de
- * l'administrateur (`tickets/decisions.ts`), qui doivent tous deux savoir si
- * un développement est en cours et si le ticket est bloqué. Module à part :
- * `launch.ts` importe déjà `decisions.ts`.
+ * Partagé par les lancements (`tickets/launch.ts`), la réponse de
+ * l'administrateur (`tickets/decisions.ts`) et la livraison
+ * (`tickets/delivery.ts`). Module à part : `launch.ts` importe déjà
+ * `decisions.ts`.
  */
 
 import { Timestamp } from "firebase-admin/firestore";
 
-import type { LaunchEntryView } from "./rules";
+import { lastDeliveryBlockedAtMs, type DeliveryLockView, type LaunchEntryView } from "./rules";
 
 export function millis(raw: unknown): number | null {
   return raw instanceof Timestamp ? raw.toMillis() : null;
@@ -66,4 +67,35 @@ export function storedValidatedAt(
 ): number | null | undefined {
   if (data === undefined || !("validated_at" in data)) return undefined;
   return millis(data.validated_at);
+}
+
+/**
+ * Date du dernier compte rendu « blocage » de `tickets/{id}/admin/delivery`
+ * (`reports`), en millisecondes, ou `null`.
+ */
+export function deliveryBlockedAtMs(
+  data: FirebaseFirestore.DocumentData | undefined,
+): number | null {
+  const raw = data?.reports;
+  if (!Array.isArray(raw)) return null;
+  return lastDeliveryBlockedAtMs(
+    raw
+      .filter((r): r is Record<string, unknown> => r !== null && typeof r === "object")
+      .map((r) => ({ kind: r.kind, created_at_ms: millis(r.created_at) })),
+  );
+}
+
+/**
+ * `app_config/tickets_status.delivery_running`, ou `null` s'il est absent ou
+ * n'est pas un objet.
+ */
+export function deliveryLockView(raw: unknown): DeliveryLockView | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const lock = raw as Record<string, unknown>;
+  return {
+    ticketId: lock.ticket_id,
+    issueNumber: lock.issue_number,
+    launchedAtMs: millis(lock.launched_at),
+    retryAfterMs: millis(lock.retry_after),
+  };
 }

@@ -32,6 +32,7 @@ import {
   TICKETS_STATUS_DOC_ID,
 } from "../config";
 import { logError, logInfo, logWarn } from "../logging";
+import { writeDeliveryReports } from "./delivery";
 import {
   GITHUB_REPO_FULL_NAME,
   GithubError,
@@ -529,8 +530,28 @@ export async function refreshTicketAnalyses(
 }
 
 /**
+ * Relit les commentaires d'une Issue et réécrit, depuis la même lecture, les
+ * analyses (`admin/analysis`) et les comptes rendus de livraison
+ * (`admin/delivery.reports`, qui peuvent libérer le verrou des livraisons).
+ * Rend le nombre d'analyses. Lève une `GithubError` ou une erreur Firestore ;
+ * l'appelant journalise.
+ */
+export async function refreshTicketComments(
+  token: string,
+  ticketId: string,
+  issueNumber: number,
+  scope: LogScope,
+): Promise<number> {
+  const comments = await listIssueComments(token, issueNumber);
+  const count = await writeTicketAnalyses(ticketId, comments);
+  await writeDeliveryReports(ticketId, comments, scope);
+  return count;
+}
+
+/**
  * Relit une Issue et applique son état au ticket (tâche horaire, webhook
- * perdu), puis réécrit ses analyses depuis les commentaires déjà lus. Issue
+ * perdu), puis réécrit ses analyses et ses comptes rendus de livraison depuis
+ * les commentaires déjà lus. Issue
  * ouverte : la date du dernier « validé » du mainteneur est lue dans ses
  * événements (`GET /issues/{n}/events`) et écrite par `updateValidatedAt`. Lève une `GithubError` ;
  * l'appelant journalise.
@@ -539,6 +560,7 @@ export async function resyncTicket(
   token: string,
   ticketId: string,
   issueNumber: number,
+  scope: LogScope,
 ): Promise<boolean> {
   const issue = await getIssue(token, issueNumber);
   if (issue.isPullRequest) return false;
@@ -563,6 +585,7 @@ export async function resyncTicket(
     issueUpdatedAt: issue.updatedAt,
   });
   await writeTicketAnalyses(ticketId, comments);
+  await writeDeliveryReports(ticketId, comments, scope);
   if (validatedAtIso !== undefined) {
     const ms = validatedAtIso === null ? null : Date.parse(validatedAtIso);
     await updateValidatedAt(

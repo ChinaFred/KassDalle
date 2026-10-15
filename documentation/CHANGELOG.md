@@ -20,18 +20,59 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-15
 
-### v0.23.75 — fonctionnel
+### v0.23.76 — fonctionnel
 
 Admin › Tickets : le filtre « À traiter » et la pastille du menu comptent aussi les tickets
 Validés. Un ticket validé attend une réponse à une question de l'analyse ou le lancement du
 développement : il restait hors du filtre. Il en sort au passage En cours, Terminé ou Refusé
 (ticket #80).
 
-### v0.23.75 — technique
+### v0.23.76 — technique
 
 `kAdminTicketToProcessStatuses` (`ticket.dart`) passe de deux à trois statuts. Le compteur
 reste un `whereIn` sur le champ `status` : pas de nouvel index, pas de backfill, pas de
 changement de règles.
+
+### v0.23.75 — fonctionnel
+
+Admin › Tickets : un ticket En cours offre « Livrer ». Quand sa pull request est prête (une
+seule PR de la session, CI verte), la fiche affiche « PR #57 prête — CI verte
+le … » et le bouton « Livrer ». Une session Claude Code met alors la PR à jour avec `master`,
+la fusionne et suit le déploiement ; appuyer sur « Livrer » vaut accord de fusion. Sinon, une
+seule ligne dit ce qui manque : plusieurs PR, CI en échec ou en cours, aucune PR
+prête, ou livraison d'un autre ticket en cours (une seule à la fois, avec « Ouvrir le ticket
+#K »). Une PR qui modifie `.github/`, `.claude/`, `deploy.ps1`, `firebase.json`, ou un fichier
+nommé `CLAUDE.md`, `CLAUDE.local.md` ou `.mcp.json` où qu'il soit, est refusée sans décompte : elle se fusionne à la main. La fiche ajoute « Ouvrir la PR #M » et
+une section « Livraison (N) » avec les comptes rendus de la session (« Blocage du … »,
+« Livraison terminée le … ») ; après un blocage ou trois heures sans fusion, « Relancer la
+livraison ». La liste porte une puce « PR prête ». Une livraison compte comme un lancement
+dans le plafond du jour. Rien ne change pour les membres.
+
+### v0.23.75 — technique
+
+Nouvelle callable `launchTicketDelivery` (routine de développement, texte `livraison #N`,
+mêmes secrets, aucun nouveau jeton). Contrôles avant tout comptage : PR éligible unique,
+fichiers sensibles (`GET /pulls/{n}/files`, `delivery_sensitive_files`), dernier run « CI »
+vert relu, verrou global `app_config/tickets_status.delivery_running`. Nouveau sous-document
+`tickets/{id}/admin/delivery` (état « PR prête » et comptes rendus `## Livraison — …`), écrit
+par le webhook (`pull_request` élargi, nouvel événement `workflow_run`), la tâche horaire et
+le lancement ; aucune règle Firestore nouvelle (joker `admin/{doc}`), sept tests de règles
+ajoutés. Logique dupliquée : `ticket_decisions.json` gagne `can_deliver`, les cas
+`livraison` de `launch_runs` (fin par blocage), les sections `launch_actions` et
+`delivery_lock`, et `delivery_sensitive_reason` ; corrigée des deux côtés (`rules.ts`,
+`ticket.dart`, `ticket_launch.dart`, `ticket_delivery.dart`). Réglages GitHub faits à la main :
+permission « Actions : Read-only » sur le jeton « KassDalle ticket », événement « Workflow
+runs » du webhook. Reste à faire après le déploiement : recoller le prompt de la routine de
+développement (aiguillage `developpement` / `livraison`). `CLAUDE.md` : règles de
+`livraison #N`, et l'appui sur « Livrer » vaut « fusionne ». Après la relecture `securite` :
+fichiers sensibles élargis à tout `CLAUDE.md`, `CLAUDE.local.md` et `.mcp.json` ; PR éligible
+seulement si son corps ne ferme que l'Issue du ticket ; le webhook ne relit la livraison que
+pour une PR du mainteneur dont la tête est dans le dépôt, cinq Issues au plus par événement,
+liste des PR lue une fois ; un 403 de limite secondaire n'est plus classé « jeton refusé » ;
+prompt de livraison avec un point L0 (entrées non fiables), une fusion au sha poussé après un
+second contrôle des fichiers, et une durée bornée à 2 h 30. Un conflit signalé par GitHub
+(`mergeable`) n'éteint plus « PR prête » : le champ n'est plus lu ni stocké, et la session
+résout `version:` et le CHANGELOG ou publie un blocage.
 
 ### v0.23.74 — fonctionnel
 

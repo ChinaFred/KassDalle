@@ -4095,6 +4095,56 @@ describe("tickets/{id}/admin/launches — lancements de sessions, lecture admini
   }
 });
 
+describe("tickets/{id}/admin/delivery — état « PR prête », lecture administrateur seule", () => {
+  const DELIVERY = "tickets/t-reader/admin/delivery";
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "tickets/t-reader": {
+        type: "evolution",
+        title: "Liste vide",
+        author_uid: READER,
+        status: "in_progress",
+        github_issue_number: 12,
+      },
+      [DELIVERY]: {
+        eligible_pr_count: 1,
+        pr_number: 57,
+        ready: true,
+        reports: [{ kind: "blocked", body: "## Livraison — blocage\n\nConflit." }],
+      },
+    });
+  });
+
+  it("l'administrateur lit l'état de livraison", async () => {
+    await assertSucceeds(db("admin").doc(DELIVERY).get());
+  });
+
+  it("l'auteur du ticket, un éditeur, un autre lecteur ne lisent pas l'état de livraison", async () => {
+    await assertFails(db("reader").doc(DELIVERY).get());
+    await assertFails(db("editor").doc(DELIVERY).get());
+    await assertFails(db("otherReader").doc(DELIVERY).get());
+    await assertFails(db("pending").doc(DELIVERY).get());
+    await assertFails(db("anonymous").doc(DELIVERY).get());
+  });
+
+  for (const persona of ["admin", "editor", "reader", "anonymous"]) {
+    it(`${persona} n'écrit pas l'état de livraison`, async () => {
+      await assertFails(db(persona).doc(DELIVERY).set({ ready: true }));
+      await assertFails(db(persona).doc(DELIVERY).update({ ready: true }));
+      await assertFails(db(persona).doc(DELIVERY).delete());
+    });
+  }
+
+  it("l'administrateur ne pose ni ne lève le verrou des livraisons", async () => {
+    await assertFails(
+      db("admin")
+        .doc("app_config/tickets_status")
+        .set({ delivery_running: null }, { merge: true }),
+    );
+  });
+});
+
 describe("ticket_quotas — compteur serveur seul", () => {
   const DOC = `ticket_quotas/${READER}_20261013`;
 

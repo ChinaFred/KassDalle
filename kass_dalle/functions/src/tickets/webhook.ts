@@ -18,7 +18,13 @@
  * mainteneur créé, modifié ou supprimé, relecture des commentaires de l'Issue
  * et réécriture des analyses `tickets/{id}/admin/analysis`), `pull_request` (PR ouverte
  * qui ferme l'Issue → « En cours », si son auteur est le mainteneur ou un
- * `OWNER`, `MEMBER` ou `COLLABORATOR` du dépôt), `ping`. Tout autre événement, une Issue
+ * `OWNER`, `MEMBER` ou `COLLABORATOR` du dépôt), `ping`. Pour « Livrer » :
+ * `pull_request` (ouverte, rouverte, modifiée, prête, repassée en brouillon,
+ * poussée, fermée) et `workflow_run` terminé du workflow « CI » relisent
+ * l'état « PR prête » des tickets dont l'Issue est citée par un mot-clé de
+ * fermeture (`deliveryRefreshFromEvent`, `refreshTicketDelivery`) ; un
+ * commentaire du mainteneur relève aussi les comptes rendus
+ * `## Livraison — …`. Tout autre événement, une Issue
  * d'un autre dépôt ou une Issue qui ne vient pas de l'application (aucun
  * ticket sous ce numéro) : 200, ignoré.
  *
@@ -44,19 +50,30 @@ import {
   REGION,
 } from "../config";
 import { logError, logInfo, logWarn, newCorrelationId } from "../logging";
-import { GITHUB_REPO_FULL_NAME, GithubError, githubToken, readRemoteIssue } from "./github";
+import { refreshTicketDelivery, type OpenPullRequests } from "./delivery";
 import {
+  GITHUB_REPO_FULL_NAME,
+  GithubError,
+  getPullRequest,
+  githubToken,
+  listOpenPullRequests,
+  readPullRequest,
+  readRemoteIssue,
+} from "./github";
+import {
+  CI_WORKFLOW_NAME,
   LABEL_VALIDATED,
   closingIssueNumbers,
   isTrustedPrAuthor,
   replyFromComment,
   statusFromIssue,
   verifyGithubSignature,
+  type PullRequestView,
 } from "./rules";
 import {
   applyGithubUpdate,
   markTokenInvalid,
-  refreshTicketAnalyses,
+  refreshTicketComments,
   ticketIdsForIssue,
   updateValidatedAt,
   type GithubUpdate,
@@ -65,6 +82,16 @@ import {
 const ISSUE_ACTIONS = new Set(["opened", "edited", "labeled", "unlabeled", "closed", "reopened"]);
 const COMMENT_ACTIONS = new Set(["created", "edited", "deleted"]);
 const PR_ACTIONS = new Set(["opened", "reopened", "edited", "ready_for_review"]);
+/** Actions d'une PR qui changent son état « PR prête » (corps, brouillon, tête, fermeture). */
+const DELIVERY_PR_ACTIONS = new Set([
+  "opened",
+  "reopened",
+  "edited",
+  "ready_for_review",
+  "converted_to_draft",
+  "synchronize",
+  "closed",
+]);
 
 type Payload = Record<string, unknown>;
 
@@ -220,6 +247,78 @@ export function analysisRefreshFromEvent(event: string, payload: Payload): numbe
   return user?.id === GITHUB_TICKETS_MAINTAINER_ID ? issue.number : null;
 }
 
+/** Issues (ou PR) relues au plus par événement pour « Livrer ». */
+export const DELIVERY_EVENT_MAX = 5;
+
+/**
+ * Vrai si une PR peut concerner une livraison : tête dans ce dépôt et auteur
+ * `GITHUB_TICKETS_MAINTAINER_ID`. Toute autre PR (copie du dépôt, autre
+ * compte, même `OWNER` ou `COLLABORATOR`) ne déclenche aucune relecture.
+ * La règle « En cours » (`updatesFromEvent`) n'en dépend pas. Pure.
+ */
+export function isDeliveryCandidatePr(pr: PullRequestView | null): boolean {
+  return (
+    pr !== null &&
+    pr.authorId === GITHUB_TICKETS_MAINTAINER_ID &&
+    typeof pr.headRepoFullName === "string" &&
+    pr.headRepoFullName.toLowerCase() === GITHUB_REPO_FULL_NAME.toLowerCase()
+  );
+}
+
+/**
+ * Ce qu'un événement demande de relire pour « Livrer », ou `null`. Pure.
+ *
+ * - `pull_request` (`DELIVERY_PR_ACTIONS`) d'une PR candidate
+ *   (`isDeliveryCandidatePr`) : les Issues citées par un mot-clé de fermeture
+ *   dans le corps, et dans l'ancien corps d'un `edited` (un renvoi retiré rend
+ *   la PR inéligible pour cette Issue). `DELIVERY_EVENT_MAX` au plus.
+ * - `workflow_run` `completed` du workflow « CI » : les PR du dépôt qu'il
+ *   porte (`workflow_run.pull_requests`, vide pour une copie du dépôt),
+ *   `DELIVERY_EVENT_MAX` au plus, dont l'appelant relit le corps et l'auteur.
+ */
+export function deliveryRefreshFromEvent(
+  event: string,
+  payload: Payload,
+): { issueNumbers: number[]; prNumbers: number[] } | null {
+  const repo = (payload.repository as { full_name?: unknown } | undefined)?.full_name;
+  if (typeof repo !== "string" || repo.toLowerCase() !== GITHUB_REPO_FULL_NAME.toLowerCase()) {
+    return null;
+  }
+  const action = typeof payload.action === "string" ? payload.action : "";
+  if (event === "pull_request" && DELIVERY_PR_ACTIONS.has(action)) {
+    const pr = payload.pull_request as Payload | undefined;
+    if (!pr || !isDeliveryCandidatePr(readPullRequest(pr))) return null;
+    const changes = payload.changes as { body?: { from?: unknown } } | undefined;
+    const bodies = [pr.body, changes?.body?.from].filter((b): b is string => typeof b === "string");
+    const issues = new Set<number>();
+    for (const body of bodies) {
+      for (const n of closingIssueNumbers(body, GITHUB_REPO_FULL_NAME)) issues.add(n);
+    }
+    return issues.size === 0
+      ? null
+      : {
+          issueNumbers: [...issues].sort((a, b) => a - b).slice(0, DELIVERY_EVENT_MAX),
+          prNumbers: [],
+        };
+  }
+  if (event === "workflow_run" && action === "completed") {
+    const run = payload.workflow_run as Payload | undefined;
+    if (!run || run.name !== CI_WORKFLOW_NAME || !Array.isArray(run.pull_requests)) return null;
+    const prs = new Set<number>();
+    for (const raw of run.pull_requests) {
+      const n = (raw as { number?: unknown } | null)?.number;
+      if (typeof n === "number" && Number.isSafeInteger(n) && n > 0) prs.add(n);
+    }
+    return prs.size === 0
+      ? null
+      : {
+          issueNumbers: [],
+          prNumbers: [...prs].sort((a, b) => a - b).slice(0, DELIVERY_EVENT_MAX),
+        };
+  }
+  return null;
+}
+
 export const githubTicketWebhook = onRequest(
   {
     region: REGION,
@@ -284,7 +383,7 @@ export const githubTicketWebhook = onRequest(
       return;
     }
 
-    const delivery = req.get("x-github-delivery") ?? null;
+    const deliveryId = req.get("x-github-delivery") ?? null;
     if (event === "ping") {
       res.status(200).send("pong");
       return;
@@ -299,7 +398,7 @@ export const githubTicketWebhook = onRequest(
         errorDescription: err instanceof Error ? err.message : String(err),
         correlationId,
         feature: "tickets",
-        extra: { event, delivery },
+        extra: { event, delivery: deliveryId },
       });
       res.status(400).send("Corps illisible.");
       return;
@@ -318,7 +417,7 @@ export const githubTicketWebhook = onRequest(
               correlationId,
               firestoreDocId: ticketId,
               feature: "tickets",
-              extra: { delivery },
+              extra: { delivery: deliveryId },
             });
           }
         }
@@ -329,7 +428,7 @@ export const githubTicketWebhook = onRequest(
         errorDescription: err instanceof Error ? err.message : String(err),
         correlationId,
         feature: "tickets",
-        extra: { delivery },
+        extra: { delivery: deliveryId },
       });
       res.status(500).send("Erreur interne.");
       return;
@@ -349,7 +448,7 @@ export const githubTicketWebhook = onRequest(
           errorDescription: err instanceof Error ? err.message : String(err),
           correlationId,
           feature: "tickets",
-          extra: { delivery },
+          extra: { delivery: deliveryId },
         });
         res.status(500).send("Erreur interne.");
         return;
@@ -371,14 +470,14 @@ export const githubTicketWebhook = onRequest(
             );
           }
           for (const ticketId of ticketIds) {
-            const count = await refreshTicketAnalyses(token, ticketId, refreshIssue);
+            const count = await refreshTicketComments(token, ticketId, refreshIssue, scope);
             changed++;
             await logInfo({
               message: `githubTicketWebhook : analyses du ticket ${ticketId} réécrites (${count}, Issue #${refreshIssue})`,
               correlationId,
               firestoreDocId: ticketId,
               feature: "tickets",
-              extra: { delivery },
+              extra: { delivery: deliveryId },
             });
           }
         }
@@ -389,7 +488,58 @@ export const githubTicketWebhook = onRequest(
           errorDescription: err instanceof Error ? err.message : String(err),
           correlationId,
           feature: "tickets",
-          extra: { delivery, kind },
+          extra: { delivery: deliveryId, kind },
+        });
+        if (kind === "token") {
+          await markTokenInvalid(scope, err instanceof Error ? err.message : String(err));
+        }
+        res.status(500).send("Erreur interne.");
+        return;
+      }
+    }
+
+    const delivery = deliveryRefreshFromEvent(event, payload);
+    if (delivery !== null) {
+      const scope = { correlationId };
+      try {
+        const token = githubToken();
+        if (token === null) {
+          throw new GithubError(
+            "token",
+            null,
+            "Jeton GitHub absent (secret GITHUB_TICKETS_TOKEN vide).",
+          );
+        }
+        const issues = new Set(delivery.issueNumbers);
+        for (const prNumber of delivery.prNumbers) {
+          const pr = await getPullRequest(token, prNumber);
+          if (!isDeliveryCandidatePr(pr)) continue;
+          for (const n of closingIssueNumbers(pr.body, GITHUB_REPO_FULL_NAME)) issues.add(n);
+        }
+        // Liste des PR ouvertes lue une fois pour l'événement, partagée.
+        let openPrs: OpenPullRequests | null = null;
+        for (const issueNumber of [...issues].slice(0, DELIVERY_EVENT_MAX)) {
+          for (const ticketId of await ticketIdsForIssue(issueNumber)) {
+            openPrs ??= await listOpenPullRequests(token);
+            const state = await refreshTicketDelivery(token, ticketId, issueNumber, openPrs);
+            changed++;
+            await logInfo({
+              message: `githubTicketWebhook : état « PR prête » du ticket ${ticketId} relu (Issue #${issueNumber}, ${event}, prête : ${state?.ready === true})`,
+              correlationId,
+              firestoreDocId: ticketId,
+              feature: "tickets",
+              extra: { delivery: deliveryId },
+            });
+          }
+        }
+      } catch (err) {
+        const kind = err instanceof GithubError ? err.kind : "other";
+        await logError({
+          message: `githubTicketWebhook : état « PR prête » non relu (${event})`,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          correlationId,
+          feature: "tickets",
+          extra: { delivery: deliveryId, kind },
         });
         if (kind === "token") {
           await markTokenInvalid(scope, err instanceof Error ? err.message : String(err));

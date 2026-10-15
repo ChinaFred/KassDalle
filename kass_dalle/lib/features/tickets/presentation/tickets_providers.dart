@@ -7,6 +7,7 @@ import '../../auth/presentation/auth_providers.dart';
 import '../data/ticket_repository.dart';
 import '../domain/ticket.dart';
 import '../domain/ticket_analysis.dart';
+import '../domain/ticket_delivery.dart';
 import '../domain/ticket_form.dart';
 import '../domain/ticket_launch.dart';
 
@@ -163,6 +164,15 @@ final ticketLaunchesProvider = StreamProvider.autoDispose
     .family<List<TicketLaunch>?, String>((ref, ticketId) {
       if (!ref.watch(isAdminProvider)) return Stream.value(null);
       return ref.watch(ticketRepositoryProvider).watchLaunches(ticketId);
+    });
+
+/// L'état de livraison d'un ticket (`tickets/{id}/admin/delivery` : « PR
+/// prête », comptes rendus), en flux ; `null` tant qu'il n'existe pas, ou hors
+/// administrateur.
+final ticketDeliveryProvider = StreamProvider.autoDispose
+    .family<TicketDelivery?, String>((ref, ticketId) {
+      if (!ref.watch(isAdminProvider)) return Stream.value(null);
+      return ref.watch(ticketRepositoryProvider).watchDelivery(ticketId);
     });
 
 /// `app_config/tickets_status` : jeton GitHub et jetons des routines
