@@ -170,7 +170,7 @@ void main() {
     });
   }
 
-  testWidgets('une ligne fixe suit la date, absente pendant le chargement', (
+  testWidgets('la phrase d\'ambiance est absente pendant le chargement', (
     tester,
   ) async {
     await pump(
@@ -178,22 +178,40 @@ void main() {
       auth: const Stream<User?>.empty(),
       user: const Stream<AppUser?>.empty(),
     );
-    expect(find.text(kSplashTagline), findsNothing);
+    for (final t in [
+      ...kSplashMorningTaglines,
+      ...kSplashAfternoonTaglines,
+      ...kSplashEveningTaglines,
+    ]) {
+      expect(find.text(t), findsNothing);
+    }
     await tester.pump(const Duration(seconds: 11));
   });
 
-  testWidgets('la ligne fixe s\'affiche avec la formule et la date', (
-    tester,
-  ) async {
-    await pump(
-      tester,
-      auth: Stream.value(_FakeFirebaseUser()),
-      user: Stream.value(_user()),
-    );
-    await tester.pump();
-    expect(find.text(kSplashTagline), findsOneWidget);
-    await tester.pump(const Duration(seconds: 6));
-  });
+  for (final c in [
+    (DateTime(2026, 10, 16, 9, 26), kSplashMorningTaglines),
+    (DateTime(2026, 10, 16, 14, 0), kSplashAfternoonTaglines),
+    (DateTime(2026, 10, 16, 21, 0), kSplashEveningTaglines),
+  ]) {
+    for (var pick = 0; pick < 3; pick++) {
+      testWidgets(
+        'la phrase d\'ambiance de ${c.$1.hour} h suit le tirage $pick',
+        (tester) async {
+          await pump(
+            tester,
+            auth: Stream.value(_FakeFirebaseUser()),
+            user: Stream.value(_user()),
+            now: c.$1,
+            pick: pick,
+          );
+          await tester.pump();
+          expect(find.text(c.$2[pick]), findsOneWidget);
+          expect(find.text("Un jaune d'œuf"), findsNothing);
+          await tester.pump(const Duration(seconds: 6));
+        },
+      );
+    }
+  }
 
   testWidgets('sans profil : formule sans prénom, date conservée', (
     tester,

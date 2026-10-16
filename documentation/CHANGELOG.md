@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-16
 
-### v0.23.89 — fonctionnel
+### v0.23.90 — fonctionnel
 
 Groupes : la feuille d'un groupe liste maintenant les invitations par e-mail en attente (personnes
 sans compte, par exemple les enfants), avec l'adresse, le rôle et « Invitation envoyée par e-mail »
@@ -29,7 +29,7 @@ deux sortes d'invitation. Seul le propriétaire du groupe les voit ; l'annulatio
 dans Admin › Invitations. Si la lecture échoue, une ligne « Invitations par e-mail indisponibles »
 propose de réessayer. Demande du ticket #113.
 
-### v0.23.89 — technique
+### v0.23.90 — technique
 
 `firestore.rules` : la lecture de `invitations/{id}` s'ouvre au propriétaire du groupe désigné par
 `group_id`, en plus de l'administrateur (un `get` du groupe par document lu). Une requête sans filtre
@@ -39,6 +39,16 @@ sur `group_id` reste refusée à un non-admin. Nouveau `InvitationsRepository.wa
 Limite connue, test `todo` dans `rules-tests` : un éditeur qui recrée sous le même identifiant un groupe
 supprimé lit les invitations restées en attente sur l'ancien groupe. Une correction passe par un
 champ `group_owner_id` écrit par le serveur dans l'invitation, avec un backfill.
+
+### v0.23.89 — fonctionnel
+
+Écran de démarrage : la ligne fixe « Un jaune d'œuf » disparaît. Une phrase d'ambiance la
+remplace sous la date, en italique, tirée au lancement selon la même tranche horaire que la
+formule d'accueil. Matin : « Un bon petit-déjeuner t'attend. », « Qu'est-ce qu'on mijote
+aujourd'hui ? », « Le carnet de recettes est ouvert. ». Après-midi : « Une idée pour ce
+soir ? », « Le temps de préparer quelque chose de bon. », « Un goûter, peut-être ? ». Soir :
+« À table, bientôt ! », « Le planning de la semaine t'attend. », « Une dernière recette avant la
+nuit ? ». La durée de l'écran et sa fermeture ne changent pas. Demande du ticket #112.
 
 ### v0.23.88 — fonctionnel
 
