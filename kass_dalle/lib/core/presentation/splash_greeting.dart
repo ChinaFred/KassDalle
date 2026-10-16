@@ -15,9 +15,6 @@ const kSplashMinDuration = Duration(seconds: 5);
 /// Plafond d'attente du profil : au-delà, l'écran affiche la formule sans prénom.
 const kSplashMaxDuration = Duration(seconds: 10);
 
-/// Message fixe affiché sous la date.
-const kSplashTagline = "Un jaune d'œuf";
-
 /// Formules d'accueil de chaque tranche horaire. Chaque entrée reçoit le nom
 /// affiché, ou `null` quand le profil n'est pas lu.
 typedef GreetingVariant = String Function(String? name);
@@ -45,6 +42,34 @@ final List<GreetingVariant> kSplashEveningGreetings = [
   (name) => _withName('Bonne soirée', name),
   (name) => _withName("C'est l'heure du dîner", name, tail: ' ?'),
 ];
+
+/// Phrases d'ambiance du matin, affichées sous la date.
+const List<String> kSplashMorningTaglines = [
+  "Un bon petit-déjeuner t'attend.",
+  "Qu'est-ce qu'on mijote aujourd'hui ?",
+  'Le carnet de recettes est ouvert.',
+];
+
+/// Phrases d'ambiance de l'après-midi.
+const List<String> kSplashAfternoonTaglines = [
+  'Une idée pour ce soir ?',
+  'Le temps de préparer quelque chose de bon.',
+  'Un goûter, peut-être ?',
+];
+
+/// Phrases d'ambiance du soir et de la nuit.
+const List<String> kSplashEveningTaglines = [
+  'À table, bientôt !',
+  "Le planning de la semaine t'attend.",
+  'Une dernière recette avant la nuit ?',
+];
+
+/// Phrases d'ambiance de la tranche horaire de [now], même découpe que les formules.
+List<String> splashTaglinesFor(DateTime now) {
+  if (now.hour >= 5 && now.hour < 12) return kSplashMorningTaglines;
+  if (now.hour >= 12 && now.hour < 18) return kSplashAfternoonTaglines;
+  return kSplashEveningTaglines;
+}
 
 /// Formules de la tranche horaire de [now].
 List<GreetingVariant> splashGreetingsFor(DateTime now) {
@@ -129,6 +154,9 @@ class _SplashGreetingState extends ConsumerState<SplashGreeting> {
       showName ? user.displayedName : null,
     );
 
+    final taglines = splashTaglinesFor(_openedAt);
+    final tagline = taglines[_variantPick % taglines.length];
+
     final visible = !_dismissed && !(_maxElapsed || (_minElapsed && ready));
 
     final reduceMotion = MediaQuery.of(context).disableAnimations;
@@ -150,6 +178,7 @@ class _SplashGreetingState extends ConsumerState<SplashGreeting> {
                 ? _SplashBody(
                     key: const ValueKey('splash'),
                     greeting: showGreeting ? greeting : null,
+                    tagline: tagline,
                     dateLine: DateFormat(
                       "EEEE d MMMM y '·' HH:mm",
                       'fr',
@@ -168,11 +197,13 @@ class _SplashBody extends StatelessWidget {
   const _SplashBody({
     super.key,
     required this.greeting,
+    required this.tagline,
     required this.dateLine,
     required this.onTap,
   });
 
   final String? greeting;
+  final String tagline;
   final String dateLine;
   final VoidCallback onTap;
 
@@ -242,7 +273,7 @@ class _SplashBody extends StatelessWidget {
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          kSplashTagline,
+                          tagline,
                           maxLines: 1,
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyLarge?.copyWith(
