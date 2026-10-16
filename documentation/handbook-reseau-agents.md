@@ -259,7 +259,7 @@ Règles de construction :
 | `business-analyst-culinaire` | lecture + écriture | cadrage : user stories, critères d'acceptation, cas limites, rôles ; met à jour les spécifications fonctionnelles | `.claude/agents/business-analyst-culinaire.md` |
 | `ux-designer` | lecture seule | proposition d'écran avant le code (parcours, disposition par taille d'écran, états, libellés), revue après | `.claude/agents/ux-designer.md` |
 | `developpement-tech-couts` | lecture + écriture | implémentation, correction de bug, suivi des coûts d'IA, documentation technique | `.claude/agents/developpement-tech-couts.md` |
-| `relecteur-regles` | lecture seule | relecture d'un diff contre `CLAUDE.md`, quatorze contrôles numérotés, lance les contrôles de la CI | `.claude/agents/relecteur-regles.md` |
+| `relecteur-regles` | lecture seule | relecture d'un diff contre `CLAUDE.md`, quinze contrôles numérotés, lance les contrôles de la CI | `.claude/agents/relecteur-regles.md` |
 | `securite` | lecture seule | droits par rôle, règles d'accès, coût abusif d'IA, données privées, secrets, workflows | `.claude/agents/securite.md` |
 | `product-owner-release` | lecture + écriture | périmètre d'une release, go / no-go | `.claude/agents/product-owner-release.md` |
 
@@ -289,6 +289,10 @@ Lis `CLAUDE.md` en entier avant de commencer.
     option destructive, hook bloquant, écart entre documentation et script.
 14. **Garde-fous du déploiement.** Un diff qui touche check-version.sh, ci.yml ou
     deploy.yml ouvre le rapport par une ligne [garde-fou], même sans anomalie.
+15. **Dépendances.** Un diff qui touche le fichier de dépendances, son lockfile ou le
+    projet natif liste les paquets montés, vérifie qu'une famille de paquets liés monte
+    ensemble, et exige une compilation de chaque plateforme publiée (en local, ou par un
+    job de CI dédié) avant la fusion.
 
 ## Vérifications automatiques
 Lance les commandes de la CI sur les fichiers touchés. Ne conclus pas « tests verts »

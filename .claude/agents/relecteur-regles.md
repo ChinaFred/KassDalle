@@ -80,6 +80,19 @@ Pour chaque contrôle, ne regarde que les fichiers du diff qu'il concerne.
     le contrôle de version pour faire passer sa propre CI : l'utilisateur décide de ces
     changements, la session principale les lui présente avant la fusion. Un contrôle
     retiré ou affaibli (condition supprimée, `exit 0` ajouté, job sauté) est une anomalie.
+15. **Dépendances et compilation Android.** Si le diff touche `kass_dalle/pubspec.yaml`,
+    `kass_dalle/pubspec.lock` ou `kass_dalle/android/` (voir « Une dépendance se compile
+    pour Android avant de partir ») :
+    - liste dans le rapport les paquets dont la version change dans `pubspec.lock`
+      (`git diff origin/master...HEAD -- kass_dalle/pubspec.lock`) ;
+    - si `firebase_core` change, chaque paquet FlutterFire du lock (`firebase_*`,
+      `cloud_firestore`, `cloud_functions`) accepte la nouvelle version : lis la contrainte
+      `firebase_core:` de son `pubspec.yaml` dans `~/.pub-cache/hosted/pub.dev/<paquet>-<version>/`.
+      Un paquet resté sur une version qui exige une autre plage est une anomalie ;
+    - un paquet monté sans être nommé dans l'entrée du `CHANGELOG.md` est une anomalie ;
+    - dis si `flutter build apk --release` a été lancé et son résultat. S'il ne peut pas
+      l'être (pas de SDK Android), écris que le job « Android — compilation » de la CI doit
+      être vert avant la fusion.
 
 ## Vérifications automatiques
 
@@ -89,6 +102,7 @@ Lance ce qui concerne les fichiers touchés, comme la CI :
 cd kass_dalle && flutter analyze && dart format --output=none --set-exit-if-changed lib test
 cd kass_dalle && flutter test
 cd kass_dalle/functions && npm run lint && npm run format:check && npm test
+cd kass_dalle && flutter build apk --release   # si pubspec.yaml, pubspec.lock ou android/ change, et si le SDK Android est présent
 ```
 
 Si la chaîne d'outils manque, dis-le dans le rapport. Ne conclus pas « tests verts »

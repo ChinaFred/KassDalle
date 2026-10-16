@@ -150,6 +150,32 @@ Rôles : `admin`, `editor`, `reader`.
   (injecté par constructeur, `ErrorReportService()` par défaut).
   `debugPrint` seul ne suffit pas : il est invisible dans les rapports d'erreurs en production.
 
+## Une dépendance se compile pour Android avant de partir — règle absolue
+
+Le job Flutter de la CI compile le web, pas Android. Une dépendance qui ne compile qu'en
+Java ou en Kotlin passe donc les tests et casse le déploiement. C'est arrivé en v0.23.81 :
+l'ajout de `firebase_messaging` a fait monter `firebase_core` de 4.13.0 à 4.15.0, et
+`firebase_auth` 6.5.7 ne compilait plus sous Android. La CI était verte ; les déploiements
+suivants ont échoué à « Construire l'APK », et rien n'a été mis en ligne pendant ce temps.
+
+- **Lire le diff de `pubspec.lock`.** `flutter pub add`, `pub get` ou `pub upgrade` font
+  monter d'autres paquets que celui demandé. Chaque paquet qui change de version est
+  nommé dans l'entrée du `CHANGELOG.md`.
+- **La famille FlutterFire monte ensemble.** Quand `firebase_core` change, monter aussi
+  `firebase_auth`, `cloud_firestore`, `cloud_functions`, `firebase_storage`,
+  `firebase_app_check` et `firebase_messaging` dans la même commande
+  (`flutter pub upgrade firebase_core firebase_auth …`), puis vérifier que chacun accepte
+  la nouvelle version de `firebase_core` dans son propre `pubspec.yaml`.
+- **Compiler l'APK avant le push.** Sur le PC : `flutter build apk --release` dans
+  `kass_dalle/`. Dans une session cloud sans SDK Android, le job « Android — compilation »
+  de `ci.yml` fait ce contrôle : il compile l'APK dès que le diff touche `pubspec.yaml`,
+  `pubspec.lock` ou `android/`. Une PR dont ce job n'est pas vert ne se fusionne pas.
+- **Un échec de « Construire l'APK » dans `deploy.yml` est une CI rouge** : il se
+  diagnostique et se corrige le jour même. Tant qu'il dure, le web, les Functions et l'APK
+  restent à la dernière version réussie, et les versions suivantes s'empilent sans partir.
+
+`relecteur-regles` vérifie ces points (contrôle 15).
+
 ## Redimensionner ne modifie jamais l'originale — règle absolue
 
 Une recette est un document partagé : plusieurs membres de la famille la lisent, la
@@ -498,7 +524,9 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
    contrôles de la CI sur ce qui a changé : `flutter analyze`, `dart format
    --set-exit-if-changed lib test` et `flutter test` côté Dart ; `npm run lint`,
    `npm run format:check`, `npm run build` et `npm test` côté Functions ; `npm test` dans
-   `kass_dalle/rules-tests/` quand `firestore.rules` ou `storage.rules` change. Le hook de
+   `kass_dalle/rules-tests/` quand `firestore.rules` ou `storage.rules` change ;
+   `flutter build apk --release` quand `pubspec.yaml`, `pubspec.lock` ou `android/` change
+   (voir « Une dépendance se compile pour Android avant de partir »). Le hook de
    formatage ne couvre que les fichiers écrits par l'outil d'édition, pas ceux produits par
    un script ou un générateur.
 3. **Relire — obligatoire.** Toute modification qui touche `kass_dalle/`, `documentation/`,
