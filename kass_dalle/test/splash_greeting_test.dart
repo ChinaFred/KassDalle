@@ -1,7 +1,10 @@
+import 'dart:math';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:kass_dalle/core/presentation/splash_greeting.dart';
 import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
@@ -18,11 +21,24 @@ AppUser _user({String? preferred}) => AppUser(
   lastSeenAt: DateTime(2026),
 );
 
+/// Tirage fixe : renvoie toujours [value].
+class _FixedRandom extends Fake implements Random {
+  _FixedRandom(this.value);
+  final int value;
+
+  @override
+  int nextInt(int max) => value;
+}
+
 void main() {
+  setUpAll(() => initializeDateFormatting('fr'));
+
   Future<void> pump(
     WidgetTester tester, {
     required Stream<User?> auth,
     required Stream<AppUser?> user,
+    DateTime? now,
+    int pick = 0,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -30,7 +46,13 @@ void main() {
           firebaseAuthStateProvider.overrideWith((ref) => auth),
           appUserProvider.overrideWith((ref) => user),
         ],
-        child: const MaterialApp(home: SplashGreeting(child: Text('accueil'))),
+        child: MaterialApp(
+          home: SplashGreeting(
+            now: () => now ?? DateTime(2026, 10, 16, 9, 26),
+            random: _FixedRandom(pick),
+            child: const Text('accueil'),
+          ),
+        ),
       ),
     );
     await tester.pump();
@@ -104,5 +126,63 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('accueil'), findsOneWidget);
+  });
+
+  testWidgets('la seconde ligne donne la date et l\'heure du lancement', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      auth: Stream.value(_FakeFirebaseUser()),
+      user: Stream.value(_user()),
+    );
+    await tester.pump();
+    expect(find.text('vendredi 16 octobre 2026 · 09:26'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  final slots = <(String, DateTime, int, String)>[
+    ('5 h', DateTime(2026, 10, 16, 5), 0, 'Bonjour Fred'),
+    ('11 h 59', DateTime(2026, 10, 16, 11, 59), 1, 'Belle matinée, Fred'),
+    ('12 h', DateTime(2026, 10, 16, 12), 0, 'Bon après-midi Fred'),
+    (
+      '17 h 59',
+      DateTime(2026, 10, 16, 17, 59),
+      2,
+      "Les casseroles t'attendent, Fred",
+    ),
+    ('18 h', DateTime(2026, 10, 16, 18), 0, 'Bonsoir Fred'),
+    ('4 h 59', DateTime(2026, 10, 16, 4, 59), 0, 'Bonsoir Fred'),
+    ('20 h', DateTime(2026, 10, 16, 20), 5, "C'est l'heure du dîner, Fred ?"),
+  ];
+  for (final (label, now, pick, expected) in slots) {
+    testWidgets('la formule suit la tranche horaire ($label)', (tester) async {
+      await pump(
+        tester,
+        auth: Stream.value(_FakeFirebaseUser()),
+        user: Stream.value(_user()),
+        now: now,
+        pick: pick,
+      );
+      await tester.pump();
+      expect(find.text(expected), findsOneWidget);
+      await tester.pump(const Duration(seconds: 6));
+    });
+  }
+
+  testWidgets('sans profil : formule sans prénom, date conservée', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      auth: Stream.value(null),
+      user: Stream.value(null),
+      now: DateTime(2026, 10, 16, 21, 5),
+      pick: 1,
+    );
+    await tester.pump();
+    expect(find.text('Bonne soirée'), findsOneWidget);
+    expect(find.text('vendredi 16 octobre 2026 · 21:05'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
   });
 }

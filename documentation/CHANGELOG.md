@@ -20,6 +20,15 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-16
 
+### v0.23.87 — fonctionnel
+
+Écran de démarrage : la formule d'accueil dépend de l'heure locale de l'appareil. De 5 h à
+11 h 59 : « Bonjour », « Belle matinée », « Bien réveillé ? ». De 12 h à 17 h 59 : « Bon
+après-midi », « Content de te revoir », « Les casseroles t'attendent ». De 18 h à 4 h 59 :
+« Bonsoir », « Bonne soirée », « C'est l'heure du dîner ? ». Une variante est tirée au
+lancement. Une seconde ligne affiche la date et l'heure du lancement en français. Sans
+profil lu, la formule s'affiche sans prénom. Demande du ticket #108.
+
 ### v0.23.86 — technique
 
 Déploiement : tous les déploiements depuis la v0.23.81 ont échoué à l'étape « Construire
