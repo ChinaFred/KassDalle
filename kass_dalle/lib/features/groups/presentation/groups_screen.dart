@@ -777,7 +777,9 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                         child: Text(
-                          'Invitations en attente ($pendingCount)',
+                          emailError && pendingCount == 0
+                              ? 'Invitations en attente'
+                              : 'Invitations en attente ($pendingCount)',
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                       ),
@@ -910,7 +912,8 @@ class _EmailInvitedTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final failed = invitation.storedStatus == 'send_failed';
+    final failed =
+        invitation.statusAt(DateTime.now()) == EmailInvitationStatus.sendFailed;
     final role = invitation.role == UserRole.editor ? 'éditeur' : 'lecteur';
     return ListTile(
       leading: const CircleAvatar(child: Icon(Icons.mail_outline)),
