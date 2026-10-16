@@ -538,7 +538,18 @@ void main() {
       expect(d.pendingAnswerAt, DateTime.utc(2026, 10, 14, 12));
       expect(d.canLaunchAnalysis, isTrue);
       expect(d.relaunchOf, isNull);
-      expect(d.canReply, isFalse);
+      // Un ticket Reçu se répond encore : les précisions s'ajoutent.
+      expect(d.canReply, isTrue);
+    });
+
+    test('Reçu sans analyse : pendingAnswerAt est la dernière réponse', () {
+      final d = doc(
+        entries: [
+          reply(DateTime.utc(2026, 10, 14, 9)),
+          reply(DateTime.utc(2026, 10, 14, 11)),
+        ],
+      );
+      expect(d.pendingAnswerAt, DateTime.utc(2026, 10, 14, 11));
     });
 
     test('sous-document : nature, compte, dates', () {

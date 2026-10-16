@@ -1205,7 +1205,7 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   - Analysé : « Votre ticket a été lu et étudié. » ;
   - Validé : « Votre demande sera traitée. » ;
   - En cours : « Le travail a commencé. » ;
-  - Livré : « C'est fait. Mettez l'application à jour pour en profiter. », suivi de « Livré par la PR #N »
+  - Livré : « C'est fait. Mettez l'application à jour pour en profiter. », suivi de « Livré en vX.Y.Z par la PR #N » (« Livré par la PR #N » quand la version n'est pas lisible)
     (lien vers la PR sur GitHub) quand la PR qui a fermé l'Issue est connue ; rien de plus pour un ticket
     fermé à la main, sans PR. L'administrateur lit la même ligne dans Admin › Tickets, avec le bouton « Ouvrir la PR #N » ;
   - Refusé : « Cette demande ne sera pas traitée. », suivi de l'encadré « Motif du refus »
@@ -1243,7 +1243,7 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   toujours En cours, puis Livré à la fusion.
 - Un statut peut sauter une étape ; il ne recule jamais, sauf dans deux cas : quand l'Admin
   répond à une analyse depuis l'application (« Répondre »), un ticket Analysé ou Validé revient
-  à Reçu ; quand plus aucune pull request ouverte ne ferme l'Issue, un ticket En cours revient
+  à Reçu (un ticket déjà Reçu le reste) ; quand plus aucune pull request ouverte ne ferme l'Issue, un ticket En cours revient
   au statut de ses étiquettes (point suivant). Répondu, Refusé et Livré sont finaux, sauf si l'Issue est rouverte : le statut
   revient alors à celui que donnent ses étiquettes.
 - Un ticket En cours dont la pull request est fermée sans être fusionnée revient au statut
@@ -1283,7 +1283,8 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, puis
   « #N · auteur · date » (le numéro de l'Issue, puis le nom de l'auteur dans l'application ;
   sans Issue, pas de numéro), statut, la puce « PR prête » juste après le statut (icône de
-  fusion ; lecteur d'écran : « Pull request prête à livrer »), la puce d'un lancement
+  fusion ; lecteur d'écran : « Pull request prête à livrer »), remplacée par « CI en cours » tant que
+  la CI de l'unique PR éligible n'est pas finie, la puce d'un lancement
   (« Analyse en cours », « Développement en cours » ou « Livraison en cours » tant que le
   lancement court, puis « Relance possible » à l'échéance sans changement de statut ; même règle
   que la ligne de la fiche, aucune puce pour un ticket sans Issue, de type question, final, dont
@@ -1340,7 +1341,7 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   avec Réessayer. Admin seul, comme les analyses.
 - **Barre de décision**, fixée en bas de la fiche, sous un trait, absente quand aucune
   décision n'est possible. Un bouton qui ne s'applique pas est masqué, pas grisé. Ticket
-  Reçu : « Refuser » et « Lancer l'analyse » ; Analysé : « Refuser », « Répondre » et
+  Reçu : « Refuser », « Répondre » et « Lancer l'analyse » ; Analysé : « Refuser », « Répondre » et
   « Valider » ; Validé : « Refuser », « Répondre » et « Lancer le développement » ; Validé
   bloqué (ci-dessous) : « Refuser » et « Répondre » ; En cours : « Refuser » et « Livrer »
   (« Relancer la livraison » après un blocage ou une échéance), hors Question. Les actions secondaires (contour) sont à
@@ -1466,9 +1467,14 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
       éligible, un fichier sensible, une CI qui n'est pas verte sur la dernière version, une
       livraison déjà en cours, le plafond du jour, puis une Issue qui a changé sur GitHub.
   - « Répondre » : pour un ticket Analysé ou Validé, d'un autre type que Question, qui a au
-    moins une analyse relevée ; masqué pendant un lancement en cours ou une autre décision.
-    Le serveur refuse aussi pendant un développement en cours (hors ticket bloqué) : « Un
-    développement est en cours. Attendez sa fin avant de répondre. ».
+    moins une analyse relevée, ou pour un ticket Reçu, d'un autre type que Question, avec Issue,
+    sans analyse requise (précisions ajoutées avant « Lancer l'analyse » ; le ticket reste Reçu,
+    rien n'est lancé) ; masqué pendant un lancement en cours ou une autre décision.
+    Le serveur refuse aussi pendant un lancement en cours (l'analyse d'un ticket Reçu, le
+    développement d'un ticket Validé hors ticket bloqué) : « Un lancement est en cours.
+    Attendez sa fin avant de répondre. ». Sans analyse, la boîte s'intitule « Répondre au
+    ticket » et dit « Ajoutez une précision avant l'analyse. Elle sera lue par la session
+    d'analyse. ».
     Seulement dans la barre. La boîte « Répondre à l'analyse » rappelle « Analyse du jj/mm/aa
     à hh:mm », prévient « Publié sur GitHub, dépôt public. N'y mettez ni nom, ni e-mail, ni
     donnée privée. » et « Le ticket repassera à « Reçu ». Relancez ensuite l'analyse pour
@@ -1840,7 +1846,7 @@ sequenceDiagram
 
 Le statut d'un ticket est écrit par le serveur seul, d'après l'Issue GitHub (5.13). Il peut
 sauter une étape ; il ne recule jamais, sauf à la réouverture d'une Issue fermée, quand
-l'Admin répond à une analyse (« Répondre ») : un ticket Analysé ou Validé revient à Reçu, et
+l'Admin répond à une analyse (« Répondre ») : un ticket Analysé ou Validé revient à Reçu (un ticket Reçu le reste), et
 quand plus aucune PR ouverte ne ferme l'Issue : un ticket En cours revient au statut de ses
 étiquettes.
 

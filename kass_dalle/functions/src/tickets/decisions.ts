@@ -516,8 +516,8 @@ async function removeLabelLogged(
 }
 
 /**
- * Vrai si un développement est en cours sur un ticket Validé non bloqué :
- * « Répondre » est alors refusé. Un ticket bloqué (dernière analyse
+ * Vrai si un lancement est en cours : une analyse sur un ticket Reçu, un
+ * développement sur un ticket Validé non bloqué. « Répondre » est alors refusé. Un ticket bloqué (dernière analyse
  * postérieure au dernier « validé ») accepte une réponse même si son dernier
  * lancement n'a pas atteint son échéance : la session s'est arrêtée sur cette
  * analyse.
@@ -529,7 +529,7 @@ async function developmentRunning(
   statusChangedAtMs: number | null,
   analysisData: FirebaseFirestore.DocumentData | undefined,
 ): Promise<boolean> {
-  if (status !== "validated") return false;
+  if (status !== "validated" && status !== "received") return false;
   const awaiting = ticketAwaitingReply({
     rawStatus: status,
     type,
@@ -543,7 +543,7 @@ async function developmentRunning(
     .get();
   return launchRunState({
     entries: launchEntryViews(launches.data()),
-    action: "developpement",
+    action: status === "received" ? "analyse" : "developpement",
     rawStatus: status,
     nowMs: Date.now(),
     statusChangedAtMs,
@@ -552,9 +552,11 @@ async function developmentRunning(
 
 /**
  * Publie la réponse de l'administrateur à la dernière analyse et ramène le
- * ticket à Reçu. Idempotente : une reprise après un échec partiel ne
- * republie pas le commentaire si la réponse déjà publiée depuis
- * l'application (`answer_comment_ids`) porte le même texte. Rien n'est lancé.
+ * ticket à Reçu. Sur un ticket déjà Reçu, sans analyse, elle publie les
+ * précisions seulement : ni statut ni étiquettes ne changent. Idempotente
+ * après une analyse : une reprise après un échec partiel ne republie pas le
+ * commentaire si la réponse déjà publiée depuis l'application
+ * (`answer_comment_ids`) porte le même texte. Rien n'est lancé.
  */
 export async function answerTicketDecision(
   ticketId: string,
@@ -621,7 +623,8 @@ export async function answerTicketDecision(
     }
 
     const state = analysisAnswerState(comments, GITHUB_TICKETS_MAINTAINER_ID, answerIds, body);
-    if (!state.hasAnalysis) {
+    const beforeAnalysis = seen.status === "received";
+    if (!state.hasAnalysis && !beforeAnalysis) {
       throw new HttpsError("failed-precondition", "Aucune analyse à laquelle répondre.", {
         reason: "no_analysis",
       });
@@ -639,13 +642,14 @@ export async function answerTicketDecision(
     // Ordre choisi pour qu'aucun état intermédiaire ne dépasse le statut de
     // départ : à-analyser posée d'abord, puis analysé et validé retirées.
     try {
-      if (!issue.labels.includes(LABEL_TO_ANALYZE)) {
+      // Ticket Reçu : les étiquettes de l'Issue restent telles quelles.
+      if (!beforeAnalysis && !issue.labels.includes(LABEL_TO_ANALYZE)) {
         await addIssueLabels(token, issueNumber, [LABEL_TO_ANALYZE]);
       }
-      if (issue.labels.includes(LABEL_ANALYZED)) {
+      if (!beforeAnalysis && issue.labels.includes(LABEL_ANALYZED)) {
         await removeLabelLogged(token, issueNumber, LABEL_ANALYZED, ticketId, scope);
       }
-      if (issue.labels.includes(LABEL_VALIDATED)) {
+      if (!beforeAnalysis && issue.labels.includes(LABEL_VALIDATED)) {
         await removeLabelLogged(token, issueNumber, LABEL_VALIDATED, ticketId, scope);
       }
     } catch (err) {
@@ -670,7 +674,7 @@ export async function answerTicketDecision(
     }
 
     try {
-      await applyGithubUpdate(ticketId, { answerReset: true });
+      if (!beforeAnalysis) await applyGithubUpdate(ticketId, { answerReset: true });
     } catch (err) {
       await logError({
         message: `Tickets : réponse publiée sur l'Issue #${issueNumber} mais ticket ${ticketId} non ramené à Reçu`,
@@ -688,7 +692,7 @@ export async function answerTicketDecision(
     }
     await refreshAnalysesAfterDecision(ticketId, null, token, issueNumber, scope);
     await logInfo({
-      message: `Tickets : réponse à l'analyse du ticket ${ticketId} publiée (Issue #${issueNumber}), ticket repassé à Reçu`,
+      message: `Tickets : réponse à l'analyse du ticket ${ticketId} publiée (Issue #${issueNumber}), ticket ${beforeAnalysis ? "resté" : "repassé"} à Reçu`,
       correlationId: scope.correlationId,
       userId: scope.userId,
       firestoreDocId: ticketId,

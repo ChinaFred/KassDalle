@@ -175,12 +175,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'Aucun appel d\'IA. Un appel GitHub par ticket, deux cents tickets '
             'par passage.';
       case BackfillKeys.ticketDeliveredPr:
-        return 'Pour chaque ticket livré sans PR connue, relit sur GitHub la '
-            'PR fusionnée qui a fermé l\'Issue et range son numéro et son '
-            'adresse sur le ticket : le membre et l\'administrateur lisent '
-            '« Livré par la PR #N ». Un ticket fermé à la main, sans PR, est '
+        return 'Pour chaque ticket livré sans PR ou sans version connue, relit sur '
+            'GitHub la PR fusionnée qui a fermé l\'Issue et range son numéro, '
+            'son adresse et la version de l\'application à sa fusion sur le '
+            'ticket : le membre et l\'administrateur lisent '
+            '« Livré en vX.Y.Z par la PR #N ». Un ticket fermé à la main, sans PR, est '
             'listé dans « À revoir ». On peut relancer.\n\n'
-            'Aucun appel d\'IA. Un à deux appels GitHub par ticket, cent '
+            'Aucun appel d\'IA. Deux à trois appels GitHub par ticket, cent '
             'tickets par passage.';
       default:
         return '';

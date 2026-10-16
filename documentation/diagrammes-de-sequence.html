@@ -3198,7 +3198,7 @@ sequenceDiagram
   and
     CI->>CI: Règles (sauté si déjà testé en PR) — npm ci, npm test (émulateurs firestore + storage, demo-kassdalle)
   end
-  CI-->>G: workflow_run completed
+  CI-->>G: workflow_run requested, in_progress, completed
 
   alt CI en échec, CI de PR, ou commit signé Deploy-Source: deploy.ps1
     G-->>D: rien à déployer
@@ -4353,7 +4353,7 @@ sequenceDiagram
   participant W as githubTicketWebhook
 
   AD->>C: « Répondre »
-  C-->>AD: boîte « Répondre à l'analyse » : Analyse du …, avertissement dépôt public,<br/>« Le ticket repassera à « Reçu ». » (+ « La validation sera retirée. »)
+  C-->>AD: boîte « Répondre à l'analyse » : Analyse du …, avertissement dépôt public,<br/>« Le ticket repassera à « Reçu ». » (+ « La validation sera retirée. ») ;<br/>ticket Reçu : « Répondre au ticket », « Ajoutez une précision avant l'analyse. »
   AD->>C: texte, « Publier »
   C->>C: 5 caractères au moins, aucune adresse e-mail (ticketAnswerFieldError)
   alt texte refusé
@@ -4361,27 +4361,27 @@ sequenceDiagram
   end
   C->>F: { ticketId, answer }
   F->>F: requireAdmin ; readAnswerText (5 à 4 000, sans adresse e-mail, mentions neutralisées)
-  F->>T: transaction : Analysé ou Validé, hors Question, Issue (answerPrecondition), bail decision_lease_until
+  F->>T: transaction : Reçu, Analysé ou Validé, hors Question, Issue (answerPrecondition), bail decision_lease_until
   F->>T: lit admin/analysis (answer_comment_ids, validated_at) et admin/launches
-  alt développement en cours, ticket non bloqué
-    F-->>C: « Un développement est en cours. Attendez sa fin avant de répondre. » (launch_running)
+  alt lancement en cours (analyse sur Reçu, développement sur Validé non bloqué)
+    F-->>C: « Un lancement est en cours. Attendez sa fin avant de répondre. » (launch_running)
   end
   F->>G: GET /issues/N, GET /issues/N/comments
   alt Issue fermée
     F->>T: état relu appliqué
     F-->>C: « Ce ticket a déjà été clos sur GitHub. »
-  else aucune analyse du mainteneur
+  else aucune analyse du mainteneur, ticket non Reçu
     F-->>C: « Aucune analyse à laquelle répondre. »
   end
   opt aucun commentaire de answer_comment_ids ne suit la dernière analyse avec ce texte
     F->>G: POST commentaire « ## Précisions de l'administrateur » + texte
     F->>T: admin/analysis.answer_comment_ids += id (au mieux)
   end
-  F->>G: POST label statut:à-analyser, DELETE statut:analysé, DELETE validé<br/>(404 : étiquette déjà absente, journalisée)
+  F->>G: POST label statut:à-analyser, DELETE statut:analysé, DELETE validé<br/>(404 : étiquette déjà absente, journalisée) ; ticket Reçu : aucune étiquette touchée
   alt échec des étiquettes
     F-->>C: « Réponse publiée, mais le statut n'a pas changé. Réessayez. »<br/>(answer_published_labels_failed : texte verrouillé, réessayer ne republie pas)
   end
-  F->>T: transaction : statut received (seul recul permis), answer_reset_at
+  F->>T: transaction : statut received (seul recul permis), answer_reset_at<br/>(ticket Reçu : sautée, statut inchangé)
   F->>T: admin/analysis réécrit (analyses et réponses, kind)
   F->>T: bail retiré (finally)
   F-->>C: { status: received }
@@ -4436,7 +4436,7 @@ sequenceDiagram
   participant R as API Routines (Anthropic)
   participant S as Session Claude Code
 
-  G->>W: pull_request (poussée, modifiée, fermée) ou workflow_run « CI » terminé
+  G->>W: pull_request (poussée, modifiée, fermée) ou workflow_run « CI » (départ, exécution, fin)
   W->>G: GET /pulls?state=open, GET /pulls/M, GET /actions/runs?head_sha=
   W->>T: admin/delivery : PR éligible, dernier run CI, ready
   T-->>C: flux admin/delivery et tickets_status.delivery_running
@@ -4474,7 +4474,7 @@ sequenceDiagram
   G->>G: « Closes #N » ferme l'Issue ; workflow « Déploiement »
   G->>W: issues closed : ticket Livré (verrou inactif)
   W->>G: événements de l'Issue (commit de fermeture), puis PR de ce commit
-  W->>T: delivered_pr_number et delivered_pr_url sur le ticket (lus par le membre et l'admin)
+  W->>T: delivered_pr_number, delivered_pr_url et delivered_version (pubspec.yaml au commit de fusion) sur le ticket (lus par le membre et l'admin)
   S->>G: commentaire « ## Livraison — terminée » (ou « ## Livraison — blocage »)
   G->>W: issue_comment du mainteneur
   W->>T: admin/delivery.reports ; blocage postérieur : delivery_running effacé

@@ -153,7 +153,7 @@ async function runTicketDeliveredPrPass(
     }
     response.examines += 1;
     const data = doc.data() as Record<string, unknown>;
-    if (data.delivered_pr_number != null) {
+    if (data.delivered_pr_number != null && data.delivered_version != null) {
       response.dejaAJour += 1;
       continue;
     }

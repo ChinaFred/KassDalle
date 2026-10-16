@@ -56,8 +56,11 @@ class Ticket {
 
   /// PR fusionnée qui a fermé l'Issue, écrite par le serveur à la livraison
   /// (`delivered_pr_number`, `delivered_pr_url`). `null` sans PR retrouvable.
+  /// `deliveredVersion` : version de l'application au commit de fusion
+  /// (`delivered_version`, sans numéro de build), `null` si illisible.
   final int? deliveredPrNumber;
   final String? deliveredPrUrl;
+  final String? deliveredVersion;
 
   const Ticket({
     required this.id,
@@ -82,6 +85,7 @@ class Ticket {
     required this.seenByAuthorAt,
     this.deliveredPrNumber,
     this.deliveredPrUrl,
+    this.deliveredVersion,
   });
 
   factory Ticket.fromMap(String id, Map<String, dynamic> data) {
@@ -115,12 +119,29 @@ class Ticket {
       seenByAuthorAt: parseTicketDate(data['seen_by_author_at']),
       deliveredPrNumber: optInt(data['delivered_pr_number']),
       deliveredPrUrl: optStr(data['delivered_pr_url']),
+      deliveredVersion: optStr(data['delivered_version']),
     );
   }
 
   /// Numéro de la PR de livraison, affiché seulement sur un ticket livré.
   int? get shownDeliveredPrNumber =>
       status == TicketStatus.delivered ? deliveredPrNumber : null;
+
+  /// Texte de la ligne de livraison : « Livré en v0.23.80 par la PR #57 », ou
+  /// « Livré par la PR #57 » sans version lisible. `null` sans PR affichée.
+  String? get deliveredLineText {
+    final number = shownDeliveredPrNumber;
+    if (number == null) return null;
+    final version = deliveredVersion?.trim();
+    final shownVersion =
+        version != null &&
+            RegExp(r'^\d{1,4}\.\d{1,5}\.\d{1,6}$').hasMatch(version)
+        ? version
+        : null;
+    return shownVersion == null
+        ? 'Livré par la PR #$number'
+        : 'Livré en v$shownVersion par la PR #$number';
+  }
 
   /// Adresse de la PR de livraison, seulement en `https` sur `github.com`,
   /// sur un ticket livré ; `null` sinon (la ligne s'affiche alors sans lien).
@@ -449,8 +470,9 @@ class AdminTicketDecisions {
 /// `test-fixtures/ticket_decisions.json` (section `reply_cases`). Un statut
 /// inconnu de cette version n'offre rien.
 ///
-/// [developmentRunning] : un développement est en cours sur un ticket non
-/// bloqué ; le serveur refuse alors (`launch_running`).
+/// [developmentRunning] : un lancement est en cours (analyse sur un ticket
+/// Reçu, développement sur un ticket Validé non bloqué) ; le serveur refuse
+/// alors (`launch_running`). Un ticket Reçu se répond sans analyse.
 bool ticketCanReply({
   required String rawStatus,
   required TicketType type,
@@ -460,10 +482,12 @@ bool ticketCanReply({
 }) {
   final status = TicketStatus.fromValue(rawStatus);
   return hasIssue &&
-      hasAnalysis &&
+      (hasAnalysis || status == TicketStatus.received) &&
       !developmentRunning &&
       type != TicketType.question &&
-      (status == TicketStatus.analyzed || status == TicketStatus.validated);
+      (status == TicketStatus.received ||
+          status == TicketStatus.analyzed ||
+          status == TicketStatus.validated);
 }
 
 /// Ticket bloqué : la même règle que le serveur (`ticketAwaitingReply`),
@@ -575,13 +599,19 @@ AdminTicketDecisions adminTicketDecisions(
   }
   final offered =
       action != null && !launchesLoading && !run.running && !awaiting;
-  final canReply = ticketCanReply(
-    rawStatus: t.rawStatus,
-    type: t.type,
-    hasIssue: hasIssue,
-    hasAnalysis: analysis?.hasAnalysis ?? false,
-    developmentRunning: run.running,
-  );
+  // Reçu : un lancement d'analyse en cours se lit dans `launches`; avant sa
+  // lecture, « Répondre » reste masqué comme « Lancer l'analyse ».
+  final replyReady =
+      status != TicketStatus.received || (launches != null && !launchesLoading);
+  final canReply =
+      replyReady &&
+      ticketCanReply(
+        rawStatus: t.rawStatus,
+        type: t.type,
+        hasIssue: hasIssue,
+        hasAnalysis: analysis?.hasAnalysis ?? false,
+        developmentRunning: run.running,
+      );
   return AdminTicketDecisions(
     canValidate: canValidate,
     canRefuse: canRefuse,

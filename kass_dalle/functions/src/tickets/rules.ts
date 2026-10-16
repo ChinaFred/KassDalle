@@ -626,7 +626,8 @@ export function analysesFromComments(
  *   (identifiant dans `answerIds`) suit cette analyse et porte exactement
  *   `expectedBody`. Seul ce cas — reprise après un échec partiel avec le même
  *   texte — ne republie pas la réponse. Une autre `## Précisions…`, ou un
- *   autre texte, ne la remplace pas.
+ *   autre texte, ne la remplace pas. Sans analyse, la réponse peut figurer
+ *   n'importe où dans l'Issue.
  */
 export function analysisAnswerState(
   comments: readonly AnalysisSourceComment[],
@@ -787,13 +788,14 @@ export function answerCommentBody(text: string): string {
 }
 
 export const ANSWER_DEVELOPMENT_RUNNING_MESSAGE =
-  "Un développement est en cours. Attendez sa fin avant de répondre.";
+  "Un lancement est en cours. Attendez sa fin avant de répondre.";
 
 /**
  * Ce que décide « Répondre » avant tout appel à GitHub : `null` si la réponse
- * est permise (ticket Analysé ou Validé, hors Question, avec une Issue, aucun
- * développement en cours hors ticket bloqué), sinon le message du refus. La
- * présence d'une analyse se vérifie ensuite sur les commentaires de l'Issue.
+ * est permise (ticket Reçu, Analysé ou Validé, hors Question, avec une Issue,
+ * aucun lancement en cours hors ticket bloqué), sinon le message du refus. La
+ * présence d'une analyse se vérifie ensuite sur les commentaires de l'Issue,
+ * sauf pour un ticket Reçu, qui n'en exige pas.
  */
 export function answerPrecondition(args: {
   status: TicketStatus;
@@ -805,8 +807,8 @@ export function answerPrecondition(args: {
   if (args.type === "question") {
     return "Une question reçoit une réponse sur GitHub, pas des précisions.";
   }
-  if (args.status !== "analyzed" && args.status !== "validated") {
-    return "Seule la dernière analyse d'un ticket analysé ou validé peut recevoir une réponse.";
+  if (args.status !== "received" && args.status !== "analyzed" && args.status !== "validated") {
+    return "Seul un ticket reçu, analysé ou validé peut recevoir une réponse.";
   }
   if (args.developmentRunning === true) return ANSWER_DEVELOPMENT_RUNNING_MESSAGE;
   return null;
@@ -964,7 +966,9 @@ export function ticketDecisions(args: {
 /**
  * « Répondre », tel que le client l'affiche (`adminTicketDecisions.canReply`,
  * fixture `ticket_decisions.json`, section `reply_cases`) : la condition de
- * statut (`answerPrecondition`) et au moins une analyse relevée. Pure.
+ * statut (`answerPrecondition`) et au moins une analyse relevée, sauf pour un
+ * ticket Reçu, qui se répond avant toute analyse. `developmentRunning` vaut
+ * pour un lancement en cours (analyse sur Reçu, développement sur Validé). Pure.
  */
 export function ticketCanReply(args: {
   rawStatus: unknown;
@@ -975,7 +979,7 @@ export function ticketCanReply(args: {
 }): boolean {
   const status = storedTicketStatus(args.rawStatus);
   return (
-    args.hasAnalysis &&
+    (args.hasAnalysis || status === "received") &&
     answerPrecondition({
       status,
       type: args.type,
@@ -1462,6 +1466,15 @@ export function safePullRequestUrl(url: string | null, repoFullName: string): st
   const prefix = `https://github.com/${repoFullName}/pull/`;
   if (!url.startsWith(prefix)) return null;
   return /^[1-9][0-9]{0,6}$/.test(url.slice(prefix.length)) ? url : null;
+}
+
+/**
+ * La version (`x.y.z`, sans le numéro de build `+N`) de la ligne `version:`
+ * d'un `pubspec.yaml`, ou `null` quand elle est absente ou mal formée. Pure.
+ */
+export function pubspecVersionName(text: string): string | null {
+  const m = /^version:[ \t]*(\d{1,4}\.\d{1,5}\.\d{1,6})(?:\+\d+)?[ \t]*$/m.exec(text);
+  return m === null ? null : m[1];
 }
 
 /**

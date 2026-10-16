@@ -562,7 +562,7 @@ class AdminTicketLaunchChipState extends ConsumerState<AdminTicketLaunchChip> {
   }
 }
 
-/// Puce « PR prête » d'un ticket En cours dont la pull request peut être
+/// Puce « CI en cours » ou « PR prête » d'un ticket En cours dont la pull request peut être
 /// livrée (`tickets/{id}/admin/delivery.ready`). Rien tant que l'état n'est
 /// pas lu, ni s'il ne se lit pas : la fiche le dit.
 class _DeliveryReadyChip extends ConsumerWidget {
@@ -571,8 +571,15 @@ class _DeliveryReadyChip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ready = ref.watch(ticketDeliveryProvider(ticketId)).value?.ready;
-    if (ready != true) return const SizedBox.shrink();
+    final delivery = ref.watch(ticketDeliveryProvider(ticketId)).value;
+    if (delivery == null) return const SizedBox.shrink();
+    if (delivery.prNumber != null &&
+        delivery.eligiblePrCount == 1 &&
+        delivery.ciStatus != null &&
+        delivery.ciStatus != 'completed') {
+      return const TicketLaunchStateChip(label: 'CI en cours');
+    }
+    if (!delivery.ready) return const SizedBox.shrink();
     return Semantics(
       label: 'Pull request prête à livrer',
       excludeSemantics: true,
@@ -804,7 +811,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
   }
 
   /// « Répondre » : publie les précisions de l'administrateur sous la
-  /// dernière analyse. Pendant l'envoi, la boîte peut être fermée : le
+  /// dernière analyse, ou sur l'Issue d'un ticket Reçu sans analyse. Pendant l'envoi, la boîte peut être fermée : le
   /// résultat s'affiche ensuite par le messenger capturé.
   Future<void> _answer() async {
     final ticket = widget.ticket;
@@ -832,6 +839,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           },
           analysisAt: analysisAt,
           validated: ticket.status == TicketStatus.validated,
+          received: ticket.status == TicketStatus.received,
           submit: (text) => pending = ref
               .read(ticketRepositoryProvider)
               .answer(ticket.id, text),
@@ -867,7 +875,9 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       if (!messenger.mounted) return;
       if (published) {
         messenger.showSuccessMessage(
-          'Réponse publiée. Le ticket repasse à Reçu : lancez l\'analyse.',
+          ticket.status == TicketStatus.received
+              ? 'Réponse publiée. Elle sera lue par la prochaine analyse.'
+              : 'Réponse publiée. Le ticket repasse à Reçu : lancez l\'analyse.',
           scheme: scheme,
         );
       } else if (failure != null) {
@@ -1429,7 +1439,14 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
                 ),
               ),
               const Divider(height: 1),
-              bar,
+              // Étroit (320 px) avec trois boutons empilés et une ligne
+              // d'état, la barre défile plutôt que de déborder.
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: constraints.maxHeight * 0.5,
+                ),
+                child: SingleChildScrollView(child: bar),
+              ),
             ],
           );
         }
@@ -2140,8 +2157,9 @@ enum _AnswerDialogResult {
   detached,
 }
 
-/// Boîte « Répondre à l'analyse » : la réponse part sur GitHub, dépôt public,
-/// sous la dernière analyse, et le ticket repasse à Reçu.
+/// Boîte « Répondre » : la réponse part sur GitHub, dépôt public, sous la
+/// dernière analyse (ou sur l'Issue, avant toute analyse), et le ticket
+/// repasse à Reçu s'il ne l'est pas.
 ///
 /// Reste ouverte sur un refus du serveur ou une panne, texte gardé. Pendant
 /// l'envoi, « Fermer » (ou le retour, ou Échap) la ferme sans couper l'appel :
@@ -2158,6 +2176,9 @@ class _AnswerTicketDialog extends StatefulWidget {
 
   /// Ticket Validé : la réponse retire la validation.
   final bool validated;
+
+  /// Ticket déjà Reçu : les précisions s'ajoutent, le statut ne change pas.
+  final bool received;
   final Future<String> Function(String text) submit;
 
   const _AnswerTicketDialog({
@@ -2166,6 +2187,7 @@ class _AnswerTicketDialog extends StatefulWidget {
     required this.onLocked,
     required this.analysisAt,
     required this.validated,
+    required this.received,
     required this.submit,
   });
 
@@ -2265,7 +2287,9 @@ class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
       },
       child: AlertDialog(
         scrollable: true,
-        title: const Text('Répondre à l\'analyse'),
+        title: Text(
+          widget.received ? 'Répondre au ticket' : 'Répondre à l\'analyse',
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2301,8 +2325,12 @@ class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Le ticket repassera à « Reçu ». Relancez ensuite '
-                          'l\'analyse pour qu\'elle lise votre réponse.',
+                          widget.received
+                              ? 'Ajoutez une précision avant l\'analyse. Elle '
+                                    'sera lue par la session d\'analyse.'
+                              : 'Le ticket repassera à « Reçu ». Relancez '
+                                    'ensuite l\'analyse pour qu\'elle lise '
+                                    'votre réponse.',
                           style: muted,
                         ),
                         if (widget.validated) ...[
@@ -2328,7 +2356,9 @@ class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
               decoration: InputDecoration(
                 border: const OutlineInputBorder(),
                 labelText: 'Votre réponse',
-                helperText: 'Répondez aux questions de l\'analyse.',
+                helperText: widget.received
+                    ? 'Précisez votre demande.'
+                    : 'Répondez aux questions de l\'analyse.',
                 helperMaxLines: 3,
                 errorText: _fieldError,
                 errorMaxLines: 3,
@@ -2337,8 +2367,10 @@ class _AnswerTicketDialogState extends State<_AnswerTicketDialog> {
             if (_locked && error == null) ...[
               const SizedBox(height: 8),
               Text(
-                'Cette réponse est déjà publiée sur GitHub. Publier remet le '
-                'ticket à Reçu.',
+                widget.received
+                    ? 'Cette réponse est déjà publiée sur GitHub.'
+                    : 'Cette réponse est déjà publiée sur GitHub. Publier '
+                          'remet le ticket à Reçu.',
                 style: muted,
               ),
             ],

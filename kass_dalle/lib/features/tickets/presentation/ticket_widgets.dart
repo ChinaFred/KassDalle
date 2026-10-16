@@ -423,9 +423,8 @@ class TicketDeliveredPrLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final number = ticket.shownDeliveredPrNumber;
-    if (number == null) return const SizedBox.shrink();
-    final text = 'Livré par la PR #$number';
+    final text = ticket.deliveredLineText;
+    if (text == null) return const SizedBox.shrink();
     final link = ticket.deliveredPrLink;
     if (!withLink || link == null) return TicketInfoLine(text);
     return Padding(
