@@ -13,6 +13,7 @@ import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 import {
   FOUNDER_EMAIL,
+  OPEN_FLAW,
   PERSONAS,
   as,
   createEnv,
@@ -2567,6 +2568,46 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
         db("otherReader").collection("invitations").where("group_id", "==", "g1").get(),
       );
     });
+
+    it("un propriétaire révoqué ou en attente ne lit rien", async () => {
+      await seedDocs(env, {
+        "groups/gR": { name: "R", owner_id: PERSONAS.revoked.uid, member_ids: [PERSONAS.revoked.uid] },
+        "groups/gP": { name: "P", owner_id: PERSONAS.pending.uid, member_ids: [PERSONAS.pending.uid] },
+        "invitations/invR": { ...INVITATION, group_id: "gR" },
+        "invitations/invP": { ...INVITATION, group_id: "gP" },
+      });
+      await assertFails(db("revoked").doc("invitations/invR").get());
+      await assertFails(db("revoked").collection("invitations").where("group_id", "==", "gR").get());
+      await assertFails(db("pending").doc("invitations/invP").get());
+      await assertFails(db("pending").collection("invitations").where("group_id", "==", "gP").get());
+    });
+
+    it("un lecteur propriétaire lit les invitations de son groupe", async () => {
+      await seedDocs(env, {
+        "groups/gL": { name: "L", owner_id: PERSONAS.reader.uid, member_ids: [PERSONAS.reader.uid] },
+        "invitations/invL": { ...INVITATION, group_id: "gL" },
+      });
+      await assertSucceeds(db("reader").doc("invitations/invL").get());
+    });
+
+    it(
+      "un compte qui recrée un groupe supprimé sous le même identifiant ne lit pas ses invitations",
+      OPEN_FLAW,
+      async () => {
+        await seedDocs(env, { "invitations/invD": { ...INVITATION, group_id: "gDeleted" } });
+        await assertSucceeds(
+          db("editor").doc("groups/gDeleted").set({
+            name: "Pirate",
+            owner_id: EDITOR,
+            member_ids: [EDITOR],
+            invited_ids: [],
+          }),
+        );
+        await assertFails(
+          db("editor").collection("invitations").where("group_id", "==", "gDeleted").get(),
+        );
+      },
+    );
 
     it("n'écrit toujours pas", async () => {
       await assertFails(db("editor").doc("invitations/inv1").update({ status: "accepted" }));

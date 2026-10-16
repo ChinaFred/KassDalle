@@ -36,6 +36,9 @@ propose de réessayer. Demande du ticket #113.
 sur `group_id` reste refusée à un non-admin. Nouveau `InvitationsRepository.watchGroupInvitations`
 (filtre `group_id`, tri côté client, pas d'index), `groupEmailInvitationsProvider` et
 `pendingEmailInvitations`. Tests dans `rules-tests` et `pending_email_invitations_test.dart`.
+Limite connue, test `todo` dans `rules-tests` : un éditeur qui recrée sous le même identifiant un groupe
+supprimé lit les invitations restées en attente sur l'ancien groupe. Une correction passe par un
+champ `group_owner_id` écrit par le serveur dans l'invitation, avec un backfill.
 
 ### v0.23.88 — fonctionnel
 
