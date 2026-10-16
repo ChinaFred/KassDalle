@@ -156,18 +156,15 @@ final adminTicketsToProcessCountProvider = Provider<AsyncValue<int>>((ref) {
   return ref.watch(adminTicketsToProcessIdsProvider).whenData((s) => s.length);
 });
 
-/// Tickets à signaler sur la puce du compte : ceux de l'utilisateur avec un
-/// suivi non lu, plus ceux à traiter (administrateur), chaque ticket une seule
-/// fois.
+/// Tickets à signaler sur la puce du compte. Administrateur : les tickets à
+/// traiter seuls. Autres rôles : ceux de l'utilisateur avec un suivi non lu.
 final accountTicketsBadgeCountProvider = Provider<int>((ref) {
-  final mine = ref.watch(myTicketsProvider).value ?? const <Ticket>[];
-  final toProcess =
-      ref.watch(adminTicketsToProcessIdsProvider).value ?? const <String>{};
-  return {
-    for (final t in mine)
-      if (t.hasUnseenUpdate) t.id,
-    ...toProcess,
-  }.length;
+  if (ref.watch(isAdminProvider)) {
+    return (ref.watch(adminTicketsToProcessIdsProvider).value ??
+            const <String>{})
+        .length;
+  }
+  return ref.watch(unseenTicketsCountProvider);
 });
 
 /// Les analyses d'un ticket (`tickets/{id}/admin/analysis`), en flux ;

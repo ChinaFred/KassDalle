@@ -561,8 +561,8 @@ class _AdminIcon extends ConsumerWidget {
 }
 
 /// Pastille chiffrée sur le compte : invitations de groupe en attente, plus
-/// les tickets distincts avec un suivi non lu ou, pour l'administrateur, à
-/// traiter (Reçu, Analysé ou Validé). `99+` au-delà de 99, rien à zéro.
+/// les tickets avec un suivi non lu ou, pour l'administrateur, à traiter
+/// (Reçu, Analysé ou Validé) et eux seuls. `99+` au-delà de 99, rien à zéro.
 ///
 /// Les Groupes et « Mes tickets » ne s'ouvrent que par le menu du compte :
 /// sans ce signal, un invité ne trouverait pas son invitation, et un membre
@@ -575,12 +575,13 @@ class _AccountDot extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final invitations = ref.watch(pendingInvitationsCountProvider);
     final tickets = ref.watch(accountTicketsBadgeCountProvider);
+    final isAdmin = ref.watch(isAdminProvider);
     final total = invitations + tickets;
     if (total == 0) return child;
     return Semantics(
       label:
           '$total élément(s) en attente : '
-          '${[if (invitations > 0) '$invitations invitation(s)', if (tickets > 0) '$tickets ticket(s)'].join(', ')}',
+          '${[if (invitations > 0) '$invitations invitation(s)', if (tickets > 0) '$tickets ticket(s)${isAdmin ? ' à traiter' : ''}'].join(', ')}',
       child: Badge(label: Text(total > 99 ? '99+' : '$total'), child: child),
     );
   }

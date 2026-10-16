@@ -3794,8 +3794,9 @@ n'offre aucune décision ; la fiche dit « Statut inconnu de cette version : met
 l'application à jour pour décider. ». Les identifiants « à traiter »
 (`adminTicketsToProcessIdsProvider`, requête `status in ['received', 'analyzed', 'validated']` en flux,
 aucune requête hors administrateur) donnent `adminTicketsToProcessCountProvider` (entrée « Tickets à
-traiter » et puce « À traiter (N) ») et, avec `Ticket.hasUnseenUpdate` (tout statut sauf `sending`),
-`accountTicketsBadgeCountProvider` : tickets distincts de la pastille chiffrée de la puce du compte. Le filtre de statut
+traiter » et puce « À traiter (N) ») et, pour l'administrateur, `accountTicketsBadgeCountProvider`
+(pastille chiffrée de la puce du compte). Les autres rôles y lisent `unseenTicketsCountProvider`
+(`Ticket.hasUnseenUpdate`, tout statut sauf `sending`), qui vaut 0 pour l'administrateur. Le filtre de statut
 (`adminTicketStatusFilterProvider`) est global, sans `autoDispose`, et l'écran ne le remet
 jamais à zéro : `enterToProcess` le pose à l'entrée, `settleEntry` le bascule une fois sur
 « Tous » si le premier compteur reçu vaut zéro. Les analyses se lisent en flux
