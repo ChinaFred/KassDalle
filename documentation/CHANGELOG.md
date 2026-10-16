@@ -20,6 +20,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-16
 
+### v0.23.89 — fonctionnel
+
+Écran de démarrage : la ligne fixe « Un jaune d'œuf » disparaît. Une phrase d'ambiance la
+remplace sous la date, en italique, tirée au lancement selon la même tranche horaire que la
+formule d'accueil. Matin : « Un bon petit-déjeuner t'attend. », « Qu'est-ce qu'on mijote
+aujourd'hui ? », « Le carnet de recettes est ouvert. ». Après-midi : « Une idée pour ce
+soir ? », « Le temps de préparer quelque chose de bon. », « Un goûter, peut-être ? ». Soir :
+« À table, bientôt ! », « Le planning de la semaine t'attend. », « Une dernière recette avant la
+nuit ? ». La durée de l'écran et sa fermeture ne changent pas. Demande du ticket #112.
+
 ### v0.23.88 — fonctionnel
 
 Écran de démarrage : une ligne fixe « Un jaune d'œuf » s'affiche sous la date et l'heure, en
