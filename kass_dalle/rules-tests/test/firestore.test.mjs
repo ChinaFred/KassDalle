@@ -13,6 +13,7 @@ import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 import {
   FOUNDER_EMAIL,
+  OPEN_FLAW,
   PERSONAS,
   as,
   createEnv,
@@ -2506,7 +2507,7 @@ describe("web_search_cache", () => {
 
 // ── invitations ──────────────────────────────────────────────────────────
 
-describe("invitations — lecture administrateur, écriture serveur seule", () => {
+describe("invitations — lecture administrateur et propriétaire du groupe, écriture serveur seule", () => {
   const INVITATION = {
     email: "marie@example.com",
     email_key: "marie@example.com",
@@ -2527,12 +2528,92 @@ describe("invitations — lecture administrateur, écriture serveur seule", () =
     await assertSucceeds(db("admin").collection("invitations").orderBy("created_at", "desc").get());
   });
 
-  for (const persona of ["editor", "reader", "pending", "revoked", "anonymous"]) {
+  for (const persona of ["reader", "pending", "revoked", "anonymous"]) {
     it(`${persona} ne lit pas les invitations`, async () => {
       await assertFails(db(persona).doc("invitations/inv1").get());
       await assertFails(db(persona).collection("invitations").get());
     });
   }
+
+  describe("propriétaire d'un groupe non administrateur", () => {
+    beforeEach(async () => {
+      await seedDocs(env, {
+        "groups/g1": { name: "Famille", owner_id: EDITOR, member_ids: [EDITOR, OTHER], invited_ids: [] },
+        "groups/g2": { name: "Amis", owner_id: OTHER, member_ids: [OTHER], invited_ids: [] },
+        "invitations/inv2": { ...INVITATION, group_id: "g2" },
+      });
+    });
+
+    it("lit une invitation de son groupe, document et requête filtrée", async () => {
+      await assertSucceeds(db("editor").doc("invitations/inv1").get());
+      await assertSucceeds(
+        db("editor").collection("invitations").where("group_id", "==", "g1").get(),
+      );
+    });
+
+    it("ne lit pas l'invitation d'un groupe qui n'est pas le sien", async () => {
+      await assertFails(db("editor").doc("invitations/inv2").get());
+      await assertFails(
+        db("editor").collection("invitations").where("group_id", "==", "g2").get(),
+      );
+    });
+
+    it("ne lit pas la collection entière", async () => {
+      await assertFails(db("editor").collection("invitations").get());
+    });
+
+    it("un membre non propriétaire ne lit rien", async () => {
+      await assertFails(db("otherReader").doc("invitations/inv1").get());
+      await assertFails(
+        db("otherReader").collection("invitations").where("group_id", "==", "g1").get(),
+      );
+    });
+
+    it("un propriétaire révoqué ou en attente ne lit rien", async () => {
+      await seedDocs(env, {
+        "groups/gR": { name: "R", owner_id: PERSONAS.revoked.uid, member_ids: [PERSONAS.revoked.uid] },
+        "groups/gP": { name: "P", owner_id: PERSONAS.pending.uid, member_ids: [PERSONAS.pending.uid] },
+        "invitations/invR": { ...INVITATION, group_id: "gR" },
+        "invitations/invP": { ...INVITATION, group_id: "gP" },
+      });
+      await assertFails(db("revoked").doc("invitations/invR").get());
+      await assertFails(db("revoked").collection("invitations").where("group_id", "==", "gR").get());
+      await assertFails(db("pending").doc("invitations/invP").get());
+      await assertFails(db("pending").collection("invitations").where("group_id", "==", "gP").get());
+    });
+
+    it("un lecteur propriétaire lit les invitations de son groupe", async () => {
+      await seedDocs(env, {
+        "groups/gL": { name: "L", owner_id: PERSONAS.reader.uid, member_ids: [PERSONAS.reader.uid] },
+        "invitations/invL": { ...INVITATION, group_id: "gL" },
+      });
+      await assertSucceeds(db("reader").doc("invitations/invL").get());
+    });
+
+    it(
+      "un compte qui recrée un groupe supprimé sous le même identifiant ne lit pas ses invitations",
+      OPEN_FLAW,
+      async () => {
+        await seedDocs(env, { "invitations/invD": { ...INVITATION, group_id: "gDeleted" } });
+        await assertSucceeds(
+          db("editor").doc("groups/gDeleted").set({
+            name: "Pirate",
+            owner_id: EDITOR,
+            member_ids: [EDITOR],
+            invited_ids: [],
+          }),
+        );
+        await assertFails(
+          db("editor").collection("invitations").where("group_id", "==", "gDeleted").get(),
+        );
+      },
+    );
+
+    it("n'écrit toujours pas", async () => {
+      await assertFails(db("editor").doc("invitations/inv1").update({ status: "accepted" }));
+      await assertFails(db("editor").doc("invitations/inv1").delete());
+    });
+  });
 
   it("aucun rôle n'écrit une invitation depuis le client", async () => {
     await assertFails(db("admin").doc("invitations/new").set(INVITATION));

@@ -35,6 +35,13 @@ class _FakeRepo implements InvitationsRepository {
   Stream<List<EmailInvitation>> watchInvitations() => Stream.value(invitations);
 
   @override
+  Stream<List<EmailInvitation>> watchGroupInvitations(String groupId) =>
+      Stream.value([
+        for (final i in invitations)
+          if (i.groupId == groupId) i,
+      ]);
+
+  @override
   Future<InvitationOutcome> create({
     required String email,
     required UserRole role,

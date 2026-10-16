@@ -8,7 +8,7 @@ import '../../auth/domain/app_user.dart';
 import '../domain/email_invitation.dart';
 
 /// Invitations par e-mail : la liste se lit dans Firestore (lecture réservée
-/// à l'administrateur par les règles), les gestes passent par la callable
+/// à l'administrateur et, pour son groupe, à son propriétaire), les gestes passent par la callable
 /// `manageInvitationFn`, seule à écrire et à envoyer l'e-mail.
 class InvitationsRepository {
   final FirebaseFirestore _firestore;
@@ -52,6 +52,39 @@ class InvitationsRepository {
                 ),
               );
               // L'écran affiche l'erreur et propose de réessayer.
+              sink.addError(error, stackTrace);
+            },
+          ),
+        );
+  }
+
+  /// Les invitations d'un groupe, pour son propriétaire. La requête filtre sur
+  /// `group_id` : c'est ce filtre que la règle Firestore exige d'un non-admin.
+  /// Pas de tri serveur (il demanderait un index) : l'écran trie.
+  Stream<List<EmailInvitation>> watchGroupInvitations(String groupId) {
+    return _firestore
+        .collection('invitations')
+        .where('group_id', isEqualTo: groupId)
+        .snapshots()
+        .map(
+          (snap) => snap.docs
+              .map((d) => EmailInvitation.fromFirestore(d.id, d.data()))
+              .toList(),
+        )
+        .transform(
+          StreamTransformer<
+            List<EmailInvitation>,
+            List<EmailInvitation>
+          >.fromHandlers(
+            handleError: (error, stackTrace, sink) {
+              unawaited(
+                _errorReportService.reportError(
+                  feature: _feature,
+                  error: error,
+                  stackTrace: stackTrace,
+                  context: {'step': 'watch_group', 'group_id': groupId},
+                ),
+              );
               sink.addError(error, stackTrace);
             },
           ),
