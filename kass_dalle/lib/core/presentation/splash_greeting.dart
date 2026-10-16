@@ -15,6 +15,9 @@ const kSplashMinDuration = Duration(seconds: 5);
 /// Plafond d'attente du profil : au-delà, l'écran affiche la formule sans prénom.
 const kSplashMaxDuration = Duration(seconds: 10);
 
+/// Message fixe affiché sous la date.
+const kSplashTagline = "Un jaune d'œuf";
+
 /// Formules d'accueil de chaque tranche horaire. Chaque entrée reçoit le nom
 /// affiché, ou `null` quand le profil n'est pas lu.
 typedef GreetingVariant = String Function(String? name);
@@ -231,6 +234,20 @@ class _SplashBody extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyLarge?.copyWith(
                             fontSize: dateFontSize,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          kSplashTagline,
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontSize: dateFontSize,
+                            fontStyle: FontStyle.italic,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),

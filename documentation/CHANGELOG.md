@@ -20,6 +20,13 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-16
 
+### v0.23.88 — fonctionnel
+
+Écran de démarrage : une ligne fixe « Un jaune d'œuf » s'affiche sous la date et l'heure, en
+italique, à chaque lancement. Elle apparaît avec la formule d'accueil, jamais pendant
+l'indicateur de chargement. La durée de l'écran et sa fermeture ne changent pas. Demande du
+ticket #110.
+
 ### v0.23.87 — fonctionnel
 
 Écran de démarrage : la formule d'accueil dépend de l'heure locale de l'appareil. De 5 h à
