@@ -6157,7 +6157,7 @@ course la version d'APK réellement en ligne dès qu'elle diffère de celle du w
 main (`workflow_dispatch`). Une nouvelle exécution sur la même référence annule la
 précédente (`cancel-in-progress`). Le workflow n'a que le droit `contents: read` ; le seul
 job « Déjà testé en PR » reçoit en plus `pull-requests: read` et `actions: read`. Ses actions sont épinglées par SHA de commit, la version en commentaire (v0.23.12), comme
-celles de `deploy.yml`. Cinq jobs, sur `ubuntu-latest` :
+celles de `deploy.yml`. Six jobs, sur `ubuntu-latest` :
 
 | Job | Étapes, dans l'ordre |
 |---|---|
@@ -6166,12 +6166,20 @@ celles de `deploy.yml`. Cinq jobs, sur `ubuntu-latest` :
 | Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
 | Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
 | Règles — émulateur (`kass_dalle/rules-tests/`, Node 22, Java 21 Temurin) | `npm ci` · `npm test` : émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle`, tests des règles (voir §4, « Tests des règles ») |
+| Android — compilation (`kass_dalle/`, historique complet, Flutter 3.44.6, Java 17 Temurin) | Liste les fichiers du diff : contre la `master` du moment sur une PR, contre la `master` d'avant le push sur un push. Si un fichier sous `kass_dalle/pubspec.yaml`, `kass_dalle/pubspec.lock` ou `kass_dalle/android/` change, ou sur un lancement manuel, ou si le diff est illisible : libération du disque (même liste que `deploy.yml`) · `flutter pub get` · génération d'une clé jetable (`keytool`, mot de passe aléatoire, validité d'un jour) et de `android/key.properties`, supprimés à la sortie · `flutter build apk --release`. Sinon, les étapes suivantes sont sautées. La clé de production n'est jamais lue (v0.23.86) |
 
-Les jobs Flutter, Functions et Règles dépendent de « Déjà testé en PR » et sont sautés quand
+Les jobs Flutter, Functions, Règles et Android dépendent de « Déjà testé en PR » et sont sautés quand
 il sort `skip=true` (v0.23.44). La fusion d'une PR à jour de `master` ne relance donc que le
 job Version, au lieu des douze minutes facturées de la CI entière. Un workflow dont des jobs
 sont sautés conclut `success` : `deploy.yml` part comme avant. Sur une PR et un lancement
-manuel, « Déjà testé en PR » est sauté et les trois jobs tournent (`!cancelled()`).
+manuel, « Déjà testé en PR » est sauté et les quatre jobs tournent (`!cancelled()`).
+
+Le job Android existe parce que le job Flutter ne compile que le web. En v0.23.81, l'ajout de
+`firebase_messaging` a fait monter `firebase_core` à 4.15.0, qui a déplacé `customAuthDomain`
+de `FlutterFirebaseCorePlugin` vers `FlutterFirebasePlugin`. `firebase_auth` 6.5.7 ne compilait
+plus en Java ; la CI est restée verte, et les déploiements à partir de la v0.23.81 ont échoué à
+l'étape « Construire l'APK », avant les Functions et le web. La v0.23.86 passe `firebase_auth`
+à 6.7.0 et ajoute ce job.
 
 #### Le contrôle de version
 

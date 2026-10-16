@@ -472,6 +472,7 @@ Les agents travaillent en parallèle quand leurs tâches sont indépendantes : `
 | Application | dépendances, analyse statique stricte, formatage vérifié, lockfile à jour, tests, build |
 | Fonctions serveur | `npm ci`, lint, `format:check`, build, tests |
 | Règles d'accès | tests des règles contre les émulateurs |
+| Android | quand le diff touche `pubspec.yaml`, `pubspec.lock` ou `android/` : APK release compilé avec une clé jetable |
 
 Réglages communs, à reprendre :
 

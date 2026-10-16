@@ -539,6 +539,7 @@ déjà testée, seul le job Version tourne :
 | Flutter | `pub get`, `flutter analyze` (strict), `dart format` vérifié, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
 | Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run format:check` (Prettier), `npm run build` (tsc), `npm test` |
 | Règles — émulateur | `npm ci`, `npm test` dans `kass_dalle/rules-tests/` : `firestore.rules` et `storage.rules` rejouées rôle par rôle contre les émulateurs (projet `demo-kassdalle`, Java 21) |
+| Android — compilation | quand le diff touche `kass_dalle/pubspec.yaml`, `pubspec.lock` ou `android/` (toujours sur un lancement manuel) : `flutter build apk --release`, signé par une clé jetable générée dans le job |
 
 `.github/workflows/deploy.yml` part après une CI verte sur un push sur `master` : voir
 « Déploiement ».
