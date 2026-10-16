@@ -20,6 +20,28 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-16
 
+### v0.23.86 — technique
+
+Déploiement : tous les déploiements depuis la v0.23.81 ont échoué à l'étape « Construire
+l'APK ». Le web, les Functions et l'APK en ligne sont restés en v0.23.80. L'ajout de
+`firebase_messaging` (v0.23.81) a fait monter `firebase_core` à 4.15.0, qui a déplacé
+`customAuthDomain` de `FlutterFirebaseCorePlugin` vers `FlutterFirebasePlugin`.
+`firebase_auth` 6.5.7 lisait encore l'ancien emplacement et ne compilait plus en Java.
+`firebase_auth` passe à 6.7.0, avec `cloud_functions` 6.5.0, `firebase_storage` 13.6.0 et
+`firebase_app_check` 0.4.8, et leurs paquets `_platform_interface` et `_web`.
+
+La CI ne compilait que le web, et cette erreur ne s'y voyait pas. Un job « Android —
+compilation » est ajouté à `ci.yml` : quand le diff touche `pubspec.yaml`, `pubspec.lock` ou
+`android/`, il compile l'APK release, signé par une clé jetable générée dans le job,
+en 45 minutes au plus.
+
+`CLAUDE.md` gagne la règle « Une dépendance se compile pour Android avant de partir » : lire
+le diff de `pubspec.lock` et nommer chaque paquet monté dans le `CHANGELOG.md`, monter la
+famille FlutterFire ensemble, compiler l'APK avant le push (sur le PC) ou attendre le job
+Android vert (en session cloud), et traiter un échec de « Construire l'APK » comme une CI
+rouge. `relecteur-regles` la vérifie (contrôle 15) ; l'étape 2 de la « Chaîne de travail »
+cite `flutter build apk --release`.
+
 ### v0.23.85 — fonctionnel
 
 Administrateur : la puce du compte compte les invitations de groupe et les tickets à traiter.

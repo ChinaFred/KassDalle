@@ -55,7 +55,7 @@ jobs:
   deja-teste:
     name: Déjà testé en PR
     runs-on: ubuntu-latest
-    # Une PR fusionnée relançait les trois jobs lourds sur master, environ
+    # Une PR fusionnée relançait les jobs lourds sur master, environ
     # douze minutes facturées, pour un contenu que sa CI venait de valider.
     # Le push de fusion les saute quand trois conditions tiennent :
     # - le commit poussé a le même arbre que la tête d'une PR vers master qui
@@ -153,6 +153,108 @@ jobs:
 
       - name: Build web (vérifie que la release compile)
         run: flutter build web --release
+
+  android:
+    name: Android — compilation
+    # Le job Flutter ne compile que le web. En octobre 2026, la mise à jour de
+    # firebase_core 4.15.0 (v0.23.81) a cassé la compilation Java de
+    # firebase_auth 6.5.7 : la CI est restée verte, et quatre déploiements ont
+    # échoué à l'étape « Construire l'APK ». Ce job compile l'APK release quand
+    # le diff touche ce qui le compose côté Android : pubspec.yaml,
+    # pubspec.lock ou android/. Il signe avec une clé jetable : la clé de
+    # production reste réservée au déploiement.
+    needs: deja-teste
+    if: ${{ !cancelled() && needs.deja-teste.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    # Un Gradle bloqué occuperait sinon le runner jusqu'au plafond de GitHub
+    # (360 min). Un build complet prend une dizaine de minutes.
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: kass_dalle
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # L'historique complet : le diff se calcule contre master, ou contre
+          # la master d'avant le push.
+          fetch-depth: 0
+
+      - name: Le diff touche-t-il Android ?
+        id: touched
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            build=true
+          else
+            if [ "$EVENT" = "pull_request" ]; then
+              git fetch --quiet origin master
+              range="FETCH_HEAD...$PR_HEAD"
+            else
+              range="$BEFORE..$GITHUB_SHA"
+            fi
+            # Un diff illisible compile par prudence.
+            if ! files=$(git diff --name-only "$range"); then
+              echo "::warning::Diff $range illisible : l'APK est compilé."
+              build=true
+            elif printf '%s\n' "$files" | grep -qE '^kass_dalle/(pubspec\.(yaml|lock)|android/)'; then
+              build=true
+            else
+              build=false
+            fi
+          fi
+          echo "Compilation Android : $build."
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+      - name: Libérer de la place sur le disque
+        # Même liste de dossiers que deploy.yml, sans la purge Docker : SDK
+        # Flutter, caches Gradle et build de l'APK remplissent le disque du runner.
+        if: steps.touched.outputs.build == 'true'
+        working-directory: .
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift \
+            /usr/local/share/boost /opt/hostedtoolcache/CodeQL /usr/local/julia* \
+            /usr/local/share/powershell /usr/local/share/chromium /opt/microsoft
+          df -h /
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        if: steps.touched.outputs.build == 'true'
+        with:
+          flutter-version: '3.44.6'
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        if: steps.touched.outputs.build == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Dépendances
+        if: steps.touched.outputs.build == 'true'
+        run: flutter pub get
+
+      - name: Compiler l'APK release (clé jetable)
+        # android/app/build.gradle.kts exige key.properties pour toute
+        # compilation. La clé est générée ici et supprimée à la sortie.
+        if: steps.touched.outputs.build == 'true'
+        run: |
+          keystore="$RUNNER_TEMP/ci-keystore.jks"
+          properties="android/key.properties"
+          trap 'rm -f "$keystore" "$properties"' EXIT
+          password=$(openssl rand -hex 16)
+          keytool -genkeypair -noprompt -keystore "$keystore" -alias ci \
+            -keyalg RSA -keysize 2048 -validity 1 \
+            -storepass "$password" -keypass "$password" -dname "CN=CI"
+          {
+            echo "storeFile=$keystore"
+            echo "storePassword=$password"
+            echo "keyAlias=ci"
+            echo "keyPassword=$password"
+          } > "$properties"
+          flutter build apk --release
 
   functions:
     name: Cloud Functions — lint et build

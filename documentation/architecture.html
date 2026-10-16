@@ -624,7 +624,7 @@ stateDiagram-v2
 <pre class="mermaid">
 flowchart TB
   PUSH["push sur master&lt;br/&gt;(PC, ou fusion d'une PR)"]
-  CI["ci.yml&lt;br/&gt;version + Flutter + Functions + règles (émulateur)"]
+  CI["ci.yml&lt;br/&gt;version + Flutter + Functions + règles (émulateur)&lt;br/&gt;+ APK si pubspec ou android/ change"]
   GATE["gate&lt;br/&gt;le commit est la tête de master&lt;br/&gt;et n'est pas signé deploy.ps1"]
   DISK["libération du disque"]
   WEB["build web"]
