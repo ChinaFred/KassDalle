@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../admin/domain/email_invitation.dart';
+import '../../auth/domain/app_user.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/family_group.dart';
@@ -151,6 +153,16 @@ class _GroupTile extends ConsumerWidget {
     // `firestore.rules`) : un lecteur propriétaire d'un groupe créé avant
     // v0.23.54 ne garde que ce qui réduit son groupe.
     final canManage = isOwner && ref.watch(canEditProvider);
+    // Les invitations par e-mail ne se lisent que pour un groupe possédé :
+    // la règle Firestore refuse la requête à un autre membre.
+    final emailPending = isOwner
+        ? pendingEmailInvitations(
+            ref.watch(groupEmailInvitationsProvider(group.id)).value ??
+                const [],
+            DateTime.now(),
+          ).length
+        : 0;
+    final pendingCount = group.invitedIds.length + emailPending;
     return ListTile(
       leading: CircleAvatar(child: Text(group.name[0].toUpperCase())),
       title: Text(group.name),
@@ -158,8 +170,8 @@ class _GroupTile extends ConsumerWidget {
         [
           if (paused) 'En pause',
           '${group.memberIds.length} membre(s)',
-          if (isOwner && group.invitedIds.isNotEmpty)
-            '${group.invitedIds.length} invitation(s) en attente',
+          if (isOwner && pendingCount > 0)
+            '$pendingCount invitation(s) en attente',
         ].join(' · '),
       ),
       trailing: Row(
@@ -558,6 +570,15 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
     final busy = _searching || _emailSearching;
     final colors = Theme.of(context).colorScheme;
     final smallText = Theme.of(context).textTheme.bodySmall;
+    final emailAsync = isOwner
+        ? ref.watch(groupEmailInvitationsProvider(group.id))
+        : null;
+    final emailPending = pendingEmailInvitations(
+      emailAsync?.value ?? const [],
+      DateTime.now(),
+    );
+    final emailError = emailAsync != null && emailAsync.hasError;
+    final pendingCount = group.invitedIds.length + emailPending.length;
     // L'aide de la recherche par adresse, ou ce qui la remplace : recherche
     // en cours, plafond atteint, échec. `null` : rien à afficher, la réponse
     // (liste ou état vide) occupe la place.
@@ -752,11 +773,11 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                         canRemove: isOwner && uid != widget.myUid,
                         onRemove: (name) => _removeMember(group, uid, name),
                       ),
-                    if (isOwner && group.invitedIds.isNotEmpty) ...[
+                    if (isOwner && (pendingCount > 0 || emailError)) ...[
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                         child: Text(
-                          'Invitations en attente (${group.invitedIds.length})',
+                          'Invitations en attente ($pendingCount)',
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                       ),
@@ -765,6 +786,21 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                           uid: uid,
                           onCancel: (name) =>
                               _cancelInvitation(group, uid, name),
+                        ),
+                      for (final invitation in emailPending)
+                        _EmailInvitedTile(invitation: invitation),
+                      if (emailError)
+                        ListTile(
+                          leading: const Icon(Icons.error_outline),
+                          title: const Text(
+                            'Invitations par e-mail indisponibles',
+                          ),
+                          trailing: TextButton(
+                            onPressed: () => ref.invalidate(
+                              groupEmailInvitationsProvider(group.id),
+                            ),
+                            child: const Text('Réessayer'),
+                          ),
                         ),
                     ],
                   ],
@@ -860,6 +896,27 @@ class _InvitedTile extends ConsumerWidget {
         icon: const Icon(Icons.close),
         tooltip: 'Annuler l\'invitation',
         onPressed: () => onCancel(name),
+      ),
+    );
+  }
+}
+
+/// Une invitation par e-mail (personne sans compte), vue par le propriétaire.
+/// Lecture seule : l'annulation et le renvoi restent dans Admin › Invitations.
+class _EmailInvitedTile extends StatelessWidget {
+  final EmailInvitation invitation;
+
+  const _EmailInvitedTile({required this.invitation});
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = invitation.storedStatus == 'send_failed';
+    final role = invitation.role == UserRole.editor ? 'éditeur' : 'lecteur';
+    return ListTile(
+      leading: const CircleAvatar(child: Icon(Icons.mail_outline)),
+      title: Text(invitation.email),
+      subtitle: Text(
+        '${failed ? 'Envoi échoué' : 'Invitation envoyée par e-mail'} · $role',
       ),
     );
   }

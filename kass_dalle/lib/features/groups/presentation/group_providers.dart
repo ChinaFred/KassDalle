@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../admin/domain/email_invitation.dart';
+import '../../admin/presentation/admin_providers.dart'
+    show invitationsRepositoryProvider;
 import '../../auth/presentation/auth_providers.dart';
 import '../data/group_repository.dart';
 import '../domain/family_group.dart';
@@ -154,3 +157,31 @@ final visibleUserIdsProvider = Provider<AsyncValue<List<String>>>((ref) {
     data: (ids) => AsyncValue.data([myUid, ...ids]),
   );
 });
+
+/// Invitations par e-mail d'un groupe, lues par son propriétaire seul : la
+/// règle Firestore refuse la requête à tout autre compte non administrateur.
+/// L'appelant ne l'observe que si l'utilisateur possède le groupe.
+final groupEmailInvitationsProvider = StreamProvider.autoDispose
+    .family<List<EmailInvitation>, String>((ref, groupId) {
+      return ref
+          .watch(invitationsRepositoryProvider)
+          .watchGroupInvitations(groupId);
+    });
+
+/// Les invitations par e-mail encore en attente (envoyée, ou envoi échoué
+/// non expiré), les plus anciennes d'abord. Une acceptée, annulée ou
+/// expirée n'y figure pas.
+List<EmailInvitation> pendingEmailInvitations(
+  List<EmailInvitation> all,
+  DateTime now,
+) {
+  final pending = all.where((i) => i.statusAt(now).isPending).toList();
+  pending.sort((a, b) {
+    final x = a.createdAt, y = b.createdAt;
+    if (x == null && y == null) return a.email.compareTo(b.email);
+    if (x == null) return 1;
+    if (y == null) return -1;
+    return x.compareTo(y);
+  });
+  return pending;
+}

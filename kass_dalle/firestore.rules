@@ -1030,8 +1030,19 @@ service cloud.firestore {
     // Functions les écrivent (`manageInvitationFn`, `applyEmailInvitation`).
     // Ouvertes à l'écriture, elles laisseraient un compte s'inviter lui-même
     // sous une autre adresse avec le rôle de son choix.
+    //
+    // Le propriétaire d'un groupe, admin ou non, lit les invitations de son
+    // groupe : la feuille du groupe lui montre qui a été invité. Un membre
+    // non propriétaire n'en lit aucune. La lecture exige une requête filtrée
+    // sur `group_id` (la règle compare le champ du document au groupe).
     match /invitations/{invitationId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin()
+        || (isApproved()
+          && resource.data.group_id is string
+          && resource.data.group_id.size() > 0
+          && exists(/databases/$(database)/documents/groups/$(resource.data.group_id))
+          && get(/databases/$(database)/documents/groups/$(resource.data.group_id)).data.owner_id
+             == request.auth.uid);
       allow write: if false;
     }
 

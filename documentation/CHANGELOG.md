@@ -20,6 +20,23 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-16
 
+### v0.23.89 — fonctionnel
+
+Groupes : la feuille d'un groupe liste maintenant les invitations par e-mail en attente (personnes
+sans compte, par exemple les enfants), avec l'adresse, le rôle et « Invitation envoyée par e-mail »
+ou « Envoi échoué ». Le compteur « Invitations en attente (n) » et la ligne de la tuile comptent les
+deux sortes d'invitation. Seul le propriétaire du groupe les voit ; l'annulation et le renvoi restent
+dans Admin › Invitations. Si la lecture échoue, une ligne « Invitations par e-mail indisponibles »
+propose de réessayer. Demande du ticket #113.
+
+### v0.23.89 — technique
+
+`firestore.rules` : la lecture de `invitations/{id}` s'ouvre au propriétaire du groupe désigné par
+`group_id`, en plus de l'administrateur (un `get` du groupe par document lu). Une requête sans filtre
+sur `group_id` reste refusée à un non-admin. Nouveau `InvitationsRepository.watchGroupInvitations`
+(filtre `group_id`, tri côté client, pas d'index), `groupEmailInvitationsProvider` et
+`pendingEmailInvitations`. Tests dans `rules-tests` et `pending_email_invitations_test.dart`.
+
 ### v0.23.88 — fonctionnel
 
 Écran de démarrage : une ligne fixe « Un jaune d'œuf » s'affiche sous la date et l'heure, en
