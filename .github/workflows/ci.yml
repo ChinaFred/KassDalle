@@ -55,7 +55,7 @@ jobs:
   deja-teste:
     name: Déjà testé en PR
     runs-on: ubuntu-latest
-    # Une PR fusionnée relançait les trois jobs lourds sur master, environ
+    # Une PR fusionnée relançait les jobs lourds sur master, environ
     # douze minutes facturées, pour un contenu que sa CI venait de valider.
     # Le push de fusion les saute quand trois conditions tiennent :
     # - le commit poussé a le même arbre que la tête d'une PR vers master qui
@@ -209,8 +209,8 @@ jobs:
           echo "build=$build" >> "$GITHUB_OUTPUT"
 
       - name: Libérer de la place sur le disque
-        # Même nettoyage que deploy.yml : SDK Flutter, caches Gradle et build
-        # de l'APK remplissent le disque du runner.
+        # Même liste de dossiers que deploy.yml, sans la purge Docker : SDK
+        # Flutter, caches Gradle et build de l'APK remplissent le disque du runner.
         if: steps.touched.outputs.build == 'true'
         working-directory: .
         run: |

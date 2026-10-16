@@ -563,7 +563,7 @@ déjà testée, seul le job Version tourne :
 | Job | Étapes |
 |---|---|
 | Version | `check-version.sh` : une version changée doit dépasser celle de `master` ; dans tous les cas, la version de la tête n'a qu'une origine dans l'historique et une entrée au `CHANGELOG.md` (au plus une « fonctionnel » et une « technique », ajoutées dans le même commit) |
-| Déjà testé en PR | sur un push seulement : saute Flutter, Functions et Règles quand le commit a l'arbre d'une tête de PR à jour de `master` dont la CI est verte |
+| Déjà testé en PR | sur un push seulement : saute Flutter, Functions, Règles et Android quand le commit a l'arbre d'une tête de PR à jour de `master` dont la CI est verte |
 | Flutter | `pub get`, `flutter analyze` (strict), `dart format` vérifié, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
 | Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run format:check` (Prettier), `npm run build` (tsc), `npm test` |
 | Règles — émulateur | `npm ci`, `npm test` dans `kass_dalle/rules-tests/` : `firestore.rules` et `storage.rules` rejouées rôle par rôle contre les émulateurs (projet `demo-kassdalle`, Java 21) |
