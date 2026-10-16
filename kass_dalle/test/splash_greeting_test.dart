@@ -170,6 +170,31 @@ void main() {
     });
   }
 
+  testWidgets('une ligne fixe suit la date, absente pendant le chargement', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      auth: const Stream<User?>.empty(),
+      user: const Stream<AppUser?>.empty(),
+    );
+    expect(find.text(kSplashTagline), findsNothing);
+    await tester.pump(const Duration(seconds: 11));
+  });
+
+  testWidgets('la ligne fixe s\'affiche avec la formule et la date', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      auth: Stream.value(_FakeFirebaseUser()),
+      user: Stream.value(_user()),
+    );
+    await tester.pump();
+    expect(find.text(kSplashTagline), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
   testWidgets('sans profil : formule sans prénom, date conservée', (
     tester,
   ) async {
