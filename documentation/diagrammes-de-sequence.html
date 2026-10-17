@@ -188,6 +188,8 @@
       <li><a href="#ticket-lancer">Lancer une analyse ou un développement depuis l'application</a></li>
       <li><a href="#ticket-repondre">Répondre à une analyse depuis l'application</a></li>
       <li><a href="#ticket-livrer">Livrer un ticket En cours depuis l'application</a></li>
+      <li value="47"><a href="#notification-version">Notifier les administrateurs d'un nouvel APK</a></li>
+      <li value="48"><a href="#doublon-import">Trancher un doublon possible à l'import</a></li>
     </ol>
   </nav>
 
@@ -199,8 +201,8 @@
       cocher décide : décochée, un appel par page qui COMPTE ; cochée, la chaîne complète qui
       découpe et enregistre. Le client n'attend rien : il dépose un travail et écoute son avancement.
       <span class="path">scan_upload_service.dart → jobDispatcher.ts → recipeProcessor.ts →
-      gemini/transcription.ts, gemini/translation.ts, gemini/tagging.ts, gemini/fidelity.ts,
-      illustrations/extract.ts, pipeline/originalText.ts</span>
+      gemini/transcription.ts, gemini/translation.ts, pipeline/duplicateDetection.ts,
+      gemini/tagging.ts, gemini/fidelity.ts, illustrations/extract.ts, pipeline/originalText.ts</span>
       <br/><b>La capture diffère selon la plateforme.</b> Sur mobile, le scanner du système —
       ML Kit sur Android, VisionKit sur iOS — cherche les coins sur le flux vidéo et rend des pages
       déjà cadrées ; jusqu'à vingt par session. Sur le web, ces API n'existent pas : l'atelier de
@@ -305,6 +307,20 @@ sequenceDiagram
       P->>J: transcription_checkpoint réécrit avec la traduction
       Note over P,J: une relance après un balisage en échec ne retraduit pas<br/>balisage, fidélité, tags et nutrition lisent la traduction
     end
+    opt le job vise un livre (book_id) — DOUBLONS, AUCUN appel de modèle
+      P->>J: titre_keys, titre_key_pages, titre_key_titres
+      opt pas une reprise (duplicate_override absent)
+        P->>R: book_id == et titre_key == — recettes du livre, tout auteur
+        P->>J: book_id == et titre_keys array-contains — imports du même compte
+        P->>P: pickDuplicate — même clé de titre, pages compatibles,<br/>import en file ou en cours, plus ancien ou déjà vérifié
+      end
+      break page scannée, TOUTES ses recettes déjà dans le livre
+        P->>J: status duplicate, current_step null,<br/>duplicates, pending_items, created_recipe_ids
+        Note over P,J: transcription_checkpoint gardé<br/>ni balisage, ni illustrations, ni normalisation, ni nutrition<br/>la décision revient à l'utilisateur : séquence 48
+      end
+      P->>J: current_step parse, duplicate_checked true
+      Note over P,J: une tranche de livre n'est jamais arrêtée :<br/>sa recette en double sera un brouillon marqué duplicate_of
+    end
     alt case « Extraire les illustrations » décochée
       loop chaque page du scan
         P->>G: pré-contrôle — combien d'images sur cette page ?
@@ -330,7 +346,7 @@ sequenceDiagram
       end
     end
 
-    loop chaque recette transcrite
+    loop chaque recette transcrite, hors recettes retenues comme doublons
       P->>G: PASSE 2 — tagAndNormalize (texte seul, pas d'image)
       G-->>P: CookLang balisé + liste normalisée (nom, qté, unité, NOTE)<br/>+ cuisines, types de plat, rôle dans un repas
       P->>LOG: stage « balisage » — la sortie du modèle
@@ -349,6 +365,7 @@ sequenceDiagram
       P->>G: normalizeRecipeReferentialsCore
       G-->>P: unités et identités canoniques
       P->>LOG: stage « enregistrement » — le texte écrit en base
+      Note over P,R: le brouillon porte titre_key ;<br/>tranche de livre en double : duplicate_of aussi
       alt recette traduite
         P->>R: un lot — la recette avec langue_origine,<br/>et origine/texte, la recette avant traduction
       else recette en français
@@ -357,8 +374,14 @@ sequenceDiagram
       Note over R: la normalisation a lieu AVANT l'écriture<br/>le déclencheur ne part donc qu'une fois
       P->>J: created_recipe_ids
     end
-    P->>J: status done
+    alt page à plusieurs recettes, une partie retenue comme doublons
+      P->>J: status duplicate, duplicates, pending_items
+      Note over P,J: les autres recettes sont des brouillons ;<br/>transcription_checkpoint gardé
+    else aucune recette retenue
+      P->>J: status done, transcription_checkpoint supprimé
+    end
   else page de document
+    Note over P,J: même comparaison des doublons, sur le titre de la page
     P->>P: le texte recopié par la passe 1
     P->>G: polishMarkdown
     P->>R: add page technique ou note d'ingrédient
@@ -397,6 +420,18 @@ sequenceDiagram
         compare ensuite la forme de la traduction à l'original. Un écart fait échouer le job,
         relançable. La recette et son texte d'origine partent dans le même lot : une recette
         marquée traduite a toujours son original.
+      </figcaption>
+      <figcaption>
+        <b>Les doublons se comparent avant toute dépense de la suite.</b> Pour un job rattaché à
+        un livre, après la transcription et la traduction, le serveur cherche chaque titre lu
+        (clé <code>titre_key</code>) parmi les recettes du livre et parmi les imports du même
+        compte sur ce livre encore en file ou en cours. Deux numéros de page connus et
+        différents écartent le doublon. Une page scannée dont toutes les recettes sont déjà là
+        s'arrête au statut <code>duplicate</code> : aucun brouillon, aucun appel de balisage,
+        d'illustration ni de nutrition. Une page à plusieurs recettes écrit les autres, puis
+        s'arrête pour celles en double. Une tranche de livre ne s'arrête jamais : son brouillon
+        est marqué <code>duplicate_of</code>. Détail : <code>TechnicalRequirements.md</code>,
+        § 6, « Les doublons à l'import ».
       </figcaption>
       <figcaption>
         <b>La quarantaine est le seul chemin d'entrée d'un fichier.</b> Le client ne peut pas
@@ -4540,6 +4575,94 @@ sequenceDiagram
       <figcaption>
         Le rôle est relu dans Firestore à chaque envoi : un compte qui n'est plus administrateur
         ne reçoit plus rien, même si son jeton est resté stocké.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="doublon-import"><span class="n">48</span>Trancher un doublon possible à l'import</h2>
+    <p class="sec-note">
+      Un import de page arrêté au statut <code>duplicate</code> (séquence 01) attend une décision
+      dans la file « Brouillons &amp; Traitements ». « Ce n'est pas un doublon » le reprend au
+      balisage sans relire la page ; « Supprimer » le retire. Un brouillon marqué
+      <code>duplicate_of</code>, issu d'un livre entier, se valide depuis la relecture.
+      <span class="path">work_queue_screen.dart, work_queue_widgets.dart, duplicate_widgets.dart,
+      work_queue_batch.dart (planDraftValidation, staleDuplicateMarks) →
+      scan_upload_service.dart (resumeDuplicateJob) → firestore.rules (isDuplicateResume) →
+      jobDispatcher.ts → recipeProcessor.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Éditeur propriétaire
+  participant W as WorkQueueScreen
+  participant S as ScanUploadNotifier
+  participant FR as Règles Firestore
+  participant J as processing_jobs
+  participant D as jobDispatcher
+  participant P as recipeProcessor
+  participant G as Moteur d'IA
+  participant R as recipes
+
+  J-->>W: job status duplicate, duplicates
+  W->>R: relit chaque recipe_id de duplicates
+  W-->>U: « Doublon possible », « Déjà dans le livre : titre, p. n »,<br/>compteur « n doublons possibles à trancher »
+
+  alt « Ce n'est pas un doublon »
+    U->>W: appui
+    W->>S: resumeDuplicateJob(job)
+    S->>J: update status queued, duplicate_override true,<br/>error_message null, current_step null
+    FR->>FR: isDuplicateResume — statut précédent duplicate,<br/>propriétaire éditeur, ces seules clés, pas un import par lien
+    alt refus
+      FR-->>W: permission-denied
+      W-->>U: « La reprise du traitement a échoué. »
+    else accepté
+      J-->>D: entrée en queued
+      D->>P: tâche Cloud Tasks
+      P->>J: lit transcription_checkpoint — AUCUN appel de transcription
+      opt transcription de plus de 300 000 caractères, sans point de reprise
+        P->>G: PASSE 1 — la page est relue, appel facturé
+      end
+      P->>P: duplicate_override : comparaison sautée,<br/>created_recipe_ids repris, pending_items seuls
+      P->>G: illustrations (pré-contrôle ou chaîne complète), puis PASSE 2 par recette retenue
+      P->>R: brouillons des recettes retenues
+      P->>J: status done — transcription_checkpoint,<br/>pending_items et duplicates supprimés
+    end
+  else « Supprimer »
+    U->>W: appui, confirmation
+    W->>J: deleteJob
+    FR->>FR: admin, ou propriétaire éditeur d'un job duplicate
+    Note over J: le fichier scanné reste dans Storage
+  end
+
+  opt brouillon marqué duplicate_of (livre entier)
+    U->>W: Valider en lot
+    W->>R: staleDuplicateMarks — relit la recette ou le job de référence
+    alt référence supprimée, import en erreur ou rejeté
+      W->>R: validateDraft — duplicate_of effacé
+    else référence encore là, ou lecture en échec
+      W-->>U: « Non validés : n doublons possibles. »
+    end
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>La reprise ne refait ni la lecture, ni la comparaison.</b> La transcription est restée
+        sur le job (<code>transcription_checkpoint</code>), et <code>duplicate_override</code>
+        fait sauter la détection. Seules les recettes de <code>pending_items</code> passent au
+        balisage : sur une page à plusieurs recettes, les autres sont déjà des brouillons, et
+        <code>created_recipe_ids</code> n'est pas vidé. L'étape des illustrations est refaite.
+        Une ligne « Doublon possible » n'entre ni dans « Valider » ni dans « Relancer » d'une
+        sélection : seulement dans « Supprimer ».
+      </figcaption>
+      <figcaption>
+        <b>Une marque relue avant de valider.</b> La validation en lot écarte un brouillon
+        marqué, sauf si sa référence a disparu depuis. Une lecture refusée ou en échec garde la
+        marque et part au rapport d'erreurs (<code>workQueueScreen.checkDuplicateMark</code>).
+        Depuis l'écran de relecture, le bandeau « Doublon possible de … » laisse « Valider », qui
+        efface la marque.
       </figcaption>
     </figure>
   </section>

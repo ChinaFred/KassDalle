@@ -219,14 +219,16 @@ export async function runTitleKeysPass(
   }
 
   response.aRevoir = review.toJSON();
+  // Le curseur revient au début quand la collection est parcourue, même avec
+  // des échecs : le passage suivant repart du début et reprend les recettes en
+  // échec (les autres sont comptées « identiques », sans écriture). Sinon il
+  // retient le dernier document examiné.
+  const reachedEnd = response.completed;
   if (response.echouees > 0) response.completed = false;
-
-  // Le curseur revient au début quand tout est passé ; sinon il retient le
-  // dernier document examiné.
   await setBackfillCursor({
     db,
     docId: TITLE_KEYS_CHECKPOINT_DOC_ID,
-    lastDocId: response.completed ? null : cursor,
+    lastDocId: reachedEnd ? null : cursor,
     operation: FEATURE,
     adminUid: ctx.userId,
   });
