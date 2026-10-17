@@ -11,10 +11,10 @@
 // membre.
 //
 // Le fichier entier (environ 660 Ko) n'est pas embarqué dans l'application.
-// ci.yml et deploy.yml lancent ce script avant les tests et le build : la
-// version installée connaît son propre historique. Le JSON est aussi
-// versionné dans kass_dalle/assets/, pour que flutter run et deploy.ps1
-// trouvent l'asset ; il peut y dater de quelques versions.
+// ci.yml, deploy.yml et deploy.ps1 lancent ce script avant les tests et le
+// build : la version installée connaît son propre historique. Le JSON est
+// aussi versionné dans kass_dalle/assets/, pour que flutter run et les tests
+// locaux trouvent l'asset ; il peut y dater de quelques versions.
 //
 // Échoue (code 1) si l'extraction rend moins de <nombre> versions : une liste
 // tronquée ne part pas en production. Échoue aussi si un texte extrait contient

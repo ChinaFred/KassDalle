@@ -7,10 +7,10 @@ import 'error_reporting.dart';
 
 /// Chemin de l'extrait du `CHANGELOG.md` embarqué dans l'application.
 ///
-/// Généré par `.github/scripts/changelog-recent.mjs`, que `ci.yml` et
-/// `deploy.yml` lancent avant les tests et le build : la version installée
-/// connaît son propre historique. Le fichier versionné sert à `flutter run` et
-/// à `deploy.ps1` ; il peut dater de quelques versions.
+/// Généré par `.github/scripts/changelog-recent.mjs`, que `ci.yml`,
+/// `deploy.yml` et `deploy.ps1` lancent avant les tests et le build : la
+/// version installée connaît son propre historique. Le fichier versionné sert
+/// à `flutter run` et aux tests locaux ; il peut dater de quelques versions.
 const kReleaseNotesAsset = 'assets/changelog_recent.json';
 
 /// Une version telle que l'écran « Nouveautés » l'affiche.
