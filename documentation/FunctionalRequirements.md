@@ -67,7 +67,7 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 
 > Règle de propriété (v0.23.8) : **on ne modifie que son propre contenu.** Un livre ou une recette se modifie, se supprime ou change d'image par son créateur seulement — quel que soit son rôle — ou par un Admin. Un livre ou une recette **privé** ne se lit que par son créateur et par un Admin. Les écrans masquent les gestes de modification sur le contenu d'autrui ; les règles Firestore et les Cloud Functions les refusent de toute façon.
 
-> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution, une nouvelle fonctionnalité ou une question depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé, refuse un ticket avec un motif publié sur GitHub, répond aux questions d'une analyse, et lance une session Claude Code d'analyse ou de développement (10 lancements par jour pour la famille, 50 pour le fondateur). Un compte en attente ou révoqué n'envoie rien.
+> Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution ou une nouvelle fonctionnalité depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé, refuse un ticket avec un motif publié sur GitHub, le clôt avec un commentaire, répond aux questions d'une analyse, et lance une session Claude Code d'analyse ou de développement (10 lancements par jour pour la famille, 50 pour le fondateur). Un compte en attente ou révoqué n'envoie rien.
 
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
 
@@ -754,7 +754,7 @@ Les quinze entrées sont ouvertes sur mobile : rien n'est réservé au grand éc
 - **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et le budget de réflexion de chacun. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
   - **Configurations de routage**, dans l'écran *Moteur d'IA* (ce n'est pas une entrée de l'accueil) : les sept réglages de cet écran s'enregistrent sous un nom, se rechargent, se renomment, se mettent à jour et se suppriment. Charger remplit le formulaire et affiche d'abord l'écart — combien de postes changent de moteur, lesquels changent de modèle — ; le routage ne bouge qu'à l'enregistrement. Le chargement est un remplacement : un poste que la configuration ne nomme pas repart au moteur par défaut. La configuration **« Haute performance »** est créée au premier affichage à partir du réglage déjà en place, pour qu'essayer autre chose ne le fasse pas perdre.
 - **Modération des images** : journal de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
-- **Tickets des membres** : les bugs, idées et questions envoyés par les membres, leur statut sur GitHub, la capture jointe, les analyses de l'administrateur, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. L'écran s'ouvre sur le filtre « À traiter ». On y valide un ticket analysé, on y refuse un ticket, on y répond aux questions d'une analyse, et on y lance une session Claude Code d'analyse ou de développement ; répondre à une Question se fait sur GitHub (voir 5.13).
+- **Tickets des membres** : les bugs et idées envoyés par les membres, leur statut sur GitHub, la capture jointe, les analyses de l'administrateur, et « Relancer l'envoi » pour un ticket que GitHub n'a pas reçu après dix essais. Un badge compte ces tickets en anomalie. L'écran s'ouvre sur le filtre « À traiter ». On y valide un ticket analysé, on y refuse un ticket, on le clôt avec un commentaire, on y répond aux questions d'une analyse, et on y lance une session Claude Code d'analyse ou de développement ; répondre à une Question déjà posée se fait sur GitHub (voir 5.13).
 - **Attestation de l'application (App Check)** : trois modes — désactivé, observation, exigé. Le passage en *exigé* est refusé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même.
 
 **Comptabilité**
@@ -1172,8 +1172,8 @@ lui-même celles qu'il retient.
 
 ### 5.13 Module Tickets (tous les clients — suivi réservé à l'Admin)
 
-Un membre signale un bug, propose une évolution ou une nouvelle fonctionnalité, ou pose une
-question, sans quitter l'application. Le ticket part en Issue sur le dépôt GitHub **public**
+Un membre signale un bug, propose une évolution ou une nouvelle fonctionnalité sans quitter
+l'application. Le ticket part en Issue sur le dépôt GitHub **public**
 `ChinaFred/KassDalle`, où l'administrateur le traite. Le membre suit l'avancement dans
 « Mes tickets ».
 
@@ -1190,7 +1190,10 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   proposer » et « Mes tickets », entre « Groupes familiaux » et « Se déconnecter ». Il n'y en
   a pas d'autre pour un membre. L'Admin y trouve aussi « Tickets à traiter », juste après
   « Mes tickets » (voir « Tickets des membres »).
-- **Quatre types** : « Bug », « Évolution », « Nouvelle fonctionnalité », « Question ».
+- **Trois types à la création** : « Bug », « Évolution », « Nouvelle fonctionnalité ». Le type
+  « Question » n'est plus proposé et le serveur le refuse (« Choisissez le type de ticket. »).
+  Il reste connu : les tickets de type Question déjà créés se lisent, se filtrent (Admin) et
+  gardent leurs règles (réponse sur GitHub, statut Répondu).
 
 #### Signaler ou proposer (`/tickets/new`)
 
@@ -1204,7 +1207,7 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
     qui existe aujourd'hui : … / Ce que vous aimeriez changer : … / Pourquoi ce serait
     utile : … ». Nouvelle fonctionnalité : « Ce que vous aimeriez pouvoir faire : … / Dans
     quelle situation (en cuisine, en préparant la semaine…) : … / Comment vous faites
-    aujourd'hui : … ». Question : « Votre question : … / Ce que vous avez déjà essayé : … » ;
+    aujourd'hui : … » ;
   - l'**écran concerné**, prérempli par l'écran d'origine sous son nom français (« Fiche
     recette », « Planning », « Administration — … »…), avec « Autre écran » et « Je ne sais
     pas » en fin de liste ;
@@ -1276,7 +1279,12 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
     fermé à la main, sans PR. L'administrateur lit la même ligne dans Admin › Tickets, avec le bouton « Ouvrir la PR #N » ;
   - Refusé : « Cette demande ne sera pas traitée. », suivi de l'encadré « Motif du refus »
     s'il existe ;
-  - Répondu : un encadré « Réponse de l'administrateur », texte sélectionnable.
+  - Répondu : un encadré « Réponse de l'administrateur », texte sélectionnable ;
+  - Clos : « Ce ticket est clos. », suivi, quand l'administrateur a écrit un commentaire, de
+    « L'administrateur vous a répondu ci-dessous. » et de l'encadré « Réponse de
+    l'administrateur ». La frise va de l'envoi à la réception, puis à « Clos », comme pour
+    Refusé et Répondu. Une version installée avant la v0.23.96 ne connaît pas ce statut et
+    affiche « Reçu » pour un ticket clos, jusqu'à sa mise à jour.
 - **Notification.** Une pastille chiffrée s'affiche sur la puce du compte (`99+` au-delà de 99)
   et sur l'icône de « Mes tickets » quand le statut d'un ticket du membre a changé depuis sa
   dernière ouverture, ou qu'il ne l'a jamais ouvert, quel que soit le statut sauf « Envoi en
@@ -1284,7 +1292,7 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
   de groupe et les tickets à lire. Pour l'Admin, ce sont les tickets à traiter qui comptent, et
   ses propres tickets non lus n'y entrent pas : « Mes tickets » n'a pas de pastille pour lui. Pas de notification push ni d'e-mail.
 - États : chargement « Chargement de vos tickets… » ; liste vide « Aucun ticket pour
-  l'instant » — « Un bug, une idée, une question ? Envoyez-les à l'administrateur. », avec
+  l'instant » — « Un bug, une idée ? Envoyez-les à l'administrateur. », avec
   « Signaler ou proposer » ; erreur « Impossible de charger vos tickets. » avec Réessayer ;
   ticket disparu « Ce ticket n'existe plus. » avec « Retour à mes tickets » ; grand écran sans
   sélection « Choisissez un ticket pour voir son suivi. ».
@@ -1303,6 +1311,7 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 | Pull request ouverte qui dit « Closes #N », par l'administrateur ou un collaborateur du dépôt | En cours |
 | Issue fermée comme terminée (fusion de la pull request « Closes #N », par « Livrer » ou à la main) | Livré — Répondu pour une Question |
 | Issue fermée comme non prévue | Refusé |
+| Issue fermée portant l'étiquette `statut:clos` (posée par « Clore »), quelle que soit la raison de fermeture | Clos |
 
 - **« PR prête » n'est pas un statut.** C'est un sous-état d'un ticket En cours, calculé par le
   serveur et visible de l'Admin seul (puce de la liste, barre de décision). Le membre voit
@@ -1310,7 +1319,7 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 - Un statut peut sauter une étape ; il ne recule jamais, sauf dans deux cas : quand l'Admin
   répond à une analyse depuis l'application (« Répondre »), un ticket Analysé ou Validé revient
   à Reçu (un ticket déjà Reçu le reste) ; quand plus aucune pull request ouverte ne ferme l'Issue, un ticket En cours revient
-  au statut de ses étiquettes (point suivant). Répondu, Refusé et Livré sont finaux, sauf si l'Issue est rouverte : le statut
+  au statut de ses étiquettes (point suivant). Répondu, Refusé, Clos et Livré sont finaux, sauf si l'Issue est rouverte : le statut
   revient alors à celui que donnent ses étiquettes.
 - Un ticket En cours dont la pull request est fermée sans être fusionnée revient au statut
   que donnent ses étiquettes (Validé en général), dans l'heure qui suit : la vérification
@@ -1319,13 +1328,14 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   change aucun statut, même si elle dit « Closes #N ».
 - **Réponse et motif.** Seul un commentaire du compte GitHub de l'administrateur
   (`ChinaFred`, reconnu par son identifiant numérique et non par son nom) qui commence par « Réponse : » est repris dans l'application, sans ce
-  préfixe. Il sert de réponse à une Question et de motif à un refus. Aucun autre commentaire
+  préfixe. Il sert de réponse à une Question, de motif à un refus et de commentaire de clôture. Aucun autre commentaire
   n'est relayé.
 - GitHub prévient l'application à chaque changement. Une vérification horaire rattrape un
   avis perdu et renvoie les tickets restés en « Envoi en cours ».
-- Valider et refuser se font depuis Admin › Tickets des membres, ou sur GitHub par les mêmes
-  gestes : l'application pose l'étiquette `validé`, ou publie le motif et ferme l'Issue comme
-  non prévue. Livrer un ticket En cours se fait depuis l'application (« Livrer »), ou en
+- Valider, refuser et clore se font depuis Admin › Tickets des membres, ou sur GitHub par les
+  mêmes gestes : l'application pose l'étiquette `validé`, ou publie le motif et ferme l'Issue
+  comme non prévue, ou publie le commentaire, pose `statut:clos` et ferme l'Issue comme
+  terminée (« Clore » : pas de pull request, pas de livraison). Livrer un ticket En cours se fait depuis l'application (« Livrer »), ou en
   fusionnant la pull request sur GitHub. Répondre à une Question se fait sur GitHub. Répondre aux questions d'une
   analyse se fait dans l'application : elle publie un commentaire « ## Précisions de
   l'administrateur », retire `validé` et remet `statut:à-analyser`.
@@ -1346,8 +1356,9 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   traiter, l'écran passe une fois sur « Tous ». Le filtre choisi ensuite est gardé.
 - **En anomalie** : un ticket qui n'a pas pu être transmis à GitHub après 10 essais. Ce n'est
   pas un statut : le membre continue de voir « Envoi en cours ».
-- Filtres : statut (« À traiter (N) », « Tous », « En anomalie », puis les huit statuts) et type (« Tous les
-  types », puis les quatre). Sous le seuil large, chaque rangée de filtres tient sur une ligne
+- Filtres : statut (« À traiter (N) », « Tous », « En anomalie », puis les neuf statuts, « Clos » en dernier) et type (« Tous les
+  types », puis les quatre, Question comprise pour lire les anciens tickets). Un ticket Clos n'est jamais « à
+  traiter » ni « en anomalie ». Sous le seuil large, chaque rangée de filtres tient sur une ligne
   qui défile de côté, pour que la liste reste visible à 200 % et en paysage. Chaque ligne : type, titre, puis
   « #N · auteur · date » (le numéro de l'Issue, puis le nom de l'auteur dans l'application ;
   sans Issue, pas de numéro), statut, la puce « PR prête » juste après le statut (icône de
@@ -1409,10 +1420,11 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   avec Réessayer. Admin seul, comme les analyses.
 - **Barre de décision**, fixée en bas de la fiche, sous un trait, absente quand aucune
   décision n'est possible. Un bouton qui ne s'applique pas est masqué, pas grisé. Ticket
-  Reçu : « Refuser », « Répondre » et « Lancer l'analyse » ; Analysé : « Refuser », « Répondre » et
-  « Valider » ; Validé : « Refuser », « Répondre » et « Lancer le développement » ; Validé
-  bloqué (ci-dessous) : « Refuser » et « Répondre » ; En cours : « Refuser » et « Livrer »
-  (« Relancer la livraison » après un blocage ou une échéance), hors Question. Les actions secondaires (contour) sont à
+  Reçu : « Refuser », « Répondre », « Clore » et « Lancer l'analyse » ; Analysé : « Refuser », « Répondre », « Clore » et
+  « Valider » ; Validé : « Refuser », « Répondre », « Clore » et « Lancer le développement » ; Validé
+  bloqué (ci-dessous) : « Refuser », « Répondre » et « Clore » ; En cours : « Refuser », « Clore » et « Livrer »
+  (« Relancer la livraison » après un blocage ou une échéance), « Livrer » hors Question. Clos : aucune décision
+  (un ticket Clos est final). Les actions secondaires (contour, dans l'ordre Refuser, Répondre, Clore) sont à
   gauche, une seule action principale (pleine) à droite. « Valider » et un lancement ne
   s'affichent jamais ensemble. Quand la largeur manque, l'action principale passe sous les
   autres, à droite. Quand la hauteur manque (paysage, texte agrandi), la barre suit la fiche
@@ -1437,6 +1449,28 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     est publié mais l'Issue pas fermée : « Motif publié, mais l'Issue n'a pas été fermée.
     Réessayez. », et le motif ne se modifie plus ; rouverte, la boîte dit « Ce motif est déjà
     publié sur GitHub. Refuser ferme l'Issue. » ; réessayer ne le publie pas une seconde fois.
+  - « Clore » : pour un ticket Reçu, Analysé, Validé ou En cours, de tout type, Question
+    comprise, avec son Issue ; masqué pendant une livraison de ce ticket (lancement de
+    livraison en cours ou verrou global sur ce ticket) et pendant une décision de la fiche. La
+    boîte « Clore ce ticket » prévient : « Le commentaire sera publié sur GitHub, dépôt public,
+    et lu par le membre. N'y mettez ni nom ni donnée privée. » Pour un ticket En cours, elle
+    ajoute « Une pull request est ouverte. Elle ne sera pas fermée. » Elle dit aussi « Le
+    ticket passera à « Clos » et l'Issue sera fermée. ». Le champ « Commentaire de clôture »
+    (« Le membre lira ce texte : réponse, ou raison de la clôture. ») prend 5 à 4 000
+    caractères : « Le commentaire doit faire au moins 5 caractères. » ; une adresse e-mail est
+    refusée avant l'envoi : « Retirez l'adresse e-mail avant de publier. » ; le texte est gardé
+    si l'on ferme puis rouvre la boîte. Boutons « Annuler » et « Clore ». Succès : « Ticket
+    clos. Le commentaire est publié sur GitHub. » ; le membre voit le statut Clos et
+    l'encadré « Réponse de l'administrateur ». L'application publie `Réponse : <commentaire>`
+    (mentions `@` et renvois `#N` neutralisés), pose `statut:clos`, puis ferme l'Issue comme
+    terminée ; elle ne touche à aucune pull request. Refus du serveur affichés tels quels :
+    « Une livraison est en cours sur ce ticket. Attendez sa fin. », « Ce ticket ne peut plus
+    être clos. », « Ce ticket a déjà été clos sur GitHub. » (la fiche reprend l'état de
+    GitHub). Commentaire publié mais Issue pas fermée : « Commentaire publié, mais l'Issue n'a
+    pas été fermée. Réessayez. » ; le texte ne se modifie plus, la boîte dit « Ce commentaire
+    est déjà publié sur GitHub. Clore ferme l'Issue. » et réessayer ne le publie pas une
+    seconde fois. Issue fermée mais ticket non mis à jour : « La clôture est faite sur GitHub,
+    mais le ticket n'a pas été mis à jour. Réessayez. ».
   - « Lancer l'analyse » : pour un ticket Reçu, de tout type, Question comprise, avec son
     Issue. « Lancer le développement » : pour un ticket Validé (jamais une Question). Une
     confirmation s'ouvre. Analyse : « Lancer l'analyse de ce ticket ? » — « Une session Claude
@@ -1607,7 +1641,7 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
 
 Créer ou commenter un ticket depuis GitHub au nom d'un membre ; modifier ou annuler un ticket
 envoyé ; notification push ou e-mail ; version exacte de la livraison ; répondre à une
-Question depuis l'application ; livrer depuis l'application une pull request qui modifie un
+Question depuis l'application ; créer un ticket de type Question ; livrer depuis l'application une pull request qui modifie un
 fichier sensible ; déployer sans fusionner ; filtrer la liste sur « PR prête » ; montant facturé d'une session dans le suivi des coûts ;
 détection des doublons ; plusieurs captures ; purge des captures ; analyse ou traitement
 automatiques.
@@ -1687,7 +1721,7 @@ automatiques.
 - Modération de toutes les images par Cloud Vision, avec journal de revue
 - Qualité des données : diagnostic en lecture seule des référentiels nutrition (Admin)
 - Attestation App Check (web, Android)
-- Tickets : un membre signale un bug, propose une évolution ou une fonctionnalité, ou pose une question ; le ticket part en Issue sur GitHub, son statut revient dans « Mes tickets », et l'administrateur suit tous les tickets dans Admin › Tickets des membres
+- Tickets : un membre signale un bug ou propose une évolution ou une fonctionnalité ; le ticket part en Issue sur GitHub, son statut revient dans « Mes tickets », et l'administrateur suit tous les tickets dans Admin › Tickets des membres
 - Plateformes : Android, Web, Windows desktop
 
 ### Reste à faire
@@ -1971,16 +2005,23 @@ stateDiagram-v2
     analyzed --> refused : Issue fermée, non prévue
     validated --> refused : Issue fermée, non prévue
 
+    received --> closed : « Clore » de l'Admin\n(Issue fermée avec statut:clos)
+    analyzed --> closed : « Clore » de l'Admin
+    validated --> closed : « Clore » de l'Admin
+    in_progress --> closed : « Clore » de l'Admin\n(la PR ouverte n'est pas fermée)
+
     analyzed --> received : « Répondre » de l'Admin\n(précisions publiées,\nstatut:à-analyser)
     validated --> received : « Répondre » de l'Admin\n(validé retiré)
 
     delivered --> received : Issue rouverte\n(statut repris des étiquettes)
     refused --> received : Issue rouverte\n(statut repris des étiquettes)
     answered --> received : Issue rouverte\n(statut repris des étiquettes)
+    closed --> received : Issue rouverte\n(statut repris des étiquettes)
 
     delivered --> [*]
     refused --> [*]
     answered --> [*]
+    closed --> [*]
 
     note right of sending
         Envoi en cours. Après 10 essais
@@ -2003,8 +2044,8 @@ stateDiagram-v2
     end note
 ```
 
-Le diagramme ne trace que les passages courants. Toute fermeture donne Livré (Répondu pour
-une Question) ou Refusé, quel que soit le statut de départ. Une réouverture ramène au statut
+Le diagramme ne trace que les passages courants. Toute fermeture donne Clos (Issue portant
+`statut:clos`), Refusé (non prévue) ou Livré (Répondu pour une Question), quel que soit le statut de départ. Une réouverture ramène au statut
 que donnent les étiquettes de l'Issue — Reçu, Analysé ou Validé. Tout changement de statut
 hors « Envoi en cours » allume la pastille de notification sur la puce du compte de l'auteur,
 jusqu'à ce qu'il ouvre le ticket.

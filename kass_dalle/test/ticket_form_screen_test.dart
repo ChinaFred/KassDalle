@@ -44,11 +44,26 @@ void main() {
   testWidgets('le type choisi donne son gabarit', (tester) async {
     await pump(tester);
 
-    await tester.tap(find.text('Question'));
+    await tester.ensureVisible(find.text('Évolution'));
+    await tester.tap(find.text('Évolution'));
     await tester.pump();
 
     expect(find.text('Choisissez le type de ticket.'), findsNothing);
-    expect(find.textContaining('Votre question : …'), findsWidgets);
+    expect(find.textContaining('Ce qui existe aujourd\'hui : …'), findsWidgets);
+  });
+
+  testWidgets('trois types proposés, Question absent', (tester) async {
+    await pump(tester);
+    Finder chip(String label) => find.descendant(
+      of: find.byType(ChoiceChip),
+      matching: find.text(label),
+    );
+
+    expect(chip('Bug'), findsOneWidget);
+    expect(chip('Évolution'), findsOneWidget);
+    expect(chip('Nouvelle fonctionnalité'), findsOneWidget);
+    expect(chip('Question'), findsNothing);
+    expect(find.byType(ChoiceChip), findsNWidgets(3));
   });
 
   testWidgets('écran présélectionné depuis le modèle de route', (tester) async {

@@ -164,12 +164,13 @@ void main() {
     });
   });
 
-  test('statuts finaux : Livré, Refusé, Répondu', () {
+  test('statuts finaux : Livré, Refusé, Répondu, Clos', () {
     final finals = TicketStatus.values.where((s) => s.isFinal).toSet();
     expect(finals, {
       TicketStatus.delivered,
       TicketStatus.refused,
       TicketStatus.answered,
+      TicketStatus.closed,
     });
   });
 

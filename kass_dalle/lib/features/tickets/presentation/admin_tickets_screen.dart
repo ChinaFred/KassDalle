@@ -32,10 +32,11 @@ import 'tickets_providers.dart';
 /// les décisions de l'administrateur : « Valider » (étiquette `validé` sur
 /// l'Issue), « Refuser » (motif publié sur GitHub, Issue fermée), « Répondre »
 /// (précisions publiées sous la dernière analyse, ticket ramené à Reçu),
+/// « Clore » (commentaire publié, étiquette `statut:clos`, Issue fermée),
 /// « Lancer l'analyse », « Lancer le développement » et « Livrer » (session
 /// Claude Code lancée par une Routine ; la livraison fusionne la PR prête
 /// d'un ticket En cours). Elles passent par les callables `validateTicket`,
-/// `refuseTicket`, `answerTicketAnalysis`, `launchTicketAnalysis`,
+/// `refuseTicket`, `answerTicketAnalysis`, `closeTicket`, `launchTicketAnalysis`,
 /// `launchTicketDevelopment` et `launchTicketDelivery`.
 ///
 /// Le filtre « À traiter » est posé par les points d'entrée
@@ -691,6 +692,14 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
   /// Le motif a été publié sans que l'Issue soit fermée : il ne change plus.
   bool _reasonLocked = false;
 
+  /// Commentaire de clôture : gardé si l'administrateur ferme puis rouvre la
+  /// boîte, vidé après un succès ou un changement de ticket.
+  final _closeController = TextEditingController();
+
+  /// Le commentaire a été publié sans que l'Issue soit fermée : il ne change
+  /// plus, et « Clore » finit la fermeture.
+  bool _closeLocked = false;
+
   /// Brouillon de la réponse à l'analyse : gardé si l'administrateur ferme
   /// puis rouvre la boîte, vidé après un succès ou un changement de ticket.
   final _answerController = TextEditingController();
@@ -708,6 +717,8 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       _reasonLocked = false;
       _answerController.clear();
       _answerLocked = false;
+      _closeController.clear();
+      _closeLocked = false;
     }
   }
 
@@ -716,6 +727,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     _cancelRunTimer();
     _reasonController.dispose();
     _answerController.dispose();
+    _closeController.dispose();
     super.dispose();
   }
 
@@ -812,6 +824,34 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     setState(() => _reasonLocked = false);
     context.showSuccessSnackBar(
       'Ticket refusé. Le motif est publié sur GitHub.',
+    );
+  }
+
+  /// « Clore » : publie le commentaire de clôture, pose `statut:clos` et
+  /// ferme l'Issue.
+  Future<void> _closeTicket() async {
+    final ticket = widget.ticket;
+    final closed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _CloseTicketDialog(
+        controller: _closeController,
+        inProgress: ticket.status == TicketStatus.inProgress,
+        locked: _closeLocked,
+        onLocked: () {
+          if (mounted && widget.ticket.id == ticket.id) {
+            setState(() => _closeLocked = true);
+          }
+        },
+        submit: (comment) =>
+            ref.read(ticketRepositoryProvider).close(ticket.id, comment),
+      ),
+    );
+    if (closed != true || !mounted) return;
+    _closeController.clear();
+    setState(() => _closeLocked = false);
+    context.showSuccessSnackBar(
+      'Ticket clos. Le commentaire est publié sur GitHub.',
     );
   }
 
@@ -1063,6 +1103,19 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     return active ? lock : null;
   }
 
+  /// Vrai si le verrou des livraisons tient et porte [ticket] : « Clore » est
+  /// masqué pendant sa livraison.
+  bool _lockHere(Ticket ticket, DateTime now) {
+    final status = ref.watch(ticketsStatusProvider);
+    final lock = status.hasError ? null : status.value?.deliveryRunning;
+    if (lock == null || lock.ticketId != ticket.id) return false;
+    return ticketDeliveryLockActive(
+      lock: lock,
+      lockedTicketRawStatus: ticket.rawStatus,
+      now: now,
+    );
+  }
+
   void _openOtherTicket(String ticketId) {
     final location = AppRoutes.adminTicketDetail(ticketId);
     if (MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint) {
@@ -1098,6 +1151,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       now: now,
       analysis: analysisAsync.hasError ? null : analysisAsync.value,
       delivery: delivery,
+      deliveryLockHere: _lockHere(ticket, now),
     );
     final hint = decisions.validateHint;
     final lockElsewhere = _lockElsewhere(ticket.id, now);
@@ -1220,9 +1274,11 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
         if (reply != null) ...[
           const SizedBox(height: 12),
           TicketReplyBox(
-            title: ticket.status == TicketStatus.refused
-                ? 'Motif du refus'
-                : 'Réponse de l\'administrateur',
+            title: switch (ticket.status) {
+              TicketStatus.refused => 'Motif du refus',
+              TicketStatus.closed => 'Commentaire de clôture',
+              _ => 'Réponse de l\'administrateur',
+            },
             text: reply,
           ),
         ],
@@ -1310,6 +1366,12 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           onPressed: _answer,
           icon: const Icon(Icons.reply),
           label: const Text('Répondre'),
+        ),
+      if (decisions.canClose)
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _closeTicket,
+          icon: const Icon(AppIcons.ticketStatusClosed),
+          label: const Text('Clore'),
         ),
     ];
     final Widget? primary;
@@ -2145,6 +2207,207 @@ class _RefuseTicketDialogState extends State<_RefuseTicketDialog> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('Refuser'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Boîte « Clore ce ticket » : le commentaire part sur GitHub, dépôt public,
+/// puis l'Issue est fermée.
+///
+/// Reste ouverte sur un échec, avec le message du serveur, texte gardé. Sur un
+/// échec partiel (commentaire publié, Issue non fermée), le champ passe en
+/// lecture seule : réessayer republie le même texte, que le serveur reconnaît
+/// et ne double pas.
+class _CloseTicketDialog extends StatefulWidget {
+  final TextEditingController controller;
+  final bool inProgress;
+  final bool locked;
+  final VoidCallback onLocked;
+  final Future<String> Function(String comment) submit;
+
+  const _CloseTicketDialog({
+    required this.controller,
+    required this.inProgress,
+    required this.locked,
+    required this.onLocked,
+    required this.submit,
+  });
+
+  @override
+  State<_CloseTicketDialog> createState() => _CloseTicketDialogState();
+}
+
+class _CloseTicketDialogState extends State<_CloseTicketDialog> {
+  final _focus = FocusNode();
+  bool _sending = false;
+  String? _fieldError;
+  String? _error;
+  late bool _locked = widget.locked;
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _showFieldError(String message) {
+    setState(() {
+      _fieldError = message;
+      _sending = false;
+    });
+    // Le champ est encore désactivé tant que l'image suivante n'est pas
+    // construite : le focus se pose après elle.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  Future<void> _submit() async {
+    final text = widget.controller.text;
+    final fieldError = ticketCloseFieldError(text);
+    if (fieldError != null) {
+      _showFieldError(fieldError);
+      return;
+    }
+    setState(() {
+      _fieldError = null;
+      _error = null;
+      _sending = true;
+    });
+    try {
+      await widget.submit(text.trim());
+      if (mounted) Navigator.of(context).pop(true);
+    } on TicketDecisionError catch (e) {
+      // Déjà remontée par `TicketRepository` (feature `tickets`).
+      if (!mounted) return;
+      if (e.field == 'comment') {
+        _showFieldError(e.message);
+        return;
+      }
+      setState(() {
+        _error = e.message;
+        _sending = false;
+        if (e.partial) _locked = true;
+      });
+      if (e.partial) widget.onLocked();
+    } catch (e) {
+      // Déjà remontée par `TicketRepository` (feature `tickets`).
+      if (mounted) {
+        setState(() {
+          _error = 'Ticket non clos : ${shortErrorMessage(e)}';
+          _sending = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final muted = textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant);
+    final error = _error;
+    return PopScope(
+      canPop: !_sending,
+      child: AlertDialog(
+        scrollable: true,
+        title: const Text('Clore ce ticket'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.public, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Le commentaire sera publié sur GitHub, dépôt '
+                          'public, et lu par le membre. N\'y mettez ni nom ni '
+                          'donnée privée.',
+                          style: muted,
+                        ),
+                        if (widget.inProgress) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Une pull request est ouverte. Elle ne sera pas '
+                            'fermée.',
+                            style: muted,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('Le ticket passera à « Clos » et l\'Issue sera fermée.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: widget.controller,
+              focusNode: _focus,
+              enabled: !_sending,
+              readOnly: _locked,
+              autofocus: true,
+              minLines: 4,
+              maxLines: 10,
+              maxLength: kTicketAnswerMaxChars,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: 'Commentaire de clôture',
+                helperText:
+                    'Le membre lira ce texte : réponse, ou raison de la '
+                    'clôture.',
+                helperMaxLines: 2,
+                errorText: _fieldError,
+                errorMaxLines: 3,
+              ),
+            ),
+            if (_locked && error == null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Ce commentaire est déjà publié sur GitHub. Clore ferme '
+                'l\'Issue.',
+                style: muted,
+              ),
+            ],
+            if (error != null) ...[
+              const SizedBox(height: 8),
+              Semantics(
+                liveRegion: true,
+                child: Text(error, style: TextStyle(color: cs.error)),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _sending ? null : () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: _sending ? null : _submit,
+            child: _sending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Clore'),
           ),
         ],
       ),

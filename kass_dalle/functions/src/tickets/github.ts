@@ -307,6 +307,20 @@ export async function closeIssueNotPlanned(
   return readRemoteIssue(raw);
 }
 
+/** Ferme une Issue avec la raison `completed` (clôture par l'administrateur). Rend l'Issue relue. */
+export async function closeIssueCompleted(
+  token: string,
+  issueNumber: number,
+): Promise<RemoteIssue> {
+  const raw = await request<Record<string, unknown>>(
+    token,
+    "PATCH",
+    `${REPO_PATH}/issues/${issueNumber}`,
+    { body: { state: "closed", state_reason: "completed" } },
+  );
+  return readRemoteIssue(raw);
+}
+
 /**
  * Corps des PR **ouvertes** qui mentionnent l'Issue, lus dans sa chronologie
  * (événements `cross-referenced`). L'appelant y cherche « Closes #N ».

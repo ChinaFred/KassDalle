@@ -68,3 +68,18 @@ String? ticketAnswerFieldError(String text) {
   if (ticketTextContainsEmail(trimmed)) return kTicketAnswerEmailMessage;
   return null;
 }
+
+const kTicketCloseTooShortMessage =
+    'Le commentaire doit faire au moins 5 caractères.';
+
+/// Le message à poser sous le champ « Commentaire de clôture », ou `null` si
+/// le texte peut partir. Mêmes règles que [ticketAnswerFieldError]
+/// (`readCloseComment` côté serveur).
+String? ticketCloseFieldError(String text) {
+  final trimmed = text.trim();
+  if (trimmed.length < kTicketAnswerMinChars) {
+    return kTicketCloseTooShortMessage;
+  }
+  if (ticketTextContainsEmail(trimmed)) return kTicketAnswerEmailMessage;
+  return null;
+}

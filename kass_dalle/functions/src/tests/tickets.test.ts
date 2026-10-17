@@ -85,6 +85,19 @@ describe("readTicketInput", () => {
     assert.throws(() => readTicketInput(validInput({ title: "x".repeat(101) })), /100/);
   });
 
+  test("refuse le type question, qui n'est plus créable", () => {
+    assert.throws(
+      () => readTicketInput(validInput({ type: "question" })),
+      (err: unknown) =>
+        err instanceof TicketInputError &&
+        err.field === "type" &&
+        err.message === "Choisissez le type de ticket.",
+    );
+    for (const type of ["bug", "evolution", "feature"]) {
+      assert.equal(readTicketInput(validInput({ type })).type, type);
+    }
+  });
+
   test("refuse une description vide ou de plus de 2 000 caractères", () => {
     assert.throws(() => readTicketInput(validInput({ description: "   " })), TicketInputError);
     assert.throws(
@@ -250,6 +263,35 @@ describe("statusFromIssue", () => {
       "refused",
     );
   });
+
+  test("Issue fermée avec statut:clos : clos, quelle que soit la raison", () => {
+    for (const stateReason of ["completed", "not_planned", "duplicate", null]) {
+      for (const type of ["bug", "question"] as const) {
+        assert.equal(
+          statusFromIssue(
+            issue({ state: "closed", stateReason, labels: ["source:app", "statut:clos"] }),
+            type,
+          ),
+          "closed",
+        );
+      }
+    }
+  });
+
+  test("statut:clos sur une Issue ouverte : statut des étiquettes", () => {
+    assert.equal(statusFromIssue(issue({ labels: ["statut:clos"] }), "bug"), "received");
+    assert.equal(
+      statusFromIssue(issue({ labels: ["statut:clos", "statut:analysé"] }), "bug"),
+      "analyzed",
+    );
+  });
+
+  test("Issue fermée sans statut:clos : comportement inchangé", () => {
+    assert.equal(
+      statusFromIssue(issue({ state: "closed", stateReason: "completed" }), "bug"),
+      "delivered",
+    );
+  });
 });
 
 describe("nextTicketStatus", () => {
@@ -265,6 +307,10 @@ describe("nextTicketStatus", () => {
     ["answered", "received", "received"], // réouverture
     ["delivered", "refused", "refused"], // refermée autrement
     ["refused", "refused", "refused"],
+    ["validated", "closed", "closed"],
+    ["in_progress", "closed", "closed"],
+    ["closed", "received", "received"], // réouverture
+    ["delivered", "closed", "closed"], // refermée avec l'étiquette
   ];
   for (const [current, github, expected] of cases) {
     test(`${current} + ${github} → ${expected}`, () => {

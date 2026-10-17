@@ -5249,6 +5249,26 @@ describe("tickets — lecture et écriture", () => {
       db("admin").doc(MINE).update({ seen_by_author_at: serverTimestamp() }),
     );
   });
+
+  it("un ticket clos se lit comme les autres : auteur et administrateur seuls", async () => {
+    const CLOSED = "tickets/t-closed";
+    await seedDocs(env, {
+      [CLOSED]: { ...ticket(READER), status: "closed", reply_text: "Doublon du ticket 11." },
+    });
+    await assertSucceeds(db("reader").doc(CLOSED).get());
+    await assertSucceeds(db("admin").doc(CLOSED).get());
+    await assertFails(db("otherReader").doc(CLOSED).get());
+    await assertFails(db("editor").doc(CLOSED).get());
+  });
+
+  it("l'auteur ne rouvre ni ne modifie un ticket clos", async () => {
+    const CLOSED = "tickets/t-closed";
+    await seedDocs(env, { [CLOSED]: { ...ticket(READER), status: "closed" } });
+    await assertFails(db("reader").doc(CLOSED).update({ status: "received" }));
+    await assertFails(db("reader").doc(CLOSED).update({ status: "closed" }));
+    await assertFails(db("reader").doc(CLOSED).update({ reply_text: "faux" }));
+    await assertSucceeds(db("reader").doc(CLOSED).update({ seen_by_author_at: serverTimestamp() }));
+  });
 });
 
 describe("tickets/{id}/admin — analyses, lecture administrateur seule", () => {

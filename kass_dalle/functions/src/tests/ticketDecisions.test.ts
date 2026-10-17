@@ -26,6 +26,10 @@ import {
   ANSWER_MIN_CHARS,
   ANSWER_DEVELOPMENT_RUNNING_MESSAGE,
   ANSWER_PARTIAL_REASON,
+  CLOSE_DELIVERY_RUNNING_MESSAGE,
+  CLOSE_PARTIAL_REASON,
+  closePrecondition,
+  readCloseComment,
   analysisAnswerState,
   answerCommentBody,
   nextValidatedAt,
@@ -59,6 +63,7 @@ import {
   launchLimitFor,
   launchRunState,
   shouldWriteValidated,
+  storedTicketStatus,
   ticketDecisions,
   truncateAnalysis,
   validatePrecondition,
@@ -73,7 +78,12 @@ import {
   validatedLabelFromEvent,
 } from "../tickets/webhook";
 import { lastAnalysisMillis } from "../tickets/stored";
-import { readAnswerArg, readRefusalArg, readTicketIdArg } from "../callable/ticketsCallable";
+import {
+  readAnswerArg,
+  readCloseArg,
+  readRefusalArg,
+  readTicketIdArg,
+} from "../callable/ticketsCallable";
 import { Timestamp } from "firebase-admin/firestore";
 import { GITHUB_TICKETS_MAINTAINER_ID } from "../config";
 
@@ -451,6 +461,7 @@ const DECISIONS_FIXTURE = JSON.parse(
 ) as {
   refusal_partial_reason: string;
   answer_partial_reason: string;
+  close_partial_reason: string;
   default_launches_per_day: number;
   max_launches_per_day: number;
   founder_launches_per_day: number;
@@ -466,6 +477,13 @@ const DECISIONS_FIXTURE = JSON.parse(
     can_launch_analysis: boolean;
     can_launch_development: boolean;
     can_deliver: boolean;
+    can_close: boolean;
+  }[];
+  close_cases: {
+    status: string;
+    has_issue: boolean;
+    delivery_running: boolean;
+    can_close: boolean;
   }[];
   launch_runs: {
     name: string;
@@ -550,7 +568,27 @@ describe("fixture ticket_decisions.json (partagée avec le client)", () => {
           canLaunchAnalysis: c.can_launch_analysis,
           canLaunchDevelopment: c.can_launch_development,
           canDeliver: c.can_deliver,
+          canClose: c.can_close,
         },
+      );
+    });
+  }
+
+  test("raison de l'échec partiel d'une clôture", () => {
+    assert.equal(CLOSE_PARTIAL_REASON, DECISIONS_FIXTURE.close_partial_reason);
+  });
+
+  for (const c of DECISIONS_FIXTURE.close_cases) {
+    test(`Clore : ${c.status} · ${c.has_issue ? "avec" : "sans"} Issue${
+      c.delivery_running ? " · livraison en cours" : ""
+    }`, () => {
+      assert.equal(
+        closePrecondition({
+          status: storedTicketStatus(c.status),
+          hasIssue: c.has_issue,
+          deliveryRunning: c.delivery_running,
+        }) === null,
+        c.can_close,
       );
     });
   }
@@ -675,6 +713,72 @@ describe("fixture ticket_answer_text.json (partagée avec le client)", () => {
       assert.equal(containsEmailAddress(c.text), c.contains_email);
     });
   }
+});
+
+describe("Clore", () => {
+  test("messages des refus de la précondition", () => {
+    assert.equal(
+      closePrecondition({ status: "validated", hasIssue: false }),
+      "Ce ticket n'a pas encore d'Issue GitHub.",
+    );
+    assert.equal(
+      closePrecondition({ status: "delivered", hasIssue: true }),
+      "Ce ticket ne peut plus être clos.",
+    );
+    assert.equal(
+      closePrecondition({ status: "in_progress", hasIssue: true, deliveryRunning: true }),
+      CLOSE_DELIVERY_RUNNING_MESSAGE,
+    );
+    assert.equal(
+      CLOSE_DELIVERY_RUNNING_MESSAGE,
+      "Une livraison est en cours sur ce ticket. Attendez sa fin.",
+    );
+  });
+
+  test("un ticket clos est final : aucune autre décision", () => {
+    for (const type of ["bug", "evolution", "feature", "question"] as const) {
+      assert.deepEqual(ticketDecisions({ rawStatus: "closed", type, hasIssue: true }), {
+        canValidate: false,
+        canRefuse: false,
+        canLaunchAnalysis: false,
+        canLaunchDevelopment: false,
+        canDeliver: false,
+        canClose: false,
+      });
+    }
+    assert.notEqual(answerPrecondition({ status: "closed", type: "bug", hasIssue: true }), null);
+  });
+
+  test("commentaire : mêmes contrôles que la réponse, champ comment", () => {
+    assert.equal(
+      readCloseComment("  Voir @ChinaFred et #12.  "),
+      `Voir @${ZWSP}ChinaFred et #${ZWSP}12.`,
+    );
+    assert.throws(() => readCloseComment(undefined), /Le commentaire est requis/);
+    assert.throws(() => readCloseComment("abcd"), /Le commentaire doit faire au moins 5/);
+    assert.throws(() => readCloseComment("x".repeat(4001)), /4 000/);
+    try {
+      readCloseComment("Écrivez à moi@exemple.fr");
+      assert.fail("aurait dû lever");
+    } catch (err) {
+      assert.ok(err instanceof TicketInputError);
+      assert.equal(err.field, "comment");
+      assert.equal(err.reason, "contains_email");
+    }
+  });
+
+  test("argument de la callable : champ comment", () => {
+    assert.equal(readCloseArg({ comment: " Doublon du #3. " }), `Doublon du #${ZWSP}3.`);
+    assert.throws(
+      () => readCloseArg({ comment: "Mon adresse : a@b.fr" }),
+      (err: unknown) =>
+        err instanceof HttpsError &&
+        err.code === "invalid-argument" &&
+        (err.details as { field?: string; reason?: string }).field === "comment" &&
+        (err.details as { reason?: string }).reason === "contains_email",
+    );
+    assert.throws(() => readCloseArg({}), HttpsError);
+  });
 });
 
 describe("readAnswerText", () => {

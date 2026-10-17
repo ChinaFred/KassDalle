@@ -48,9 +48,7 @@ class MyTicketsScreen extends ConsumerWidget {
           return AppEmptyState(
             icon: AppIcons.tickets,
             title: 'Aucun ticket pour l\'instant',
-            message:
-                'Un bug, une idée, une question ? Envoyez-les à '
-                'l\'administrateur.',
+            message: 'Un bug, une idée ? Envoyez-les à l\'administrateur.',
             action: FilledButton.icon(
               onPressed: () => context.push(AppRoutes.ticketNew),
               icon: const Icon(AppIcons.ticketNew),
@@ -242,12 +240,20 @@ class _MemberTicketDetail extends StatelessWidget {
             TicketInfoLine('Envoyé le ${formatTicketDateTime(created)}'),
           const SizedBox(height: 8),
           if (sentence != null) Text(sentence),
+          if (ticket.status == TicketStatus.closed &&
+              (reply?.isNotEmpty ?? false)) ...[
+            const SizedBox(height: 4),
+            const Text('L\'administrateur vous a répondu ci-dessous.'),
+          ],
           TicketDeliveredPrLine(ticket: ticket, withLink: true),
           if (ticket.isLate(DateTime.now())) ...[
             const SizedBox(height: 4),
             const Text(kTicketLateSentence),
           ],
-          if (ticket.status == TicketStatus.answered && reply != null) ...[
+          if ((ticket.status == TicketStatus.answered ||
+                  ticket.status == TicketStatus.closed) &&
+              reply != null &&
+              reply.isNotEmpty) ...[
             const SizedBox(height: 12),
             TicketReplyBox(title: 'Réponse de l\'administrateur', text: reply),
           ],
