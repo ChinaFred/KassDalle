@@ -312,8 +312,15 @@ fenêtre de mise à jour revient à chaque lancement.
 ```
 
 Rien **ne bump la version** : `version:` dans `pubspec.yaml` est la seule source, que
-l'application lit elle-même (`package_info_plus`, `version.json` sur le web). Séquence après un
-travail demandé, sur le PC :
+l'application lit elle-même (`package_info_plus`, `version.json` sur le web).
+
+**Incrémenter une version**, partout dans ce fichier (« incrémenter », « + 1 »), veut dire :
+le dernier chiffre monte d'un, jusqu'à 99. Après `0.x.99`, on passe à `0.(x+1).0` : jamais de
+`0.x.100`. Exemple : `0.23.99` → `0.24.0`, puis `0.24.1`. Le numéro de build après le `+`
+monte toujours d'un. `0.23.100` a été publiée une fois avant cette règle ; elle reste dans
+l'historique.
+
+Séquence après un travail demandé, sur le PC :
 
 1. résumer le travail en français ;
 2. incrémenter `version:` dans `kass_dalle/pubspec.yaml` et ajouter son entrée dans
