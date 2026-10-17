@@ -22,7 +22,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ### v0.23.99 — fonctionnel
 
-Menu du compte : nouvelle entrée « Nouveautés », juste avant « Se déconnecter ». Elle liste les six dernières versions de l'application, de la plus récente à la plus ancienne, avec leur date et ce qu'elles changent pour vous. La version installée porte la pastille « Installée ». La liste s'affiche aussi hors ligne.
+Menu du compte : nouvelle entrée « Nouveautés », juste avant « Se déconnecter », pour tous. Elle liste les six dernières versions de l'application, de la plus récente à la plus ancienne, avec leur date et ce qu'elles changent pour vous. La version installée porte la pastille « Installée ». Une version qui n'a rien changé à l'écran n'y figure pas. La liste s'affiche aussi hors ligne.
 
 ### v0.23.99 — technique
 
@@ -30,9 +30,9 @@ Ticket #131. Script `.github/scripts/changelog-recent.mjs` (Node, sans dépendan
 
 ### v0.23.98 — fonctionnel
 
-Pour l'administrateur : dans Tickets des membres, nouvelle décision « Clore », pour un ticket Reçu, Analysé, Validé ou En cours. L'administrateur écrit un commentaire, et le ticket passe à « Clos ». « Clore » n'est pas proposé pendant une livraison de ce ticket. Un ticket clos ne change plus. Le filtre de statut gagne la puce « Clos ».
+Pour l'administrateur : dans Tickets des membres, nouvelle décision « Clore », pour un ticket Reçu, Analysé, Validé ou En cours. L'administrateur écrit un commentaire, et le ticket passe à « Clos ». « Clore » n'est pas proposé pendant une livraison de ce ticket. Un ticket clos ne change plus. Le filtre de statut gagne la puce « Clos » (neuf statuts).
 
-Pour tous : celui qui a envoyé le ticket lit le commentaire dans « Mes tickets » (« Ce ticket est clos. »). À l'envoi d'un ticket, le type « Question » n'est plus proposé : il reste « Bug », choisi d'avance, « Évolution » et « Nouvelle fonctionnalité ». Les questions déjà envoyées restent lisibles. Quand « Mes tickets » est vide, l'écran dit « Un bug, une idée ? Envoyez-les à l'administrateur. ». Une application pas encore mise à jour affiche « Reçu » pour un ticket clos.
+Pour tous : celui qui a envoyé le ticket lit le commentaire dans « Mes tickets » (« Ce ticket est clos. », « L'administrateur vous a répondu ci-dessous. »). À l'envoi d'un ticket, le type « Question » n'est plus proposé : il reste « Bug », choisi d'avance, « Évolution » et « Nouvelle fonctionnalité ». Les questions déjà envoyées restent lisibles, et l'administrateur peut toujours les filtrer. Quand « Mes tickets » est vide, l'écran dit « Un bug, une idée ? Envoyez-les à l'administrateur. ». Une application pas encore mise à jour affiche « Reçu » pour un ticket clos.
 
 ### v0.23.98 — technique
 
@@ -40,11 +40,11 @@ Le commentaire de clôture (5 à 4 000 caractères, sans adresse e-mail) est pub
 
 ### v0.23.97 — fonctionnel
 
-Doublons à l'import. Quand une page scannée contient une recette dont le titre existe déjà dans le livre, en brouillon ou validée, ou dans un import du même livre encore en cours, l'import s'arrête et la recette passe en « Doublon possible ». Deux numéros de page différents écartent le doublon. Dans les brouillons, un lien ouvre la recette existante, avec deux choix : « Ce n'est pas un doublon » (l'import reprend sans refaire la lecture de la page) ou « Supprimer ». À l'import d'un livre entier, les recettes déjà présentes arrivent en « Doublon possible » ; la validation en lot les laisse de côté, et la relecture permet de les valider. À l'import d'un fichier comme nouveau livre, un livre déjà présent dans la bibliothèque est signalé, avec « Importer dans ce livre » ou « Créer un nouveau livre quand même ».
+Doublons à l'import. Quand une page scannée contient une recette dont le titre existe déjà dans le livre, en brouillon ou validée, ou dans un import du même livre encore en cours, l'import s'arrête après la lecture de la page et la recette passe en « Doublon possible ». Deux numéros de page connus et différents écartent le doublon. Dans les brouillons, un lien ouvre la recette existante, avec deux choix : « Ce n'est pas un doublon » (l'import reprend sans refaire la lecture de la page) ou « Supprimer ». À l'import d'un livre entier, les recettes déjà présentes arrivent en « Doublon possible » ; la validation en lot les laisse de côté, et la relecture permet de les valider. À l'import d'un fichier comme nouveau livre, un livre déjà présent dans la bibliothèque est signalé, avec « Importer dans ce livre » ou « Créer un nouveau livre quand même ».
 
 ### v0.23.97 — technique
 
-Après le déploiement, lancer une fois Admin › Backfills › « Clé de titre des recettes » pour que les recettes existantes servent de référence. Détection sans appel de modèle (`pipeline/duplicateDetection.ts`) : `titre_key` sur les recettes (posé à l'import, recalculé par `onRecipeWritten`, repris par le backfill ponctuel `recipe_title_keys`, `backfillTitleKeysFn`), `titre_keys` / `titre_key_pages` / `titre_key_titres` / `duplicate_checked` sur les jobs, deux index composites. Nouveau statut de job `duplicate` avec `duplicates`, `pending_items`, reprise par `duplicate_override` écrit par le client. `duplicate_of` sur les brouillons d'un import de livre, effaçable seulement. `books.source_file_sha256` et `existingBook` dans la réponse d'`analyzeBookFileFn`. Règles : création de job sans champ serveur et en file, relance limitée à `queued`/`error`, reprise et suppression d'un job `duplicate` par son propriétaire éditeur. Une écriture qui ne change que `titre_key` ne relance aucun traitement de `onRecipeWritten`.
+Après le déploiement, lancer une fois Admin › Backfills › « Clé de titre des recettes » pour que les recettes existantes servent de référence. Un livre déjà présent est reconnu à son titre avec un auteur compatible, ou à son fichier. Détection sans appel de modèle (`pipeline/duplicateDetection.ts`) : `titre_key` sur les recettes (posé à l'import, recalculé par `onRecipeWritten`, repris par le backfill ponctuel `recipe_title_keys`, `backfillTitleKeysFn`), `titre_keys` / `titre_key_pages` / `titre_key_titres` / `duplicate_checked` sur les jobs, deux index composites. Nouveau statut de job `duplicate` avec `duplicates`, `pending_items`, reprise par `duplicate_override` écrit par le client. `duplicate_of` sur les brouillons d'un import de livre, effaçable seulement. `books.source_file_sha256` et `existingBook` dans la réponse d'`analyzeBookFileFn`. Règles : création de job sans champ serveur et en file, relance limitée à `queued`/`error`, reprise et suppression d'un job `duplicate` par son propriétaire éditeur. Une écriture qui ne change que `titre_key` ne relance aucun traitement de `onRecipeWritten`.
 
 ### v0.23.96 — fonctionnel
 
