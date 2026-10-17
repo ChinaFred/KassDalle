@@ -150,18 +150,46 @@ final adminTicketsToProcessIdsProvider = StreamProvider<Set<String>>((ref) {
   return ref.watch(ticketRepositoryProvider).watchToProcessIds();
 });
 
+/// Identifiants des tickets En cours dont la PR est prête à livrer
+/// ([isTicketAwaitingDelivery]). L'état de livraison et l'historique des
+/// lancements se lisent par ticket, sur les seuls tickets En cours ; un état
+/// pas encore lu n'ajoute rien.
+final adminAwaitingDeliveryIdsProvider = Provider<Set<String>>((ref) {
+  final tickets = ref.watch(adminTicketsProvider).value ?? const <Ticket>[];
+  final now = DateTime.now();
+  return {
+    for (final t in tickets)
+      if (t.status == TicketStatus.inProgress &&
+          isTicketAwaitingDelivery(
+            t,
+            launches: ref.watch(ticketLaunchesProvider(t.id)).value,
+            delivery: ref.watch(ticketDeliveryProvider(t.id)).value,
+            now: now,
+          ))
+        t.id,
+  };
+});
+
+/// Tous les tickets qui attendent l'administrateur : [adminTicketsToProcessIdsProvider]
+/// et [adminAwaitingDeliveryIdsProvider].
+final adminActionTicketIdsProvider = Provider<AsyncValue<Set<String>>>((ref) {
+  final awaiting = ref.watch(adminAwaitingDeliveryIdsProvider);
+  return ref
+      .watch(adminTicketsToProcessIdsProvider)
+      .whenData((ids) => {...ids, ...awaiting});
+});
+
 /// Nombre de tickets à traiter : entrée « Tickets à traiter » du menu et
 /// puce « À traiter ».
 final adminTicketsToProcessCountProvider = Provider<AsyncValue<int>>((ref) {
-  return ref.watch(adminTicketsToProcessIdsProvider).whenData((s) => s.length);
+  return ref.watch(adminActionTicketIdsProvider).whenData((s) => s.length);
 });
 
 /// Tickets à signaler sur la puce du compte. Administrateur : les tickets à
 /// traiter seuls. Autres rôles : ceux de l'utilisateur avec un suivi non lu.
 final accountTicketsBadgeCountProvider = Provider<int>((ref) {
   if (ref.watch(isAdminProvider)) {
-    return (ref.watch(adminTicketsToProcessIdsProvider).value ??
-            const <String>{})
+    return (ref.watch(adminActionTicketIdsProvider).value ?? const <String>{})
         .length;
   }
   return ref.watch(unseenTicketsCountProvider);
