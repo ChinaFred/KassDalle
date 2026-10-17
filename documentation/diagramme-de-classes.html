@@ -975,7 +975,7 @@ classDiagram
         <code>created_by in</code> ; les règles Firestore le relisent pour laisser lire un
         <code>Book</code> ou une <code>Recipe</code> non privé d'un autre compte.
         <b>Ticket</b> (<code>tickets/{id}</code>) est un bug, une évolution, une nouvelle
-        fonctionnalité ou une question d'un membre, publié en Issue GitHub sans son nom, son uid
+        fonctionnalité d'un membre (une question pour les tickets antérieurs, ce type n'étant plus créable), publié en Issue GitHub sans son nom, son uid
         ni sa capture. Écrit par les Cloud Functions ; l'auteur ne pose que
         <code>seenByAuthorAt</code>. <code>status</code> revient de GitHub (webhook et relecture
         horaire) et ne recule pas, sauf <code>in_progress</code> : la relecture horaire le ramène au
