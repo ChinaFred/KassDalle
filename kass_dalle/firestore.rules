@@ -1020,6 +1020,7 @@ service cloud.firestore {
                                      && ((isExactCancel() && retryCountUnchanged()
                                           && (!isUrlImport() || urlJobInFlight()))
                                          || (isEditor() && request.resource.data.status in ['queued', 'error']
+                                             && resource.data.get('status', '') != 'duplicate'
                                              && (!isUrlImport() || urlRelaunchAllowed()))))
                     || (isJobOwner() && isEditor() && isDuplicateResume());
       // Un import en attente de doublon se supprime par son propriétaire : rien

@@ -464,7 +464,8 @@ privait le titre de la place dont il manquait.
   {n} doublon(s) possible(s). ». La marque est relue juste avant de valider : si la recette de
   référence a été supprimée, ou si l'import de référence a été supprimé, est en erreur ou
   rejeté, le brouillon n'est plus un doublon et il est validé comme les autres. Une relecture
-  qui échoue (droit refusé, réseau) garde la marque et est signalée au rapport d'erreurs. Un
+  qui échoue garde la marque : un refus de droit (page d'un autre membre) n'est pas signalé, une
+  autre erreur (réseau) part au rapport d'erreurs. Un
   brouillon marqué se valide depuis l'écran de relecture.
 - Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
 - **Vue Admin** : l'admin voit tous les traitements de tous les utilisateurs. Un filtre par utilisateur (dropdown) permet de restreindre l'affichage. Chaque tuile affiche le nom du propriétaire du traitement.

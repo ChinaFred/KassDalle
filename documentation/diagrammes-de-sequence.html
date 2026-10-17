@@ -4660,7 +4660,8 @@ sequenceDiagram
       <figcaption>
         <b>Une marque relue avant de valider.</b> La validation en lot écarte un brouillon
         marqué, sauf si sa référence a disparu depuis. Une lecture refusée ou en échec garde la
-        marque et part au rapport d'erreurs (<code>workQueueScreen.checkDuplicateMark</code>).
+        marque ; seule une erreur autre qu'un refus de droit part au rapport d'erreurs
+        (<code>workQueueScreen.checkDuplicateMark</code>).
         Depuis l'écran de relecture, le bandeau « Doublon possible de … » laisse « Valider », qui
         efface la marque.
       </figcaption>

@@ -851,8 +851,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                   onCancel: () =>
                       ref.read(scanUploadProvider.notifier).cancelJob(job.id),
                   onDelete: () => _deleteItems([item]),
-                  // Les règles n'admettent la reprise qu'au propriétaire
-                  // éditeur : pas pour l'administrateur sur le job d'un autre.
+                  // Réservée au propriétaire éditeur. Les règles l'admettent
+                  // aussi pour l'administrateur ; l'écran ne la lui propose
+                  // pas sur le job d'un autre.
                   onNotDuplicate: canImport && job.createdBy == me?.uid
                       ? () => _resumeDuplicate(job)
                       : null,

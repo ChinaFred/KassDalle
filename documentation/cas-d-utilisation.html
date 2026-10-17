@@ -812,9 +812,10 @@ flowchart LR
         « Doublon possible » dans la file, avec la recette existante en lien. Son propriétaire,
         s'il est <code>editor</code> ou <code>admin</code>, choisit « Ce n'est pas un doublon »
         (le traitement reprend au balisage, sans relire la page) ou « Supprimer ». Un
-        administrateur supprime aussi la ligne d'un autre, sans pouvoir la reprendre. Les règles
-        Firestore n'admettent la reprise que depuis ce statut et par le propriétaire éditeur
-        (<code>isDuplicateResume</code>). Une recette d'un livre entier déjà présente devient un
+        administrateur supprime aussi la ligne d'un autre ; l'écran ne lui propose pas de la
+        reprendre, que les règles lui admettent comme toute écriture d'administrateur. Pour un
+        autre compte, les règles n'admettent la reprise que depuis ce statut et par le
+        propriétaire éditeur (<code>isDuplicateResume</code>). Une recette d'un livre entier déjà présente devient un
         brouillon marqué : la validation en lot l'écarte, la relecture le valide et efface la
         marque. En mode nouveau livre, l'écran de confirmation d'un import de livre signale un
         livre déjà en bibliothèque et propose « Importer dans ce livre » ou « Créer un nouveau

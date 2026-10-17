@@ -2916,6 +2916,15 @@ describe("processing_jobs", () => {
     );
   });
 
+  it("un import en attente de doublon ne se relance pas comme un job en erreur", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/dup-editor").update({
+        status: "queued",
+        created_recipe_ids: [],
+      }),
+    );
+  });
+
   it("une relance ne pose pas le statut 'duplicate'", async () => {
     await assertFails(
       db("editor").doc("processing_jobs/job-editor").update({ status: "duplicate" }),
