@@ -32,6 +32,7 @@ import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
 import { syncRecipeMealRole } from "./recipeMealRoleAutoSync";
 import { recipeAllergensMissing, syncRecipeAllergens } from "./recipeAllergensSync";
 import { syncRecipeEstimatedTimes } from "./recipeEstimatedTimes";
+import { syncRecipeTitleKey } from "./recipeTitleKey";
 
 export const onRecipeWritten = onDocumentWritten(
   {
@@ -81,6 +82,16 @@ export const onRecipeWritten = onDocumentWritten(
       data,
       beforeData,
       correlationId: newCorrelationId(qualify("ecriture_recette", "confidentialite")),
+      scanId,
+    });
+
+    // La clé de titre suit le titre, pour toute page : une page technique se
+    // compare aussi aux doublons de son livre. L'écriture qu'elle provoque
+    // réveille ce déclencheur, qui la trouve alors à jour.
+    await syncRecipeTitleKey({
+      recipeId: after.id,
+      data,
+      correlationId: newCorrelationId(qualify("ecriture_recette", "cle_de_titre")),
       scanId,
     });
 

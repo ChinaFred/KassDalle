@@ -241,6 +241,18 @@ beforeEach(async () => {
       type: "recipeUrlImport",
       url_retry_count: 1,
     },
+    "processing_jobs/dup-editor": {
+      created_by: EDITOR,
+      status: "duplicate",
+      created_recipe_ids: ["editor-own"],
+    },
+    "processing_jobs/dup-reader": { created_by: READER, status: "duplicate" },
+    "recipes/dup-editor": {
+      title: "Pâte brisée",
+      created_by: EDITOR,
+      review_status: "draft",
+      duplicate_of: { titre: "Pâte brisée", page: 12, recipe_id: "editor-own", job_id: null },
+    },
     "processing_jobs/url-blocked": {
       created_by: EDITOR,
       status: "error",
@@ -2823,9 +2835,111 @@ describe("processing_jobs", () => {
     await assertSucceeds(db("admin").collection("processing_jobs").get());
   });
 
-  it("seul un administrateur supprime un job", async () => {
+  it("seul un administrateur supprime un job, hors attente de doublon", async () => {
     await assertFails(db("editor").doc("processing_jobs/job-editor").delete());
     await assertSucceeds(db("admin").doc("processing_jobs/job-editor").delete());
+  });
+
+  // Doublon possible : l'import s'est arrêté après sa transcription.
+  it("le propriétaire supprime son import en attente de doublon", async () => {
+    await assertSucceeds(db("editor").doc("processing_jobs/dup-editor").delete());
+  });
+
+  it("un autre compte ne supprime pas un import en attente de doublon", async () => {
+    await assertFails(db("editor").doc("processing_jobs/dup-reader").delete());
+  });
+
+  it("« Ce n'est pas un doublon » reprend l'import sans toucher aux brouillons créés", async () => {
+    await assertSucceeds(
+      db("editor").doc("processing_jobs/dup-editor").update({
+        status: "queued",
+        duplicate_override: true,
+        error_message: null,
+        current_step: null,
+        updated_at: new Date(),
+      }),
+    );
+  });
+
+  it("la reprise d'un doublon ne vide pas created_recipe_ids", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/dup-editor").update({
+        status: "queued",
+        duplicate_override: true,
+        created_recipe_ids: [],
+      }),
+    );
+  });
+
+  it("la reprise exige duplicate_override", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/dup-editor").update({
+        status: "queued",
+        duplicate_override: false,
+      }),
+    );
+  });
+
+  it("duplicate_override ne se pose pas sur un job qui n'attend pas", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/job-editor").update({
+        status: "queued",
+        duplicate_override: true,
+      }),
+    );
+  });
+
+  it("un lecteur ne reprend pas son import en attente de doublon", async () => {
+    await assertFails(
+      db("reader").doc("processing_jobs/dup-reader").update({
+        status: "queued",
+        duplicate_override: true,
+      }),
+    );
+  });
+});
+
+// ── recipes : marque « doublon possible » ─────────────────────────────────
+
+describe("recipes — marque de doublon possible (duplicate_of)", () => {
+  it("le client ne crée pas une recette marquée", async () => {
+    await assertFails(
+      db("editor").doc("recipes/new").set({
+        title: "x",
+        created_by: EDITOR,
+        review_status: "draft",
+        duplicate_of: { titre: "x", page: null, recipe_id: "editor-own", job_id: null },
+      }),
+    );
+  });
+
+  it("valider efface la marque", async () => {
+    await assertSucceeds(
+      db("editor").doc("recipes/dup-editor").update({
+        review_status: "validated",
+        duplicate_of: deleteField(),
+      }),
+    );
+  });
+
+  it("le client ne change pas la marque", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/dup-editor")
+        .update({ duplicate_of: { titre: "Autre", page: 3, recipe_id: null, job_id: null } }),
+    );
+  });
+
+  it("le client ne pose pas la marque sur une recette qui n'en a pas", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/editor-own")
+        .update({ duplicate_of: { titre: "Gratin", page: null, recipe_id: null, job_id: null } }),
+    );
+  });
+
+  it("une autre mise à jour garde la marque", async () => {
+    await assertSucceeds(db("editor").doc("recipes/dup-editor").update({ title: "Pâte brisée" }));
   });
 });
 

@@ -602,6 +602,14 @@ service cloud.firestore {
         return ['nutrition_catch_up_attempts', 'meal_role_failure_count', 'meal_role_attempt_at'];
       }
 
+      // Marque « doublon possible » d'un brouillon issu d'un livre entier :
+      // posée par le serveur seul (`recipeProcessor`). Le client ne peut que
+      // l'effacer, en validant — jamais la poser ni la changer, ce qui ferait
+      // écarter de la validation en lot un brouillon qui n'est pas un doublon.
+      function duplicateMarkKeptOrRemoved() {
+        return !changes('duplicate_of') || !('duplicate_of' in request.resource.data);
+      }
+
       allow read: if canReadRecipe(resource.data);
 
       // Création : éditeur et administrateur, toujours à leur propre nom. Le
@@ -618,6 +626,7 @@ service cloud.firestore {
       // empreinte gardée) quand les deux durées sont lues.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !('estimated_times' in request.resource.data)
+        && !('duplicate_of' in request.resource.data)
         && !request.resource.data.keys().hasAny(serverOnlySourceFields())
         && !request.resource.data.keys().hasAny(serverOnlyRetryFields())
         && bookCheck(true) && sourceUrlAccepted();
@@ -628,6 +637,7 @@ service cloud.firestore {
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyRetryFields())
         && !changes('estimated_times')
+        && duplicateMarkKeptOrRemoved()
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
       allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());
@@ -981,11 +991,29 @@ service cloud.firestore {
           && request.resource.data.cancel_requested == true;
       }
 
+      // « Ce n'est pas un doublon » : un import arrêté après sa transcription
+      // (`status: 'duplicate'`) reprend au balisage. La reprise relance le
+      // pipeline facturé : elle suit le droit de création. Elle ne touche pas
+      // `created_recipe_ids` — les autres recettes de la page sont déjà des
+      // brouillons — et pose `duplicate_override`, qui fait sauter la détection.
+      function isDuplicateResume() {
+        return resource.data.get('status', '') == 'duplicate'
+          && request.resource.data.status == 'queued'
+          && request.resource.data.duplicate_override == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'status', 'duplicate_override', 'error_message', 'current_step', 'updated_at'
+             ]);
+      }
+
       allow update: if isAdmin() || (isJobOwner() && touchesOnlyRetryOrCancelFields()
                                      && ((isExactCancel() && retryCountUnchanged()
                                           && (!isUrlImport() || urlJobInFlight()))
-                                         || (isEditor() && (!isUrlImport() || urlRelaunchAllowed()))));
-      allow delete: if isAdmin();
+                                         || (isEditor() && (!isUrlImport() || urlRelaunchAllowed()))))
+                    || (isJobOwner() && isEditor() && isDuplicateResume());
+      // Un import en attente de doublon se supprime par son propriétaire : rien
+      // n'y tourne, et la ligne n'a pas d'autre sortie que la reprise.
+      allow delete: if isAdmin()
+                    || (isJobOwner() && resource.data.get('status', '') == 'duplicate');
     }
 
     // Suivi de l'usage des tokens IA
