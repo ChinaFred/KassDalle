@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
+import 'package:kass_dalle/core/router/app_router.dart';
 import 'package:kass_dalle/core/widgets/provider_retry.dart';
 import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/groups/domain/family_group.dart';
+import 'package:kass_dalle/features/groups/presentation/group_members_screen.dart';
 import 'package:kass_dalle/features/groups/presentation/groups_screen.dart';
 
 import '../support/test_backend.dart';
@@ -22,7 +25,11 @@ void main() {
     createdAt: DateTime.utc(2026),
   );
 
-  Future<void> pump(WidgetTester tester, FamilyGroup paused) async {
+  Future<void> pump(
+    WidgetTester tester,
+    FamilyGroup paused, {
+    String initialLocation = AppRoutes.groups,
+  }) async {
     final backend = TestBackend(
       user: testUser(role: UserRole.reader),
       pausedGroups: [paused],
@@ -34,7 +41,23 @@ void main() {
           ...backend.overrides,
           memberNameProvider.overrideWith((ref, uid) => 'Marie'),
         ],
-        child: const MaterialApp(home: GroupsScreen()),
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            routes: [
+              GoRoute(
+                path: AppRoutes.groups,
+                builder: (_, _) => const GroupsScreen(),
+              ),
+              GoRoute(
+                path: AppRoutes.groupMembers,
+                builder: (_, state) => GroupMembersScreen(
+                  groupId: state.pathParameters['groupId']!,
+                ),
+              ),
+            ],
+            initialLocation: initialLocation,
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -78,5 +101,37 @@ void main() {
     await tester.tap(find.byIcon(Icons.more_vert).first);
     await tester.pumpAndSettle();
     expect(find.text('Quitter le groupe'), findsOneWidget);
+  });
+
+  testWidgets('la page d\'un groupe s\'ouvre en plein écran et revient', (
+    tester,
+  ) async {
+    await pump(tester, group(owner: 'uid-test'));
+
+    await tester.tap(find.text('Famille Dupont'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GroupMembersScreen), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.text('Membres'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Retour aux groupes'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GroupMembersScreen), findsNothing);
+    expect(find.byType(GroupsScreen), findsOneWidget);
+  });
+
+  testWidgets('un groupe inconnu affiche « Groupe introuvable »', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      group(owner: 'uid-test'),
+      initialLocation: AppRoutes.groupMembersPath('inconnu'),
+    );
+
+    expect(find.text('Groupe introuvable'), findsOneWidget);
+    await tester.tap(find.text('Retour aux groupes'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GroupsScreen), findsOneWidget);
   });
 }

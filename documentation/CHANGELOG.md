@@ -18,6 +18,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-17
+
+### v0.23.91 — fonctionnel
+
+Groupes : la gestion des membres d'un groupe n'est plus une feuille qui monte du bas, mais une page à part entière, à l'adresse `/groups/<groupe>`. Elle a sa barre d'application (nom du groupe, flèche « Retour aux groupes »), son lien direct et un contenu centré sur 640 px au plus sur grand écran. Recherche, invitation, annulation et retrait fonctionnent comme avant, avec les mêmes droits. Un groupe inconnu ou quitté affiche « Groupe introuvable ». Demande du ticket #116.
+
+### v0.23.91 — technique
+
+`_ManageMembersSheet` devient `GroupMembersScreen` (`group_members_screen.dart`), reçoit `groupId` et relit le groupe par `groupByIdProvider`. Route `AppRoutes.groupMembers` (`/groups/:groupId`) dans `app_router.dart` ; `GroupsScreen` y mène par `context.push`. Aucun changement de données, de règle ni de Function.
+
 ## 2026-10-16
 
 ### v0.23.90 — fonctionnel

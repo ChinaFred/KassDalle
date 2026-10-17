@@ -6939,6 +6939,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/planning/config` | `PlanningConfigScreen` | `editor` — « Préférences du planning », dont « Partager mon planning » ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/planning/staples` | `MyStaplesScreen` | `editor` — ses garnitures, retouchées pour soi ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/groups` | `GroupsScreen` | `reader` |
+| `/groups/:groupId` | `GroupMembersScreen` — gestion des membres d'un groupe (`AppRoutes.groupMembers`) ; groupe absent de `myGroupsProvider` : « Groupe introuvable » | `reader` — les actions suivent `isOwner` et `canEditProvider`, les règles Firestore font foi |
 | `/account` | `AccountScreen` | `reader` |
 | `/preferences` | `PreferencesScreen` | `reader` |
 | `/tickets` | `MyTicketsScreen` — « Mes tickets » (liste, et détail côte à côte au-delà du seuil large) | `reader` — ses propres tickets (`firestore.rules`, `author_uid`) ; entrée « Mes tickets » du menu du compte |
