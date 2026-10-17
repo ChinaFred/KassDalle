@@ -760,7 +760,8 @@ class QueueDraftTile extends StatelessWidget {
     // Sans action ni document, pas de menu : un menu vide s'ouvrait sur rien.
     final hasMenu = onValidate != null || onDelete != null || hasSource;
 
-    return ListTile(
+    final detail = _duplicateDetail();
+    final tile = ListTile(
       // En mode sélection, le brouillon d'un autre est grisé et ne réagit
       // pas : il ne se sélectionne pas, et naviguer ferait perdre la
       // sélection en cours.
@@ -812,12 +813,6 @@ class QueueDraftTile extends StatelessWidget {
                 ),
               ],
             ),
-          // Doublon possible : marque du serveur (import de livre entier), ou
-          // brouillon de même titre dans la file. Une pastille, puis le
-          // détail sur deux lignes : une ligne coupée ne montrait pas la
-          // recette concernée.
-          if (_duplicateDetail() case final detail?)
-            _DuplicateBadge(detail: detail),
         ],
       ),
       trailing: isSelecting
@@ -881,7 +876,7 @@ class QueueDraftTile extends StatelessWidget {
                       // bandeau montre la recette existante : « Valider »
                       // depuis la file l'aurait laissé de côté sans rien
                       // montrer.
-                      if (onValidate != null && recipe.duplicateOf != null)
+                      if (onValidate != null && detail != null)
                         const PopupMenuItem(
                           value: _DraftMenuAction.review,
                           child: ListTile(
@@ -932,6 +927,22 @@ class QueueDraftTile extends StatelessWidget {
             ),
       onTap: onTap,
       onLongPress: onLongPress,
+    );
+    if (detail == null) return tile;
+    // Doublon possible : marque du serveur (import de livre entier), ou
+    // brouillon de même titre dans la file. La pastille occupe toute la
+    // largeur sous la tuile : dans le sous-titre, le statut et la date du
+    // trailing ne lui laissaient que quelques dizaines de dp.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        tile,
+        Padding(
+          padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
+          child: _DuplicateBadge(detail: detail),
+        ),
+      ],
     );
   }
 
@@ -996,10 +1007,14 @@ class _DuplicateBadge extends StatelessWidget {
                       color: scheme.onTertiaryContainer,
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      'Doublon',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onTertiaryContainer,
+                    Flexible(
+                      child: Text(
+                        'Doublon possible',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onTertiaryContainer,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],

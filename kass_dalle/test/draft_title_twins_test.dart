@@ -95,7 +95,7 @@ void main() {
       final a = _draft('a');
       final b = _draft('b', page: 3);
       await tester.pumpWidget(_tile(a, twins: draftTitleTwins([a, b])['a']));
-      expect(find.text('Doublon'), findsOneWidget);
+      expect(find.text('Doublon possible'), findsOneWidget);
       expect(find.text('Même titre : « Rouget » (p. 3)'), findsOneWidget);
     });
 
@@ -108,7 +108,7 @@ void main() {
       );
       final b = _draft('b');
       await tester.pumpWidget(_tile(a, twins: draftTitleTwins([a, b])['a']));
-      expect(find.text('Doublon'), findsOneWidget);
+      expect(find.text('Doublon possible'), findsOneWidget);
       expect(
         find.text('Doublon possible de « Rouget grillé » (p. 3)'),
         findsOneWidget,
@@ -117,7 +117,7 @@ void main() {
 
     testWidgets('sans doublon : rien de plus', (tester) async {
       await tester.pumpWidget(_tile(_draft('a')));
-      expect(find.text('Doublon'), findsNothing);
+      expect(find.text('Doublon possible'), findsNothing);
     });
 
     testWidgets('titre très long sur 360 dp : pas de débordement', (

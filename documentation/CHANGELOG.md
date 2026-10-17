@@ -22,7 +22,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ### v0.23.99 — fonctionnel
 
-Brouillons : un doublon est maintenant visible. Chaque brouillon doublon affiche une pastille « Doublon » sous son titre, puis le détail sur deux lignes au plus (« Doublon possible de « Rouget » (p. 3) » quand le serveur l'a marqué). Le serveur ne marquait que le brouillon écrit en second : le plus ancien de deux brouillons « Rouget » d'un même livre n'affichait rien. La file rapproche désormais deux brouillons du même livre de même titre et leur donne à chacun la pastille, avec « Même titre : « Rouget » (p. 3) ». Pas de rapprochement sans livre, ni quand les deux pages sont connues et différentes. La validation en lot ne change pas : elle écarte les seuls brouillons marqués par le serveur. Un doublon avec une recette déjà validée reste signalé par la seule marque du serveur. Ticket #132.
+Brouillons : un doublon est maintenant visible. Chaque brouillon doublon affiche une pastille « Doublon possible » sous sa ligne, sur toute la largeur, puis le détail sur deux lignes au plus (« Doublon possible de « Rouget » (p. 3) » quand le serveur l'a marqué). Le serveur ne marquait que le brouillon écrit en second : le plus ancien de deux brouillons « Rouget » d'un même livre n'affichait rien. La file rapproche désormais deux brouillons du même livre de même titre et leur donne à chacun la pastille, avec « Même titre : « Rouget » (p. 3) ». Pas de rapprochement sans livre, ni quand les deux pages sont connues et différentes. La validation en lot ne change pas : elle écarte les seuls brouillons marqués par le serveur. Un doublon avec une recette déjà validée reste signalé par la seule marque du serveur. Ticket #132.
 
 ### v0.23.99 — technique
 
