@@ -688,6 +688,10 @@ flowchart TB
         et les exécutions Actions), et leurs actions sont épinglées par SHA de commit, version en
         commentaire. Sur le push d'une PR fusionnée à jour de <code>master</code>, la CI ne
         rejoue que le contrôle de version : la CI de la PR a déjà testé le même arbre.
+        Avant le build web, <code>deploy.yml</code> et le job Flutter de <code>ci.yml</code> régénèrent
+        <code>assets/changelog_recent.json</code> (six dernières versions « fonctionnel » du
+        <code>CHANGELOG.md</code>) avec <code>.github/scripts/changelog-recent.mjs</code> ; l'écran
+        « Nouveautés » le lit.
         La base Firestore reçoit deux sauvegardes planifiées, quotidienne (7 jours) et
         hebdomadaire (14 semaines), et le bucket Storage garde 30 jours les versions remplacées
         ou supprimées. La base refuse d'être supprimée (protection activée). Ces réglages se font dans Google Cloud, et non par ce workflow :

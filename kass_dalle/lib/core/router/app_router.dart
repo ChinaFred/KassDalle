@@ -49,6 +49,7 @@ import '../../features/planning/presentation/batch_planning_screen.dart';
 import '../../features/planning/presentation/planning_config_screen.dart';
 import '../../features/planning/presentation/my_staples_screen.dart';
 import '../../features/planning/presentation/suggest_meal_screen.dart';
+import '../presentation/changelog_screen.dart';
 import '../../features/tickets/presentation/admin_tickets_screen.dart';
 import '../../features/tickets/presentation/my_tickets_screen.dart';
 import '../../features/tickets/presentation/ticket_launcher.dart';
@@ -114,6 +115,7 @@ class AppRoutes {
   static const tickets = '/tickets';
   static const ticketNew = '/tickets/new';
   static const adminTickets = '/admin/tickets';
+  static const changelog = '/changelog';
 
   /// Suivi d'un ticket du membre.
   static String ticketDetail(String id) => '$tickets/$id';
@@ -510,6 +512,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.search,
             builder: (context, state) => const SearchScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.changelog,
+            builder: (context, state) => const ChangelogScreen(),
           ),
           GoRoute(
             path: AppRoutes.tickets,

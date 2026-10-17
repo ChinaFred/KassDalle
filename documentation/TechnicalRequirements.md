@@ -6337,7 +6337,7 @@ celles de `deploy.yml`. Six jobs, sur `ubuntu-latest` :
 |---|---|
 | Version — numéro libre (racine, historique complet) | `.github/scripts/check-version.sh <base> <tête>` : sur une PR, la base est la `master` du moment (`git fetch origin master`) et la tête le dernier commit de la PR ; sur un push, la base est le commit d'avant le push. Sauté sur un lancement manuel |
 | Déjà testé en PR (push seulement, API GitHub) | Sur un push, sort `skip=true` quand le commit poussé a le même arbre que la tête d'une PR associée qui vise `master`, que cette tête contient la `master` d'avant le push (`compare` : `ahead` ou `identical`) et que toutes les exécutions de `ci.yml` sur cette tête, en `pull_request`, ont réussi (au moins une, aucune en cours ni en échec). La CI de la PR a alors testé ce même arbre. Une réponse d'API manquante laisse `skip=false` |
-| Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
+| Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `node --test .github/scripts/changelog-recent.test.mjs` puis `node .github/scripts/changelog-recent.mjs` (régénère l'asset des nouveautés) · `flutter test` · `flutter build web --release` |
 | Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
 | Règles — émulateur (`kass_dalle/rules-tests/`, Node 22, Java 21 Temurin) | `npm ci` · `npm test` : émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle`, tests des règles (voir §4, « Tests des règles ») |
 | Android — compilation (`kass_dalle/`, historique complet, Flutter 3.44.6, Java 17 Temurin) | Liste les fichiers du diff : contre la `master` du moment sur une PR, contre la `master` d'avant le push sur un push. Si un fichier sous `kass_dalle/pubspec.yaml`, `kass_dalle/pubspec.lock` ou `kass_dalle/android/` change, ou sur un lancement manuel, ou si le diff est illisible : libération du disque (même liste que `deploy.yml`) · `flutter pub get` · génération d'une clé jetable (`keytool`, mot de passe aléatoire, validité d'un jour) et de `android/key.properties`, supprimés à la sortie · `flutter build apk --release`. Sinon, les étapes suivantes sont sautées. La clé de production n'est jamais lue. Plafond de 45 minutes (v0.23.86) |
@@ -6425,6 +6425,28 @@ Functions.
 | `shopping_products.json` | regroupement des lignes de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
 | `allergens.json` | les quatorze allergènes majeurs (annexe II INCO) : clés dans l'ordre du règlement et libellés — valeurs seules ; le calcul du champ `allergens` d'une recette est serveur seul | `features/recipes/domain/allergens.dart` | `nutrition/allergens.ts` |
 
+### Nouveautés — l'asset `changelog_recent.json`
+
+L'écran « Nouveautés » (`/changelog`) affiche les six dernières versions du `CHANGELOG.md`. Le
+fichier n'est pas embarqué tel quel (environ 660 Ko) : `.github/scripts/changelog-recent.mjs`
+en extrait les six dernières versions qui ont une entrée `— fonctionnel` et écrit
+`kass_dalle/assets/changelog_recent.json`, déclaré dans `pubspec.yaml`.
+
+- Format : `{"versions": [{"version": "0.23.98", "date": "2026-10-17", "text": "<Markdown>"}]}`,
+  de la plus récente à la plus ancienne. Deux entrées « fonctionnel » d'une même version sont
+  concaténées ; une version « technique » seule est ignorée.
+- Le script échoue (code 1) s'il trouve moins de six versions. Son test,
+  `changelog-recent.test.mjs`, tourne dans le job Flutter de la CI.
+- La CI (job Flutter) et `deploy.yml` régénèrent le fichier avant le build. La copie versionnée
+  ne sert qu'aux builds locaux et à `flutter test` ; elle peut retarder sur le `CHANGELOG.md`
+  sans effet sur ce qui est mis en ligne. En local : `node .github/scripts/changelog-recent.mjs`
+  depuis la racine du dépôt.
+- Côté application : `core/services/changelog_service.dart` (`parseChangelog`,
+  `changelogProvider`) ; une lecture ou un décodage en échec est remonté par
+  `ErrorReportService` (feature `changelog.load`) et l'écran affiche l'erreur.
+- `deploy.ps1`, l'outil de secours, ne régénère pas le fichier : il embarque la copie
+  versionnée.
+
 ### Déploiement automatique (GitHub Actions)
 
 C'est le chemin de déploiement normal depuis la v0.23.1, sur le PC comme depuis une session
@@ -6436,6 +6458,7 @@ cloud. Une session cloud fusionne sa PR sur `master` ; le PC commite sur `master
 | Déclencheur | la CI (`ci.yml`) verte sur un **push** sur `master`, ou un lancement manuel (`workflow_dispatch`), accepté sur `master` seulement |
 | Commit déployé | celui que la CI a validé, et seulement s'il est encore la tête de `master`, vérifié au début des deux jobs. Relancer une ancienne CI ou un ancien déploiement ne remet donc pas en ligne une version périmée |
 | Ignoré | un commit signé `Deploy-Source: deploy.ps1` : `deploy.ps1`, l'outil de secours, vient de tout déployer depuis le PC. Un message qui commence par `deploy:` sans cette ligne est déployé |
+| Asset des nouveautés | avant le build web, `node .github/scripts/changelog-recent.mjs` régénère `kass_dalle/assets/changelog_recent.json` (voir « Nouveautés ») ; l'APK construit ensuite l'embarque aussi |
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
 | APK | construit et signé seulement si `version:` de `pubspec.yaml` dépasse celle de l'APK en ligne (`.github/scripts/build-apk.sh`), avant le déploiement des Functions ; sinon l'APK en ligne est conservé |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
@@ -7117,6 +7140,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/groups/:groupId` | `GroupMembersScreen` — gestion des membres d'un groupe (`AppRoutes.groupMembers`) ; groupe absent de `myGroupsProvider` : « Groupe introuvable » | `reader` — les actions suivent `isOwner` et `canEditProvider`, les règles Firestore font foi |
 | `/account` | `AccountScreen` | `reader` |
 | `/preferences` | `PreferencesScreen` | `reader` |
+| `/changelog` | `ChangelogScreen` — « Nouveautés » : six dernières versions lues dans l'asset `assets/changelog_recent.json` (`changelogProvider`), pastille « Installée » sur `kAppVersion` | `reader` — lecture seule ; entrée « Nouveautés » du menu du compte |
 | `/tickets` | `MyTicketsScreen` — « Mes tickets » (liste, et détail côte à côte au-delà du seuil large) | `reader` — ses propres tickets (`firestore.rules`, `author_uid`) ; entrée « Mes tickets » du menu du compte |
 | `/tickets/new` | `TicketFormScreen` — « Signaler ou proposer » | `reader` — paramètre `?ecran=` : le modèle de route de l'écran d'où vient le membre, jamais l'adresse réelle ; envoi par `submitTicket` (§5, « Tickets ») |
 | `/tickets/:ticketId` | `MyTicketsScreen`, ticket sélectionné | `reader` — l'auteur seul ; ouvrir le détail pose `seen_by_author_at` |
