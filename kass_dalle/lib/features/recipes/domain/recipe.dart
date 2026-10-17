@@ -783,6 +783,13 @@ class Recipe {
   /// par le serveur à l'import. Mêmes règles d'écriture que [sourceUrl].
   final String? sourceAuthor;
 
+  /// Marque « Doublon possible » posée par le serveur sur un brouillon issu
+  /// d'un import de livre entier. `null` sinon.
+  ///
+  /// Le client la lit et ne peut que l'effacer : `validateDraft` la supprime
+  /// dans la même écriture. [toFirestore] ne l'écrit jamais.
+  final RecipeDuplicateRef? duplicateOf;
+
   /// Vrai quand la recette a été traduite à l'import.
   bool get isTranslated => (langueOrigine ?? '').isNotEmpty;
 
@@ -840,6 +847,7 @@ class Recipe {
     this.sourceUrl,
     this.sourceSite,
     this.sourceAuthor,
+    this.duplicateOf,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -915,6 +923,7 @@ class Recipe {
       sourceUrl: data['source_url'] as String?,
       sourceSite: data['source_site'] as String?,
       sourceAuthor: data['source_author'] as String?,
+      duplicateOf: RecipeDuplicateRef.fromMap(data['duplicate_of']),
     );
   }
 
@@ -1039,7 +1048,48 @@ class Recipe {
       sourceUrl: sourceUrl ?? this.sourceUrl,
       sourceSite: sourceSite ?? this.sourceSite,
       sourceAuthor: sourceAuthor ?? this.sourceAuthor,
+      // Posée par le serveur, effacée par la validation : jamais un paramètre.
+      duplicateOf: duplicateOf,
     );
+  }
+}
+
+/// La recette dont un brouillon est peut-être le doublon (`duplicate_of`).
+///
+/// [titre] et [page] sont ceux de la référence. La référence est une recette
+/// existante ([recipeId]) ou un import plus ancien encore en cours ([jobId]).
+class RecipeDuplicateRef {
+  const RecipeDuplicateRef({
+    required this.titre,
+    this.page,
+    this.recipeId,
+    this.jobId,
+  });
+
+  final String titre;
+  final int? page;
+  final String? recipeId;
+  final String? jobId;
+
+  /// Lecture tolérante : tout ce qui n'est pas une carte vaut « pas de marque ».
+  static RecipeDuplicateRef? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    String? text(Object? v) => v is String && v.trim().isNotEmpty ? v : null;
+    final page = raw['page'];
+    return RecipeDuplicateRef(
+      titre: text(raw['titre']) ?? '',
+      page: page is num ? page.toInt() : null,
+      recipeId: text(raw['recipe_id']),
+      jobId: text(raw['job_id']),
+    );
+  }
+
+  /// « Doublon possible de « Tarte aux pommes » (p. 42) », sans la page
+  /// quand elle est inconnue.
+  String get bannerLabel {
+    final p = page;
+    final head = 'Doublon possible de « $titre »';
+    return p == null ? head : '$head (p. $p)';
   }
 }
 
