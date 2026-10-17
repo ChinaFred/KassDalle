@@ -3570,6 +3570,17 @@ Le propriétaire d'un groupe cherche un compte existant à inviter par son adres
 complète. `users/{uid}` n'est pas lisible par lui (§4) : le serveur fait la recherche. Aucun
 appel de modèle : ce n'est pas un poste d'IA.
 
+**`listFamilyPrivateTitlesFn`** (`callable/privateTitlesCallable.ts`, logique pure dans
+`gemini/privateTitles.ts`, `onCall`, `requireAuth` — compte approuvé et non révoqué ; traitement
+`titres_recettes_privees`). Sans entrée. Lit `group_reach/{uid}` du demandeur (30 comptes au plus,
+lui exclu), puis les recettes de ces comptes `review_status == validated` et `is_private == true`
+(pages de type recette seulement), et rend `{titles: [{id, titre, bookTitre, createdBy}]}`, 500 au
+plus, triés par titre. Aucun autre champ de la recette ne sort ; les règles Firestore restent
+inchangées (la recette privée reste illisible côté client). Appelée par la feuille « Suggérer un
+plat » (`suggestablePrivateTitlesProvider`) ; un échec est rapporté
+(`meal_suggestions.load_private_titles`) et la section est omise. La suggestion copie déjà le titre
+(`recipe_titre`). Aucun appel de modèle : pas de poste d'IA. Testé : `tests/privateTitles.test.ts`.
+
 **`findMemberByEmailFn`** (`callable/memberSearchCallable.ts`, `onCall`, `requireEditor` —
 editor ou admin, non révoqué, App Check selon la politique (v0.23.54 : un reader
 propriétaire d'un ancien groupe n'invite plus) ; traitement
@@ -3621,7 +3632,7 @@ Client : `GroupRepository.findMemberByEmail(groupId, email)` appelle la callable
 réponse par `memberFromSearchResponse` (`groups/domain/member_email_search.dart`) ;
 `resource-exhausted` devient `MemberSearchLimitReached`. Toute erreur est signalée
 (`ErrorReportService`, feature `group_search_email`, contexte `group_id` et issue, sans
-l'adresse). Dans la feuille « Gérer les membres », une saisie qui contient `@` suspend la
+l'adresse). Dans la page « Gérer les membres », une saisie qui contient `@` suspend la
 recherche par nom ; une adresse complète (`looksLikeEmail`) part à la validation de la saisie
 ou au bouton « Chercher cette adresse », jamais à chaque frappe. Les recherches par nom et par
 adresse ont chacune leur indicateur (`_searching`, `_emailSearching`) : la fin de l'une ne
@@ -6941,6 +6952,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/planning/config` | `PlanningConfigScreen` | `editor` — « Préférences du planning », dont « Partager mon planning » ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/planning/staples` | `MyStaplesScreen` | `editor` — ses garnitures, retouchées pour soi ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/groups` | `GroupsScreen` | `reader` |
+| `/groups/:groupId` | `GroupMembersScreen` — gestion des membres d'un groupe (`AppRoutes.groupMembers`) ; groupe absent de `myGroupsProvider` : « Groupe introuvable » | `reader` — les actions suivent `isOwner` et `canEditProvider`, les règles Firestore font foi |
 | `/account` | `AccountScreen` | `reader` |
 | `/preferences` | `PreferencesScreen` | `reader` |
 | `/tickets` | `MyTicketsScreen` — « Mes tickets » (liste, et détail côte à côte au-delà du seuil large) | `reader` — ses propres tickets (`firestore.rules`, `author_uid`) ; entrée « Mes tickets » du menu du compte |

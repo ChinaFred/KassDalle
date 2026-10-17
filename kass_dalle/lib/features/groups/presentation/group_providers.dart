@@ -94,7 +94,7 @@ final pendingInvitationsCountProvider = Provider<int>((ref) {
 
 /// Un groupe précis, suivi en direct.
 ///
-/// La feuille de gestion des membres recevait le groupe par valeur, figé à
+/// La page de gestion des membres recevait le groupe par valeur, figé à
 /// l'ouverture : ajouter un membre écrivait bien dans Firestore, mais la liste
 /// affichée restait celle du premier instant. L'ajout semblait avoir échoué.
 /// En passant par ce provider, la feuille lit la même source que l'écran, et

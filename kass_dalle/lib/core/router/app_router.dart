@@ -35,6 +35,7 @@ import '../../features/admin/presentation/nutrition_units_screen.dart';
 import '../../features/admin/presentation/meal_staples_screen.dart';
 import '../../features/sandbox/presentation/sandbox_hub_screen.dart';
 import '../../features/auth/presentation/preferences_screen.dart';
+import '../../features/groups/presentation/group_members_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
@@ -96,6 +97,9 @@ class AppRoutes {
   static const account = '/account';
   static const preferences = '/preferences';
   static const groups = '/groups';
+  static const groupMembers = '/groups/:groupId';
+  static String groupMembersPath(String groupId) =>
+      '/groups/${Uri.encodeComponent(groupId)}';
   static const search = '/search';
   static const tokenUsage = '/token-usage';
   static const errorReports = '/error-reports';
@@ -495,6 +499,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.groups,
             builder: (context, state) => const GroupsScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.groupMembers,
+            builder: (context, state) =>
+                GroupMembersScreen(groupId: state.pathParameters['groupId']!),
           ),
           GoRoute(
             path: AppRoutes.search,

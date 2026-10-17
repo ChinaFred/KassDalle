@@ -4057,6 +4057,7 @@ sequenceDiagram
   actor O as Propriétaire (Marie, éditrice)
   participant S as PlanningScreen
   participant SS as Feuille « Suggérer un plat »
+  participant CF as listFamilyPrivateTitlesFn
   participant MS as meal_suggestions
   participant W as Fenêtre des suggestions
   participant PM as planned_meals
@@ -4065,6 +4066,7 @@ sequenceDiagram
   L->>S: samedi 17 octobre, Famille Dupont — « Suggérer un plat »
   S->>SS: groupe et jour fixés
   SS->>SS: recettes de Léo et des membres de ses groupes (sans IA) ou nom libre ≤ 60
+  SS->>CF: listFamilyPrivateTitlesFn — titres des recettes validées des livres privés des membres de ses groupes (id, titre, livre, auteur)
   Note over SS: recette privée : « Marie ne verra que son titre. »
   SS->>MS: author_uid == léo, group_id == gd, day == 2026-10-17 — identifiants pris
   SS->>MS: set gd_léo_2026-10-17_n, premier n libre de 0 à 4 { group_id, group_owner_id: marie, author_uid, day,<br/>recipe_id + recipe_titre ou free_title, note ≤ 200, created_at: serveur }

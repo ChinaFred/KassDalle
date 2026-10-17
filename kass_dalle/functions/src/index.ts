@@ -124,6 +124,9 @@ export { manageInvitationFn } from "./callable/invitationsCallable";
 // Recherche d'un membre à inviter dans un groupe, par son adresse exacte :
 // réservée au propriétaire du groupe, dix recherches par jour.
 export { findMemberByEmailFn } from "./callable/memberSearchCallable";
+// Titres des recettes validées des livres privés des membres de mes groupes,
+// pour « Suggérer un plat » : le titre seul, jamais le contenu.
+export { listFamilyPrivateTitlesFn } from "./callable/privateTitlesCallable";
 
 // ── Tickets (bugs, idées, questions → Issues GitHub) ─────────────────────────
 // Création par un membre approuvé, capture jointe par l'auteur, relance,

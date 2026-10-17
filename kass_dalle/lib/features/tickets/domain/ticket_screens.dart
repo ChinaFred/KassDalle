@@ -45,6 +45,7 @@ const Map<String, String> kTicketScreenNames = {
   '/account': 'Profil et compte',
   '/preferences': 'Préférences',
   '/groups': 'Groupes familiaux',
+  '/groups/:groupId': 'Membres d\'un groupe',
   '/tickets': 'Mes tickets',
   '/tickets/new': 'Signaler ou proposer',
   '/tickets/:ticketId': 'Suivi d\'un ticket',
