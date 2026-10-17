@@ -3804,7 +3804,10 @@ fixture `test-fixtures/ticket_decisions.json` (statut × type × Issue présente
 n'offre aucune décision ; la fiche dit « Statut inconnu de cette version : mettez
 l'application à jour pour décider. ». Les identifiants « à traiter »
 (`adminTicketsToProcessIdsProvider`, requête `status in ['received', 'analyzed', 'validated']` en flux,
-aucune requête hors administrateur) donnent `adminTicketsToProcessCountProvider` (entrée « Tickets à
+aucune requête hors administrateur), auxquels `adminActionTicketIdsProvider` ajoute les tickets En cours
+dont la PR est prête à livrer (`adminAwaitingDeliveryIdsProvider` : `isTicketAwaitingDelivery`, lecture de
+`ticketDeliveryProvider` et `ticketLaunchesProvider` des seuls tickets En cours ; `filterAdminTickets`
+reçoit le même ensemble par `awaitingDeliveryIds`), donnent `adminTicketsToProcessCountProvider` (entrée « Tickets à
 traiter » et puce « À traiter (N) ») et, pour l'administrateur, `accountTicketsBadgeCountProvider`
 (pastille chiffrée de la puce du compte). Les autres rôles y lisent `unseenTicketsCountProvider`
 (`Ticket.hasUnseenUpdate`, tout statut sauf `sending`), qui vaut 0 pour l'administrateur. Le filtre de statut

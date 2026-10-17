@@ -70,6 +70,71 @@ void main() {
       );
     });
 
+    test('un ticket En cours y entre quand sa PR est prête à livrer', () {
+      final enCours = _ticket(id: 'en_cours', status: 'in_progress');
+      final sansPr = _ticket(id: 'sans_pr', status: 'in_progress');
+      final all = [...tickets, enCours, sansPr];
+      expect(
+        ids(
+          filterAdminTickets(
+            all,
+            status: kAdminTicketTodoFilter,
+            type: null,
+            awaitingDeliveryIds: {'en_cours'},
+          ),
+        ),
+        ['recu', 'analyse', 'valide', 'en_cours'],
+      );
+      expect(
+        ids(
+          filterAdminTickets(all, status: kAdminTicketTodoFilter, type: null),
+        ),
+        ['recu', 'analyse', 'valide'],
+      );
+    });
+
+    test('isTicketAwaitingDelivery : PR prête et « Livrer » offert', () {
+      final enCours = _ticket(id: 'en_cours', status: 'in_progress');
+      const ready = TicketDelivery(ready: true, eligiblePrCount: 1);
+      expect(
+        isTicketAwaitingDelivery(enCours, launches: const [], delivery: ready),
+        isTrue,
+      );
+      expect(
+        isTicketAwaitingDelivery(
+          enCours,
+          launches: const [],
+          delivery: const TicketDelivery(),
+        ),
+        isFalse,
+      );
+      expect(
+        isTicketAwaitingDelivery(enCours, launches: const [], delivery: null),
+        isFalse,
+      );
+      // Historique des lancements pas encore lu : « Livrer » n'est pas offert.
+      expect(
+        isTicketAwaitingDelivery(enCours, launches: null, delivery: ready),
+        isFalse,
+      );
+      expect(
+        isTicketAwaitingDelivery(
+          _ticket(id: 'valide', status: 'validated'),
+          launches: const [],
+          delivery: ready,
+        ),
+        isFalse,
+      );
+      expect(
+        isTicketAwaitingDelivery(
+          _ticket(id: 'q', status: 'in_progress', type: 'question'),
+          launches: const [],
+          delivery: ready,
+        ),
+        isFalse,
+      );
+    });
+
     test('même ensemble que la requête du compteur', () {
       expect(kAdminTicketToProcessStatuses.map((s) => s.value), [
         'received',

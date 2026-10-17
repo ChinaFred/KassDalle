@@ -20,6 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
+### v0.23.95 — fonctionnel
+
+Admin › Tickets des membres : le filtre « À traiter » et son compteur incluent les tickets En cours dont la pull request est prête à livrer, quand « Livrer » est offert. Ils n'apparaissaient que sous « Tous ». Un ticket En cours sans PR prête, ou dont la livraison est en cours, reste exclu. Demande du ticket #123.
+
+### v0.23.95 — technique
+
+`isTicketAwaitingDelivery` (`ticket.dart`) : PR prête côté serveur, historique des lancements lu, `canDeliver` vrai. `adminAwaitingDeliveryIdsProvider` lit `ticketDeliveryProvider` et `ticketLaunchesProvider` des seuls tickets En cours ; `adminActionTicketIdsProvider` l'ajoute à la requête par statut. Le compteur, la pastille du compte et `filterAdminTickets` (`awaitingDeliveryIds`) le lisent. `kAdminTicketToProcessStatuses` ne change pas. Aucun changement de donnée, de règle ni de Function.
+
 ### v0.23.94 — fonctionnel
 
 Suggérer un plat : la suggestion s'ouvre en page entière, plus en feuille ni en boîte de dialogue. Le champ principal est « Quel plat ? » : un nom tapé (« des frites ») suffit à envoyer, sans choisir de recette. Les recettes correspondantes s'affichent dessous, dans le même écran, titres privés des livres de la famille compris. Le mot facultatif est un champ à part. Quand « Envoyer la suggestion » est inactif, une phrase dit pourquoi. Quitter avec une saisie demande confirmation. Demande du ticket #121.
