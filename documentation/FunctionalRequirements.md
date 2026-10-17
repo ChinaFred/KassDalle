@@ -440,6 +440,13 @@ privait le titre de la place dont il manquait.
   « La référence est un import plus ancien, encore en cours. »), et « Valider la publiera quand
   même et retirera cette marque. ». Sur téléphone, le bandeau est replié sur une ligne et se
   déplie d'un appui. « Valider » depuis la relecture reste possible et efface la marque.
+  La ligne montre une pastille « Doublon » sous le titre, puis le détail sur deux lignes au plus.
+- **Deux brouillons de même titre dans un même livre** reçoivent chacun la pastille « Doublon »,
+  avec « Même titre : « {titre} » (p. {n}) » et « et {n} autre(s) » quand ils sont plus de deux.
+  Le serveur ne marque que le brouillon écrit en second ; la file rapproche les deux à
+  l'affichage, sur la clé de titre posée par le serveur, sans rien enregistrer. Pas de
+  rapprochement sans livre, sans clé de titre, ou si les deux pages sont connues et différentes.
+  Un doublon avec une recette déjà validée n'est montré que par la marque du serveur.
 - **Un compteur en tête de la file** dit combien de décisions attendent : « {n} doublon(s)
   possible(s) à trancher ». Il compte les lignes « Doublon possible » et les brouillons marqués
   que l'utilisateur peut valider ou supprimer ; ceux d'un autre membre ne comptent pas.

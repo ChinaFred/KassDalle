@@ -9,6 +9,7 @@ import '../../../auth/presentation/auth_providers.dart';
 import '../../../processing/domain/processing_job.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../recipe_providers.dart';
+import '../../domain/draft_title_twins.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/context_extensions.dart';
@@ -639,6 +640,13 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
         .toList();
     final selecting = _selectionMode && allItems.isNotEmpty;
 
+    // Brouillons de même titre dans un même livre : le serveur ne marque que
+    // le plus récent, la file rapproche les deux à l'affichage.
+    final twins = draftTitleTwins([
+      for (final i in allItems)
+        if (i case _DraftItem(:final recipe)) recipe,
+    ]);
+
     // Ce qui attend une décision de l'utilisateur : ses traitements arrêtés
     // en doublon possible — seul leur auteur peut les reprendre — et les
     // brouillons marqués qu'il peut valider ou supprimer. Ceux d'un autre
@@ -865,6 +873,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
               listItems.add(
                 QueueDraftTile(
                   recipe: recipe,
+                  twins: twins[recipe.id],
                   isSelected: mine && _selected.contains(item.key),
                   isSelecting: selecting,
                   onTap: () => selecting && mine
