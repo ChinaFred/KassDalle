@@ -1187,9 +1187,10 @@ l'application. Le ticket part en Issue sur le dépôt GitHub **public**
   Claude de l'administrateur, hors du suivi des coûts de l'application. L'application affiche
   le texte publié sur GitHub, sans rien générer.
 - **Points d'entrée.** Le menu du compte (puce en haut à droite) porte « Signaler ou
-  proposer » et « Mes tickets », entre « Groupes familiaux » et « Se déconnecter ». Il n'y en
+  proposer » et « Mes tickets », entre « Groupes familiaux » et « Nouveautés ». Il n'y en
   a pas d'autre pour un membre. L'Admin y trouve aussi « Tickets à traiter », juste après
-  « Mes tickets » (voir « Tickets des membres »).
+  « Mes tickets » (voir « Tickets des membres »). « Nouveautés » (voir « Nouveautés ») vient
+  juste avant « Se déconnecter ».
 - **Trois types à la création** : « Bug », « Évolution », « Nouvelle fonctionnalité ». Le type
   « Question » n'est plus proposé et le serveur le refuse (« Choisissez le type de ticket. »).
   Il reste connu : les tickets de type Question déjà créés se lisent, se filtrent (Admin) et
@@ -1257,6 +1258,20 @@ l'application. Le ticket part en Issue sur le dépôt GitHub **public**
   Un renvoi `#12` ou `compte/dépôt#12` l'est aussi : il ne crée aucun lien vers une autre
   Issue ou pull request.
 - Le membre ne reçoit aucun lien vers l'Issue.
+
+#### Nouveautés (`/changelog`)
+
+Ouvert par « Nouveautés » dans le menu du compte (icône `new_releases_outlined`), pour tous
+les rôles. Écran en lecture seule.
+
+- Les **six dernières versions** qui ont un texte « fonctionnel » dans `CHANGELOG.md`, de la
+  plus récente à la plus ancienne. Une version qui n'a qu'une entrée « technique » n'y figure
+  pas. Chaque carte montre le numéro (« v0.23.98 »), la date (« 17 octobre 2026 ») et le texte
+  de l'entrée, mis en forme en Markdown.
+- Une pastille « Installée » repère la carte de la version de l'application.
+- Colonne centrée de 720 px au plus sur grand écran ; cartes pleine largeur sur mobile.
+- Liste illisible : « Impossible d'afficher les nouveautés. » avec « Réessayer ». Il n'y a pas
+  de liste de repli et pas d'état vide.
 
 #### Mes tickets (`/tickets`, `/tickets/:ticketId`)
 

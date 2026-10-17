@@ -130,6 +130,15 @@ jobs:
       - name: Dépendances
         run: flutter pub get
 
+        # L'écran « Nouveautés » lit assets/changelog_recent.json. Le script
+        # le régénère depuis le CHANGELOG.md et échoue s'il trouve moins de six
+        # versions ; son test tourne ici, avec Node préinstallé sur le runner.
+      - name: Nouveautés — test et génération de l'asset
+        working-directory: .
+        run: |
+          node --test .github/scripts/changelog-recent.test.mjs
+          node .github/scripts/changelog-recent.mjs
+
       - name: Analyse statique
         # Strict : erreurs, warnings ET infos sont bloquants. Le code part de
         # zéro diagnostic — le laisser dériver coûte plus cher que de corriger

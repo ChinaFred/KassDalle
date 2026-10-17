@@ -1,0 +1,34 @@
+{
+  "versions": [
+    {
+      "version": "0.23.99",
+      "date": "2026-10-17",
+      "text": "Menu du compte : nouvelle entrée « Nouveautés ». Elle ouvre un écran qui liste les six dernières versions de l'application, de la plus récente à la plus ancienne, avec leur numéro, leur date et ce qu'elles changent. Une pastille « Installée » repère la version de l'application. Si la liste ne se charge pas, l'écran affiche « Impossible d'afficher les nouveautés. » et un bouton « Réessayer ». Demandé par le ticket #131."
+    },
+    {
+      "version": "0.23.98",
+      "date": "2026-10-17",
+      "text": "Admin › Tickets des membres : nouvelle décision « Clore », pour un ticket Reçu, Analysé, Validé ou En cours, de tout type. L'administrateur écrit un commentaire (5 à 4 000 caractères, sans adresse e-mail) ; il est publié sur GitHub en « Réponse : … », l'Issue est fermée et le ticket passe à « Clos ». Le membre lit le commentaire dans « Mes tickets » (« Ce ticket est clos. », « L'administrateur vous a répondu ci-dessous. »). « Clore » est masqué pendant une livraison de ce ticket. Un ticket Clos est final : plus de validation, de refus, de réponse ni de lancement. Le filtre de statut de l'administrateur gagne la puce « Clos » (neuf statuts). Le type « Question » n'est plus proposé à la création d'un ticket (« Bug », présélectionné, « Évolution », « Nouvelle fonctionnalité ») et le serveur le refuse ; les tickets Question déjà créés restent lisibles et filtrables. L'état vide de « Mes tickets » dit « Un bug, une idée ? Envoyez-les à l'administrateur. ». Les versions installées avant celle-ci ne connaissent pas le statut Clos et affichent « Reçu » pour un ticket clos, jusqu'à leur mise à jour."
+    },
+    {
+      "version": "0.23.97",
+      "date": "2026-10-17",
+      "text": "Doublons à l'import. Un scan de page dont la recette a le même titre qu'une recette du livre (brouillon ou validée), ou qu'un import du même livre encore en cours, s'arrête après la transcription au statut « Doublon possible ». Deux numéros de page connus et différents écartent le doublon. La file des brouillons montre la recette existante en lien, et propose « Ce n'est pas un doublon » (le traitement reprend sans refaire la transcription) ou « Supprimer ». L'import d'un livre entier marque les recettes déjà présentes comme brouillons « Doublon possible » ; la validation en lot les saute, la relecture permet de les valider. À l'import d'un fichier en nouveau livre, un livre déjà dans la bibliothèque (même titre et auteur compatible, ou même fichier) est signalé, avec « Importer dans ce livre » ou « Créer un nouveau livre quand même ». Après le déploiement, lancer une fois Admin › Backfills › « Clé de titre des recettes » pour que les recettes existantes servent de référence."
+    },
+    {
+      "version": "0.23.95",
+      "date": "2026-10-17",
+      "text": "Admin › Tickets des membres : le filtre « À traiter » et son compteur incluent les tickets En cours dont la pull request est prête à livrer, quand « Livrer » est offert. Ils n'apparaissaient que sous « Tous ». Un ticket En cours sans PR prête, ou dont la livraison est en cours, reste exclu. Demande du ticket #123."
+    },
+    {
+      "version": "0.23.94",
+      "date": "2026-10-17",
+      "text": "Suggérer un plat : la suggestion s'ouvre en page entière, plus en feuille ni en boîte de dialogue. Le champ principal est « Quel plat ? » : un nom tapé (« des frites ») suffit à envoyer, sans choisir de recette. Les recettes correspondantes s'affichent dessous, dans le même écran, titres privés des livres de la famille compris. Le mot facultatif est un champ à part. Quand « Envoyer la suggestion » est inactif, une phrase dit pourquoi. Quitter avec une saisie demande confirmation. Demande du ticket #121."
+    },
+    {
+      "version": "0.23.93",
+      "date": "2026-10-17",
+      "text": "Tickets : une analyse qui pose une question n'empêche plus de répondre. Quand la session d'analyse\npublie une analyse ou des « compléments » sur l'Issue, la ligne « Analyse en cours depuis … » disparaît\ntout de suite au lieu de durer une heure. « Répondre » est alors offert, et « Lancer l'analyse »\ndevient « Relancer l'analyse ». Demande du ticket #119."
+    }
+  ]
+}
