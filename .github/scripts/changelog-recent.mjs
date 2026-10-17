@@ -17,7 +17,9 @@
 // trouvent l'asset ; il peut y dater de quelques versions.
 //
 // Échoue (code 1) si l'extraction rend moins de <nombre> versions : une liste
-// tronquée ne part pas en production.
+// tronquée ne part pas en production. Échoue aussi si un texte extrait contient
+// une image Markdown (« ![ ») : l'écran ne charge aucune image, et une adresse
+// externe dans l'APK servirait de pixel de suivi.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -81,7 +83,7 @@ export function extractRecent(markdown, count) {
   }));
 }
 
-function main(argv) {
+export function main(argv) {
   const [source, output, rawCount] = argv;
   if (!source || !output) {
     console.error('Usage : changelog-recent.mjs <CHANGELOG.md> <sortie.json> [nombre]');
@@ -96,6 +98,13 @@ function main(argv) {
   if (versions.length < count) {
     console.error(
       `::error file=${source}::${versions.length} version(s) « fonctionnel » trouvée(s), ${count} attendue(s).`,
+    );
+    return 1;
+  }
+  const withImage = versions.filter((v) => v.text.includes('!['));
+  if (withImage.length > 0) {
+    console.error(
+      `::error file=${source}::Image Markdown dans l'entrée « fonctionnel » de ${withImage.map((v) => `v${v.version}`).join(', ')} : retirer l'image.`,
     );
     return 1;
   }

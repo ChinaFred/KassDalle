@@ -65,10 +65,15 @@ class _ReleaseNoteCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    'v${note.version}',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                  // Un titre par carte : le lecteur d'écran passe d'une
+                  // version à l'autre.
+                  child: Semantics(
+                    header: true,
+                    child: Text(
+                      'v${note.version}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -99,6 +104,18 @@ class _ReleaseNoteCard extends StatelessWidget {
               styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
                 p: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
                 listBullet: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+              ),
+              // Aucune image n'est chargée : le constructeur par défaut
+              // appellerait Image.network sur une adresse écrite dans le
+              // CHANGELOG. changelog-recent.mjs refuse déjà une image.
+              imageBuilder: (_, _, alt) => Text(
+                alt == null || alt.trim().isEmpty
+                    ? '[Image non affichée]'
+                    : '[Image non affichée : ${alt.trim()}]',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontStyle: FontStyle.italic,
+                  color: cs.onSurfaceVariant,
+                ),
               ),
             ),
           ],

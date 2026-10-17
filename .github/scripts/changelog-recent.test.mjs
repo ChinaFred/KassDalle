@@ -2,10 +2,12 @@
 //   node --test .github/scripts/changelog-recent.test.mjs
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { extractRecent } from './changelog-recent.mjs';
+import { extractRecent, main } from './changelog-recent.mjs';
 
 const SAMPLE = `# Historique des versions
 
@@ -84,4 +86,16 @@ test('le CHANGELOG du dépôt fournit six versions datées', () => {
     assert.match(v.date, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(v.text.length > 0);
   }
+});
+
+test('une image dans un texte extrait fait échouer le script', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'changelog-'));
+  const source = join(dir, 'CHANGELOG.md');
+  const output = join(dir, 'out.json');
+  writeFileSync(source, SAMPLE.replace('Planning.', 'Planning ![x](https://exemple.test/p.png).'));
+  assert.equal(main([source, output, '3']), 1);
+  assert.equal(existsSync(output), false);
+  writeFileSync(source, SAMPLE);
+  assert.equal(main([source, output, '3']), 0);
+  assert.equal(JSON.parse(readFileSync(output, 'utf8')).versions.length, 3);
 });
