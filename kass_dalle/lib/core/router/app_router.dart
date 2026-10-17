@@ -48,6 +48,7 @@ import '../../features/planning/presentation/planning_screen.dart';
 import '../../features/planning/presentation/batch_planning_screen.dart';
 import '../../features/planning/presentation/planning_config_screen.dart';
 import '../../features/planning/presentation/my_staples_screen.dart';
+import '../../features/planning/presentation/suggest_meal_screen.dart';
 import '../../features/tickets/presentation/admin_tickets_screen.dart';
 import '../../features/tickets/presentation/my_tickets_screen.dart';
 import '../../features/tickets/presentation/ticket_launcher.dart';
@@ -109,6 +110,7 @@ class AppRoutes {
   static const batchPlanning = '/planning/batch';
   static const planningConfig = '/planning/config';
   static const myStaples = '/planning/staples';
+  static const suggestMeal = '/planning/suggest';
   static const tickets = '/tickets';
   static const ticketNew = '/tickets/new';
   static const adminTickets = '/admin/tickets';
@@ -561,6 +563,15 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'staples',
                 builder: (context, state) => const MyStaplesScreen(),
+              ),
+              GoRoute(
+                path: 'suggest',
+                // Les groupes et la recette arrivent en `extra` : sans eux
+                // (page rechargée, lien collé), retour au planning.
+                redirect: (context, state) =>
+                    state.extra is SuggestMealArgs ? null : AppRoutes.planning,
+                builder: (context, state) =>
+                    SuggestMealScreen(args: state.extra! as SuggestMealArgs),
               ),
             ],
           ),
