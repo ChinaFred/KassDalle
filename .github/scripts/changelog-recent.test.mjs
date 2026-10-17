@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { COUNT, extractRecentVersions } from './changelog-recent.mjs';
+import { COUNT, extractRecentVersions, writingProblems } from './changelog-recent.mjs';
 
 const SAMPLE = `# Historique
 
@@ -76,4 +76,29 @@ test('le CHANGELOG du dépôt donne au moins COUNT versions', async () => {
     'utf8',
   );
   assert.equal(extractRecentVersions(text).length, COUNT);
+});
+
+test('signale un accent grave, un numéro de ticket et une image', () => {
+  assert.deepEqual(
+    writingProblems([
+      { version: '1.0.0', text: 'Formulaire `/tickets/new`.' },
+      { version: '1.0.1', text: 'Demandé par le ticket #127.' },
+      { version: '1.0.2', text: 'Voir ![capture](https://exemple.test/a.png).' },
+      { version: '1.0.3', text: '#### Signaler ou proposer' },
+    ]),
+    [
+      'v1.0.0 contient un accent grave (nom de code)',
+      'v1.0.1 contient un numéro de ticket',
+      'v1.0.2 contient une image',
+    ],
+  );
+});
+
+test('les entrées extraites du CHANGELOG du dépôt respectent la rédaction', async () => {
+  const { readFileSync } = await import('node:fs');
+  const text = readFileSync(
+    new URL('../../documentation/CHANGELOG.md', import.meta.url),
+    'utf8',
+  );
+  assert.deepEqual(writingProblems(extractRecentVersions(text)), []);
 });

@@ -361,6 +361,14 @@ try {
     # Rien ne la remplace : `pubspec.yaml` reste la seule source, et les trois
     # plateformes vont l'y chercher elles-mêmes.
 
+    # ── 0c. Extrait du CHANGELOG ───────────────────────────────────────────────
+    # Asset de l'écran « Nouveautés », régénéré comme dans deploy.yml : sans
+    # cette étape, le build embarquerait la copie versionnée, qui peut dater de
+    # quelques versions. Le fichier régénéré part dans le commit du script.
+    Write-Host "`nExtrait du CHANGELOG..." -ForegroundColor Cyan
+    node ..\.github\scripts\changelog-recent.mjs
+    if ($LASTEXITCODE -ne 0) { throw "L'extrait du CHANGELOG a échoué" }
+
     # ── 1. Build Web ───────────────────────────────────────────────────────────
     Write-Host "`n[1/5] flutter build web..." -ForegroundColor Cyan
     flutter build web --release --no-tree-shake-icons --no-wasm-dry-run
