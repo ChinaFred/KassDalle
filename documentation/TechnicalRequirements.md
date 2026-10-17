@@ -3632,7 +3632,7 @@ Client : `GroupRepository.findMemberByEmail(groupId, email)` appelle la callable
 réponse par `memberFromSearchResponse` (`groups/domain/member_email_search.dart`) ;
 `resource-exhausted` devient `MemberSearchLimitReached`. Toute erreur est signalée
 (`ErrorReportService`, feature `group_search_email`, contexte `group_id` et issue, sans
-l'adresse). Dans la feuille « Gérer les membres », une saisie qui contient `@` suspend la
+l'adresse). Dans la page « Gérer les membres », une saisie qui contient `@` suspend la
 recherche par nom ; une adresse complète (`looksLikeEmail`) part à la validation de la saisie
 ou au bouton « Chercher cette adresse », jamais à chaque frappe. Les recherches par nom et par
 adresse ont chacune leur indicateur (`_searching`, `_emailSearching`) : la fin de l'une ne
@@ -6950,6 +6950,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/planning/config` | `PlanningConfigScreen` | `editor` — « Préférences du planning », dont « Partager mon planning » ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/planning/staples` | `MyStaplesScreen` | `editor` — ses garnitures, retouchées pour soi ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/groups` | `GroupsScreen` | `reader` |
+| `/groups/:groupId` | `GroupMembersScreen` — gestion des membres d'un groupe (`AppRoutes.groupMembers`) ; groupe absent de `myGroupsProvider` : « Groupe introuvable » | `reader` — les actions suivent `isOwner` et `canEditProvider`, les règles Firestore font foi |
 | `/account` | `AccountScreen` | `reader` |
 | `/preferences` | `PreferencesScreen` | `reader` |
 | `/tickets` | `MyTicketsScreen` — « Mes tickets » (liste, et détail côte à côte au-delà du seuil large) | `reader` — ses propres tickets (`firestore.rules`, `author_uid`) ; entrée « Mes tickets » du menu du compte |

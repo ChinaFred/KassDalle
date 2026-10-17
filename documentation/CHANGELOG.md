@@ -20,14 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
-### v0.23.91 — fonctionnel
+### v0.23.92 — fonctionnel
 
 Suggérer un plat : le sélecteur propose aussi les recettes validées des livres privés des membres
 de vos groupes, en titre seul (nom du livre et cadenas, sans image ni ingrédients). Le destinataire
 d'une suggestion sans accès à la recette n'en voit que le titre. L'auteur ne peut pas refuser
 l'affichage du titre. Un membre sans groupe en commun n'en voit rien. Demande du ticket #117.
 
-### v0.23.91 — technique
+### v0.23.92 — technique
 
 Nouvelle Cloud Function `listFamilyPrivateTitlesFn` (`callable/privateTitlesCallable.ts`,
 `gemini/privateTitles.ts`) : lit `group_reach` puis les recettes privées validées, et ne rend que
@@ -35,6 +35,14 @@ Nouvelle Cloud Function `listFamilyPrivateTitlesFn` (`callable/privateTitlesCall
 `PrivateTitlesRepository`, `suggestablePrivateTitlesProvider` et `PrivateRecipeTitle`
 (recette creuse). Tests : `privateTitles.test.ts`, `private_recipe_title_test.dart`. Aucune
 dépendance modifiée.
+
+### v0.23.91 — fonctionnel
+
+Groupes : la gestion des membres d'un groupe n'est plus une feuille qui monte du bas, mais une page à part entière, à l'adresse `/groups/<groupe>`. Elle a sa barre d'application (nom du groupe, flèche « Retour aux groupes »), son lien direct et un contenu centré sur 640 px au plus sur grand écran. Recherche, invitation, annulation et retrait fonctionnent comme avant, avec les mêmes droits. Un groupe inconnu ou quitté affiche « Groupe introuvable ». Demande du ticket #116.
+
+### v0.23.91 — technique
+
+`_ManageMembersSheet` devient `GroupMembersScreen` (`group_members_screen.dart`), reçoit `groupId` et relit le groupe par `groupByIdProvider`. Route `AppRoutes.groupMembers` (`/groups/:groupId`) dans `app_router.dart` ; `GroupsScreen` y mène par `context.push`. Aucun changement de données, de règle ni de Function.
 
 ## 2026-10-16
 
