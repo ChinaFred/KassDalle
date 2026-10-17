@@ -18,6 +18,23 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-17
+
+### v0.23.91 — fonctionnel
+
+Tickets : une analyse qui pose une question n'empêche plus de répondre. Quand la session d'analyse
+publie une analyse ou des « compléments » sur l'Issue, la ligne « Analyse en cours depuis … » disparaît
+tout de suite au lieu de durer une heure. « Répondre » est alors offert, et « Lancer l'analyse »
+devient « Relancer l'analyse ». Demande du ticket #119.
+
+### v0.23.91 — technique
+
+`launchRunState` (`rules.ts`) et `ticketLaunchRunState` (`ticket_launch.dart`) reçoivent la date de la
+dernière analyse (`analysisPublishedAtMs`, `analysisPublishedAt`) : une analyse strictement postérieure
+au lancement termine un lancement d'analyse avant son échéance. Appelée par `launchTicketAnalysis`,
+`answerTicketAnalysis` et `adminTicketDecisions`. Cas ajoutés à `ticket_decisions.json`
+(`launch_runs.analysis_published_at`), rejoués côté Dart et TypeScript.
+
 ## 2026-10-16
 
 ### v0.23.90 — fonctionnel

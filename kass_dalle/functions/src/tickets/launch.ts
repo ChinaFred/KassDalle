@@ -475,6 +475,10 @@ export async function launchTicketSession(
         action === "livraison"
           ? deliveryBlockedAtMs((await deliveryRef(ticketId).get()).data())
           : null,
+      analysisPublishedAtMs:
+        action === "analyse"
+          ? lastAnalysisMillis((await analysisRef(ticketId).get()).data())
+          : null,
     });
     if (run.running && run.runningSinceMs !== null) {
       throw new HttpsError(

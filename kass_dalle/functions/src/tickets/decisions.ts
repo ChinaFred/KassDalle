@@ -547,6 +547,7 @@ async function developmentRunning(
     rawStatus: status,
     nowMs: Date.now(),
     statusChangedAtMs,
+    analysisPublishedAtMs: lastAnalysisMillis(analysisData),
   }).running;
 }
 

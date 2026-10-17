@@ -3882,7 +3882,9 @@ antérieure au `status_changed_at` du ticket ne bloque rien et ne propose pas de
 une réponse de l'administrateur, le ticket revient à Reçu, et l'analyse lancée avant n'est pas
 proposée en « Relancer l'analyse ». Livraison seulement : un compte rendu
 `## Livraison — blocage` strictement postérieur au lancement la termine avant son échéance
-(relance proposée, `blocked`). Cette règle, les conditions de statut des trois lancements
+(relance proposée, `blocked`). Analyse seulement : une analyse du mainteneur (« compléments »
+comprise) strictement postérieure au lancement (`analysisPublishedAt`, date de la dernière analyse
+relevée dans `tickets/{id}/admin/analysis`) la termine de même, `blocked` faux. Cette règle, les conditions de statut des trois lancements
 (`launch_actions`), le plafond par défaut (10) et celui du fondateur (50) sont dupliqués et
 verrouillés par `ticket_decisions.json` (cases `can_launch_*` et `can_deliver`, sections
 `launch_runs` et `launch_limits`).

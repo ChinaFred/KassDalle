@@ -281,6 +281,7 @@ void main() {
           now: DateTime.parse(r['now'] as String),
           statusChangedAt: iso(r['status_changed_at']),
           deliveryBlockedAt: iso(r['delivery_blocked_at']),
+          analysisPublishedAt: iso(r['analysis_published_at']),
         );
         expect(state.running, r['running']);
         expect(state.runningSince, iso(r['running_since']));

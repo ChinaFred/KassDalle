@@ -474,6 +474,7 @@ const DECISIONS_FIXTURE = JSON.parse(
     now: string;
     status_changed_at?: string | null;
     delivery_blocked_at?: string | null;
+    analysis_published_at?: string | null;
     launches: {
       action: string;
       outcome: string;
@@ -581,6 +582,7 @@ describe("fixture ticket_decisions.json (partagée avec le client)", () => {
         nowMs: Date.parse(r.now),
         statusChangedAtMs: isoMs(r.status_changed_at ?? null),
         deliveryBlockedAtMs: isoMs(r.delivery_blocked_at ?? null),
+        analysisPublishedAtMs: isoMs(r.analysis_published_at ?? null),
       });
       assert.deepEqual(state, {
         running: r.running,
