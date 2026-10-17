@@ -371,7 +371,12 @@ class _AdminTicketList extends ConsumerWidget {
             message: 'Les membres n\'ont encore rien signalé.',
           );
         }
-        final shown = filterAdminTickets(tickets, status: status, type: type);
+        final shown = filterAdminTickets(
+          tickets,
+          status: status,
+          type: type,
+          awaitingDeliveryIds: ref.watch(adminAwaitingDeliveryIdsProvider),
+        );
         if (shown.isEmpty) {
           final todo = status == kAdminTicketTodoFilter && type == null;
           return AppEmptyState(

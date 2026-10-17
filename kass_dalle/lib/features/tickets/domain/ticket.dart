@@ -335,9 +335,10 @@ String formatTicketDateTime(DateTime date) {
 /// pour « En anomalie », sinon un statut.
 const kAdminTicketAnomalyFilter = 'anomaly';
 
-/// Filtre « À traiter » : tickets Reçus, Analysés ou Validés, qui
-/// attendent une action de l'administrateur. Même ensemble que le compteur de la pastille
-/// ([kAdminTicketToProcessStatuses]).
+/// Filtre « À traiter » : tickets qui attendent une action de l'administrateur.
+/// Reçus, Analysés ou Validés ([kAdminTicketToProcessStatuses]), plus les
+/// tickets En cours dont la PR est prête à livrer ([isTicketAwaitingDelivery]).
+/// Même ensemble que le compteur de la pastille.
 const kAdminTicketTodoFilter = 'todo';
 
 /// Statuts comptés « à traiter » : la requête du compteur et le filtre.
@@ -353,17 +354,43 @@ bool isTicketToProcess(Ticket t) =>
     t.rawStatus == t.status.value &&
     kAdminTicketToProcessStatuses.contains(t.status);
 
+/// Vrai pour un ticket En cours dont l'administrateur peut livrer la PR :
+/// « PR prête » côté serveur et « Livrer » offert (aucune livraison en
+/// cours). Les tickets En cours sans PR prête n'attendent rien de lui.
+bool isTicketAwaitingDelivery(
+  Ticket t, {
+  required List<TicketLaunch>? launches,
+  required TicketDelivery? delivery,
+  DateTime? now,
+}) {
+  if (t.status != TicketStatus.inProgress) return false;
+  // Historique ou livraison pas encore lus : le détail masque aussi « Livrer ».
+  if (launches == null || delivery == null || !delivery.ready) return false;
+  return adminTicketDecisions(
+    t,
+    launches: launches,
+    now: now,
+    delivery: delivery,
+  ).canDeliver;
+}
+
 /// Applique les deux filtres de l'écran d'administration.
+///
+/// [awaitingDeliveryIds] : les tickets En cours qui attendent une livraison
+/// ([isTicketAwaitingDelivery]), comptés « À traiter » en plus des statuts.
 List<Ticket> filterAdminTickets(
   List<Ticket> tickets, {
   required String? status,
   required TicketType? type,
+  Set<String> awaitingDeliveryIds = const {},
 }) {
   return tickets.where((t) {
     if (type != null && t.type != type) return false;
     if (status == null) return true;
     if (status == kAdminTicketAnomalyFilter) return t.isInAnomaly;
-    if (status == kAdminTicketTodoFilter) return isTicketToProcess(t);
+    if (status == kAdminTicketTodoFilter) {
+      return isTicketToProcess(t) || awaitingDeliveryIds.contains(t.id);
+    }
     return t.status.value == status;
   }).toList();
 }
