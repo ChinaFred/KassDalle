@@ -1050,6 +1050,75 @@ describe("lecture des choix du modèle", () => {
   }
 });
 
+describe("protéine du voisin lue par date", () => {
+  const recipes: PlanningRecipeSummary[] = [
+    { id: "pou1", titre: "Poulet rôti", mainProtein: "volaille" },
+    { id: "pou2", titre: "Poulet curry", mainProtein: "volaille" },
+    { id: "poi1", titre: "Cabillaud", mainProtein: "poisson" },
+  ];
+  const slots: FxSlot[] = [{ date: "2026-10-12" }, { date: "2026-10-13" }];
+  const corpusById = new Map(recipes.map((r) => [r.id, r]));
+  const ranking = (slot: number, plats: string[]): SlotRanking => ({
+    slot,
+    plats: plats.map((id) => ({ recipeId: id, why: id })),
+    entrees: [],
+    desserts: [],
+    sent: { plats: plats.length, entrees: 0, desserts: 0 },
+    relaxed: [],
+  });
+
+  test("le choix du modèle de même protéine que la veille est remplacé", () => {
+    const out = validateModelChoices({
+      raw: [
+        { slot: 0, recipe_id: "pou1" },
+        { slot: 1, recipe_id: "pou2" },
+      ],
+      rankings: [ranking(0, ["pou1"]), ranking(1, ["pou2", "poi1"])],
+      input: inputOf(slots, recipes),
+      corpusById,
+    });
+    assert.deepEqual(
+      out.slots.map((s) => [s.slot, s.recipeId, s.source]),
+      [
+        [0, "pou1", "model"],
+        [1, "poi1", "code"],
+      ],
+    );
+    assert.equal(out.rejected, 1);
+  });
+
+  test("le résultat ne dépend pas de l'ordre de traitement des créneaux", () => {
+    const out = validateModelChoices({
+      raw: [{ slot: 0, recipe_id: "pou2" }],
+      rankings: [ranking(0, ["pou2", "poi1"]), ranking(1, ["pou1"])],
+      input: inputOf(slots, recipes),
+      corpusById,
+      sentSlots: new Set([0]),
+    });
+    // Le créneau 1 (non envoyé) est traité d'abord ; le créneau 0 doit éviter sa protéine.
+    assert.deepEqual(
+      out.slots.map((s) => [s.slot, s.recipeId]),
+      [
+        [0, "poi1"],
+        [1, "pou1"],
+      ],
+    );
+  });
+
+  test("sans candidat de protéine différente, le créneau reste rempli", () => {
+    const out = validateModelChoices({
+      raw: [{ slot: 1, recipe_id: "pou2" }],
+      rankings: [ranking(0, ["pou1"]), ranking(1, ["pou2"])],
+      input: inputOf(slots, recipes),
+      corpusById,
+    });
+    assert.deepEqual(
+      out.slots.map((s) => s.recipeId),
+      ["pou1", "pou2"],
+    );
+  });
+});
+
 describe("justification produite par le code", () => {
   for (const c of fixture.code_justification) {
     test(c.why, () => {

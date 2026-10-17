@@ -1421,7 +1421,9 @@ interface ValidateArgs {
  *
  * Un `recipe_id` hors de la tête de liste du créneau, ou déjà pris dans le
  * cycle, est remplacé par le premier candidat libre de la liste (source
- * `code`). Même règle pour l'entrée et le dessert. Un créneau absent de la
+ * `code`). Même règle pour l'entrée et le dessert. Un plat dont la protéine
+ * connue est celle de la veille ou du lendemain (comptée par date) est refusé
+ * de la même façon, sauf si aucun candidat libre ne diffère. Un créneau absent de la
  * réponse reçoit aussi le premier candidat. `rejected` compte ces
  * remplacements sur les créneaux envoyés. Les créneaux non envoyés sont
  * remplis par le code en premier, sans compter de rejet.
@@ -1449,10 +1451,26 @@ export function validateModelChoices(args: ValidateArgs): {
     const r = corpusById.get(id);
     return r ? proteinOf(r) : "inconnue";
   };
-  const firstFree = (list: RankedCandidate[], avoid: ProteinKey | null) =>
-    (avoid && avoid !== "inconnue"
-      ? list.find((c) => free(c) && proteinById(c.recipeId) !== avoid)
-      : undefined) ?? list.find(free);
+  const isAvoided = (c: RankedCandidate, avoid: ReadonlyArray<ProteinKey>) =>
+    isProteinNeighbourRepeat(proteinById(c.recipeId), avoid);
+  const firstFree = (list: RankedCandidate[], avoid: ReadonlyArray<ProteinKey>) =>
+    (avoid.length > 0 ? list.find((c) => free(c) && !isAvoided(c, avoid)) : undefined) ??
+    list.find(free);
+  // Protéines posées par date, lues la veille et le lendemain : l'ordre de
+  // traitement des créneaux (non envoyés d'abord) n'est pas l'ordre des jours.
+  const proteinsByDate = new Map<string, ProteinKey[]>();
+  const noteProtein = (date: string, protein: ProteinKey) => {
+    if (protein === "inconnue") return;
+    proteinsByDate.set(date, [...(proteinsByDate.get(date) ?? []), protein]);
+  };
+  for (const a of input.alreadyAssigned ?? []) {
+    const ctx = contexts[a.slot];
+    if (ctx) noteProtein(ctx.date, proteinById(a.recipeId));
+  }
+  const neighbourProteins = (date: string): ProteinKey[] => [
+    ...(proteinsByDate.get(shiftDate(date, -1)) ?? []),
+    ...(proteinsByDate.get(shiftDate(date, 1)) ?? []),
+  ];
 
   const ordered = [
     ...rankings.filter((r) => !isSent(r.slot)),
@@ -1460,7 +1478,6 @@ export function validateModelChoices(args: ValidateArgs): {
   ];
   const results: PlanningSlotResult[] = [];
   let rejected = 0;
-  let lastProtein: ProteinKey | null = null;
 
   for (const ranking of ordered) {
     const ctx = contexts[ranking.slot];
@@ -1472,25 +1489,32 @@ export function validateModelChoices(args: ValidateArgs): {
       list: RankedCandidate[],
       head: number,
       wanted: string | null,
-      avoid: ProteinKey | null,
+      avoid: ReadonlyArray<ProteinKey>,
     ): { candidate: RankedCandidate | undefined; fromModel: boolean } => {
       const fromModel =
         wanted != null
-          ? list.slice(0, head).find((c) => c.recipeId === wanted && free(c))
+          ? list
+              .slice(0, head)
+              .find((c) => c.recipeId === wanted && free(c) && !isAvoided(c, avoid))
           : undefined;
       if (fromModel) return { candidate: fromModel, fromModel: true };
       return { candidate: firstFree(list, avoid), fromModel: false };
     };
 
-    const main = pick(ranking.plats, ranking.sent.plats, asId(e?.recipe_id), lastProtein);
+    const main = pick(
+      ranking.plats,
+      ranking.sent.plats,
+      asId(e?.recipe_id),
+      neighbourProteins(ctx.date),
+    );
     if (!main.candidate) continue;
     if (sent && !main.fromModel) rejected++;
     used.add(main.candidate.recipeId);
-    lastProtein = proteinById(main.candidate.recipeId);
+    noteProtein(ctx.date, proteinById(main.candidate.recipeId));
 
     let starterId: string | undefined;
     if (ctx.format.wantsStarter && ranking.entrees.length > 0) {
-      const s = pick(ranking.entrees, ranking.sent.entrees, asId(e?.starter_id), null);
+      const s = pick(ranking.entrees, ranking.sent.entrees, asId(e?.starter_id), []);
       if (s.candidate) {
         starterId = s.candidate.recipeId;
         used.add(starterId);
@@ -1499,7 +1523,7 @@ export function validateModelChoices(args: ValidateArgs): {
     }
     let dessertId: string | undefined;
     if (ctx.format.wantsDessert && ranking.desserts.length > 0) {
-      const d = pick(ranking.desserts, ranking.sent.desserts, asId(e?.dessert_id), null);
+      const d = pick(ranking.desserts, ranking.sent.desserts, asId(e?.dessert_id), []);
       if (d.candidate) {
         dessertId = d.candidate.recipeId;
         used.add(dessertId);

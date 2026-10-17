@@ -20,6 +20,18 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
+### v0.24.0 — fonctionnel
+
+Planning : deux plats principaux de même protéine ne se suivent plus quand un autre
+candidat existe (ticket #137, deux jours de poulet d'affilée). `validateModelChoices`
+(`gemini/planning.ts`) refuse le choix du modèle dont la protéine connue est celle de la
+veille ou du lendemain, comptée par date. Avant, seule la protéine du créneau traité juste
+avant servait de repli, et l'ordre de traitement (créneaux non envoyés d'abord) n'est pas
+l'ordre des jours. Le refus s'ajoute à `rejected_choices`. Sans candidat libre d'une autre
+protéine, le créneau garde le choix du modèle. Aucune modification Dart, aucun nouveau poste d'IA.
+Une recette sans tag `main_protein` ni indice dans les types de plat reste « inconnue » et
+n'est pas détectée.
+
 ### v0.23.100 — fonctionnel
 
 Brouillons : un doublon est maintenant visible. Chaque brouillon doublon affiche une pastille « Doublon possible » sous sa ligne, sur toute la largeur, puis le détail sur deux lignes au plus (« Doublon possible de « Rouget » (p. 3) » quand le serveur l'a marqué). Le serveur ne marquait que le brouillon écrit en second : le plus ancien de deux brouillons « Rouget » d'un même livre n'affichait rien. La file rapproche désormais deux brouillons du même livre de même titre et leur donne à chacun la pastille, avec « Même titre : « Rouget » (p. 3) ». Pas de rapprochement sans livre, ni quand les deux pages sont connues et différentes. La validation en lot ne change pas : elle écarte les seuls brouillons marqués par le serveur. Un doublon avec une recette déjà validée reste signalé par la seule marque du serveur. Ticket #132.
