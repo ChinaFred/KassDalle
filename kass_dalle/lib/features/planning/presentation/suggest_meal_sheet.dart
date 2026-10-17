@@ -130,6 +130,16 @@ class _SuggestMealSheetState extends ConsumerState<SuggestMealSheet> {
     List<Recipe> recipes;
     try {
       recipes = await ref.read(suggestableRecipesProvider.future);
+      // Les livres privés des membres de mes groupes : titre seul. Une
+      // recette déjà proposée par la liste habituelle passe en premier.
+      final known = {for (final r in recipes) r.id};
+      final privateTitles = await ref.read(
+        suggestablePrivateTitlesProvider.future,
+      );
+      recipes = [
+        ...recipes,
+        ...privateTitles.where((r) => !known.contains(r.id)),
+      ];
     } catch (_) {
       // Déjà remonté au rapport par le provider : on laisse choisir un nom
       // libre, et on dit que les recettes manquent.

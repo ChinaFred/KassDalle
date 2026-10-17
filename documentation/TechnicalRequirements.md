@@ -3570,6 +3570,17 @@ Le propriétaire d'un groupe cherche un compte existant à inviter par son adres
 complète. `users/{uid}` n'est pas lisible par lui (§4) : le serveur fait la recherche. Aucun
 appel de modèle : ce n'est pas un poste d'IA.
 
+**`listFamilyPrivateTitlesFn`** (`callable/privateTitlesCallable.ts`, logique pure dans
+`gemini/privateTitles.ts`, `onCall`, `requireAuth` — compte approuvé et non révoqué ; traitement
+`titres_recettes_privees`). Sans entrée. Lit `group_reach/{uid}` du demandeur (30 comptes au plus,
+lui exclu), puis les recettes de ces comptes `review_status == validated` et `is_private == true`
+(pages de type recette seulement), et rend `{titles: [{id, titre, bookTitre, createdBy}]}`, 500 au
+plus, triés par titre. Aucun autre champ de la recette ne sort ; les règles Firestore restent
+inchangées (la recette privée reste illisible côté client). Appelée par la feuille « Suggérer un
+plat » (`suggestablePrivateTitlesProvider`) ; un échec est rapporté
+(`meal_suggestions.load_private_titles`) et la section est omise. La suggestion copie déjà le titre
+(`recipe_titre`). Aucun appel de modèle : pas de poste d'IA. Testé : `tests/privateTitles.test.ts`.
+
 **`findMemberByEmailFn`** (`callable/memberSearchCallable.ts`, `onCall`, `requireEditor` —
 editor ou admin, non révoqué, App Check selon la politique (v0.23.54 : un reader
 propriétaire d'un ancien groupe n'invite plus) ; traitement

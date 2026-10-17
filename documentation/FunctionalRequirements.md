@@ -954,7 +954,12 @@ lui-même celles qu'il retient.
   qu'un plat est choisi. Depuis une fiche recette, la feuille demande aussi le
   « Groupe » (s'il y en a plusieurs) et le « Jour » (d'aujourd'hui à 59 jours après).
   Une erreur de lecture des recettes se dit dans la feuille : « Les recettes n'ont pas
-  pu être lues. Réessayez. » ; un nom libre reste possible. Succès :
+  pu être lues. Réessayez. » ; un nom libre reste possible. Les recettes validées des
+  livres privés des membres de ses groupes sont aussi proposées, **en titre seul** : ligne
+  avec le nom du livre et un cadenas (« Seul le titre est visible »), sans image ni
+  ingrédients ni accès à la fiche. L'auteur d'une recette ne peut pas refuser que son titre
+  paraisse. Un membre sans groupe en commun avec l'auteur n'en voit rien. Si cette lecture
+  échoue, la liste habituelle s'affiche sans ces recettes. Succès :
   « Suggestion envoyée à Marie. » Échec : « Suggestion non envoyée. Réessayez. », la
   feuille reste ouverte et la saisie est conservée. Feuille du bas sur un téléphone,
   boîte de dialogue de 480 px sur grand écran ; Ctrl+Entrée ou Ctrl+S (Cmd sur Mac)
