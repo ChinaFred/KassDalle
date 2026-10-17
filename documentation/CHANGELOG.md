@@ -20,6 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
+### v0.23.99 — fonctionnel
+
+Menu du compte : nouvelle entrée « Nouveautés ». Elle ouvre un écran qui liste les six dernières versions de l'application, de la plus récente à la plus ancienne, avec leur numéro, leur date et ce qu'elles changent. Une pastille « Installée » repère la version de l'application. Si la liste ne se charge pas, l'écran affiche « Impossible d'afficher les nouveautés. » et un bouton « Réessayer ». Demandé par le ticket #131.
+
+### v0.23.99 — technique
+
+`.github/scripts/changelog-recent.mjs` extrait du `CHANGELOG.md` les six dernières versions qui ont une entrée « fonctionnel » et écrit `kass_dalle/assets/changelog_recent.json`, déclaré comme asset dans `pubspec.yaml`. Il échoue s'il trouve moins de six versions. Son test (`changelog-recent.test.mjs`) et la génération tournent dans le job Flutter de `ci.yml` ; `deploy.yml` régénère le fichier avant le build web, et l'APK l'embarque. La copie versionnée sert aux builds locaux et aux tests ; `deploy.ps1` embarque cette copie. Écran `core/presentation/changelog_screen.dart`, service `core/services/changelog_service.dart` (erreur remontée par `ErrorReportService`, feature `changelog.load`), route `/changelog`, nom d'écran « Nouveautés » ajouté à `kTicketScreenNames`. Aucun paquet ni `pubspec.lock` modifié.
+
 ### v0.23.98 — fonctionnel
 
 Admin › Tickets des membres : nouvelle décision « Clore », pour un ticket Reçu, Analysé, Validé ou En cours, de tout type. L'administrateur écrit un commentaire (5 à 4 000 caractères, sans adresse e-mail) ; il est publié sur GitHub en « Réponse : … », l'Issue est fermée et le ticket passe à « Clos ». Le membre lit le commentaire dans « Mes tickets » (« Ce ticket est clos. », « L'administrateur vous a répondu ci-dessous. »). « Clore » est masqué pendant une livraison de ce ticket. Un ticket Clos est final : plus de validation, de refus, de réponse ni de lancement. Le filtre de statut de l'administrateur gagne la puce « Clos » (neuf statuts). Le type « Question » n'est plus proposé à la création d'un ticket (« Bug », présélectionné, « Évolution », « Nouvelle fonctionnalité ») et le serveur le refuse ; les tickets Question déjà créés restent lisibles et filtrables. L'état vide de « Mes tickets » dit « Un bug, une idée ? Envoyez-les à l'administrateur. ». Les versions installées avant celle-ci ne connaissent pas le statut Clos et affichent « Reçu » pour un ticket clos, jusqu'à leur mise à jour.

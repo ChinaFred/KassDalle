@@ -156,6 +156,12 @@ jobs:
           flutter pub get
           npm ci --prefix functions
 
+      - name: Nouveautés — générer l'asset
+        # L'écran « Nouveautés » embarque les six dernières versions du
+        # CHANGELOG.md, dans le web comme dans l'APK construit plus bas.
+        working-directory: .
+        run: node .github/scripts/changelog-recent.mjs
+
       - name: Build web
         # Mêmes options que deploy.ps1.
         run: flutter build web --release --no-tree-shake-icons --no-wasm-dry-run

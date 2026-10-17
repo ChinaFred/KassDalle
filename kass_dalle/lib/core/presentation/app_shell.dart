@@ -358,6 +358,7 @@ enum _AccountAction {
   newTicket,
   myTickets,
   adminTickets,
+  changelog,
   signOut,
 }
 
@@ -393,6 +394,10 @@ class _AccountBadge extends ConsumerWidget {
         if (action == _AccountAction.adminTickets) {
           ref.read(adminTicketStatusFilterProvider.notifier).enterToProcess();
           context.push(AppRoutes.adminTickets);
+          return;
+        }
+        if (action == _AccountAction.changelog) {
+          context.push(AppRoutes.changelog);
           return;
         }
         ref.read(authRepositoryProvider).signOut();
@@ -510,6 +515,16 @@ class _AccountBadge extends ConsumerWidget {
               ],
             ),
           ),
+        const PopupMenuItem<_AccountAction>(
+          value: _AccountAction.changelog,
+          child: Row(
+            children: [
+              Icon(Icons.new_releases_outlined),
+              SizedBox(width: 8),
+              Text('Nouveautés'),
+            ],
+          ),
+        ),
         const PopupMenuItem<_AccountAction>(
           value: _AccountAction.signOut,
           child: Row(
