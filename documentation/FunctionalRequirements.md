@@ -113,7 +113,7 @@ Création à partir d'un PDF ou d'un EPUB (« Ajouter à partir d'un PDF ou d'un
 - Le livre est créé depuis le fichier. Un EPUB donne titre, auteur, éditeur, année, langue, ISBN, description et couverture sans appel d'IA. Un PDF est lu par l'IA sur sa première page, comme une couverture scannée ; sa couverture est l'image JPEG de la première page quand le PDF en embarque une, sinon le livre se crée sans couverture.
 - Le contenu est découpé en tranches de 3 pages (PDF) ou d'environ 6 000 caractères (EPUB, Word), avec une page de contexte à la suite pour terminer la dernière recette entamée. Chaque tranche devient un import de page ordinaire : ses recettes arrivent une à une dans les **brouillons**, rattachées au nouveau livre.
 - Depuis le menu d'un livre existant, « Importer un livre complet » suit le même chemin et rattache les recettes à ce livre.
-- **Livre déjà dans la bibliothèque.** En mode nouveau livre, l'écran de confirmation compare le fichier lu aux livres de l'utilisateur, avant toute dépense de l'import. Deux signaux comptent : le titre lu dans le fichier, comparé sans casse, sans accents ni ponctuation, avec un auteur compatible (un auteur inconnu d'un côté n'écarte pas le livre) ; ou le même fichier, octet pour octet, qu'un livre déjà importé depuis un fichier. Un livre reconnu affiche un encadré : « Ce livre semble déjà dans votre bibliothèque : {titre}, {auteur}. », suivi de « Ce fichier a déjà été importé le {date}. » quand c'est le même fichier, et de « Importer dans ce livre marque les recettes déjà présentes comme doublons possibles. ». Deux choix : **Importer dans ce livre** lance l'import dans le livre existant, avec le plafond saisi ; **Créer un nouveau livre quand même** (le bouton « Lancer l'import » prend ce libellé) crée un second livre. « Annuler » reste offert. Les deux boutons d'import restent grisés tant que le plafond n'est pas valide. « Importer un livre complet » depuis un livre existant n'affiche pas cet encadré : c'est le chemin normal pour terminer un import interrompu. Limite : un PDF sans titre dans ses métadonnées n'est reconnu, à cette étape, que s'il s'agit du même fichier ; la lecture de sa première page par l'IA vient après le lancement.
+- **Livre déjà dans la bibliothèque.** En mode nouveau livre, l'écran de confirmation compare le fichier lu aux livres de l'utilisateur, avant toute dépense de l'import. Deux signaux comptent : le titre lu dans le fichier, comparé sans casse, sans accents ni ponctuation, avec un auteur compatible (un auteur inconnu d'un côté n'écarte pas le livre) ; ou le même fichier, octet pour octet, qu'un livre déjà importé depuis un fichier. Un livre reconnu affiche un encadré : « Ce livre semble déjà dans votre bibliothèque : {titre}, {auteur}. », suivi de « Ce fichier a déjà été importé le {date}. » quand c'est le même fichier, et de « Importer dans ce livre marque les recettes déjà présentes comme doublons possibles. ». Deux choix : **Importer dans ce livre** lance l'import dans le livre existant, avec le plafond saisi ; **Créer un nouveau livre quand même** (le bouton « Lancer l'import » prend ce libellé, en bouton secondaire) crée un second livre. « Importer dans ce livre » est alors le bouton principal, et la phrase de la carte devient « Par défaut, un nouveau livre sera créé depuis le fichier. ». « Annuler » reste offert. Les deux boutons d'import restent grisés tant que le plafond n'est pas valide. « Importer un livre complet » depuis un livre existant n'affiche pas cet encadré : c'est le chemin normal pour terminer un import interrompu. Limite : un PDF sans titre dans ses métadonnées n'est reconnu, à cette étape, que s'il s'agit du même fichier ; la lecture de sa première page par l'IA vient après le lancement.
 - **Recette déjà présente dans le livre.** Chaque tranche compare ses recettes à celles du livre et aux tranches précédentes du même import (même critère qu'une page scannée, voir 4.2). Une recette déjà présente devient quand même un brouillon, marqué « Doublon possible » avec la recette existante (voir 5.4). Ainsi, réimporter un livre dans le même livre fait ressortir marquées les recettes déjà importées.
 - Chaque import est facturé et soumis au plafond quotidien d'IA, en plus du plafond de l'import. Quand l'un ou l'autre est atteint, les imports restants passent en erreur et se relancent, le lendemain ou après relèvement du plafond, depuis la file « Brouillons & Traitements » (sélection multiple, « Relancer »).
 - Un import qui échoue après la lecture de la page ne relit pas la page à la relance : la transcription réussie est gardée sur le traitement, et seule la suite est refaite.
@@ -417,22 +417,29 @@ privait le titre de la place dont il manquait.
   elle donne le titre lu, puis la référence : « Déjà dans le livre : {titre}, p. {n} » (sans
   « p. » quand la page est inconnue), lien qui ouvre la recette existante — la relecture pour un
   brouillon, la fiche pour une recette validée —, ou « Import plus ancien en cours : {titre} »
-  quand la référence est un import pas encore terminé. Une recette supprimée depuis s'affiche
-  « Recette supprimée », sans lien. Une recette que l'utilisateur ne peut pas lire (livre privé ou
+  quand la référence est un import pas encore terminé. Une fois cet import terminé, la ligne
+  affiche « Déjà dans le livre : … » et le lien ouvre la recette qu'il a créée. Une recette
+  supprimée depuis, ou un import de référence en erreur, rejeté ou supprimé, s'affiche
+  « Recette supprimée », sans lien. Le lien a une cible d'au moins 48 px et s'annonce comme lien
+  au lecteur d'écran. Une recette que l'utilisateur ne peut pas lire (livre privé ou
   brouillon non partagé d'un autre membre) s'affiche « Déjà dans le livre (page d'un autre
   membre) », sans lien. Deux actions :
   - **Ce n'est pas un doublon** : le traitement reprend au balisage, pour les seules recettes
     retenues, sans nouvelle comparaison. Les brouillons déjà créés pour les autres recettes de la
     page ne sont pas touchés. Réservé au propriétaire du traitement, s'il est éditeur ou
-    administrateur. En cas d'échec : « La reprise du traitement a échoué. »
+    administrateur. Le bouton se grise pendant l'écriture ; en cas de succès : « Traitement
+    repris : le brouillon arrivera dans la file. », en cas d'échec : « La reprise du traitement
+    a échoué. »
   - **Supprimer** : supprime le traitement, avec confirmation. Ouvert à son propriétaire s'il
     est éditeur ou administrateur, et à un administrateur. Le fichier scanné reste dans le
     stockage.
 - **Un brouillon marqué « Doublon possible »** vient d'un import de livre entier (voir 4.1) :
   sa recette existait déjà dans le livre. Sa ligne porte, sous le titre, « Doublon possible de
-  « {titre} » (p. {n}) ». L'écran de relecture affiche le même texte dans un bandeau, avec
-  « Ouvrir la recette existante » (ou « La référence est un import plus ancien, encore en
-  cours. »). « Valider » depuis la relecture reste possible et efface la marque.
+  « {titre} » (p. {n}) », et son menu propose « Relire » à la place de « Valider ». L'écran de
+  relecture affiche le même texte dans un bandeau, avec « Ouvrir la recette existante » (ou
+  « La référence est un import plus ancien, encore en cours. »), et « Valider la publiera quand
+  même et retirera cette marque. ». Sur téléphone, le bandeau est replié sur une ligne et se
+  déplie d'un appui. « Valider » depuis la relecture reste possible et efface la marque.
 - **Un compteur en tête de la file** dit combien de décisions attendent : « {n} doublon(s)
   possible(s) à trancher ». Il compte les lignes « Doublon possible » et les brouillons marqués
   que l'utilisateur peut valider ou supprimer ; ceux d'un autre membre ne comptent pas.
