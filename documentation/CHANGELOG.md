@@ -20,6 +20,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
+### v0.23.96 — fonctionnel
+
+#### Signaler ou proposer (`/tickets/new`)
+
+- Le type « Bug » est sélectionné à l'ouverture du formulaire, avec son aide de description.
+  Le membre peut en choisir un autre avant l'envoi. Demandé par le ticket #127 : la plupart des
+  tickets sont des bugs, et le choix du type était une étape de plus.
+- Le message « Choisissez le type de ticket. » n'apparaît plus dans le parcours normal ;
+  `validateTicketForm` garde ce contrôle.
+
 ### v0.23.95 — fonctionnel
 
 Admin › Tickets des membres : le filtre « À traiter » et son compteur incluent les tickets En cours dont la pull request est prête à livrer, quand « Livrer » est offert. Ils n'apparaissaient que sous « Tous ». Un ticket En cours sans PR prête, ou dont la livraison est en cours, reste exclu. Demande du ticket #123.

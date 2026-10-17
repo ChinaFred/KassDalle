@@ -1146,7 +1146,7 @@ question, sans quitter l'application. Le ticket part en Issue sur le dépôt Git
 - Au moment de l'appui sur « Signaler ou proposer », l'application note l'écran d'où vient le
   membre et, quand c'est possible, prend une image de cet écran.
 - Le formulaire demande :
-  - le **type**, sans présélection (« Choisissez le type de ticket. ») ;
+  - le **type**, Bug présélectionné à l'ouverture, modifiable avant l'envoi ;
   - le **titre**, de 5 à 100 caractères (« Le titre doit faire au moins 5 caractères. ») ;
   - la **description**, de 1 à 2000 caractères, avec une aide propre au type. Bug : « Ce que
     vous faisiez : … / Ce qui s'est passé : … / Ce que vous attendiez : … ». Évolution : « Ce
