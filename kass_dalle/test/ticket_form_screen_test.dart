@@ -54,11 +54,15 @@ void main() {
 
   testWidgets('trois types proposés, Question absent', (tester) async {
     await pump(tester);
+    Finder chip(String label) => find.descendant(
+      of: find.byType(ChoiceChip),
+      matching: find.text(label),
+    );
 
-    expect(find.text('Bug'), findsOneWidget);
-    expect(find.text('Évolution'), findsOneWidget);
-    expect(find.text('Nouvelle fonctionnalité'), findsOneWidget);
-    expect(find.text('Question'), findsNothing);
+    expect(chip('Bug'), findsOneWidget);
+    expect(chip('Évolution'), findsOneWidget);
+    expect(chip('Nouvelle fonctionnalité'), findsOneWidget);
+    expect(chip('Question'), findsNothing);
     expect(find.byType(ChoiceChip), findsNWidgets(3));
   });
 
