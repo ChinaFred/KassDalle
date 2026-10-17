@@ -8,6 +8,8 @@
  * le backfill « Clé de titre des recettes ».
  */
 
+import { isDeepStrictEqual } from "node:util";
+
 import { getFirestore } from "firebase-admin/firestore";
 
 import { COLL_RECIPES } from "../config";
@@ -18,6 +20,20 @@ import { titleKey } from "../pipeline/duplicateDetection";
 export function titleKeyUpdate(data: Record<string, unknown>): string | null {
   const expected = titleKey(typeof data.titre === "string" ? data.titre : "");
   return data.titre_key === expected ? null : expected;
+}
+
+/** Vrai quand l'écriture n'a changé que `titre_key`. Faux pour une création. */
+export function onlyTitleKeyChanged(
+  before: Record<string, unknown> | undefined,
+  after: Record<string, unknown>,
+): boolean {
+  if (!before || before.titre_key === after.titre_key) return false;
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const key of keys) {
+    if (key === "titre_key") continue;
+    if (!isDeepStrictEqual(before[key], after[key])) return false;
+  }
+  return true;
 }
 
 /** Aligne `titre_key` sur le titre. Best-effort, jamais silencieux. */

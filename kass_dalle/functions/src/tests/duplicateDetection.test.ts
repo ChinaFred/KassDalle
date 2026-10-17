@@ -15,7 +15,7 @@ import {
   titleKey,
   type InFlightJob,
 } from "../pipeline/duplicateDetection";
-import { titleKeyUpdate } from "../triggers/recipeTitleKey";
+import { onlyTitleKeyChanged, titleKeyUpdate } from "../triggers/recipeTitleKey";
 import { pickExistingBook, type LibraryBook } from "../books/existingBook";
 
 describe("titleKey", () => {
@@ -44,7 +44,12 @@ describe("pagesCompatible", () => {
   });
 });
 
-const self = { jobId: "job-b", createdAtMs: 2_000, createdRecipeIds: [] as string[] };
+const self = {
+  jobId: "job-b",
+  createdAtMs: 2_000,
+  createdRecipeIds: [] as string[],
+  ownerUid: "owner",
+};
 
 function job(overrides: Partial<InFlightJob>): InFlightJob {
   return {
@@ -55,6 +60,7 @@ function job(overrides: Partial<InFlightJob>): InFlightJob {
     titreKeyPages: [12],
     titres: ["Pâte brisée"],
     checked: false,
+    createdBy: "owner",
     ...overrides,
   };
 }
@@ -115,6 +121,16 @@ describe("pickDuplicate", () => {
       self,
     });
     assert.equal(match?.jobId, "job-a");
+  });
+
+  test("un import d'un autre compte sur le même livre n'est pas une référence", () => {
+    const match = pickDuplicate({
+      candidate: { titre: "Pâte brisée", page: 12 },
+      recipes: [],
+      jobs: [job({ createdBy: "intrus", checked: true })],
+      self,
+    });
+    assert.equal(match, null);
   });
 
   test("à date égale, l'identifiant départage", () => {
@@ -249,5 +265,29 @@ describe("pickExistingBook", () => {
 
   test("rien ne correspond", () => {
     assert.equal(pickExistingBook({ books, titre: "Autre", auteur: null, sha256: "z" }), null);
+  });
+});
+
+describe("onlyTitleKeyChanged", () => {
+  test("seule la clé change : vrai", () => {
+    assert.equal(
+      onlyTitleKeyChanged(
+        { titre: "Gratin", tags: { a: 1 } },
+        { titre: "Gratin", tags: { a: 1 }, titre_key: "gratin" },
+      ),
+      true,
+    );
+  });
+
+  test("un autre champ change aussi : faux", () => {
+    assert.equal(
+      onlyTitleKeyChanged({ titre: "Gratin" }, { titre: "Gratin d", titre_key: "gratin d" }),
+      false,
+    );
+  });
+
+  test("création ou clé inchangée : faux", () => {
+    assert.equal(onlyTitleKeyChanged(undefined, { titre_key: "gratin" }), false);
+    assert.equal(onlyTitleKeyChanged({ titre_key: "a", x: 1 }, { titre_key: "a", x: 2 }), false);
   });
 });

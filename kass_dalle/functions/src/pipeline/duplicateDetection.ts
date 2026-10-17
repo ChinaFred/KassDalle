@@ -84,13 +84,26 @@ export interface InFlightJob {
   titres: string[];
   /** L'import a passé sa vérification et continue (`duplicate_checked`). */
   checked: boolean;
+  /** `created_by` du job. */
+  createdBy: string;
+}
+
+/** L'import qui vérifie. */
+export interface DuplicateSelf {
+  jobId: string;
+  createdAtMs: number;
+  createdRecipeIds: string[];
+  /** `created_by` du job : seuls ses propres imports servent de référence. */
+  ownerUid: string;
 }
 
 /**
  * Choisit la référence d'un candidat, ou `null`. Fonction pure : la lecture de
  * Firestore est faite à côté, pour que la décision se teste sans émulateur.
  *
- * Une recette existante l'emporte sur un import en cours. Un import n'est une
+ * Une recette existante l'emporte sur un import en cours. Seuls les imports du
+ * même compte comptent : un job se crée côté client, et un job fabriqué par un
+ * autre membre sur ce livre ne doit pas arrêter ses scans. Un import n'est une
  * référence que s'il est en file ou en cours, et créé avant celui-ci (à date
  * égale, l'identifiant départage) ou déjà vérifié : un import terminé a écrit
  * ses recettes, que la première source couvre ; un import en erreur ou lui-même
@@ -101,7 +114,7 @@ export function pickDuplicate(args: {
   candidate: DuplicateCandidate;
   recipes: ExistingRecipe[];
   jobs: InFlightJob[];
-  self: { jobId: string; createdAtMs: number; createdRecipeIds: string[] };
+  self: DuplicateSelf;
 }): DuplicateMatch | null {
   const key = titleKey(args.candidate.titre);
   if (!key) return null;
@@ -124,6 +137,7 @@ export function pickDuplicate(args: {
     (j.createdAtMs === args.self.createdAtMs && j.id < args.self.jobId);
   for (const job of args.jobs) {
     if (job.id === args.self.jobId) continue;
+    if (job.createdBy !== args.self.ownerUid) continue;
     if (job.status !== "queued" && job.status !== "processing") continue;
     if (!earlier(job) && !job.checked) continue;
     const index = job.titreKeys.indexOf(key);
@@ -149,7 +163,7 @@ export function pickDuplicate(args: {
 export async function findDuplicates(args: {
   bookId: string;
   candidates: DuplicateCandidate[];
-  self: { jobId: string; createdAtMs: number; createdRecipeIds: string[] };
+  self: DuplicateSelf;
 }): Promise<(DuplicateMatch | null)[]> {
   const db = getFirestore();
   const keys = [...new Set(args.candidates.map((c) => titleKey(c.titre)).filter((k) => k))];
@@ -188,6 +202,7 @@ export async function findDuplicates(args: {
           titreKeyPages: asPageList(data.titre_key_pages),
           titres: asStringList(data.titre_key_titres),
           checked: data.duplicate_checked === true,
+          createdBy: typeof data.created_by === "string" ? data.created_by : "",
         });
       }
     }),

@@ -662,6 +662,7 @@ export const recipeProcessor = onTaskDispatched(
             createdAtMs:
               job.created_at instanceof Timestamp ? job.created_at.toMillis() : Date.now(),
             createdRecipeIds: readStringList(job.created_recipe_ids),
+            ownerUid: typeof job.created_by === "string" ? job.created_by : "",
           },
         });
         matches.forEach((m, i) => {

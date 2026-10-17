@@ -977,8 +977,18 @@ service cloud.firestore {
       // Un import depuis un lien (`recipeUrlImport`) n'est créé que par
       // `importRecipeFromUrlFn`, qui vérifie l'adresse, le doublon et le
       // plafond du jour. Écrit par le client, il les contournerait tous.
+      //
+      // Le job naît en file, sans aucun champ que seul le pipeline écrit. Les
+      // clés de titre et `duplicate_checked` servent de référence aux imports
+      // suivants du même livre : posées par le client sur un job jamais mis en
+      // file, elles arrêteraient ces imports au statut « Doublon possible ».
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
-        && request.resource.data.get('type', 'recipeScan') != 'recipeUrlImport';
+        && request.resource.data.get('type', 'recipeScan') != 'recipeUrlImport'
+        && request.resource.data.get('status', 'queued') == 'queued'
+        && !request.resource.data.keys().hasAny([
+             'titre_keys', 'titre_key_pages', 'titre_key_titres', 'duplicate_checked',
+             'duplicates', 'pending_items', 'duplicate_override'
+           ]);
       // Une relance remet le job en `queued`, et jobDispatcher relance alors le
       // pipeline facturé : elle suit le droit de création. Le propriétaire qui
       // n'est plus éditeur (job créé avant ce droit, compte rétrogradé) garde
@@ -1000,6 +1010,7 @@ service cloud.firestore {
         return resource.data.get('status', '') == 'duplicate'
           && request.resource.data.status == 'queued'
           && request.resource.data.duplicate_override == true
+          && !isUrlImport()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                'status', 'duplicate_override', 'error_message', 'current_step', 'updated_at'
              ]);
@@ -1008,12 +1019,15 @@ service cloud.firestore {
       allow update: if isAdmin() || (isJobOwner() && touchesOnlyRetryOrCancelFields()
                                      && ((isExactCancel() && retryCountUnchanged()
                                           && (!isUrlImport() || urlJobInFlight()))
-                                         || (isEditor() && (!isUrlImport() || urlRelaunchAllowed()))))
+                                         || (isEditor() && request.resource.data.status in ['queued', 'error']
+                                             && (!isUrlImport() || urlRelaunchAllowed()))))
                     || (isJobOwner() && isEditor() && isDuplicateResume());
       // Un import en attente de doublon se supprime par son propriétaire : rien
-      // n'y tourne, et la ligne n'a pas d'autre sortie que la reprise.
+      // n'y tourne, et la ligne n'a pas d'autre sortie que la reprise. Un
+      // statut 'duplicate' n'est posé que par le pipeline : la relance
+      // ci-dessus n'admet que 'queued' ou 'error'.
       allow delete: if isAdmin()
-                    || (isJobOwner() && resource.data.get('status', '') == 'duplicate');
+                    || (isJobOwner() && isEditor() && resource.data.get('status', '') == 'duplicate');
     }
 
     // Suivi de l'usage des tokens IA

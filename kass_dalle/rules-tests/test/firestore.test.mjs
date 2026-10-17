@@ -2889,6 +2889,45 @@ describe("processing_jobs", () => {
     );
   });
 
+  it("un éditeur ne crée pas un job déjà vérifié ou porteur de clés de titre", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/faux-1").set({
+        created_by: EDITOR,
+        status: "processing",
+        book_id: "b1",
+      }),
+    );
+    await assertFails(
+      db("editor").doc("processing_jobs/faux-2").set({
+        created_by: EDITOR,
+        status: "queued",
+        titre_keys: ["pate brisee"],
+      }),
+    );
+    await assertFails(
+      db("editor").doc("processing_jobs/faux-3").set({
+        created_by: EDITOR,
+        status: "queued",
+        duplicate_checked: true,
+      }),
+    );
+    await assertSucceeds(
+      db("editor").doc("processing_jobs/vrai").set({ created_by: EDITOR, status: "queued" }),
+    );
+  });
+
+  it("une relance ne pose pas le statut 'duplicate'", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/job-editor").update({ status: "duplicate" }),
+    );
+    await assertFails(
+      db("editor").doc("processing_jobs/url-timeout").update({
+        status: "duplicate",
+        url_retry_count: 1,
+      }),
+    );
+  });
+
   it("un lecteur ne reprend pas son import en attente de doublon", async () => {
     await assertFails(
       db("reader").doc("processing_jobs/dup-reader").update({

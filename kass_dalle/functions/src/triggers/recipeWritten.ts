@@ -32,7 +32,7 @@ import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
 import { syncRecipeMealRole } from "./recipeMealRoleAutoSync";
 import { recipeAllergensMissing, syncRecipeAllergens } from "./recipeAllergensSync";
 import { syncRecipeEstimatedTimes } from "./recipeEstimatedTimes";
-import { syncRecipeTitleKey } from "./recipeTitleKey";
+import { onlyTitleKeyChanged, syncRecipeTitleKey } from "./recipeTitleKey";
 
 export const onRecipeWritten = onDocumentWritten(
   {
@@ -94,6 +94,13 @@ export const onRecipeWritten = onDocumentWritten(
       correlationId: newCorrelationId(qualify("ecriture_recette", "cle_de_titre")),
       scanId,
     });
+
+    // Une écriture qui ne change que `titre_key` (celle de la ligne
+    // ci-dessus, ou du backfill « Clé de titre des recettes ») ne touche
+    // aucune entrée des traitements suivants. Sans cette sortie, le rôle dans
+    // un repas d'une recette non classée repartait une seconde fois, et le
+    // backfill relançait un appel de modèle par recette sans rôle.
+    if (onlyTitleKeyChanged(beforeData, data)) return;
 
     // Ne traiter que les recettes (pas les pages techniques, notes, etc.)
     if (resolvePageType(data) !== "recipe") return;
