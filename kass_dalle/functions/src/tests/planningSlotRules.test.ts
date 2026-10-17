@@ -263,6 +263,10 @@ interface PreselectionFixture {
     slots: FxSlot[];
     rankings: FxRanking[];
     raw: unknown;
+    /** Protéine principale par recette ; absent : inconnue. */
+    proteins?: Record<string, string>;
+    /** Créneaux envoyés au modèle ; absent : tous. */
+    sent_slots?: number[];
     expected: Array<Record<string, unknown>>;
     rejected: number;
     why: string;
@@ -1027,10 +1031,15 @@ describe("lecture des choix du modèle", () => {
     test(c.why, () => {
       const rankings = c.rankings.map(rankingOf);
       const ids = new Set(rankings.flatMap((r) => [...r.plats, ...r.entrees, ...r.desserts]));
-      const recipes = [...ids].map((x) => ({ id: x.recipeId, titre: x.recipeId }));
+      const recipes = [...ids].map((x) => ({
+        id: x.recipeId,
+        titre: x.recipeId,
+        ...(c.proteins?.[x.recipeId] ? { mainProtein: c.proteins[x.recipeId] } : {}),
+      }));
       const input = inputOf(c.slots, recipes);
       const out = validateModelChoices({
         raw: c.raw,
+        ...(c.sent_slots ? { sentSlots: new Set(c.sent_slots) } : {}),
         rankings,
         input,
         corpusById: new Map(recipes.map((r) => [r.id, r])),
