@@ -74,6 +74,15 @@ import { ZipLimitError } from "../utils/boundedZip";
 import { parseBookWindow, runBookImport } from "./bookImport";
 import { parseCheckpoint, serializeCheckpoint } from "./transcriptionCheckpoint";
 import {
+  duplicateJobEntry,
+  duplicateOfField,
+  findDuplicates,
+  jobTitleKeyFields,
+  titleKey,
+  type DuplicateCandidate,
+  type DuplicateMatch,
+} from "./duplicateDetection";
+import {
   URL_IMPORT_JOB_TYPE,
   URL_IMPORT_MESSAGES,
   UrlImportError,
@@ -617,11 +626,103 @@ export const recipeProcessor = onTaskDispatched(
         await jobRef.update({ titre: titreDeSuivi(transcription), updated_at: Timestamp.now() });
       }
 
-      // ── PARSE + DESIGN + SAVE ─────────────────────────────────────────────
-      await jobRef.update({ current_step: "parse", updated_at: Timestamp.now() });
+      // ── DOUBLONS : la recette existe-t-elle déjà dans le livre ? ──────────
+      //
+      // Après la transcription (et la traduction : le titre comparé est celui
+      // qu'on enregistrera), avant le balisage, les illustrations et la
+      // nutrition. Une page scannée en double s'arrête ici, en attente d'une
+      // décision : « Ce n'est pas un doublon » la reprend sans relire la page,
+      // la transcription restant sur le job. Une tranche de livre ne s'arrête
+      // pas — des dizaines de lignes en attente rendraient la file illisible :
+      // son brouillon est créé et marqué, et la validation en lot l'écarte.
       const bookId = job.book_id as string | undefined;
       const bookTitre = job.book_titre as string | undefined;
-      const createdIds: string[] = [];
+      const items: DuplicateCandidate[] = isRecipePage
+        ? transcription.recettes.map((r) => ({
+            titre: r.titre,
+            page: r.page ?? transcription.page,
+          }))
+        : [{ titre: transcription.titre, page: transcription.page }];
+      const resuming = job.duplicate_override === true;
+      // Les brouillons déjà créés par ce job : une page à plusieurs recettes
+      // dont une seule était en double les a écrits avant l'attente.
+      const createdIds: string[] = resuming ? readStringList(job.created_recipe_ids) : [];
+      const pending = resuming ? readIndexList(job.pending_items) : null;
+      let toProcess = items.map((_, i) => i).filter((i) => pending == null || pending.includes(i));
+      const duplicateOf = new Map<number, DuplicateMatch>();
+      if (bookId) {
+        await jobRef.update({ ...jobTitleKeyFields(items), updated_at: Timestamp.now() });
+      }
+      if (bookId && !resuming && items.some((c) => titleKey(c.titre))) {
+        const matches = await findDuplicates({
+          bookId,
+          candidates: items,
+          self: {
+            jobId,
+            createdAtMs:
+              job.created_at instanceof Timestamp ? job.created_at.toMillis() : Date.now(),
+            createdRecipeIds: readStringList(job.created_recipe_ids),
+            ownerUid: typeof job.created_by === "string" ? job.created_by : "",
+          },
+        });
+        matches.forEach((m, i) => {
+          if (m) duplicateOf.set(i, m);
+        });
+        if (duplicateOf.size > 0) {
+          logInfo({
+            message: `Doublon possible : ${duplicateOf.size} recette(s) sur ${items.length} déjà dans le livre`,
+            moduleType: "IMPORT",
+            ...ctx,
+            extra: {
+              bookId,
+              trancheDeLivre: bookWindow != null,
+              references: [...duplicateOf.values()].map((m) => ({
+                recipeId: m.recipeId,
+                jobId: m.jobId,
+              })),
+            },
+          });
+        }
+      }
+      // Une page scannée : les doublons attendent, le reste continue.
+      const held = bookWindow ? [] : toProcess.filter((i) => duplicateOf.has(i));
+      if (held.length > 0) {
+        toProcess = toProcess.filter((i) => !held.includes(i));
+      }
+      const holdJob = async () => {
+        const elapsed = Date.now() - start;
+        await jobRef.update({
+          status: "duplicate",
+          current_step: null,
+          created_recipe_ids: createdIds,
+          duplicates: held.map((i) => duplicateJobEntry(duplicateOf.get(i)!)),
+          pending_items: held,
+          updated_at: Timestamp.now(),
+          execution_time_ms: elapsed,
+        });
+        logInfo({
+          message: "Import en attente : doublon possible",
+          moduleType: "IMPORT",
+          executionTimeMs: elapsed,
+          ...ctx,
+          extra: { createdIds, enAttente: held.length },
+        });
+      };
+      if (toProcess.length === 0 && held.length > 0) {
+        await holdJob();
+        return;
+      }
+
+      // ── PARSE + DESIGN + SAVE ─────────────────────────────────────────────
+      //
+      // `duplicate_checked` dit aux imports du même livre que celui-ci a passé
+      // sa vérification et va écrire ses brouillons : un scan plus ancien dont
+      // la transcription finit après lui le prendra pour référence.
+      await jobRef.update({
+        current_step: "parse",
+        ...(bookId ? { duplicate_checked: true } : {}),
+        updated_at: Timestamp.now(),
+      });
 
       // ── ILLUSTRATIONS ─────────────────────────────────────────────────────
       //
@@ -710,7 +811,7 @@ export const recipeProcessor = onTaskDispatched(
       const pageTypeSaved = transcription.pageType as CookLangPageType;
 
       // Une page non-recette n'a rien à baliser : son texte part tel quel.
-      if (!isRecipePage) {
+      if (!isRecipePage && toProcess.includes(0)) {
         await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
         const id = await saveDraft({
           cooklang: documentCooklang(transcription),
@@ -736,12 +837,14 @@ export const recipeProcessor = onTaskDispatched(
           apiKey,
           ctx,
           illustrationReport,
+          duplicateOf: duplicateOf.get(0),
         });
         createdIds.push(id);
         await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
       }
 
-      for (const recette of transcription.recettes) {
+      for (const [index, recette] of transcription.recettes.entries()) {
+        if (!isRecipePage || !toProcess.includes(index)) continue;
         // ── PASSE 2 : balisage et normalisation ─────────────────────────────
         //
         // Cette passe ne voit pas l'image : elle travaille sur ce que la passe 1
@@ -813,6 +916,7 @@ export const recipeProcessor = onTaskDispatched(
           fidelity,
           illustrationReport,
           traduction: recette.traduction,
+          duplicateOf: duplicateOf.get(index),
           onStep: async (step) => {
             await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
           },
@@ -828,12 +932,22 @@ export const recipeProcessor = onTaskDispatched(
         await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
       }
 
+      if (held.length > 0) {
+        // Les autres recettes de la page sont écrites ; celles en double
+        // attendent, et la transcription reste sur le job pour la reprise.
+        await holdJob();
+        return;
+      }
+
       const elapsed = Date.now() - start;
       await jobRef.update({
         status: "done",
         current_step: "done",
         created_recipe_ids: createdIds,
         transcription_checkpoint: FieldValue.delete(),
+        ...(resuming
+          ? { pending_items: FieldValue.delete(), duplicates: FieldValue.delete() }
+          : {}),
         updated_at: Timestamp.now(),
         execution_time_ms: elapsed,
       });
@@ -1065,6 +1179,8 @@ async function saveDraft(args: {
   sourceAuthor?: string | null;
   /** Nutrition par portion annoncée par la page — import par lien seulement. */
   sourceNutrition?: { perPortion: JsonLdNutrition; portions: number | null } | null;
+  /** Référence d'un doublon possible — tranche d'un livre entier seulement. */
+  duplicateOf?: DuplicateMatch;
 }): Promise<string> {
   const {
     cooklang,
@@ -1242,6 +1358,13 @@ async function saveDraft(args: {
   const now = FieldValue.serverTimestamp();
   const recipeData = {
     titre,
+    // Clé de comparaison des doublons à l'import (`duplicateDetection.ts`).
+    // Tenue à jour par `onRecipeWritten` quand le titre change.
+    titre_key: titleKey(titre),
+    // Posé sur le brouillon d'une tranche de livre dont la recette existe déjà
+    // dans le livre : la validation en lot l'écarte. Le client ne peut que
+    // l'effacer, en validant.
+    ...(args.duplicateOf ? { duplicate_of: duplicateOfField(args.duplicateOf) } : {}),
     langue: "fr",
     // Posé seulement sur une recette traduite : son absence veut dire « écrite
     // en français », et les recettes existantes n'ont rien à reprendre.
@@ -1526,4 +1649,15 @@ async function countPageImages(args: {
     publiees: 0,
     pagesEnEchec: failures,
   };
+}
+
+/** Une liste de chaînes lue sur le job, ou une liste vide. */
+function readStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+/** Les recettes d'une page encore en attente de décision, par position, ou `null`. */
+function readIndexList(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((v): v is number => Number.isInteger(v) && v >= 0);
 }

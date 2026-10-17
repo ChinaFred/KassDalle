@@ -472,6 +472,13 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
                     onConfirm: (budgetLimitUsd) => ref
                         .read(scanUploadProvider.notifier)
                         .confirmBookImport(budgetLimitUsd: budgetLimitUsd),
+                    onImportIntoExisting: (budgetLimitUsd, book) => ref
+                        .read(scanUploadProvider.notifier)
+                        .confirmBookImport(
+                          budgetLimitUsd: budgetLimitUsd,
+                          targetBookId: book.id,
+                          targetBookTitre: book.titre,
+                        ),
                     onCancel: () => ref
                         .read(scanUploadProvider.notifier)
                         .cancelBookImport(),
@@ -1008,6 +1015,11 @@ class _BookConfirmationCard extends StatefulWidget {
 
   /// Reçoit le plafond saisi, en dollars. Appelé seulement quand il est valide.
   final ValueChanged<double> onConfirm;
+
+  /// « Importer dans ce livre » : le plafond saisi et le livre déjà en
+  /// bibliothèque que le serveur a reconnu.
+  final void Function(double budgetLimitUsd, ExistingBookMatch book)
+  onImportIntoExisting;
   final VoidCallback onCancel;
 
   const _BookConfirmationCard({
@@ -1017,6 +1029,7 @@ class _BookConfirmationCard extends StatefulWidget {
     required this.targetsExistingBook,
     required this.errorMessage,
     required this.onConfirm,
+    required this.onImportIntoExisting,
     required this.onCancel,
   });
 
@@ -1130,11 +1143,13 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
       return 'Les recettes seront rattachées au livre '
           '« ${widget.targetBookTitre ?? ''} ».';
     }
-    final titre = analysis.titre;
-    return titre == null
+    // Un livre déjà en bibliothèque : la création n'est plus qu'un choix
+    // parmi deux, celui que fait le bouton du bas.
+    final head = analysis.existingBook == null
         ? 'Un nouveau livre sera créé depuis le fichier.'
-        : 'Un nouveau livre sera créé depuis le fichier. Titre relevé : '
-              '« $titre ».';
+        : 'Par défaut, un nouveau livre sera créé depuis le fichier.';
+    final titre = analysis.titre;
+    return titre == null ? head : '$head Titre relevé : « $titre ».';
   }
 
   @override
@@ -1142,7 +1157,12 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
     final theme = Theme.of(context);
     final body = theme.textTheme.bodyMedium;
     final limitUsd = _limitUsd;
+    final canLaunch = limitUsd != null && _budgetError() == null;
     final errorMessage = widget.errorMessage;
+    // Un livre déjà en bibliothèque ne compte qu'en mode « nouveau livre » :
+    // importer dans un livre choisi est le chemin normal pour terminer un
+    // import, il n'avertit pas.
+    final existing = widget.targetsExistingBook ? null : analysis.existingBook;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -1170,6 +1190,17 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
             Text(_costLine(), style: body),
             const SizedBox(height: 8),
             Text(_targetLine(), style: body),
+            if (existing != null) ...[
+              const SizedBox(height: 12),
+              _ExistingBookWarning(
+                book: existing,
+                // Même plafond que « Créer un nouveau livre quand même » :
+                // sans montant valide, aucun import ne part.
+                onImportIntoExisting: canLaunch
+                    ? () => widget.onImportIntoExisting(limitUsd, existing)
+                    : null,
+              ),
+            ],
             const SizedBox(height: 16),
             Text('Plafond de cet import', style: theme.textTheme.titleSmall),
             const SizedBox(height: 4),
@@ -1220,27 +1251,126 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
               ),
             ],
             const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            // `OverflowBar` : « Créer un nouveau livre quand même » ne tient
+            // pas toujours sur la ligne d'« Annuler » d'un téléphone.
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              spacing: 8,
+              overflowSpacing: 8,
+              overflowAlignment: OverflowBarAlignment.end,
               children: [
                 TextButton(
                   onPressed: widget.onCancel,
                   child: const Text('Annuler'),
                 ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  // Pas de plafond valide, pas d'import : c'est le montant que
-                  // le serveur fera respecter.
-                  onPressed: limitUsd == null || _budgetError() != null
-                      ? null
-                      : () => widget.onConfirm(limitUsd),
-                  icon: const Icon(Icons.auto_awesome_outlined),
-                  label: const Text('Lancer l\'import'),
-                ),
+                // Pas de plafond valide, pas d'import : c'est le montant que
+                // le serveur fera respecter.
+                if (existing == null)
+                  FilledButton.icon(
+                    onPressed: canLaunch
+                        ? () => widget.onConfirm(limitUsd)
+                        : null,
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                    label: const Text('Lancer l\'import'),
+                  )
+                else
+                  // Un livre reconnu : « Importer dans ce livre » est l'action
+                  // principale, créer un second livre l'alternative.
+                  OutlinedButton.icon(
+                    onPressed: canLaunch
+                        ? () => widget.onConfirm(limitUsd)
+                        : null,
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                    label: const Text('Créer un nouveau livre quand même'),
+                  ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// L'avertissement d'un livre déjà en bibliothèque, sur l'écran de
+/// confirmation d'un import en mode « nouveau livre ».
+///
+/// Il ne bloque rien : « Importer dans ce livre » est le bouton principal de
+/// la carte, et « Créer un nouveau livre quand même » reste offert en bas. Le
+/// même livre peut venir de deux sources (un PDF scanné, un EPUB acheté), et
+/// seul l'utilisateur sait s'il en veut deux.
+class _ExistingBookWarning extends StatelessWidget {
+  const _ExistingBookWarning({
+    required this.book,
+    required this.onImportIntoExisting,
+  });
+
+  final ExistingBookMatch book;
+
+  /// Null tant que le plafond saisi n'est pas valide.
+  final VoidCallback? onImportIntoExisting;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final couleur = theme.colorScheme.tertiary;
+    final sameFile = book.sameFileLabel;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.35),
+        border: Border.all(color: couleur.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.library_books_outlined,
+                color: couleur,
+                size: AppIconSize.small,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      book.warningLabel,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (sameFile != null) ...[
+                      const SizedBox(height: 4),
+                      Text(sameFile, style: theme.textTheme.bodyMedium),
+                    ],
+                    const SizedBox(height: 4),
+                    Text(
+                      'Importer dans ce livre marque les recettes déjà '
+                      'présentes comme doublons possibles.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: onImportIntoExisting,
+              icon: const Icon(Icons.menu_book_outlined),
+              label: const Text('Importer dans ce livre'),
+            ),
+          ),
+        ],
       ),
     );
   }

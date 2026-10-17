@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/services/error_reporting.dart';
+import '../../processing/domain/processing_job.dart';
+import '../../processing/presentation/processing_providers.dart';
 import '../../admin/data/nutrition_ingredients_repository.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../data/original_text_repository.dart';
@@ -10,6 +14,7 @@ import '../data/scan_upload_service.dart';
 import '../data/share_intent_source.dart';
 import '../data/shopping_cart_repository.dart';
 import '../data/storage_repository.dart';
+import '../domain/duplicate_reference.dart';
 import '../domain/original_text.dart';
 import '../domain/plating_advice.dart';
 import '../domain/storage_advice.dart';
@@ -288,6 +293,104 @@ final recipeByIdProvider = FutureProvider.autoDispose.family<Recipe?, String>((
 ) async {
   return ref.watch(recipeRepositoryProvider).getById(id);
 });
+
+/// La référence d'un doublon possible, résolue à l'affichage (voir
+/// `duplicate_reference.dart`).
+///
+/// - [recipeId] : la recette se lit, est absente, ou est refusée ;
+/// - [jobId] : l'import plus ancien est en cours, a créé la recette (celle
+///   dont le titre égale [existingTitre], sinon la première), ou ne mène plus
+///   à rien — en erreur, rejeté, en doublon, supprimé ou illisible.
+///
+/// Un import de l'utilisateur est pris dans sa file ([processingJobsProvider]),
+/// suivie en direct : la référence change quand l'import finit. Un autre
+/// (plus ancien que la file, ou d'un autre membre) est lu une fois.
+///
+/// Un refus `permission-denied` est attendu (livre privé, brouillon ou import
+/// d'un autre membre) et ne se signale pas. Toute autre erreur se signale.
+final duplicateReferenceProvider = FutureProvider.autoDispose
+    .family<
+      DuplicateReference,
+      ({String? recipeId, String? jobId, String existingTitre})
+    >((ref, key) async {
+      final recipes = ref.watch(recipeRepositoryProvider);
+      final recipeId = key.recipeId;
+      if (recipeId != null) {
+        return _readDuplicateRecipe(recipes, recipeId, key);
+      }
+      final jobId = key.jobId;
+      if (jobId == null) return const DuplicateReferenceGone();
+      final mine = ref.watch(
+        processingJobsProvider.select(
+          (jobs) => jobs.value?.where((j) => j.id == jobId).firstOrNull,
+        ),
+      );
+      final ProcessingJob? job;
+      try {
+        job =
+            mine ??
+            await ref.read(processingJobRepositoryProvider).getJob(jobId);
+      } catch (error, stackTrace) {
+        if (!_isPermissionDenied(error)) {
+          reportUnexpectedError(
+            feature: 'duplicateReference.readJob',
+            error: error,
+            stackTrace: stackTrace,
+            jobId: jobId,
+          );
+        }
+        return const DuplicateReferenceGone();
+      }
+      final outcome = duplicateJobOutcome(job);
+      if (outcome.pending) return const DuplicateReferencePending();
+      final results = await Future.wait(
+        outcome.candidates.map((id) => _readDuplicateRecipe(recipes, id, key)),
+      );
+      final found = <Recipe>[];
+      DuplicateReferenceUnreadable? unreadable;
+      for (final result in results) {
+        switch (result) {
+          case DuplicateReferenceFound(:final recipe):
+            found.add(recipe);
+          case DuplicateReferenceUnreadable():
+            // Un refus prime : il dit pourquoi la recette ne s'ouvre pas.
+            if (unreadable == null || result.denied) unreadable = result;
+          case DuplicateReferencePending() || DuplicateReferenceGone():
+            break;
+        }
+      }
+      final recipe = pickDuplicateReferenceRecipe(found, key.existingTitre);
+      if (recipe != null) return DuplicateReferenceFound(recipe);
+      return unreadable ?? const DuplicateReferenceGone();
+    });
+
+Future<DuplicateReference> _readDuplicateRecipe(
+  RecipeRepository recipes,
+  String recipeId,
+  ({String? recipeId, String? jobId, String existingTitre}) key,
+) async {
+  try {
+    final recipe = await recipes.getById(recipeId);
+    return recipe == null
+        ? const DuplicateReferenceGone()
+        : DuplicateReferenceFound(recipe);
+  } catch (error, stackTrace) {
+    final denied = _isPermissionDenied(error);
+    if (!denied) {
+      reportUnexpectedError(
+        feature: 'duplicateReference.readRecipe',
+        error: error,
+        stackTrace: stackTrace,
+        jobId: key.jobId,
+        context: {'recipe_id': recipeId},
+      );
+    }
+    return DuplicateReferenceUnreadable(denied: denied);
+  }
+}
+
+bool _isPermissionDenied(Object error) =>
+    error is FirebaseException && error.code == 'permission-denied';
 
 final originalTextRepositoryProvider = Provider<OriginalTextRepository>(
   (_) => OriginalTextRepository(),

@@ -607,9 +607,31 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// [budgetLimitUsd] est le plafond de dépense que l'utilisateur a fixé sur
   /// l'écran de confirmation. Il est obligatoire : un import de livre sans
   /// plafond est celui qui a coûté 59,89 $ sans que rien l'arrête.
-  Future<void> confirmBookImport({required double budgetLimitUsd}) async {
-    final pending = _pendingBook;
-    if (pending == null) return;
+  ///
+  /// [targetBookId] et [targetBookTitre] remplacent le livre choisi avant
+  /// l'envoi : c'est « Importer dans ce livre », quand le serveur a reconnu
+  /// un livre déjà en bibliothèque. Les recettes déjà présentes ressortent
+  /// alors marquées « Doublon possible ».
+  Future<void> confirmBookImport({
+    required double budgetLimitUsd,
+    String? targetBookId,
+    String? targetBookTitre,
+  }) async {
+    final chosen = _pendingBook;
+    if (chosen == null) return;
+    final pending = targetBookId == null
+        ? chosen
+        : _PendingBook(
+            uid: chosen.uid,
+            filename: chosen.filename,
+            scanId: chosen.scanId,
+            storagePath: chosen.storagePath,
+            downloadUrl: chosen.downloadUrl,
+            mimeType: chosen.mimeType,
+            sizeBytes: chosen.sizeBytes,
+            bookId: targetBookId,
+            bookTitre: targetBookTitre,
+          );
     // Le livre n'attend plus : un abandon pendant la mise en file ne doit pas
     // supprimer le fichier que le job va lire. Il revient en cas d'échec.
     _pendingBook = null;
@@ -670,7 +692,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         context: {'filename': pending.filename},
       );
       // Le livre reste lu et promu : l'utilisateur peut réessayer sans renvoyer.
-      _pendingBook = pending;
+      _pendingBook = chosen;
       state = state.copyWith(
         status: ScanStatus.pendingBookConfirmation,
         errorMessage: 'L\'import n\'a pas pu démarrer : $e',
@@ -1480,6 +1502,24 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       // chacune incrémentant le compteur de un exactement.
       if (job.type == ProcessingJobType.recipeUrlImport)
         'url_retry_count': job.urlRetryCount + 1,
+    });
+  }
+
+  /// « Ce n'est pas un doublon » : remet en file un job arrêté en doublon
+  /// possible, avec le drapeau qui fait sauter la détection au serveur.
+  ///
+  /// Contrairement à [retryJob], `created_recipe_ids` n'est pas touché : sur
+  /// une page à plusieurs recettes, les autres sont déjà des brouillons, et
+  /// le serveur ne reprend que les recettes retenues. Les règles Firestore
+  /// n'admettent cette écriture que depuis le statut `duplicate`, et sur ces
+  /// seules clés.
+  Future<void> resumeDuplicateJob(ProcessingJob job) async {
+    if (job.status != ProcessingJobStatus.duplicate) return;
+    await _jobsRepo.updateJob(job.id, {
+      'status': ProcessingJobStatus.queued.name,
+      'duplicate_override': true,
+      'error_message': null,
+      'current_step': null,
     });
   }
 

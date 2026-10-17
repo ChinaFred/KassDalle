@@ -32,6 +32,7 @@ import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
 import { syncRecipeMealRole } from "./recipeMealRoleAutoSync";
 import { recipeAllergensMissing, syncRecipeAllergens } from "./recipeAllergensSync";
 import { syncRecipeEstimatedTimes } from "./recipeEstimatedTimes";
+import { onlyTitleKeyChanged, syncRecipeTitleKey } from "./recipeTitleKey";
 
 export const onRecipeWritten = onDocumentWritten(
   {
@@ -83,6 +84,23 @@ export const onRecipeWritten = onDocumentWritten(
       correlationId: newCorrelationId(qualify("ecriture_recette", "confidentialite")),
       scanId,
     });
+
+    // La clé de titre suit le titre, pour toute page : une page technique se
+    // compare aussi aux doublons de son livre. L'écriture qu'elle provoque
+    // réveille ce déclencheur, qui la trouve alors à jour.
+    await syncRecipeTitleKey({
+      recipeId: after.id,
+      data,
+      correlationId: newCorrelationId(qualify("ecriture_recette", "cle_de_titre")),
+      scanId,
+    });
+
+    // Une écriture qui ne change que `titre_key` (celle de la ligne
+    // ci-dessus, ou du backfill « Clé de titre des recettes ») ne touche
+    // aucune entrée des traitements suivants. Sans cette sortie, le rôle dans
+    // un repas d'une recette non classée repartait une seconde fois, et le
+    // backfill relançait un appel de modèle par recette sans rôle.
+    if (onlyTitleKeyChanged(beforeData, data)) return;
 
     // Ne traiter que les recettes (pas les pages techniques, notes, etc.)
     if (resolvePageType(data) !== "recipe") return;

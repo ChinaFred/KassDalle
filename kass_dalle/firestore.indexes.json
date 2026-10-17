@@ -29,6 +29,34 @@
       ]
     },
     {
+      "collectionGroup": "processing_jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "book_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "titre_keys",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "recipes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "book_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "titre_key",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "recipes",
       "queryScope": "COLLECTION",
       "fields": [

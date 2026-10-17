@@ -20,6 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
+### v0.23.97 — fonctionnel
+
+Doublons à l'import. Un scan de page dont la recette a le même titre qu'une recette du livre (brouillon ou validée), ou qu'un import du même livre encore en cours, s'arrête après la transcription au statut « Doublon possible ». Deux numéros de page connus et différents écartent le doublon. La file des brouillons montre la recette existante en lien, et propose « Ce n'est pas un doublon » (le traitement reprend sans refaire la transcription) ou « Supprimer ». L'import d'un livre entier marque les recettes déjà présentes comme brouillons « Doublon possible » ; la validation en lot les saute, la relecture permet de les valider. À l'import d'un fichier en nouveau livre, un livre déjà dans la bibliothèque (même titre et auteur compatible, ou même fichier) est signalé, avec « Importer dans ce livre » ou « Créer un nouveau livre quand même ». Après le déploiement, lancer une fois Admin › Backfills › « Clé de titre des recettes » pour que les recettes existantes servent de référence.
+
+### v0.23.97 — technique
+
+Détection sans appel de modèle (`pipeline/duplicateDetection.ts`) : `titre_key` sur les recettes (posé à l'import, recalculé par `onRecipeWritten`, repris par le backfill ponctuel `recipe_title_keys`, `backfillTitleKeysFn`), `titre_keys` / `titre_key_pages` / `titre_key_titres` / `duplicate_checked` sur les jobs, deux index composites. Nouveau statut de job `duplicate` avec `duplicates`, `pending_items`, reprise par `duplicate_override` écrit par le client. `duplicate_of` sur les brouillons d'un import de livre, effaçable seulement. `books.source_file_sha256` et `existingBook` dans la réponse d'`analyzeBookFileFn`. Règles : création de job sans champ serveur et en file, relance limitée à `queued`/`error`, reprise et suppression d'un job `duplicate` par son propriétaire éditeur. Une écriture qui ne change que `titre_key` ne relance aucun traitement de `onRecipeWritten`.
+
 ### v0.23.96 — fonctionnel
 
 #### Signaler ou proposer (`/tickets/new`)

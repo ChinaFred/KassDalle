@@ -113,6 +113,8 @@ Création à partir d'un PDF ou d'un EPUB (« Ajouter à partir d'un PDF ou d'un
 - Le livre est créé depuis le fichier. Un EPUB donne titre, auteur, éditeur, année, langue, ISBN, description et couverture sans appel d'IA. Un PDF est lu par l'IA sur sa première page, comme une couverture scannée ; sa couverture est l'image JPEG de la première page quand le PDF en embarque une, sinon le livre se crée sans couverture.
 - Le contenu est découpé en tranches de 3 pages (PDF) ou d'environ 6 000 caractères (EPUB, Word), avec une page de contexte à la suite pour terminer la dernière recette entamée. Chaque tranche devient un import de page ordinaire : ses recettes arrivent une à une dans les **brouillons**, rattachées au nouveau livre.
 - Depuis le menu d'un livre existant, « Importer un livre complet » suit le même chemin et rattache les recettes à ce livre.
+- **Livre déjà dans la bibliothèque.** En mode nouveau livre, l'écran de confirmation compare le fichier lu aux livres de l'utilisateur, avant toute dépense de l'import. Deux signaux comptent : le titre lu dans le fichier, comparé sans casse, sans accents ni ponctuation, avec un auteur compatible (un auteur inconnu d'un côté n'écarte pas le livre) ; ou le même fichier, octet pour octet, qu'un livre déjà importé depuis un fichier. Un livre reconnu affiche un encadré : « Ce livre semble déjà dans votre bibliothèque : {titre}, {auteur}. », suivi de « Ce fichier a déjà été importé le {date}. » quand c'est le même fichier, et de « Importer dans ce livre marque les recettes déjà présentes comme doublons possibles. ». Deux choix : **Importer dans ce livre** lance l'import dans le livre existant, avec le plafond saisi ; **Créer un nouveau livre quand même** (le bouton « Lancer l'import » prend ce libellé, en bouton secondaire) crée un second livre. « Importer dans ce livre » est alors le bouton principal, et la phrase de la carte devient « Par défaut, un nouveau livre sera créé depuis le fichier. ». « Annuler » reste offert. Les deux boutons d'import restent grisés tant que le plafond n'est pas valide. « Importer un livre complet » depuis un livre existant n'affiche pas cet encadré : c'est le chemin normal pour terminer un import interrompu. Limite : un PDF sans titre dans ses métadonnées n'est reconnu, à cette étape, que s'il s'agit du même fichier ; la lecture de sa première page par l'IA vient après le lancement.
+- **Recette déjà présente dans le livre.** Chaque tranche compare ses recettes à celles du livre et aux tranches précédentes du même import (même critère qu'une page scannée, voir 4.2). Une recette déjà présente devient quand même un brouillon, marqué « Doublon possible » avec la recette existante (voir 5.4). Ainsi, réimporter un livre dans le même livre fait ressortir marquées les recettes déjà importées.
 - Chaque import est facturé et soumis au plafond quotidien d'IA, en plus du plafond de l'import. Quand l'un ou l'autre est atteint, les imports restants passent en erreur et se relancent, le lendemain ou après relèvement du plafond, depuis la file « Brouillons & Traitements » (sélection multiple, « Relancer »).
 - Un import qui échoue après la lecture de la page ne relit pas la page à la relance : la transcription réussie est gardée sur le traitement, et seule la suite est refaite.
 - Sont refusés avec un message clair : un PDF chiffré, un EPUB sans texte (pages en images), un livre qui demanderait plus de 400 imports.
@@ -150,6 +152,12 @@ Comportement asynchrone :
   - **Une recette écrite en prose garde sa liste d'ingrédients.** Certains livres n'en donnent pas : « faites revenir un oignon avec deux gousses d'ail » et rien d'autre. La passe 2 construit alors la liste depuis les étapes, et n'y met une quantité que si la phrase la donne. Si elle rend quand même une liste vide, le serveur la dérive du texte balisé avant d'enregistrer. Une recette sans liste n'a ni liste de courses, ni planification, ni nutrition.
   - **Contrôle de fidélité, sans appel supplémentaire.** Du code compare la passe 2 à la passe 1 — disparitions, fusions, titres de section raccourcis, précisions perdues. Une *rupture* écarte le balisage et conserve le texte exact, non balisé. Un *avertissement* laisse passer et s'affiche sur le brouillon.
 - **La lecture d'une page ne se fait jamais par un OCR local.** Le choix est motivé dans `TechnicalRequirements.md` § 7 et § 8 : un OCR rend un flux de caractères sans structure, et il faudrait de toute façon un appel de modèle derrière pour la reconstruire.
+- **Doublon possible : la recette existe déjà dans le livre.** Après la transcription (et la traduction éventuelle), avant le balisage, le serveur compare chaque recette lue aux recettes du même livre, brouillons et recettes validées, quel que soit leur auteur, et aux imports du même livre que l'utilisateur a lui-même lancés et qui sont encore en file ou en cours. Une recette est un doublon possible quand les trois conditions tiennent : même livre ; même titre une fois mis en minuscules, sans accents ni ponctuation ; numéros de page compatibles (deux numéros connus et différents écartent le doublon, un numéro absent d'un côté ne l'écarte pas). Une page technique, une note d'ingrédient ou une page d'équipement se compare de la même façon. Une page sans titre lu, ou un import sans livre, n'est pas comparé. Cette comparaison ne fait aucun appel d'IA.
+  - Toutes les recettes de la page sont des doublons possibles : le traitement s'arrête au statut **« Doublon possible »**. Aucun brouillon n'est créé. Le balisage, les illustrations, la normalisation et la nutrition n'ont pas lieu.
+  - Une partie seulement (page à plusieurs recettes) : les autres recettes deviennent des brouillons ; le traitement passe ensuite en « Doublon possible » pour les seules recettes en double.
+  - La transcription reste sur le traitement : « Ce n'est pas un doublon » (voir 5.4) reprend au balisage sans relire la page. Exception : une transcription de plus de 300 000 caractères n'est pas gardée ; la reprise relit alors la page, et cet appel est facturé.
+  - Une même page scannée deux fois de suite : le premier import n'a pas encore écrit son brouillon quand le second a fini de lire la page. Le plus ancien des deux sert de référence et seul le second attend. Si le plus récent a déjà passé la comparaison et continue, c'est l'autre qui attend.
+  - Ce qui n'est pas détecté : deux transcriptions différentes du même titre (« Tarte aux pommes » et « Tarte aux pommes de Mamy ») ; deux imports de la même page qui font leur comparaison dans la même fraction de seconde. Deux homonymes sans numéro de page (« Pâte brisée » dans deux chapitres) sont signalés à tort : l'utilisateur lève le doute en un geste.
 - **Les illustrations coûtent jusqu'à cinq appels de plus par page**, et seulement si la case a été cochée à l'import.
 - L'étape courante du job (`current_step`) est affichée dans l'écran *Traitements*. Un import complet prend de quelques dizaines de secondes à quelques minutes ; l'utilisateur peut en lancer un second pendant ce temps.
 - Après trois échecs, le job part en `dead_letters/`, d'où un administrateur le relance depuis *Admin › File d'échecs*.
@@ -392,7 +400,7 @@ privait le titre de la place dont il manquait.
 
 ### 5.4 Module Traitements IA (tous les clients)
 
-- Liste des traitements recents avec statut (`queued`, `processing`, `done`, `error`).
+- Liste des traitements recents avec statut (`queued`, `processing`, `done`, `error`, `rejected`, `duplicate`).
 - **Une ligne porte le titre lu par l'IA dès que la page est transcrite**, à la place du nom du
   fichier scanné, qui reste accessible par « Voir le document ». Entre la lecture et
   l'enregistrement du brouillon, le balisage et la normalisation durent jusqu'à sept minutes ; un
@@ -400,8 +408,41 @@ privait le titre de la place dont il manquait.
   recettes les nomme toutes, un scan de couverture porte le titre du livre.
 - **Une ligne de traitement se distingue d'un brouillon par sa couleur.** Tant que le traitement
   est en file ou en cours, sa ligne porte un fond teinté et un liseré à gauche dans la couleur
-  secondaire, celle de sa puce et de son icône. En erreur ou rejeté, la couleur d'erreur. Un
-  brouillon garde le fond de la liste.
+  secondaire, celle de sa puce et de son icône. En erreur ou rejeté, la couleur d'erreur. En
+  « Doublon possible », la couleur tertiaire, sur le fond, la puce et l'icône. Un brouillon garde
+  le fond de la liste.
+- **Une ligne « Doublon possible »** est un import de page arrêté après la transcription (voir
+  4.2). Elle reste dans la file, même quand le traitement a déjà créé des brouillons pour les
+  autres recettes de la page, et ne disparaît jamais d'elle-même. Pour chaque recette retenue,
+  elle donne le titre lu, puis la référence : « Déjà dans le livre : {titre}, p. {n} » (sans
+  « p. » quand la page est inconnue), lien qui ouvre la recette existante — la relecture pour un
+  brouillon, la fiche pour une recette validée —, ou « Import plus ancien en cours : {titre} »
+  quand la référence est un import pas encore terminé. Une fois cet import terminé, la ligne
+  affiche « Déjà dans le livre : … » et le lien ouvre la recette qu'il a créée. Une recette
+  supprimée depuis, ou un import de référence en erreur, rejeté ou supprimé, s'affiche
+  « Recette supprimée », sans lien. Le lien a une cible d'au moins 48 px et s'annonce comme lien
+  au lecteur d'écran. Une recette que l'utilisateur ne peut pas lire (livre privé ou
+  brouillon non partagé d'un autre membre) s'affiche « Déjà dans le livre (page d'un autre
+  membre) », sans lien. Deux actions :
+  - **Ce n'est pas un doublon** : le traitement reprend au balisage, pour les seules recettes
+    retenues, sans nouvelle comparaison. Les brouillons déjà créés pour les autres recettes de la
+    page ne sont pas touchés. Réservé au propriétaire du traitement, s'il est éditeur ou
+    administrateur. Le bouton se grise pendant l'écriture ; en cas de succès : « Traitement
+    repris : le brouillon arrivera dans la file. », en cas d'échec : « La reprise du traitement
+    a échoué. »
+  - **Supprimer** : supprime le traitement, avec confirmation. Ouvert à son propriétaire s'il
+    est éditeur ou administrateur, et à un administrateur. Le fichier scanné reste dans le
+    stockage.
+- **Un brouillon marqué « Doublon possible »** vient d'un import de livre entier (voir 4.1) :
+  sa recette existait déjà dans le livre. Sa ligne porte, sous le titre, « Doublon possible de
+  « {titre} » (p. {n}) », et son menu propose « Relire » à la place de « Valider ». L'écran de
+  relecture affiche le même texte dans un bandeau, avec « Ouvrir la recette existante » (ou
+  « La référence est un import plus ancien, encore en cours. »), et « Valider la publiera quand
+  même et retirera cette marque. ». Sur téléphone, le bandeau est replié sur une ligne et se
+  déplie d'un appui. « Valider » depuis la relecture reste possible et efface la marque.
+- **Un compteur en tête de la file** dit combien de décisions attendent : « {n} doublon(s)
+  possible(s) à trancher ». Il compte les lignes « Doublon possible » et les brouillons marqués
+  que l'utilisateur peut valider ou supprimer ; ceux d'un autre membre ne comptent pas.
 - Indicateur de traitements actifs visible dans la zone Brouillons.
 - **Sélection multiple.** Le bouton « Sélectionner » de la barre du haut, ou un appui long sur
   une ligne, fait apparaître une case sur chaque ligne. « Tout sélectionner » coche ce qui est
@@ -411,11 +452,21 @@ privait le titre de la place dont il manquait.
   cochés), **Relancer** (les traitements cochés en erreur ou rejetés), **Supprimer** (tout ce qui
   est coché). Les trois demandent confirmation ; Relancer le rappelle parce que chaque import
   relancé est facturé à nouveau. Le lot avance élément par élément avec une barre de progression.
-  Un échec n'arrête pas les suivants : il est compté dans le compte rendu.
+  Un échec n'arrête pas les suivants : il est compté dans le compte rendu. Une ligne « Doublon
+  possible » n'entre que dans **Supprimer** : ce n'est pas un brouillon, et la relancer referait
+  la comparaison. En mode sélection, ses boutons sont masqués et ses liens ne s'ouvrent pas.
 - **Un lot ne valide pas ce que personne n'a relu.** Un brouillon qui porte une réserve de
   fidélité, ou qui n'a pas de contenu, reste de côté, et le compte rendu le dit. Valider efface la
   réserve : cela se fait brouillon par brouillon, depuis l'écran de relecture, où le bandeau la
   montre. L'action « Valider » d'une seule ligne suit la même règle.
+- **Un lot ne valide pas un doublon possible.** Un brouillon marqué « Doublon possible » reste de
+  côté, en lot comme sur une ligne, et le compte rendu le compte à part : « Non validés : …,
+  {n} doublon(s) possible(s). ». La marque est relue juste avant de valider : si la recette de
+  référence a été supprimée, ou si l'import de référence a été supprimé, est en erreur ou
+  rejeté, le brouillon n'est plus un doublon et il est validé comme les autres. Une relecture
+  qui échoue garde la marque : un refus de droit (page d'un autre membre) n'est pas signalé, une
+  autre erreur (réseau) part au rapport d'erreurs. Un
+  brouillon marqué se valide depuis l'écran de relecture.
 - Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
 - **Vue Admin** : l'admin voit tous les traitements de tous les utilisateurs. Un filtre par utilisateur (dropdown) permet de restreindre l'affichage. Chaque tuile affiche le nom du propriétaire du traitement.
 
@@ -1594,6 +1645,7 @@ automatiques.
 | Ranger dans ses propres livres | On ne crée, ne déplace ni n'importe une recette que dans **ses** livres ; un Admin range partout. Le choix du livre ne propose que les livres de l'utilisateur ; un Admin voit aussi ceux des autres, sauf leurs livres système. Quand on modifie une page rangée dans le livre d'un autre, ce livre reste proposé en tête, avec la mention « Livre d'un autre membre » : en choisir un autre déplace la page. Les pages déjà rangées dans le livre d'un autre y restent, et se modifient sans changer de livre. |
 | Privé = créateur seul | Un livre ou une recette privé ne se lit que par son créateur et un Admin, y compris ses annotations et ses notes. |
 | Multi-pages | Une recette peut avoir plusieurs images sources (scan multi-pages). |
+| Doublon à l'import | Une recette importée dans un livre qui contient déjà le même titre, à une page compatible, est un doublon possible (4.2). Une page scannée attend une décision : « Ce n'est pas un doublon » ou « Supprimer ». Une tranche de livre entier devient un brouillon marqué, que la validation en lot écarte. Le serveur seul décide du doublon et pose la marque ; le client peut seulement l'effacer, en validant. La comparaison ne fait aucun appel d'IA. Hors périmètre : comparaison approchée des titres, comparaison du contenu, détection entre deux livres différents, fusion de deux recettes. |
 | Toute recette a un livre | Il n'y a plus de recette orpheline : sans choix, elle rejoint « Mes recettes libres » ; conçue par l'IA, elle rejoint « Mes créations Kass'Dalle ». La règle est posée à l'entonnoir de création, pas dans un écran. |
 | Les livres système ne se suppriment pas | « Mes recettes libres », « Mes créations Kass'Dalle », « Mes recettes secrètes » et « Mes recettes du web » se **renomment** — c'est leur tag interne qui les identifie, pas leur titre — mais ne se suppriment ni depuis l'écran, ni depuis le code, ni depuis les Security Rules. Ce sont les destinations par défaut : les perdre laisserait la règle ci-dessus sans issue. « Mes recettes du web » est créé avec les autres livres système, à l'ouverture de la bibliothèque, pour un Editor ou un Admin, avec sa couverture par défaut (« From the web ») ; les quatre livres système sont aussi créés à l'approbation de tout compte, Reader compris, et la reprise *Admin › Backfills › Livres système des comptes* les pose aux comptes approuvés avant la v0.23.50. Un Reader ne les renomme pas : les règles réservent la modification d'un livre à un Editor ou un Admin. Il reste privé à son propriétaire (4.6). |
 | Deux icônes, deux sens | Le **robot** marque ce qu'une machine a produit — une raison de recherche, une valeur estimée, une recette conçue, le pourquoi d'un repas. Les **étoiles** et la **baguette** sont des verbes : générer, suggérer, affiner. Les confondre laisse l'utilisateur devant une étoile sans savoir si elle annonce un bouton ou un constat. |
@@ -1618,6 +1670,7 @@ automatiques.
 - Import d'un lien depuis une page « Sur le web » d'Explorer, depuis le bandeau au retour du navigateur, et par « Partager vers Kass'Dalle » sur Android
 - Traduction en français, mesures en métrique, d'une recette importée dans une autre langue ; texte d'origine consultable sur la fiche et pendant la relecture
 - Import d'un livre entier depuis un PDF, un EPUB ou un Word — nouveau livre ou livre existant —, avec coût estimé avant le départ et plafond de dépense par import
+- Doublons à l'import : une page déjà présente dans le livre s'arrête en « Doublon possible » après sa lecture, sans balisage ni nutrition ; « Ce n'est pas un doublon » la reprend sans relire la page ; les brouillons d'un livre entier déjà présents sont marqués et écartés de la validation en lot ; un livre déjà en bibliothèque (même titre et auteur, ou même fichier) est signalé avant l'import
 - Écran de révision split view, rendu interactif CookLang, mode lecture livre
 - Explorer : liste filtrée sur l'appareil (texte rangé en sections — titre, cuisine, type ou thème, ingrédients principaux —, type de plat, temps total, cuisine, allergènes, calories par portion…), tri, « Chercher avec l'IA », « Imaginer 3 recettes » en brouillon, « Chercher sur le web » (jusqu'à 8 pages de recettes trouvées par Google, à ouvrir ou à importer)
 - Durées estimées par l'IA pour les recettes qui n'en donnent pas : « ≈ » sur la fiche et dans la liste d'Explorer, comptées dans le filtre « Temps total » et le tri « Plus rapides » si le lecteur le veut
@@ -1705,6 +1758,37 @@ stateDiagram-v2
 
     error --> idle : Réessayer
 ```
+
+### 8.2 bis États d'un traitement d'import (`processing_jobs.status`)
+
+Le traitement vit côté serveur, après l'envoi. Ses états se lisent dans la file « Brouillons & Traitements ». Le statut `duplicate` (« Doublon possible ») attend une décision de l'utilisateur ; `jobDispatcher` ne met pas en file un job dans cet état.
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued : Envoi accepté\n(ou tranche créée par l'import d'un livre)
+    [*] --> rejected : Fichier refusé au contrôle
+
+    queued --> processing : recipeProcessor démarre
+    processing --> done : Brouillons écrits\n(ou page sans contenu)
+    processing --> error : Échec après 3 tentatives,\nplafond atteint, annulation
+    processing --> duplicate : Après la transcription,\nrecette(s) déjà dans le livre\n(page scannée seulement)
+
+    duplicate --> queued : « Ce n'est pas un doublon »\n(propriétaire éditeur ou admin)\nduplicate_override
+    duplicate --> [*] : « Supprimer »\n(propriétaire éditeur ou admin)
+
+    error --> queued : « Relancer »\n(propriétaire éditeur ou admin)
+    error --> [*] : « Supprimer » (admin)
+    rejected --> [*] : « Supprimer » (admin)
+
+    note right of duplicate
+        La transcription reste sur le job.
+        Les autres recettes de la page
+        sont déjà des brouillons.
+        La reprise ne refait pas la comparaison.
+    end note
+```
+
+Une tranche d'un livre entier ne passe jamais par `duplicate` : sa recette déjà présente devient un brouillon marqué (`duplicate_of`), et le traitement finit en `done`.
 
 ### 8.3 États d'un utilisateur (`UserRole` + `isRevoked`)
 

@@ -1,3 +1,4 @@
+import '../../../processing/domain/processing_job.dart';
 import '../../domain/recipe.dart';
 
 // Logique des actions en lot de la file « Brouillons & Traitements ».
@@ -28,31 +29,53 @@ String draftContent(Recipe recipe) {
 /// — voir [validatableInBatch] et le dialogue de confirmation de l'écran.
 /// Un brouillon sans contenu, lui, reste de côté dans tous les cas : il n'y a
 /// rien à publier, avertir ne changerait rien.
+///
+/// Un brouillon marqué « Doublon possible » (`duplicate_of`) reste de côté
+/// lui aussi, en lot comme sur une ligne : valider publierait une deuxième
+/// fois la même recette. Il se valide depuis l'écran de relecture, où le
+/// bandeau montre la recette existante. La marque est revérifiée avant le
+/// plan (voir [staleDuplicateMarks]) : un brouillon dont la référence a
+/// disparu n'est plus un doublon.
 class DraftValidationPlan {
   const DraftValidationPlan({
     required this.toValidate,
     required this.withFidelityReserve,
     required this.emptyContent,
+    this.duplicates = const [],
   });
 
   final List<Recipe> toValidate;
   final List<Recipe> withFidelityReserve;
   final List<Recipe> emptyContent;
 
-  int get skipped => withFidelityReserve.length + emptyContent.length;
+  /// Brouillons marqués « Doublon possible » dont la référence existe encore.
+  final List<Recipe> duplicates;
+
+  int get skipped =>
+      withFidelityReserve.length + emptyContent.length + duplicates.length;
 
   /// Ce qu'une validation EN LOT valide réellement, réserve de fidélité
   /// comprise — après avertissement, jamais silencieusement.
   int get validatableInBatch => toValidate.length + withFidelityReserve.length;
 }
 
-DraftValidationPlan planDraftValidation(Iterable<Recipe> drafts) {
+/// [staleDuplicates] : identifiants des brouillons dont la marque
+/// `duplicate_of` ne tient plus (référence supprimée, import en échec). Ils
+/// sont traités comme des brouillons ordinaires.
+DraftValidationPlan planDraftValidation(
+  Iterable<Recipe> drafts, {
+  Set<String> staleDuplicates = const {},
+}) {
   final toValidate = <Recipe>[];
   final withReserve = <Recipe>[];
   final empty = <Recipe>[];
+  final duplicates = <Recipe>[];
   for (final draft in drafts) {
     if (draftContent(draft).trim().isEmpty) {
       empty.add(draft);
+    } else if (draft.duplicateOf != null &&
+        !staleDuplicates.contains(draft.id)) {
+      duplicates.add(draft);
     } else if ((draft.fidelityLevel ?? '').isNotEmpty) {
       withReserve.add(draft);
     } else {
@@ -63,7 +86,78 @@ DraftValidationPlan planDraftValidation(Iterable<Recipe> drafts) {
     toValidate: toValidate,
     withFidelityReserve: withReserve,
     emptyContent: empty,
+    duplicates: duplicates,
   );
+}
+
+/// Les brouillons de [drafts] dont la marque « Doublon possible » ne tient
+/// plus, relue au moment de valider.
+///
+/// - Référence `recipe_id` : la marque tombe quand [readRecipe] ne renvoie
+///   rien (recette supprimée).
+/// - Référence `job_id` : la marque tombe quand [readJob] ne renvoie rien
+///   (import supprimé), que l'import est en erreur ou rejeté, ou qu'il est
+///   terminé et qu'aucune des recettes qu'il a créées n'existe plus
+///   (supprimées depuis). Un import en file, en cours ou lui-même arrêté en
+///   doublon garde la marque : sa recette peut encore naître.
+///
+/// Une lecture qui échoue (permission refusée sur la recette d'un autre
+/// membre, réseau) garde la marque : on ne publie pas sur un doute. L'erreur
+/// est remise à [onReadError], qui décide de la signaler.
+///
+/// Les brouillons sont relus en parallèle ; [onProgress] reçoit le nombre de
+/// brouillons marqués relus et leur total.
+Future<Set<String>> staleDuplicateMarks(
+  Iterable<Recipe> drafts, {
+  required Future<Object?> Function(String recipeId) readRecipe,
+  required Future<ProcessingJob?> Function(String jobId) readJob,
+  required void Function(Object error, StackTrace stackTrace, Recipe draft)
+  onReadError,
+  void Function(int done, int total)? onProgress,
+}) async {
+  final marked = drafts.where((d) => d.duplicateOf != null).toList();
+  var done = 0;
+
+  Future<bool> isStale(Recipe draft) async {
+    final mark = draft.duplicateOf!;
+    try {
+      final recipeId = mark.recipeId;
+      final jobId = mark.jobId;
+      if (recipeId != null) return await readRecipe(recipeId) == null;
+      if (jobId == null) return false;
+      final job = await readJob(jobId);
+      if (job == null) return true;
+      switch (job.status) {
+        // Un import arrêté en doublon attend la décision de son auteur : « Ce
+        // n'est pas un doublon » créerait la recette. Dans le doute, la marque
+        // reste.
+        case ProcessingJobStatus.queued:
+        case ProcessingJobStatus.processing:
+        case ProcessingJobStatus.duplicate:
+          return false;
+        case ProcessingJobStatus.error:
+        case ProcessingJobStatus.rejected:
+          return true;
+        case ProcessingJobStatus.done:
+          final created = await Future.wait(
+            job.createdRecipeIds.map(readRecipe),
+          );
+          return created.every((r) => r == null);
+      }
+    } catch (error, stackTrace) {
+      onReadError(error, stackTrace, draft);
+      return false;
+    } finally {
+      done++;
+      onProgress?.call(done, marked.length);
+    }
+  }
+
+  final results = await Future.wait(marked.map(isStale));
+  return {
+    for (var i = 0; i < marked.length; i++)
+      if (results[i]) marked[i].id,
+  };
 }
 
 /// « 1 brouillon », « 3 brouillons ». Zéro et un prennent le singulier.
@@ -95,6 +189,8 @@ String? notValidatedNote(
           'à relire un par un',
     if (plan.emptyContent.isNotEmpty)
       '${plan.emptyContent.length} sans contenu',
+    if (plan.duplicates.isNotEmpty)
+      countOf(plan.duplicates.length, 'doublon possible', 'doublons possibles'),
   ];
   return left.isEmpty ? null : 'Non validés : ${left.join(', ')}.';
 }
@@ -142,3 +238,9 @@ String actionSummary({
       '${selectionLabel(drafts: drafts, jobs: jobs)}';
   return failed > 0 ? '$head. $failed en échec.' : '$head.';
 }
+
+/// « 2 doublons possibles à trancher » : le compteur de la file. Null quand
+/// rien n'attend de décision.
+String? pendingDuplicatesLabel(int count) => count <= 0
+    ? null
+    : '${countOf(count, 'doublon possible', 'doublons possibles')} à trancher';

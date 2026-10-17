@@ -445,6 +445,9 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
       return '${_count(n('ecrits'), 'ticket repris', 'tickets repris')}, '
           '${_count(n('sansPr'), 'sans PR', 'sans PR')}, '
           '${_count(n('restants'), 'ticket restant', 'tickets restants')}';
+    case BackfillKeys.recipeTitleKeys:
+      return '${_count(n('posees'), 'clé posée', 'clés posées')}, '
+          '${_count(n('echouees'), 'échec', 'échecs')}';
     case BackfillKeys.moveMealsToGroup:
       final from = _isoDayOrNull(report['du']);
       final to = _isoDayOrNull(report['au']);

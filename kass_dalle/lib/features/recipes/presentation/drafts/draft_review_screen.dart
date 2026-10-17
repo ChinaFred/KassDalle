@@ -20,6 +20,7 @@ import 'draft_review_body.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../fidelity_banner.dart';
+import 'duplicate_widgets.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../../core/presentation/stylus_pad_text_field.dart';
@@ -821,6 +822,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 // tranché — continuer à afficher la réserve reviendrait à
                 // contester sa décision chaque fois qu'il ouvre le plat.
                 FidelityBanner(recipe: recipe),
+                // Brouillon d'un import de livre entier, déjà présent dans le
+                // livre : « Valider » efface la marque. Replié sur une ligne
+                // sur téléphone, comme la réserve de fidélité au-dessus : les
+                // deux bandeaux sont fixes au-dessus de l'éditeur.
+                DuplicateOfBanner(recipe: recipe, initiallyExpanded: isWide),
                 Expanded(
                   child: isWide
                       ? Row(

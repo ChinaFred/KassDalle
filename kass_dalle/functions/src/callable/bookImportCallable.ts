@@ -24,6 +24,7 @@ import {
   openBookFile,
 } from "../books/bookFile";
 import { referenceCostPerScan, referenceCostPerWindow } from "../books/importEstimate";
+import { fileSha256, findExistingBook, type ExistingBookMatch } from "../books/existingBook";
 import {
   maxImportBudgetPerWindowUsd,
   maxImportBudgetUsd,
@@ -101,10 +102,17 @@ export const analyzeBookFileFn = onCall(
       const [bytes] = await file.download();
       const opened = await openBookFile(bytes, kind);
 
-      const [bookReference, pageReference, usdToEur] = await Promise.all([
+      const [bookReference, pageReference, usdToEur, existingBook] = await Promise.all([
         referenceCostPerWindow(ctx.userId),
         referenceCostPerScan(ctx.userId),
         getUsdToEurRate(),
+        lookupExistingBook({
+          uid: ctx.userId,
+          titre: opened.metadata.titre ?? null,
+          auteur: opened.metadata.auteur ?? null,
+          bytes,
+          correlationId: ctx.correlationId,
+        }),
       ]);
 
       // Un livre déjà importé mesure ce que coûte une tranche. À défaut, la
@@ -127,6 +135,9 @@ export const analyzeBookFileFn = onCall(
         windows: opened.windows,
         titre: opened.metadata.titre ?? null,
         auteur: opened.metadata.auteur ?? null,
+        // Un livre de la bibliothèque au même titre (et auteur compatible), ou
+        // au même fichier. Le client ne l'affiche qu'en mode « nouveau livre ».
+        existingBook,
         // Absent quand la mesure manque : le client affiche « indisponible », pas zéro.
         costPerWindowUsd,
         estimatedCostUsd,
@@ -170,3 +181,34 @@ export const analyzeBookFileFn = onCall(
     }
   },
 );
+
+/**
+ * Le livre déjà en bibliothèque, ou `null`. Une lecture en échec ne bloque pas
+ * l'analyse : l'avertissement manque, l'import reste possible, et l'échec est
+ * journalisé.
+ */
+async function lookupExistingBook(args: {
+  uid: string;
+  titre: string | null;
+  auteur: string | null;
+  bytes: Buffer;
+  correlationId: string;
+}): Promise<ExistingBookMatch | null> {
+  try {
+    return await findExistingBook({
+      uid: args.uid,
+      titre: args.titre,
+      auteur: args.auteur,
+      sha256: fileSha256(args.bytes),
+    });
+  } catch (err) {
+    await logError({
+      message: "Analyse du livre : recherche d'un livre déjà en bibliothèque impossible",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "IMPORT",
+      userId: args.uid,
+      correlationId: args.correlationId,
+    });
+    return null;
+  }
+}

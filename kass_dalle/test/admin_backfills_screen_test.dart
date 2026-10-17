@@ -49,9 +49,9 @@ void main() {
   testWidgets('téléphone : trois sections, nutrition programmée par défaut', (
     tester,
   ) async {
-    await _pump(tester, size: const Size(400, 3600), runs: runs);
+    await _pump(tester, size: const Size(400, 4200), runs: runs);
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (5)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (6)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(
       find.text('Programmation : Tous les jours à 5 h'),
@@ -74,7 +74,7 @@ void main() {
     // `app_config/backfill_run_<clé>` en base, terminé ou même en cours.
     await _pump(
       tester,
-      size: const Size(400, 3600),
+      size: const Size(400, 4200),
       runs: {
         ...runs,
         'estimated_times': BackfillRunState.fromMap('estimated_times', {
@@ -94,7 +94,7 @@ void main() {
       },
     );
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (5)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (6)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(find.text('Durées estimées'), findsNothing);
     expect(find.text('Protéine et féculent des plats'), findsNothing);

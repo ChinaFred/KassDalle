@@ -35,7 +35,78 @@ UrlImportErrorCode? urlImportErrorCodeFrom(Object? raw) => switch (raw) {
   _ => null,
 };
 
-enum ProcessingJobStatus { queued, processing, done, error, rejected }
+/// `duplicate` : le serveur a arrêté le traitement après la transcription,
+/// parce que la ou les recettes lues existent déjà dans le livre (ou sont
+/// attendues d'un import plus ancien). Le job attend une décision de
+/// l'utilisateur : « Ce n'est pas un doublon » ou « Supprimer ».
+enum ProcessingJobStatus {
+  queued,
+  processing,
+  done,
+  error,
+  rejected,
+  duplicate,
+}
+
+/// Une recette lue sur la page et retenue comme doublon possible.
+///
+/// Écrite par le serveur dans `processing_jobs.duplicates`. La référence est
+/// soit une recette existante du même livre ([recipeId]), soit un import plus
+/// ancien encore en cours ([jobId]), dont la recette n'existe pas encore.
+class JobDuplicate {
+  const JobDuplicate({
+    required this.titre,
+    required this.existingTitre,
+    this.existingPage,
+    this.recipeId,
+    this.jobId,
+  });
+
+  /// Le titre lu sur la page scannée.
+  final String titre;
+
+  /// Le titre de la recette existante, ou de l'import plus ancien.
+  final String existingTitre;
+
+  /// La page de la recette existante, quand elle est connue.
+  final int? existingPage;
+
+  final String? recipeId;
+  final String? jobId;
+
+  /// Lecture tolérante : une entrée illisible est écartée par [listFrom],
+  /// un champ absent prend une valeur vide.
+  static JobDuplicate? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    String? text(Object? v) => v is String && v.trim().isNotEmpty ? v : null;
+    final page = raw['existing_page'];
+    return JobDuplicate(
+      titre: text(raw['titre']) ?? '',
+      existingTitre: text(raw['existing_titre']) ?? '',
+      existingPage: page is num ? page.toInt() : null,
+      recipeId: text(raw['recipe_id']),
+      jobId: text(raw['job_id']),
+    );
+  }
+
+  static List<JobDuplicate> listFrom(Object? raw) {
+    if (raw is! List) return const [];
+    return raw.map(fromMap).whereType<JobDuplicate>().toList(growable: false);
+  }
+
+  /// « Déjà dans le livre : Tarte aux pommes, p. 42 » (sans « p. » quand la
+  /// page est inconnue), ou « Import plus ancien en cours : Tarte aux
+  /// pommes » quand la référence est un job.
+  String get referenceLabel {
+    if (recipeId == null && jobId != null) {
+      return 'Import plus ancien en cours : $existingTitre';
+    }
+    final page = existingPage;
+    return page == null
+        ? 'Déjà dans le livre : $existingTitre'
+        : 'Déjà dans le livre : $existingTitre, p. $page';
+  }
+}
 
 class ProcessingJob {
   final String id;
@@ -123,6 +194,15 @@ class ProcessingJob {
   /// Relances admises pour un import par lien (règle `urlRelaunchAllowed`).
   static const maxUrlRetries = 2;
 
+  /// Les recettes retenues comme doublons possibles, sur un job au statut
+  /// [ProcessingJobStatus.duplicate]. Écrites par le serveur.
+  final List<JobDuplicate> duplicates;
+
+  /// Vrai quand l'utilisateur a répondu « Ce n'est pas un doublon » : le
+  /// serveur reprend sans nouvelle détection. Seule écriture du client sur
+  /// ce sujet.
+  final bool duplicateOverride;
+
   const ProcessingJob({
     required this.id,
     required this.type,
@@ -150,6 +230,8 @@ class ProcessingJob {
     this.recettesTrouvees,
     this.urlRetryCount = 0,
     this.translated = false,
+    this.duplicates = const [],
+    this.duplicateOverride = false,
   });
 
   factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
@@ -190,6 +272,8 @@ class ProcessingJob {
       recettesTrouvees: (data['recettes_trouvees'] as num?)?.toInt(),
       urlRetryCount: (data['url_retry_count'] as num?)?.toInt() ?? 0,
       translated: data['translated'] == true,
+      duplicates: JobDuplicate.listFrom(data['duplicates']),
+      duplicateOverride: data['duplicate_override'] == true,
     );
   }
 
@@ -255,8 +339,12 @@ class ProcessingJob {
       recettesTrouvees: recettesTrouvees,
       urlRetryCount: urlRetryCount,
       translated: translated,
+      duplicates: duplicates,
+      duplicateOverride: duplicateOverride,
     );
   }
+
+  bool get isDuplicate => status == ProcessingJobStatus.duplicate;
 
   bool get isActive =>
       status == ProcessingJobStatus.queued ||

@@ -895,6 +895,10 @@ class RecipeRepository {
       // à rouvrir le débat au premier écran qui déciderait de l'afficher.
       'fidelity_level': FieldValue.delete(),
       'fidelity_findings': FieldValue.delete(),
+      // La marque « Doublon possible » part aussi : valider dit que
+      // quelqu'un a tranché. Les règles n'admettent du client que son
+      // effacement.
+      'duplicate_of': FieldValue.delete(),
       'updated_at': DateTime.now(),
     });
   }
