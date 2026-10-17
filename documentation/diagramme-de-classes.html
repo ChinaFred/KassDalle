@@ -174,6 +174,7 @@ classDiagram
     +String? fidelityLevel
     +List~FidelityFinding~ fidelityFindings
     +IllustrationReport? illustrationReport
+    +RecipeDuplicateRef? duplicateOf
     +String createdBy
     +DateTime createdAt
     +DateTime updatedAt
@@ -245,6 +246,15 @@ classDiagram
     +fromMap(raw) RecipeEstimatedTimes?$
   }
 
+  class RecipeDuplicateRef {
+    +String titre
+    +int? page
+    +String? recipeId
+    +String? jobId
+    +fromMap(raw) RecipeDuplicateRef?$
+    +bannerLabel String
+  }
+
   class RecipeNutritionQuality {
     +int score
     +String level
@@ -291,6 +301,7 @@ classDiagram
   Recipe "1" o-- "0..1" RecipeNutritionSnapshot : nutrition
   Recipe "1" o-- "0..1" RecipeAllergens : allergens
   Recipe "1" o-- "0..1" RecipeEstimatedTimes : estimatedTimes
+  Recipe "1" o-- "0..1" RecipeDuplicateRef : duplicateOf
   RecipeNutritionSnapshot "1" *-- "1" RecipeNutritionQuality : quality
   RecipeNutritionSnapshot "1" o-- "0..1" RecipeAbsorbedOil : absorbedOil
   Recipe ..&gt; ReviewStatus
@@ -349,6 +360,16 @@ classDiagram
         <code>null</code> quand le balisage concorde avec la page, <code>avertissement</code> pour
         un écart mineur, <code>rupture</code> quand le balisage a été écarté
         (<code>fidelityRejected</code>).
+        <br><br>
+        <code>RecipeDuplicateRef</code> (<code>duplicate_of</code>) est la marque « Doublon
+        possible » d'un brouillon issu d'un import de livre entier dont la recette existait déjà
+        dans le livre. <code>titre</code> et <code>page</code> sont ceux de la référence ;
+        <code>recipeId</code> nomme une recette existante, <code>jobId</code> un import plus
+        ancien encore en cours. Le serveur la pose ; le client la lit, ne l'écrit jamais
+        (<code>toFirestore</code> l'omet, <code>copyWith</code> la garde) et ne peut que
+        l'effacer : <code>validateDraft</code> la supprime. <code>bannerLabel</code> rend
+        « Doublon possible de « {titre} » (p. {n}) ». La clé de titre <code>titre_key</code>,
+        que compare la détection, n'a pas de champ Dart : le serveur seul l'écrit et la lit.
         <br><br>
         <code>langueOrigine</code> (<code>langue_origine</code>) n'existe que sur une recette
         traduite à l'import, et <code>isTranslated</code> en découle. Le serveur le pose ; le
@@ -699,7 +720,56 @@ classDiagram
     +int? recettesTrouvees
     +int urlRetryCount
     +bool translated
+    +List~JobDuplicate~ duplicates
+    +bool duplicateOverride
     +bool isActive
+    +bool isDuplicate
+  }
+
+  class ProcessingJobStatus {
+    &lt;&lt;enumeration&gt;&gt;
+    queued
+    processing
+    done
+    error
+    rejected
+    duplicate
+  }
+
+  class JobDuplicate {
+    +String titre
+    +String existingTitre
+    +int? existingPage
+    +String? recipeId
+    +String? jobId
+    +fromMap(raw) JobDuplicate?$
+    +listFrom(raw) List~JobDuplicate~$
+    +referenceLabel String
+  }
+
+  class BookImportAnalysis {
+    &lt;&lt;réponse d'analyzeBookFileFn&gt;&gt;
+    +String kind
+    +int windows
+    +String? titre
+    +String? auteur
+    +double? estimatedCostUsd
+    +double? suggestedBudgetUsd
+    +double? maxBudgetUsd
+    +ExistingBookMatch? existingBook
+    +fromMap(map) BookImportAnalysis$
+  }
+
+  class ExistingBookMatch {
+    +String id
+    +String titre
+    +String? auteur
+    +bool sameFile
+    +bool sameTitle
+    +DateTime? importedAt
+    +fromMap(raw) ExistingBookMatch?$
+    +warningLabel String
+    +sameFileLabel String?
   }
 
   class UrlImportResult {
@@ -722,6 +792,12 @@ classDiagram
   }
 
   ProcessingJob --> UrlImportErrorCode : errorCode
+  ProcessingJob --> ProcessingJobStatus : status
+  ProcessingJob "1" *-- "0..*" JobDuplicate : duplicates
+  JobDuplicate ..> Recipe : recipeId, recette existante du livre
+  JobDuplicate ..> ProcessingJob : jobId, import plus ancien en cours
+  BookImportAnalysis "1" o-- "0..1" ExistingBookMatch : existingBook
+  ExistingBookMatch ..> Book : id
   UrlImportResult ..> ProcessingJob : jobId
 
   class Annotation {
@@ -862,6 +938,16 @@ classDiagram
         Trois livres système sont reconnus par leur tag interne — <b>Mes créations Kass'Dalle</b>,
         <b>Mes recettes libres</b>, <b>Mes recettes secrètes</b> — et portent une couverture par
         défaut au lieu d'une image téléversée.
+        <b>Doublons à l'import.</b> Un <code>ProcessingJob</code> au statut
+        <code>duplicate</code> (« Doublon possible ») a été arrêté par le serveur après la
+        transcription : chaque <code>JobDuplicate</code> nomme une recette lue sur la page et sa
+        référence, une <code>Recipe</code> du même livre (<code>recipeId</code>) ou un import
+        plus ancien encore en cours (<code>jobId</code>). <code>duplicateOverride</code> est la
+        seule écriture du client sur ce sujet, « Ce n'est pas un doublon ».
+        <code>BookImportAnalysis</code> est la réponse d'<code>analyzeBookFileFn</code>, abrégée
+        ici ; <code>ExistingBookMatch</code> y nomme un <code>Book</code> de l'utilisateur au
+        même titre (<code>sameTitle</code>) ou au même fichier (<code>sameFile</code>,
+        empreinte <code>source_file_sha256</code>, sans champ Dart sur <code>Book</code>).
         <b>Un invité n'est pas membre</b> (v0.23.19) : son uid vit dans <code>invitedIds</code>
         jusqu'à ce qu'il accepte, et passe alors dans <code>memberIds</code>.
         <b>MealSuggestion</b> (<code>meal_suggestions/{id}</code>, v0.23.58) : un membre d'un
@@ -2298,6 +2384,8 @@ classDiagram
           <tr><td><code>isPrivate</code></td><td><code>is_private</code></td><td>Recopié du livre par le serveur ; le client le relit et le réécrit tel quel. Absent vaut <code>false</code></td></tr>
           <tr><td><code>fidelityLevel</code> · <code>fidelityFindings</code></td><td><code>fidelity_level</code> · <code>fidelity_findings</code></td><td>Écrits par le pipeline d'import, effacés à la validation du brouillon</td></tr>
           <tr><td><code>illustrationReport</code></td><td><code>illustration_report</code></td><td>Écrit par le pipeline d'import ; lu par le client, jamais réécrit</td></tr>
+          <tr><td><code>duplicateOf</code></td><td><code>duplicate_of</code></td><td>Marque « Doublon possible » posée par le pipeline sur un brouillon d'un livre entier ; <code>toFirestore</code> l'omet, les règles refusent au client de la poser ou de la changer ; <code>validateDraft</code> l'efface (<code>FieldValue.delete()</code>)</td></tr>
+          <tr><td>—</td><td><code>titre_key</code></td><td>Titre normalisé que compare la détection des doublons ; écrit par le serveur seul (<code>recipeProcessor</code>, <code>onRecipeWritten</code>, backfill), jamais lu par le modèle Dart</td></tr>
           <tr><td>—</td><td><code>scan_id</code></td><td>Écrit par le pipeline sur une recette importée, pour rattacher la nutrition et les courses de <code>onRecipeWritten</code> au scan et à son coût. Absent d'une recette écrite à la main ; jamais relu par le modèle Dart</td></tr>
           <tr><td><code>pageType</code></td><td><code>page_type</code></td><td><code>ingredientNote</code> est stocké <code>ingredient_note</code> ; les deux formes sont relues</td></tr>
           <tr><td><code>ingredientsIndex</code></td><td><code>ingredients_index</code></td><td>Noms en minuscules, dédupliqués — dérivés de <code>ingredients</code> par <code>buildIngredientsIndex</code>, écrivain unique</td></tr>

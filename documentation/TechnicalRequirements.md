@@ -428,6 +428,7 @@ pour que deux comptes sans profil restent distincts.
 | `updated_at` | `Timestamp` | Date de dernière modification |
 | `source_file_url` | `String?` | URL du fichier source IA |
 | `source_file_name` | `String?` | Nom du fichier source |
+| `source_file_sha256` | `String?` | Empreinte SHA-256 du fichier importé, en hexadécimal (`fileSha256`, `books/existingBook.ts`). **Posée par `runBookImport` sur un livre neuf** créé depuis un PDF, un EPUB ou un Word (`books/book_import_{jobId}`). `analyzeBookFileFn` la compare à l'empreinte du fichier lu, pour signaler le même fichier même sous un autre titre (§6, « Les doublons à l'import »). Absente sur un livre créé à la main, par scan de couverture, ou importé avant le champ ; aucun backfill : ces livres restent reconnus par leur titre. Le client ne la lit ni ne l'écrit |
 | `ai_processed_at` | `Timestamp?` | Date du traitement IA |
 
 **Les quatre livres système** se reconnaissent à un tag interne (préfixe `__`, refusé dans le
@@ -529,6 +530,8 @@ Document principal d'une recette.
 | `scan_id` | `String?` | Le scan d'où vient la recette. Écrit par `recipeProcessor` au moment de l'enregistrement, et lu par `onRecipeWritten` : c'est le seul fil entre l'import et les calculs qu'il déclenche. Le déclencheur part sur une écriture Firestore, sans lien avec la tâche qui l'a produite — sans ce champ, la nutrition et les courses d'un import formaient un groupe de journaux à part, et leur coût sortait du total du scan. Absent sur une recette écrite à la main |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
 | `illustration_report` | `Map?` | Ce que la recherche d'illustrations a donné : `{detectees, retenues, publiees, pagesEnEchec}` — la quatrième clé est en camelCase là où les trois autres sont en snake_case ; l'écrivain et le lecteur emploient la même graphie, en changer une seule perdrait le compte. `detectees` compte ce que la page **porte**, jamais ce qu'on en a tiré — c'est ce chiffre qui permet au bandeau de relecture d'annoncer « trois photos repérées, à extraire à la main » alors même que rien n'a été extrait. Sans lui, « aucune photo » posait trois questions sans réponse : la page n'en portait-elle pas, l'extraction a-t-elle échoué, ou la page a-t-elle été sautée ? |
+| `titre_key` | `String?` | Le titre sous la forme que compare la détection des doublons à l'import : minuscules, accents retirés, « œ » et « æ » écrits « oe » et « ae », tout ce qui n'est ni lettre ni chiffre remplacé par une espace, espaces de bord retirées (`titleKey`, `pipeline/duplicateDetection.ts`). Chaîne vide pour un titre vide. **Serveur seul** : posé par `saveDraft` (`recipeProcessor`) à la création d'un brouillon importé, puis tenu à jour par `onRecipeWritten` (`syncRecipeTitleKey`, `triggers/recipeTitleKey.ts`) à chaque écriture dont le titre ne correspond plus à la clé — saisie, copie, titre corrigé à la relecture. Les recettes antérieures le reçoivent par le backfill ponctuel « Clé de titre des recettes » (`backfillTitleKeysFn`, §7.10). Calculé côté serveur seulement : aucune logique dupliquée Dart ↔ TypeScript. Index composite `book_id` + `titre_key` (`firestore.indexes.json`). Le client ne le lit ni ne l'écrit, et les règles ne le protègent pas : une valeur fausse posée par un client est réécrite par le déclencheur à l'écriture suivante |
+| `duplicate_of` | `Map?` | Marque « Doublon possible » d'un brouillon issu d'un **import de livre entier** dont la recette existait déjà dans le livre : `{ titre: String, page: int?, recipe_id: String?, job_id: String? }`. `titre` et `page` sont ceux de la référence ; `recipe_id` nomme une recette existante du livre, `job_id` un import plus ancien encore en cours, l'un des deux est présent (`duplicateOfField`). Posé par `saveDraft` (`recipeProcessor`) seulement ; un scan de page ne crée jamais de brouillon marqué, il s'arrête en `duplicate` (§3.4). Le client le lit (`Recipe.duplicateOf`, `RecipeDuplicateRef`) ; `toFirestore` ne l'écrit jamais. Les règles refusent au client de le poser à la création et de le poser ou de le changer à une mise à jour, administrateur compris ; seul son effacement passe (`duplicateMarkKeptOrRemoved`, §4). `validateDraft` l'efface dans la même écriture que la validation. La validation en lot écarte un brouillon marqué, après avoir relu sa référence en parallèle (`staleDuplicateMarks`, `work_queue_batch.dart`) : une marque dont la recette de référence est supprimée, ou dont l'import de référence est absent, en erreur, rejeté ou terminé sans recette encore présente, est périmée et le brouillon est validé ; un import de référence lui-même en `duplicate` garde la marque |
 | `plating_advice` | `Map?` | Conseil de dressage produit par l'IA à la demande. Écrit **uniquement** par `suggestPlatingFn` / `generatePlatingImageFn`, à la demande du créateur de la recette ou d'un administrateur (§4, `assertCanModifyRecipe`). Absent tant que personne ne l'a demandé — cf. structure ci-dessous |
 
 #### Détail du champ `nutrition` (Map imbriqué)
@@ -1167,6 +1170,19 @@ ces recettes est retiré en v0.23.52.
 `syncRecipeEstimatedTimes` (`triggers/recipeEstimatedTimes.ts`) en parallèle de
 `syncRecipeMealRole`, avant la garde des entrées : voir « Détail du champ `estimated_times` ».
 
+**La clé de titre aussi.** `onRecipeWritten` appelle `syncRecipeTitleKey`
+(`triggers/recipeTitleKey.ts`) avant le filtre sur le type de page : une page technique, une
+note d'ingrédient ou une page d'équipement reçoit sa clé comme une recette. La fonction compare
+`titre_key` à `titleKey(titre)` (`titleKeyUpdate`) et n'écrit que si elles diffèrent ; l'écho de
+cette écriture la trouve à jour et n'écrit rien. Une écriture en échec est journalisée
+(`logError`, module `DESIGN`, fil `ecriture_recette:cle_de_titre`) et ne bloque pas la suite du
+déclencheur. La recette garde alors une clé périmée : un doublon de son titre n'est pas détecté
+avant la prochaine écriture de la recette ou le passage du backfill. Une écriture qui ne change
+que `titre_key` — celle de `syncRecipeTitleKey`, ou celle du backfill — fait sortir le
+déclencheur juste après (`onlyTitleKeyChanged`), sans relancer le rôle dans un repas, les durées, la nutrition ni les courses : sans cette sortie, le rôle dans un repas
+d'une recette non classée était redemandé au modèle une seconde fois, et le backfill aurait
+lancé un appel de modèle par recette sans rôle.
+
 ---
 
 ### 3.4 Collection `processing_jobs`
@@ -1177,7 +1193,7 @@ Jobs de traitement asynchrone pour scans recettes/livres et imports par lien.
 |---|---|---|
 | `id` | `String` | ID auto-généré Firestore |
 | `type` | `String` | Enum : `recipeScan` \| `bookCoverScan` \| `bookDocumentScan` \| `recipeUrlImport`. Le dernier n'est créé que par `importRecipeFromUrlFn` : les règles refusent sa création par le client |
-| `status` | `String` | Enum : `queued` \| `processing` \| `done` \| `error` \| `rejected` |
+| `status` | `String` | Enum : `queued` \| `processing` \| `done` \| `error` \| `rejected` \| `duplicate`. `duplicate` (« Doublon possible ») : posé par `recipeProcessor` sur un import de page arrêté après la transcription, voir « Statut `duplicate` » ci-dessous |
 | `created_by` | `String` | UID du demandeur |
 | `created_at` | `Timestamp` | Date de creation |
 | `updated_at` | `Timestamp` | Date de mise a jour du job |
@@ -1187,7 +1203,7 @@ Jobs de traitement asynchrone pour scans recettes/livres et imports par lien.
 | `mime_type` | `String?` | MIME detecte du fichier |
 | `book_id` | `String?` | Livre cible pour rattachement recettes |
 | `book_titre` | `String?` | Titre denormalise du livre cible |
-| `created_recipe_ids` | `List<String>` | IDs des brouillons recettes crees. **Écrit dès la création de chaque brouillon**, pas à la fin du job : la normalisation des référentiels qui suit dure jusqu'à 7 min, et la file de travail masque un job dès qu'il a produit un brouillon (sauf `error` / `rejected`). |
+| `created_recipe_ids` | `List<String>` | IDs des brouillons recettes crees. **Écrit dès la création de chaque brouillon**, pas à la fin du job : la normalisation des référentiels qui suit dure jusqu'à 7 min, et la file de travail masque un job dès qu'il a produit un brouillon (sauf `error` / `rejected` / `duplicate`). Peut être non vide sur un job `duplicate` : sur une page à plusieurs recettes, les recettes qui ne sont pas en double sont écrites avant l'attente. « Ce n'est pas un doublon » ne le touche pas, et la reprise y ajoute les brouillons des recettes retenues. |
 | `created_book_id` | `String?` | ID du brouillon livre cree |
 | `error_message` | `String?` | Message d'erreur si statut `error`, ou raison du rejet si statut `rejected` |
 | `error_id` | `String?` | Identifiant du rapport d'erreur (`error_reports`) lié à un job en `error`. La file « Brouillons & Traitements » l'affiche en puce « Code : … », copiable. Remis à `null` par `relaunchDeadLetterFn` sur le job relancé. Aucun code actuel n'y écrit d'autre valeur que `null` : le client le lit seulement |
@@ -1206,7 +1222,14 @@ Jobs de traitement asynchrone pour scans recettes/livres et imports par lien.
 | `photo_status` | `String?` | **Posé par le serveur** sur un `recipeUrlImport` terminé : `attached`, `held` (modération en attente), `refused`, `none` (pas de photo sur la page), `failed` (récupération ou conversion en échec, journalisée) |
 | `url_retry_count` | `Number?` | Sur un `recipeUrlImport` : relances faites depuis la file. **Écrit par le client** à chaque relance (`retryJob`), qui doit l'incrémenter d'exactement un ; les règles n'admettent la relance que d'un job en `error` dont `error_code` vaut `timeout` ou est absent (incident du pipeline, annulation), et deux fois au plus (`urlRelaunchAllowed`). Une annulation le laisse inchangé (`retryCountUnchanged`) : sinon chaque annulation le remettrait à zéro et la borne de deux ne tiendrait plus. Un job terminé ou refusé par le site ne se relance pas : chaque relance relance le pipeline facturé, hors du plafond quotidien compté par la callable |
 | `forced_duplicate` | `Boolean?` | Sur un `recipeUrlImport` : l'utilisateur a choisi « Importer quand même » malgré une recette existante de même `source_url` |
-| `transcription_checkpoint` | `String?` | **Posé par le serveur** sur un job `recipeScan` : la transcription réussie de la page, en JSON (`pipeline/transcriptionCheckpoint.ts`). Une nouvelle tentative après un échec du balisage, ou une relance depuis la file (qui copie le job), la relit au lieu de refaire l'appel de modèle. Réécrit après chaque recette étrangère traduite : une relance ne retraduit pas les recettes déjà traduites. Supprimé quand le job aboutit ; non écrit au-delà de 300 000 caractères. Un point de reprise illisible est journalisé et la page est transcrite de nouveau. |
+| `transcription_checkpoint` | `String?` | **Posé par le serveur** sur un job `recipeScan` : la transcription réussie de la page, en JSON (`pipeline/transcriptionCheckpoint.ts`). Une nouvelle tentative après un échec du balisage, ou une relance depuis la file (qui copie le job), la relit au lieu de refaire l'appel de modèle. Réécrit après chaque recette étrangère traduite : une relance ne retraduit pas les recettes déjà traduites. Supprimé quand le job aboutit ; non écrit au-delà de 300 000 caractères. Un point de reprise illisible est journalisé et la page est transcrite de nouveau. **Gardé sur un job `duplicate`** : « Ce n'est pas un doublon » reprend au balisage sans relire la page. |
+| `titre_keys` | `List<String>?` | **Posé par le serveur** sur un job rattaché à un livre (`book_id`), juste après la transcription (`jobTitleKeyFields`, `pipeline/duplicateDetection.ts`) : la clé de titre (`titleKey`) de chaque recette lue, dans l'ordre de la page, titres vides exclus. Les imports suivants du même livre le comparent par `array-contains` ; index composite `book_id` + `titre_keys`. `titre` joint les titres par une virgule et ne se relit pas quand un titre en contient une : d'où cette liste. Le client l'ignore |
+| `titre_key_pages` | `List<int?>?` | **Posé par le serveur** avec `titre_keys`, même ordre : le numéro de page de chaque recette (`page` de la recette, à défaut celui de la page), `null` s'il est inconnu. Le client l'ignore |
+| `titre_key_titres` | `List<String>?` | **Posé par le serveur** avec `titre_keys`, même ordre : le titre lu, tel quel. Sert de libellé quand ce job est la référence d'un autre (`existing_titre`). Le client l'ignore |
+| `duplicate_checked` | `Boolean?` | **Posé par le serveur** à `true` sur un job rattaché à un livre, quand il a passé la comparaison et continue vers le balisage (même écriture que `current_step: "parse"`). Un import plus ancien du même livre, dont la transcription finit après celle-ci, prend alors ce job pour référence : les transcriptions peuvent finir dans l'ordre inverse des scans. Le client l'ignore |
+| `duplicates` | `List<Map>?` | **Posé par le serveur** sur un job `duplicate` : une entrée par recette retenue, `{ titre: String, existing_titre: String, existing_page: int?, recipe_id: String?, job_id: String? }` (`duplicateJobEntry`). `titre` est le titre lu sur la page ; `existing_titre` et `existing_page` ceux de la référence ; `recipe_id` nomme une recette existante du livre (brouillon ou validée, quel que soit son auteur), `job_id` un import plus ancien encore en file ou en cours ; l'un des deux est présent. Lu par le client (`ProcessingJob.duplicates`, `JobDuplicate`, lecture tolérante : une entrée illisible est écartée). Le serveur ne réécrit jamais l'entrée : le client résout `job_id` à l'affichage (`duplicateReferenceProvider`, `duplicate_reference.dart`) — import en file ou en cours, import terminé (lien vers celle de ses `created_recipe_ids` qui porte `existing_titre`, sinon la première), import en erreur, rejeté, en doublon ou absent (« Recette supprimée »). Supprimé quand la reprise aboutit |
+| `pending_items` | `List<int>?` | **Posé par le serveur** sur un job `duplicate` : la position, dans la transcription, des recettes en attente. La reprise ne traite qu'elles. Supprimé quand la reprise aboutit. Le client l'ignore |
+| `duplicate_override` | `Boolean?` | **Écrit par le client** pour « Ce n'est pas un doublon » (`ScanUploadNotifier.resumeDuplicateJob`), dans une seule écriture : `{ status: "queued", duplicate_override: true, error_message: null, current_step: null, updated_at }`. Les règles n'admettent cette écriture que depuis `status == "duplicate"`, par le propriétaire éditeur ou administrateur, et sur ces seules clés (`isDuplicateResume`, §4). `recipeProcessor` saute alors la comparaison et ne traite que `pending_items`. Reste sur le job ensuite ; une relance après une erreur ne refait donc pas la comparaison. Sur le modèle de `forced_duplicate` |
 
 **`bookDocumentScan` ne transcrit rien.** `recipeProcessor` l'aiguille sur `runBookImport` (`pipeline/bookImport.ts`), qui ouvre le fichier (`books/bookFile.ts`), crée le livre s'il n'y en a pas (`book_id` absent → document `books/book_import_{jobId}`, couverture dans `scans/{uid}/book_import_{jobId}/`), puis découpe le contenu en tranches et crée **un job `recipeScan` par tranche** (`processing_jobs/book_import_{jobId}_{NNNN}`, fichier dans `scans/{uid}/book_import_{jobId}/{NNNN}.pdf|txt`). Ces jobs suivent le pipeline d'une page scannée et partagent le `scan_id` du parent : le coût du livre se lit sur un seul groupe. L'opération est idempotente — livre et enfants ont des identifiants déterminés par le parent, un enfant existant n'est jamais recréé (`create()` refusé, code gRPC 6) — et un livre neuf qui n'a aucun enfant est supprimé si l'import échoue. Un `BookFileError` (PDF chiffré, EPUB sans texte, plus de 400 tranches) part directement en dead letter sans nouvelle tentative, comme un plafond de dépense.
 
@@ -1221,6 +1244,8 @@ la page déposé comme document original (`scans/{uid}/web_{jobId}_page_web_{sit
 `source_file_url` / `source_file_name` de la recette), `saveDraft` (`origin: "web"`,
 `source_url`, normalisation `normalize` puis `save`), et enfin la photo (`design`,
 `attachWebPhoto`). Détail au §6, « Import d'une recette depuis un lien ».
+
+**Statut `duplicate`** : posé par `recipeProcessor` sur un import de page (`recipeScan`) rattaché à un livre, quand une ou plusieurs recettes lues existent déjà dans ce livre (§6, « Les doublons à l'import »). Le job s'arrête après la transcription, `current_step` à `null`, avec `duplicates`, `pending_items`, `created_recipe_ids` et `transcription_checkpoint` en place. `jobDispatcher` ne met en file qu'une entrée en `queued` : il ne réagit pas à ce statut. Deux sorties : « Ce n'est pas un doublon » (`duplicate_override`, retour en `queued`) et « Supprimer » (`deleteJob`, ouvert par les règles au propriétaire éditeur ou administrateur pour ce seul statut). Seul le pipeline pose ce statut : les règles refusent au client de créer un job dans un autre statut que `queued`, et une relance n'admet que `queued` ou `error`. Le fichier source reste dans Storage après la suppression du job. Rien ne supprime un job `duplicate` automatiquement. Une tranche de livre (`book_window`) ne passe jamais par ce statut : son brouillon est créé et marqué `duplicate_of` (§3.3).
 
 **Statut `rejected`** : créé côté client lorsqu'un fichier est bloqué par le scan de sécurité (`scanAndPromoteUpload` renvoie `failed-precondition`). Le fichier source reste en quarantaine et n'est pas promu ; `file_url` est donc vide et `error_message` contient la raison du rejet. Ces jobs apparaissent dans l'écran « Brouillons & Traitements » (badge rouge « Rejeté ») et ne proposent que l'action **Supprimer** (pas de **Relancer**, un re-scan du même fichier produirait le même rejet).
 
@@ -2141,6 +2166,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 |---|---|
 | `nutrition_catch_up_checkpoint` | `backfillNutritionFn`, passage manuel seulement : le passage programmé repart du début à chaque fois, comme l'ancienne tâche de 5 h |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
+| `recipe_title_keys_backfill_checkpoint` | `backfillTitleKeysFn` : `last_doc_id`, la dernière recette examinée ; `null` quand `recipes` a été parcourue en entier sans échec |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
 | `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn`, retiré en v0.23.52 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `allergens_ingredients_backfill_checkpoint` | `backfillAllergensFn` — curseur du parcours du référentiel |
@@ -2165,7 +2191,7 @@ est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/back
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
 récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach`, `move_meals_to_group`,
-`ticket_analyses`, `ticket_delivered_pr` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
+`ticket_analyses`, `ticket_delivered_pr`, `recipe_title_keys` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
 rend un reste inconnu (`remaining: null`), il n'est donc jamais marqué terminé tout seul, et
 il n'a pas de point de reprise — chaque passage relit les repas de sa période. Il partage son verrou avec `group_planning_reach` (`LOCK_GROUPS`) : les deux écrivent
 `planned_meals.group_id`, et l'un refuse de partir pendant que l'autre tourne. Les ponctuels `recipe_protein`,
@@ -2758,6 +2784,12 @@ service cloud.firestore {
       function serverOnlyRetryFields() {
         return ['nutrition_catch_up_attempts', 'meal_role_failure_count', 'meal_role_attempt_at'];
       }
+      // Marque « doublon possible » d'un brouillon issu d'un livre entier :
+      // posée par le serveur seul (`recipeProcessor`). Le client ne peut que
+      // l'effacer, en validant.
+      function duplicateMarkKeptOrRemoved() {
+        return !changes('duplicate_of') || !('duplicate_of' in request.resource.data);
+      }
 
       allow read: if canReadRecipe(resource.data);
       // Création : éditeur et administrateur seulement. Le lecteur ne crée aucune
@@ -2766,6 +2798,7 @@ service cloud.firestore {
       // ni effacé par un client, administrateur compris.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && !('estimated_times' in request.resource.data)
+        && !('duplicate_of' in request.resource.data)
         && !request.resource.data.keys().hasAny(serverOnlySourceFields())
         && !request.resource.data.keys().hasAny(serverOnlyRetryFields())
         && bookCheck(true) && sourceUrlAccepted();
@@ -2774,6 +2807,7 @@ service cloud.firestore {
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyRetryFields())
         && !changes('estimated_times')
+        && duplicateMarkKeptOrRemoved()
         && ((changes('book_id') && bookCheck(true))
             || (!changes('book_id') && (!changes('is_private') || bookCheck(false))));
       allow delete: if isApproved() && (isCreator(resource.data) || isAdmin());
@@ -2825,7 +2859,7 @@ service cloud.firestore {
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création par un editor ou un admin (`isEditor()`, v0.23.54 : plus le reader), à son nom, soi seul membre, sans invité ; `owner_id` figé ; cinq mises à jour et elles seules : **gestion** (`isManagement`) par le propriétaire s'il est editor (`isEditor()`, v0.23.54), ou par un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **réduction** (`isShrinking`, v0.23.54) par le propriétaire quel que soit son rôle — `invited_ids` et `member_ids` ne font que perdre des comptes, le propriétaire reste membre, rien d'autre ne change (ni nom, ni invitation nouvelle) ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Acceptation, refus et sortie restent ouverts à tout rôle approuvé. Suppression par le propriétaire quel que soit son rôle, ou par un admin : un reader propriétaire d'un groupe créé avant la v0.23.54 ne peut pas le quitter, la suppression est sa seule sortie. Testé dans `rules-tests` (« groupes — rôle éditeur requis ») |
-| `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide |
+| `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide ; « Ce n'est pas un doublon » (`isDuplicateResume`) : le propriétaire **éditeur ou administrateur** fait passer un job de `duplicate` à `queued` avec `duplicate_override: true`, en ne touchant que `status`, `duplicate_override`, `error_message`, `current_step` et `updated_at` — `created_recipe_ids` reste en place, `duplicate_override` ne se pose sur aucun autre statut, un lecteur propriétaire ne reprend pas, un import par lien non plus ; à la création, le job naît en `queued` (statut absent admis) et sans aucun des champs que seul le pipeline écrit pour les doublons (`titre_keys`, `titre_key_pages`, `titre_key_titres`, `duplicate_checked`, `duplicates`, `pending_items`, `duplicate_override`) — posés par le client sur un job jamais mis en file, ils arrêteraient les imports suivants du même livre ; une relance par le propriétaire éditeur n'écrit que `queued` ou `error`, jamais `duplicate`, et ne part pas d'un job `duplicate` (seules la reprise et l'annulation en sortent) ; suppression par un admin, ou par le propriétaire **éditeur ou administrateur** d'un job au statut `duplicate` (rien n'y tourne, et la ligne n'a pas d'autre sortie que la reprise) |
 | `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur sans le champ attend le backfill `group_planning_reach`) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
@@ -3205,12 +3239,21 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   `nutrition_catch_up_attempts`, `meal_role_failure_count` et `meal_role_attempt_at`
   (`serverOnlyRetryFields`, v0.23.59) ne se posent pas à la création et ne se modifient ni ne
   s'effacent, éditeur créateur compris, alors que le même éditeur change le titre seul
-  (« recipes — compteurs des reprises automatiques ») ; aucune écriture du client ne les
+  (« recipes — compteurs des reprises automatiques ») ;
+  `duplicate_of` (« recipes — marque de doublon possible ») ne se pose pas à la création, ne se
+  pose pas sur une recette qui n'en a pas et ne se change pas ; valider l'efface, et une autre
+  mise à jour le garde ; aucune écriture du client ne les
   recopie (`Recipe.toFirestore` ne les connaît pas, les modifications passent par `update`) ;
   un éditeur ne crée pas de job `recipeUrlImport` et ne change pas la source d'un job en le
   relançant ; un import terminé ne se remet pas en file ni ne s'annule, un délai dépassé se
   relance avec `url_retry_count` + 1, pas au-delà de deux, pas sans compteur, et un import
-  refusé par le site ne se relance pas ; une annulation ne remet pas le compteur de relances à zéro ; `url_import_daily` se lit par son titulaire et ne
+  refusé par le site ne se relance pas ; une annulation ne remet pas le compteur de relances à zéro ;
+  « Ce n'est pas un doublon » remet en file un import `duplicate` de son propriétaire éditeur
+  sans vider `created_recipe_ids`, exige `duplicate_override`, n'est pas admis sur un job qui
+  n'attend pas ni pour un lecteur propriétaire ; le propriétaire supprime son import
+  `duplicate`, un autre compte non, et seul un administrateur supprime un job dans un autre
+  statut ; un éditeur ne crée pas un job déjà vérifié ou porteur de clés de titre, et une
+  relance ne pose pas le statut `duplicate` ; `url_import_daily` se lit par son titulaire et ne
   s'écrit pas depuis le client.
 
 **Convention `todo`.** Une faille relevée et encore ouverte a son test, écrit avec l'attendu
@@ -4459,6 +4502,113 @@ Deux réglages tiennent à ce que ces passes demandent :
 - **`maxTokens: 24 000`** sur la transcription, qui ne résume rien. C'est ce plafond qui
   impose le streaming côté Claude (chapitre 1).
 
+### Les doublons à l'import
+
+Une page déjà importée, ou la même page scannée deux fois, produisait un second brouillon de
+la même recette, facturé en entier. La détection a lieu dans `recipeProcessor`, **après la
+transcription et la traduction éventuelle, avant le balisage** : le titre comparé est celui
+qui sera enregistré, et rien de ce qui suit n'est encore facturé. Elle ne fait **aucun appel
+de modèle**. Code : `pipeline/duplicateDetection.ts` (fonctions pures `titleKey`,
+`pagesCompatible`, `pickDuplicate`, lecture `findDuplicates`), branché dans
+`pipeline/recipeProcessor.ts`.
+
+**Le critère.** Une recette lue est un doublon possible d'une référence quand elles sont dans
+le même livre (`book_id`), que leurs clés de titre sont égales (`titleKey` : minuscules,
+accents retirés, « œ » → « oe », « æ » → « ae », ce qui n'est ni lettre ni chiffre remplacé
+par une espace, espaces de bord retirées) et que leurs pages sont compatibles
+(`pagesCompatible` : deux numéros connus et différents écartent le doublon, un numéro absent
+ne l'écarte pas). Une page de recette compare chacune de ses recettes, avec la page de la
+recette, à défaut celle de la page ; une page technique, une note d'ingrédient ou une page
+d'équipement compare son titre. Un titre vide, un job sans `book_id` ou une reprise
+(`duplicate_override`) ne sont pas comparés. Une page `no_recipe` termine avant.
+
+**Les références.** Deux requêtes par clé distincte, servies par deux index composites de
+`firestore.indexes.json` :
+
+| Requête | Index | Ce qui est retenu |
+|---|---|---|
+| `recipes` où `book_id ==` et `titre_key ==` | `book_id` + `titre_key` | toute recette du livre, brouillon ou validée, quel que soit son auteur, sauf celles que ce job a déjà créées (`created_recipe_ids`) |
+| `processing_jobs` où `book_id ==` et `titre_keys array-contains` | `book_id` + `titre_keys` | un autre import du même livre et du **même compte** (`created_by`), au statut `queued` ou `processing`, créé avant celui-ci (à date égale, l'identifiant le plus petit) **ou** déjà vérifié (`duplicate_checked`) ; la page est relue dans `titre_key_pages` à la même position |
+
+Une recette existante passe avant un import en cours. Seuls les imports du même compte comptent : un job se crée côté client, et un job fabriqué par un autre membre sur ce livre ne doit pas arrêter ses scans. Un import terminé est couvert par ses
+recettes ; un import en erreur ou lui-même en `duplicate` n'est pas une référence, puisqu'il
+ne produira rien tant qu'on ne le relance pas. Le cas des imports en cours vient du délai du
+balisage : il dure jusqu'à sept minutes, et la même page scannée deux fois de suite n'a pas
+encore de brouillon quand le second import a fini de lire. `duplicate_checked` couvre les
+transcriptions qui finissent dans l'ordre inverse des scans : l'import qui a déjà passé la
+comparaison va écrire ses brouillons, et c'est l'autre qui attend.
+
+**Les champs posés sur le job.** Tout job rattaché à un livre reçoit, après la transcription,
+`titre_keys`, `titre_key_pages` et `titre_key_titres` (`jobTitleKeyFields`), puis
+`duplicate_checked: true` avec `current_step: "parse"` s'il continue. Le schéma est au §3.4.
+
+**Page scannée : mise en attente.** Les recettes en double sont retenues (`held`).
+
+- Toutes retenues : le job passe en `status: "duplicate"`, `current_step: null`, avec
+  `duplicates` (`duplicateJobEntry`), `pending_items` (positions retenues),
+  `created_recipe_ids` et `execution_time_ms`, puis s'arrête. Le balisage, les illustrations,
+  la normalisation des référentiels, l'enregistrement et la nutrition n'ont pas lieu.
+- Une partie seulement : les autres recettes suivent la chaîne et deviennent des brouillons ;
+  le job passe ensuite en `duplicate` pour les seules recettes retenues.
+- `transcription_checkpoint` reste sur le job dans les deux cas.
+
+Deux journaux d'information, module `IMPORT` : « Doublon possible : N recette(s) sur M déjà
+dans le livre » (livre, tranche ou non, identifiants des références) et « Import en attente :
+doublon possible » (brouillons créés, nombre en attente).
+
+**« Ce n'est pas un doublon ».** Le client écrit `duplicate_override: true` et remet le job en
+`queued` (§3.4, règle `isDuplicateResume` au §4). `jobDispatcher` le remet en file comme une
+relance. `recipeProcessor` relit la transcription dans `transcription_checkpoint` sans appel
+de modèle, saute la comparaison, reprend `created_recipe_ids` tel quel et ne traite que
+`pending_items`. À la fin, le job passe en `done`, et `transcription_checkpoint`,
+`pending_items` et `duplicates` sont supprimés. Une transcription de plus de 300 000
+caractères n'a pas de point de reprise : la reprise relit alors la page, et l'appel
+`transcription_page` est facturé. L'étape des illustrations est refaite à la reprise : un
+appel de pré-contrôle par page, ou la chaîne complète si la case était cochée à l'import.
+
+**Tranche d'un livre entier : brouillon marqué.** Un import de livre crée des dizaines de
+jobs ; en mettre une partie en attente rendrait la file illisible. Une tranche (`book_window`)
+n'est donc jamais retenue : sa recette en double suit toute la chaîne, et `saveDraft` pose
+`duplicate_of` sur le brouillon (`duplicateOfField`, §3.3). La file affiche la marque, la
+validation en lot écarte le brouillon après avoir relu sa référence, et `validateDraft`
+l'efface. Les tranches précédentes du même import comptent comme imports en cours.
+
+**Coût.** La détection n'ajoute aucun appel d'IA ; elle coûte deux lectures de requête par
+titre distinct, et une écriture de plus sur le job. Pour chaque recette retenue d'une page
+scannée, elle évite le balisage (`recipe_tagging`), la normalisation des référentiels et la
+nutrition qui suit l'écriture ; quand toute la page est retenue, elle évite aussi les
+illustrations (jusqu'à cinq appels par page si la case est cochée, un pré-contrôle sinon).
+La traduction a déjà eu lieu, avant la comparaison. Pour une tranche de livre, rien n'est
+évité : le brouillon est créé, marqué. La comptabilité des coûts n'a pas de poste nouveau.
+
+**Livre déjà en bibliothèque.** `analyzeBookFileFn` cherche, en parallèle de l'estimation, un
+livre de l'appelant qui ressemble au fichier lu (`findExistingBook`, `books/existingBook.ts`) :
+une requête `books` où `created_by ==` l'appelant, puis `pickExistingBook`, fonction pure.
+Même fichier : `source_file_sha256` égal à l'empreinte SHA-256 du fichier (`fileSha256`).
+Même titre : `titleKey` du titre égal, et auteurs compatibles (absent d'un côté, ou « Auteur
+inconnu », n'écarte pas). Le même fichier passe avant le même titre. La réponse porte
+`existingBook: { id, titre, auteur, sameFile, sameTitle, importedAt }` (`importedAt` :
+`created_at` du livre en ISO 8601), ou `null`. Une lecture en échec est journalisée
+(`logError`, module `IMPORT`) et rend `null` : l'avertissement manque, l'import reste
+possible. Le client ne l'affiche qu'en mode nouveau livre (`BookImportAnalysis.existingBook`,
+`ExistingBookMatch`) ; « Importer dans ce livre » appelle `confirmBookImport` avec
+`targetBookId` et `targetBookTitre`, et le job `bookDocumentScan` vise alors ce livre.
+`runBookImport` pose `source_file_sha256` sur tout livre neuf qu'il crée.
+
+**Limites connues.**
+
+- Un PDF sans titre dans ses métadonnées n'est reconnu, avant l'import, que par son
+  empreinte : la lecture de sa première page par l'IA (`book_cover`) a lieu après le
+  lancement.
+- Deux imports de la même page qui font leur comparaison dans la même fraction de seconde
+  peuvent passer tous les deux : la comparaison et l'écriture de `duplicate_checked` ne sont
+  pas dans une transaction.
+- Deux transcriptions différentes du même titre ne sont pas rapprochées ; deux homonymes sans
+  numéro de page le sont à tort. Pas de comparaison approchée, pas de comparaison entre deux
+  livres.
+- Une recette antérieure sans `titre_key` n'est pas trouvée tant que le backfill « Clé de
+  titre des recettes » ne l'a pas reprise, ou qu'elle n'a pas été réécrite.
+
 ### Import d'une recette depuis un lien
 
 Un éditeur ou un administrateur colle l'adresse d'une page de recette. La recette arrive en
@@ -5642,13 +5792,17 @@ sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà 
    (`budgetUsdToEur`, `null` s'il est absent ou hors bornes). Avec ce taux, l'écran fait saisir
    le plafond en euros (`BudgetCurrency`) et le convertit en dollars avant de l'écrire sur le
    job ; sans lui, en dollars. Il affiche « maximum … » sous le champ et refuse un plafond plus
-   haut par « Au plus … (… par tranche) », montants lus dans la réponse, jamais en dur. Avec
+   haut par « Au plus … (… par tranche) », montants lus dans la réponse, jamais en dur. La
+   réponse porte enfin `existingBook`, le livre de l'appelant qui ressemble au fichier (même
+   titre et auteur compatible, ou même empreinte `source_file_sha256`), ou `null` : en mode
+   nouveau livre, l'écran l'affiche avec « Importer dans ce livre » et « Créer un nouveau livre
+   quand même » (§6, « Les doublons à l'import »). Avec
    `discard: true`, la
    fonction supprime le fichier — seul son propriétaire, et seulement sous
    `scans/{uid}/livres/`. Elle ne dépense rien.
 3. Sur « Lancer l'import », le client crée le job `bookDocumentScan` avec `budget_limit_usd`, le
    plafond lu dans le champ de l'écran de confirmation : le bouton reste grisé sans montant
-   valide. `runBookImport` borne ce plafond côté serveur à 4 € par tranche, convertis en dollars
+   valide. « Importer dans ce livre » crée le même job, avec le `book_id` du livre reconnu. `runBookImport` borne ce plafond côté serveur à 4 € par tranche, convertis en dollars
    au taux de la facture — 4 $ par tranche sans taux, journalisé —
    (`effectiveImportLimitUsd`) : la valeur du client ne peut que réduire ce maximum. Une tranche
    arrêtée par le plafond se relance, et la relance ouvre un palier de plus. `recipeProcessor`
@@ -5677,7 +5831,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Cinq tâches planifiées (Cloud Scheduler), neuf reprises manuelles et deux réglages. Aucune
+Cinq tâches planifiées (Cloud Scheduler), onze reprises manuelles et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -5701,6 +5855,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains`, `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
 | `backfillTicketAnalysesFn` | `admin` | ponctuel `ticket_analyses`, « Analyses des tickets » (v0.23.62). Lit tous les `tickets` une fois ; pour chaque ticket qui a un numéro d'Issue et pas encore de sous-document `tickets/{id}/admin/analysis`, relit les commentaires de l'Issue (`GET /issues/{n}/comments`, un appel par tranche de cent) et écrit le sous-document (`writeTicketAnalyses`, §3.12 bis). Un ticket sans Issue est compté « sans Issue » ; un ticket déjà relevé est sauté. 200 tickets écrits par appel, arrêt sur trois échecs de suite, sur un jeton refusé (`token_invalid_since` posé) ou sur la limite de débit de GitHub. Un ticket en échec rejoint la liste « À revoir » (nature `ticket`, libellé « Issue #N », ouvert dans Admin › Tickets des membres). Monte `GITHUB_TICKETS_TOKEN`. Sans appel de modèle. À lancer une fois après le déploiement de v0.23.62 ; le webhook, la tâche horaire et les décisions tiennent ensuite les analyses à jour |
 | `backfillTicketDeliveredPrFn` | `admin` | ponctuel `ticket_delivered_pr`, « PR des tickets livrés » (v0.23.78). Lit les tickets `delivered` ; pour chacun sans `delivered_pr_number` ou sans `delivered_version`, appelle `recordDeliveredPr` (deux à trois appels GitHub). Ticket sans PR retrouvable : compté « sans PR » et listé dans « À revoir » (le backfill ne se marque donc pas terminé tout seul). 100 tickets repris par passage, trois échecs de suite ou jeton refusé ou limite de débit : arrêt. Aucun appel de modèle |
+| `backfillTitleKeysFn` | `admin` | ponctuel `recipe_title_keys`, « Clé de titre des recettes ». Parcourt `recipes` par identifiant, pages de 400, depuis le point de reprise `app_config/recipe_title_keys_backfill_checkpoint`, et pose `titre_key` (`titleKeyUpdate`, `triggers/recipeTitleKey.ts`) sur chaque recette dont la clé manque ou ne suit plus le titre, par `update` ; une recette déjà à jour n'est pas réécrite (« déjà à jour »). Sans cette clé, un nouveau scan d'une recette antérieure à la détection des doublons n'est pas reconnu. 2 000 recettes par appel par défaut (`maxDocs`, 10 000 au plus), 8 minutes au plus, arrêt sur trois échecs d'écriture de suite. L'écriture de la clé réveille `onRecipeWritten`, qui sort aussitôt (`onlyTitleKeyChanged`) : ni rôle dans un repas, ni durées, ni nutrition, ni courses ; le passage ne provoque donc aucun appel de modèle. Compte rendu : examinées, posées, identiques, échouées, arrêts (délai, quota, erreurs), `completed`. Un passage avec un échec n'est pas terminé, et le curseur reste sur la dernière recette examinée. Sans appel de modèle. À lancer une fois après le déploiement de la détection des doublons ; `recipeProcessor` et `onRecipeWritten` tiennent ensuite la clé à jour |
 
 Trois reprises ponctuelles, menées au bout en production, sont retirées en v0.23.52 avec leur
 callable : `backfillRecipeProteinFn` (« Protéine et féculent des plats »),
@@ -5861,6 +6016,7 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillSystemBooksFn` | comptes en échec de création (« Échec de création : <message> »), nommés par `display_name`, à défaut l'uid |
 | `backfillGroupPlanningReachFn` | comptes dont une portée n'a pas pu être recalculée (« Portée non recalculée : <message> »), nommés par leur uid ; repas planifiés restés sans `group_id` (« group_id non posé : <message> », nature `meal`, « Repas <id> ») |
 | `backfillMoveMealsToGroupFn` | repas dont l'écriture a échoué (« Repas non déplacé : <message> », nature `meal`), nommés par leur identifiant et leur jour (« Repas <id> — AAAA-MM-JJ »), sans titre de recette |
+| `backfillTitleKeysFn` | recettes en échec d'écriture (« Échec d'écriture : <message> »), nommées par leur titre |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du

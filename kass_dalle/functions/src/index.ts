@@ -164,6 +164,7 @@ export { scheduledBackfills } from "./scheduled/backfillSchedule";
 export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdminCallable";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
+export { backfillTitleKeysFn } from "./callable/titleKeysBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
 export { backfillSystemBooksFn } from "./callable/systemBooksBackfillCallable";
 export { backfillGroupPlanningReachFn } from "./callable/groupPlanningReachBackfillCallable";

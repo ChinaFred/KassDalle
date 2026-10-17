@@ -504,6 +504,18 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Pose `titre_key` sur les recettes qui ne l'ont pas, sans appel de
+  /// modèle : la détection des doublons à l'import la compare.
+  Future<BackfillCounts> backfillTitleKeys() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillTitleKeysFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Déplace les repas du planning personnel de l'appelant, sur la période de
   /// [request], dans le planning du groupe choisi. Sans appel de modèle. Les
   /// drapeaux valent 1 ou 0 ; les repas en échec sont dans `failures`.

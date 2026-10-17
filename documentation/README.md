@@ -14,13 +14,13 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 | [architecture.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/architecture.html) ([source](architecture.html)) | Vue d'ensemble des composants, pipeline d'import, modération des images, surface des Cloud Functions, carte des collections | HTML + Mermaid |
 | [diagramme-de-classes.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/diagramme-de-classes.html) ([source](diagramme-de-classes.html)) | Modèle de domaine Dart, couche d'accès aux données, correspondance Dart ↔ Firestore | HTML + Mermaid |
 | [cas-d-utilisation.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/cas-d-utilisation.html) ([source](cas-d-utilisation.html)) | Cas d'utilisation par rôle, et où le droit est réellement vérifié | HTML + Mermaid |
-| [diagrammes-de-sequence.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/diagrammes-de-sequence.html) ([source](diagrammes-de-sequence.html)) | Vingt-trois opérations détaillées, de l'import à la réconciliation comptable — chaque flux nomme ses classes et ses fonctions réelles | HTML + Mermaid |
+| [diagrammes-de-sequence.html](https://raw.githack.com/ChinaFred/KassDalle/master/documentation/diagrammes-de-sequence.html) ([source](diagrammes-de-sequence.html)) | Vingt-quatre opérations détaillées, de l'import à la réconciliation comptable — chaque flux nomme ses classes et ses fonctions réelles | HTML + Mermaid |
 
 GitHub affiche le code d'un fichier HTML, pas la page. Le lien principal de chaque
 fichier HTML passe donc par raw.githack.com, qui sert la page rendue depuis `master` ;
 le lien « source » ouvre le fichier dans le dépôt.
 
-## Les vingt-trois séquences documentées
+## Les vingt-quatre séquences documentées
 
 1. Import d'une page de livre — quarantaine, Cloud Tasks, pipeline, dead letters
 2. Chargement d'un brouillon — flux temps réel et garde d'initialisation du formulaire
@@ -46,6 +46,8 @@ le lien « source » ouvre le fichier dans le dépôt.
 21. Export PDF d'une recette — sur l'appareil, sans appel serveur
 22. Import d'un texte collé — la même chaîne en deux passes que la page scannée
 23. Annoter et noter une recette — deux gestes voisins, deux emplacements en base
+24. Trancher un doublon possible à l'import — « Ce n'est pas un doublon » reprend sans relire la page,
+    « Supprimer » retire le traitement (séquence 48 du fichier)
 
 ## Versions publiées en ligne
 

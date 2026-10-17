@@ -35,6 +35,7 @@ import {
 import { extractBookCover } from "../gemini/search";
 import type { BookWindowInfo } from "../gemini/promptsExtraction";
 import { logError, logInfo, logWarn } from "../logging";
+import { fileSha256 } from "../books/existingBook";
 
 export interface BookImportContext {
   jobId: string;
@@ -267,6 +268,9 @@ export async function runBookImport(args: {
       updated_at: now,
       source_file_url: fileUrl,
       source_file_name: fileName ?? null,
+      // Comparée à l'analyse d'un prochain import : le même fichier se
+      // reconnaît même sous un autre titre (`books/existingBook.ts`).
+      source_file_sha256: fileSha256(bytes),
       ai_processed_at: now,
       is_private: false,
     });

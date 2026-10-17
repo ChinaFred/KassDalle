@@ -48,7 +48,12 @@ beforeEach(async () => {
   await env.clearFirestore();
   await seedUsers(env);
   await seedDocs(env, {
-    "books/public": { title: "Livre commun", created_by: EDITOR, is_private: false, tags: [] },
+    "books/public": {
+      title: "Livre commun",
+      created_by: EDITOR,
+      is_private: false,
+      tags: [],
+    },
     "books/private-other": {
       title: "Carnet privé",
       created_by: OTHER,
@@ -67,7 +72,11 @@ beforeEach(async () => {
       is_private: false,
       tags: [],
     },
-    "books/system": { title: "Recettes libres", created_by: EDITOR, tags: ["__libres"] },
+    "books/system": {
+      title: "Recettes libres",
+      created_by: EDITOR,
+      tags: ["__libres"],
+    },
     "books/web_editor": {
       title: "Mes recettes du web",
       created_by: EDITOR,
@@ -104,7 +113,11 @@ beforeEach(async () => {
       review_status: "validated",
       is_private: true,
     },
-    "recipes/editor-own": { title: "Gratin", created_by: EDITOR, review_status: "validated" },
+    "recipes/editor-own": {
+      title: "Gratin",
+      created_by: EDITOR,
+      review_status: "validated",
+    },
     "recipes/draft-other": {
       title: "Brouillon",
       created_by: OTHER,
@@ -125,8 +138,16 @@ beforeEach(async () => {
       review_status: "validated",
       is_private: false,
     },
-    "recipes/legacy-no-flag": { title: "Ancienne", created_by: OTHER, review_status: "validated" },
-    "recipes/draft-reader": { title: "Mon brouillon", created_by: READER, review_status: "draft" },
+    "recipes/legacy-no-flag": {
+      title: "Ancienne",
+      created_by: OTHER,
+      review_status: "validated",
+    },
+    "recipes/draft-reader": {
+      title: "Mon brouillon",
+      created_by: READER,
+      review_status: "draft",
+    },
     "recipes/web-reader": {
       title: "Quiche",
       created_by: READER,
@@ -135,8 +156,17 @@ beforeEach(async () => {
       source_url: "https://www.site.fr/quiche",
       source_site: "site.fr",
       source_author: "Marie Dupont",
-      source_nutrition: { per_portion: { kcal: 420 }, portions: 6, ingredients_fingerprint: "" },
-      source_nutrition_check: { state: "ok", portions: 6, ratios: { kcal: 1 }, gaps: [] },
+      source_nutrition: {
+        per_portion: { kcal: 420 },
+        portions: 6,
+        ingredients_fingerprint: "",
+      },
+      source_nutrition_check: {
+        state: "ok",
+        portions: 6,
+        ratios: { kcal: 1 },
+        gaps: [],
+      },
     },
     "recipes/web-editor-author": {
       title: "Quiche",
@@ -146,7 +176,11 @@ beforeEach(async () => {
       source_url: "https://www.site.fr/quiche",
       source_site: "site.fr",
       source_author: "Marie Dupont",
-      source_nutrition: { per_portion: { kcal: 420 }, portions: 6, ingredients_fingerprint: "" },
+      source_nutrition: {
+        per_portion: { kcal: 420 },
+        portions: 6,
+        ingredients_fingerprint: "",
+      },
     },
     "recipes/web-editor": {
       title: "Quiche",
@@ -178,7 +212,10 @@ beforeEach(async () => {
       review_status: "validated",
       is_private: true,
     },
-    "recipes/validated-private-other/annotations/a1": { uid: OTHER, text: "note privée" },
+    "recipes/validated-private-other/annotations/a1": {
+      uid: OTHER,
+      text: "note privée",
+    },
     "recipes/validated/annotations/mine": { uid: READER, text: "ma note" },
     "recipe_ratings/r1": {
       user_id: READER,
@@ -186,24 +223,42 @@ beforeEach(async () => {
       rating: 4,
       updated_at: new Date(),
     },
-    "recipe_ratings/r-other": { user_id: OTHER, recipe_id: "validated", rating: 3 },
+    "recipe_ratings/r-other": {
+      user_id: OTHER,
+      recipe_id: "validated",
+      rating: 3,
+    },
     "recipe_ratings/r-other-private": {
       user_id: OTHER,
       recipe_id: "validated-private-other",
       rating: 5,
     },
-    "recipes/validated/annotations/other": { uid: OTHER, text: "note d'un autre" },
+    "recipes/validated/annotations/other": {
+      uid: OTHER,
+      text: "note d'un autre",
+    },
     "recipes/validated/origine/texte": { langue: "en", titre: "Banana bread" },
-    "recipes/validated-private-other/origine/texte": { langue: "en", titre: "Secret" },
+    "recipes/validated-private-other/origine/texte": {
+      langue: "en",
+      titre: "Secret",
+    },
     // `g1` appartient à l'éditeur : créer et gérer un groupe demandent le
     // rôle éditeur (v0.23.54). `g-reader` est un groupe de lecteur créé
     // avant cette version.
     "groups/g1": { name: "Famille", owner_id: EDITOR, member_ids: [EDITOR] },
-    "groups/g-reader": { name: "Ancien", owner_id: READER, member_ids: [READER] },
+    "groups/g-reader": {
+      name: "Ancien",
+      owner_id: READER,
+      member_ids: [READER],
+    },
     // La famille : lecteur, autre lecteur et éditeur partagent un groupe.
     // `stranger` n'en partage aucun. La portée est ce qu'écrit
     // `syncGroupReach` à partir des groupes.
-    "groups/famille": { name: "Famille", owner_id: OTHER, member_ids: [OTHER, READER, EDITOR] },
+    "groups/famille": {
+      name: "Famille",
+      owner_id: OTHER,
+      member_ids: [OTHER, READER, EDITOR],
+    },
     "group_reach/reader": { uids: [EDITOR, OTHER] },
     "group_reach/other-reader": { uids: [EDITOR, READER] },
     "group_reach/editor": { uids: [OTHER, READER] },
@@ -221,7 +276,11 @@ beforeEach(async () => {
     },
     "processing_jobs/job-reader": { created_by: READER, status: "processing" },
     "processing_jobs/job-editor": { created_by: EDITOR, status: "error" },
-    "processing_jobs/url-done": { created_by: EDITOR, status: "done", type: "recipeUrlImport" },
+    "processing_jobs/url-done": {
+      created_by: EDITOR,
+      status: "done",
+      type: "recipeUrlImport",
+    },
     "processing_jobs/url-timeout": {
       created_by: EDITOR,
       status: "error",
@@ -241,6 +300,23 @@ beforeEach(async () => {
       type: "recipeUrlImport",
       url_retry_count: 1,
     },
+    "processing_jobs/dup-editor": {
+      created_by: EDITOR,
+      status: "duplicate",
+      created_recipe_ids: ["editor-own"],
+    },
+    "processing_jobs/dup-reader": { created_by: READER, status: "duplicate" },
+    "recipes/dup-editor": {
+      title: "Pâte brisée",
+      created_by: EDITOR,
+      review_status: "draft",
+      duplicate_of: {
+        titre: "Pâte brisée",
+        page: 12,
+        recipe_id: "editor-own",
+        job_id: null,
+      },
+    },
     "processing_jobs/url-blocked": {
       created_by: EDITOR,
       status: "error",
@@ -248,16 +324,39 @@ beforeEach(async () => {
       error_code: "page_blocked",
     },
     "planned_meals/m1": { uid: READER, group_id: null, date: "2026-10-09" },
-    "planned_meals/m-editor": { uid: EDITOR, group_id: null, date: "2026-10-12" },
+    "planned_meals/m-editor": {
+      uid: EDITOR,
+      group_id: null,
+      date: "2026-10-12",
+    },
     "ai_usage/u1": { uid: READER, cost_usd: 0.01 },
     "ai_usage/u2": { uid: OTHER, cost_usd: 0.02 },
     "ai_daily_spend/d1": { uid: READER, total: 0.01 },
-    "url_import_daily/editor_2026-10-11": { uid: EDITOR, day: "2026-10-11", count: 3 },
-    "web_search_daily/reader_2026-10-12": { uid: READER, day: "2026-10-12", count: 4 },
-    "web_search_cache/abc": { query: "quiche", results: [], cached_at: "2026-10-12" },
-    "nutrition_ingredients/farine": { name: "farine", kcal: 364, shopping_product: "farine" },
+    "url_import_daily/editor_2026-10-11": {
+      uid: EDITOR,
+      day: "2026-10-11",
+      count: 3,
+    },
+    "web_search_daily/reader_2026-10-12": {
+      uid: READER,
+      day: "2026-10-12",
+      count: 4,
+    },
+    "web_search_cache/abc": {
+      query: "quiche",
+      results: [],
+      cached_at: "2026-10-12",
+    },
+    "nutrition_ingredients/farine": {
+      name: "farine",
+      kcal: 364,
+      shopping_product: "farine",
+    },
     "users/founder": PERSONAS.founder.doc,
-    "user_profiles/other-reader": { display_name: "Autre Lecteur", preferred_name: null },
+    "user_profiles/other-reader": {
+      display_name: "Autre Lecteur",
+      preferred_name: null,
+    },
   });
 });
 
@@ -343,23 +442,27 @@ describe("users — création de compte", () => {
 
   it("refuse un nom Google de 61 caractères à la création", async () => {
     await assertFails(
-      fresh().doc("users/newcomer").set({
-        role: "pending",
-        is_revoked: false,
-        email: "new@example.com",
-        display_name: "a".repeat(61),
-      }),
+      fresh()
+        .doc("users/newcomer")
+        .set({
+          role: "pending",
+          is_revoked: false,
+          email: "new@example.com",
+          display_name: "a".repeat(61),
+        }),
     );
   });
 
   it("accepte un nom Google de 60 caractères à la création", async () => {
     await assertSucceeds(
-      fresh().doc("users/newcomer").set({
-        role: "pending",
-        is_revoked: false,
-        email: "new@example.com",
-        display_name: "a".repeat(60),
-      }),
+      fresh()
+        .doc("users/newcomer")
+        .set({
+          role: "pending",
+          is_revoked: false,
+          email: "new@example.com",
+          display_name: "a".repeat(60),
+        }),
     );
   });
 
@@ -368,23 +471,27 @@ describe("users — création de compte", () => {
   // Google de 30 emoji, la plus longue coupe possible, passe la règle.
   it("accepte un nom de 30 emoji à la création", async () => {
     await assertSucceeds(
-      fresh().doc("users/newcomer").set({
-        role: "pending",
-        is_revoked: false,
-        email: "new@example.com",
-        display_name: "😀".repeat(30),
-      }),
+      fresh()
+        .doc("users/newcomer")
+        .set({
+          role: "pending",
+          is_revoked: false,
+          email: "new@example.com",
+          display_name: "😀".repeat(30),
+        }),
     );
   });
 
   it("refuse un nom de 31 emoji (62 unités UTF-16) à la création", async () => {
     await assertFails(
-      fresh().doc("users/newcomer").set({
-        role: "pending",
-        is_revoked: false,
-        email: "new@example.com",
-        display_name: "😀".repeat(31),
-      }),
+      fresh()
+        .doc("users/newcomer")
+        .set({
+          role: "pending",
+          is_revoked: false,
+          email: "new@example.com",
+          display_name: "😀".repeat(31),
+        }),
     );
   });
 });
@@ -392,35 +499,47 @@ describe("users — création de compte", () => {
 describe("users — longueur des noms", () => {
   it("un lecteur ne pose pas un nom préféré de 61 caractères", async () => {
     await assertFails(
-      db("reader").doc(`users/${READER}`).update({ preferred_name: "a".repeat(61) }),
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ preferred_name: "a".repeat(61) }),
     );
   });
 
   it("un lecteur pose un nom préféré de 60 caractères", async () => {
     await assertSucceeds(
-      db("reader").doc(`users/${READER}`).update({ preferred_name: "a".repeat(60) }),
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ preferred_name: "a".repeat(60) }),
     );
   });
 
   it("un lecteur efface son nom préféré", async () => {
-    await assertSucceeds(db("reader").doc(`users/${READER}`).update({ preferred_name: null }));
+    await assertSucceeds(
+      db("reader").doc(`users/${READER}`).update({ preferred_name: null }),
+    );
   });
 
   it("un nom préféré qui n'est pas une chaîne est refusé", async () => {
     await assertFails(
-      db("reader").doc(`users/${READER}`).update({ preferred_name: { x: "a".repeat(10) } }),
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ preferred_name: { x: "a".repeat(10) } }),
     );
   });
 
   it("un lecteur ne pose pas un nom Google de 61 caractères", async () => {
     await assertFails(
-      db("reader").doc(`users/${READER}`).update({ display_name: "a".repeat(61) }),
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ display_name: "a".repeat(61) }),
     );
   });
 
   it("un administrateur ne pose pas un nom préféré de 61 caractères", async () => {
     await assertFails(
-      db("admin").doc(`users/${READER}`).update({ preferred_name: "a".repeat(61) }),
+      db("admin")
+        .doc(`users/${READER}`)
+        .update({ preferred_name: "a".repeat(61) }),
     );
   });
 
@@ -433,18 +552,24 @@ describe("users — longueur des noms", () => {
         display_name: "a".repeat(80),
       },
     });
-    await assertSucceeds(db("admin").doc("users/long-name").update({ role: "editor" }));
+    await assertSucceeds(
+      db("admin").doc("users/long-name").update({ role: "editor" }),
+    );
   });
 });
 
 describe("users — rôle et révocation", () => {
   it("un lecteur ne change pas son propre rôle", async () => {
-    await assertFails(db("reader").doc(`users/${READER}`).update({ role: "admin" }));
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ role: "admin" }),
+    );
   });
 
   it("un lecteur ne lève pas sa propre révocation", async () => {
     await assertFails(
-      db("revoked").doc(`users/${PERSONAS.revoked.uid}`).update({ is_revoked: false }),
+      db("revoked")
+        .doc(`users/${PERSONAS.revoked.uid}`)
+        .update({ is_revoked: false }),
     );
   });
 
@@ -472,28 +597,40 @@ describe("users — rôle et révocation", () => {
 
   it("un compte pending ne se nomme pas lui-même", async () => {
     await assertFails(
-      db("pending").doc(`users/${PERSONAS.pending.uid}`).update({ role: "reader" }),
+      db("pending")
+        .doc(`users/${PERSONAS.pending.uid}`)
+        .update({ role: "reader" }),
     );
   });
 
   it("un lecteur ne change pas son adresse", async () => {
     await assertFails(
-      db("reader").doc(`users/${READER}`).update({ email: "china.fred.75@gmail.com" }),
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ email: "china.fred.75@gmail.com" }),
     );
   });
 
   it("un lecteur modifie un champ neutre de son profil", async () => {
-    await assertSucceeds(db("reader").doc(`users/${READER}`).update({ display_name: "Lou" }));
+    await assertSucceeds(
+      db("reader").doc(`users/${READER}`).update({ display_name: "Lou" }),
+    );
   });
 
   it("un administrateur nomme un compte en attente", async () => {
     await assertSucceeds(
-      db("admin").doc(`users/${PERSONAS.pending.uid}`).update({ role: "reader" }),
+      db("admin")
+        .doc(`users/${PERSONAS.pending.uid}`)
+        .update({ role: "reader" }),
     );
   });
 
   it("un éditeur ne nomme personne", async () => {
-    await assertFails(db("editor").doc(`users/${PERSONAS.pending.uid}`).update({ role: "reader" }));
+    await assertFails(
+      db("editor")
+        .doc(`users/${PERSONAS.pending.uid}`)
+        .update({ role: "reader" }),
+    );
   });
 
   it("un administrateur révoqué ne nomme personne", async () => {
@@ -501,19 +638,29 @@ describe("users — rôle et révocation", () => {
       .authenticatedContext("revoked-admin", { role: "admin", revoked: true })
       .firestore();
     await seedDocs(env, {
-      "users/revoked-admin": { role: "admin", is_revoked: true, email: "ra@example.com" },
+      "users/revoked-admin": {
+        role: "admin",
+        is_revoked: true,
+        email: "ra@example.com",
+      },
     });
-    await assertFails(ctx.doc(`users/${PERSONAS.pending.uid}`).update({ role: "admin" }));
+    await assertFails(
+      ctx.doc(`users/${PERSONAS.pending.uid}`).update({ role: "admin" }),
+    );
   });
 });
 
 describe("users — fondateur", () => {
   it("un administrateur ne change pas le rôle du fondateur", async () => {
-    await assertFails(db("admin").doc("users/founder").update({ role: "reader" }));
+    await assertFails(
+      db("admin").doc("users/founder").update({ role: "reader" }),
+    );
   });
 
   it("un administrateur ne révoque pas le fondateur", async () => {
-    await assertFails(db("admin").doc("users/founder").update({ is_revoked: true }));
+    await assertFails(
+      db("admin").doc("users/founder").update({ is_revoked: true }),
+    );
   });
 
   it("un administrateur ne supprime pas le fondateur", async () => {
@@ -521,34 +668,52 @@ describe("users — fondateur", () => {
   });
 
   it("le fondateur touche à son propre rôle", async () => {
-    await assertSucceeds(db("founder").doc("users/founder").update({ role: "admin" }));
+    await assertSucceeds(
+      db("founder").doc("users/founder").update({ role: "admin" }),
+    );
   });
 
   it("un administrateur ne change pas l'adresse du fondateur", async () => {
-    await assertFails(db("admin").doc("users/founder").update({ email: "x@example.com" }));
+    await assertFails(
+      db("admin").doc("users/founder").update({ email: "x@example.com" }),
+    );
   });
 
   it("un administrateur ne retire pas l'adresse du fondateur", async () => {
     const { default: firebase } = await import("firebase/compat/app");
     await import("firebase/compat/firestore");
     await assertFails(
-      db("admin").doc("users/founder").update({ email: firebase.firestore.FieldValue.delete() }),
+      db("admin")
+        .doc("users/founder")
+        .update({ email: firebase.firestore.FieldValue.delete() }),
     );
   });
 
   it("le fondateur, connecté par Google à l'adresse vérifiée, change le rôle du document fondateur", async () => {
-    await assertSucceeds(db("founder").doc("users/founder").update({ role: "editor" }));
+    await assertSucceeds(
+      db("founder").doc("users/founder").update({ role: "editor" }),
+    );
   });
 
   // Audit sécurité (« à confirmer ») : l'adresse seule suffisait.
   for (const [label, token] of [
-    ["adresse non vérifiée", { email_verified: false, firebase: { sign_in_provider: "google.com" } }],
-    ["connexion par mot de passe", { email_verified: true, firebase: { sign_in_provider: "password" } }],
+    [
+      "adresse non vérifiée",
+      { email_verified: false, firebase: { sign_in_provider: "google.com" } },
+    ],
+    [
+      "connexion par mot de passe",
+      { email_verified: true, firebase: { sign_in_provider: "password" } },
+    ],
     ["sans email_verified", { firebase: { sign_in_provider: "google.com" } }],
   ]) {
     it(`un administrateur à l'adresse du fondateur (${label}) ne destitue pas le fondateur`, async () => {
       await seedDocs(env, {
-        "users/fake-founder": { role: "admin", is_revoked: false, email: FOUNDER_EMAIL },
+        "users/fake-founder": {
+          role: "admin",
+          is_revoked: false,
+          email: FOUNDER_EMAIL,
+        },
       });
       const ctx = env
         .authenticatedContext("fake-founder", {
@@ -564,9 +729,13 @@ describe("users — fondateur", () => {
 
   it("changer l'adresse puis le rôle du fondateur échoue dès la première écriture", async () => {
     await assertFails(
-      db("admin").doc("users/founder").update({ email: "x@example.com", role: "reader" }),
+      db("admin")
+        .doc("users/founder")
+        .update({ email: "x@example.com", role: "reader" }),
     );
-    await assertFails(db("admin").doc("users/founder").update({ role: "reader" }));
+    await assertFails(
+      db("admin").doc("users/founder").update({ role: "reader" }),
+    );
   });
 });
 
@@ -579,19 +748,27 @@ describe("users — couverture « Recette libre »", () => {
 
   it("un lecteur ne pose pas une adresse externe sur son compte", async () => {
     await assertFails(
-      db("reader").doc(`users/${READER}`).update({ free_recipe_cover_url: "https://exemple.org/x.png" }),
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ free_recipe_cover_url: "https://exemple.org/x.png" }),
     );
   });
 
   it("un lecteur pose l'adresse Storage de sa couverture modérée", async () => {
-    await assertSucceeds(db("reader").doc(`users/${READER}`).update({ free_recipe_cover_url: COVER }));
+    await assertSucceeds(
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ free_recipe_cover_url: COVER }),
+    );
   });
 
   it("une adresse du bucket hors de users/ (quarantaine) est refusée", async () => {
     await assertFails(
       db("reader")
         .doc(`users/${READER}`)
-        .update({ free_recipe_cover_url: COVER.replace("users%2F", "quarantine%2F") }),
+        .update({
+          free_recipe_cover_url: COVER.replace("users%2F", "quarantine%2F"),
+        }),
     );
   });
 
@@ -608,7 +785,11 @@ describe("users — couverture « Recette libre »", () => {
         "https://firebasestorage.googleapis.com/v0/b/kassdale-6d948.firebasestorage.app/o/" +
         path +
         "?alt=media&token=t";
-      await assertFails(db("reader").doc(`users/${READER}`).update({ free_recipe_cover_url: url }));
+      await assertFails(
+        db("reader")
+          .doc(`users/${READER}`)
+          .update({ free_recipe_cover_url: url }),
+      );
     });
   }
 
@@ -621,35 +802,55 @@ describe("users — couverture « Recette libre »", () => {
   });
 
   it("effacer la couverture reste permis", async () => {
-    await assertSucceeds(db("reader").doc(`users/${READER}`).update({ free_recipe_cover_url: null }));
+    await assertSucceeds(
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ free_recipe_cover_url: null }),
+    );
   });
 
   it("un compte neuf ne naît pas avec une couverture externe", async () => {
-    const ctx = env.authenticatedContext("newcomer", {
+    const ctx = env
+      .authenticatedContext("newcomer", {
+        email: "new@example.com",
+        email_verified: true,
+      })
+      .firestore();
+    const base = {
+      role: "pending",
+      is_revoked: false,
       email: "new@example.com",
-      email_verified: true,
-    }).firestore();
-    const base = { role: "pending", is_revoked: false, email: "new@example.com" };
+    };
     await assertFails(
-      ctx.doc("users/newcomer").set({ ...base, free_recipe_cover_url: "https://exemple.org/x.png" }),
+      ctx
+        .doc("users/newcomer")
+        .set({ ...base, free_recipe_cover_url: "https://exemple.org/x.png" }),
     );
-    await assertSucceeds(ctx.doc("users/newcomer").set({ ...base, free_recipe_cover_url: null }));
+    await assertSucceeds(
+      ctx.doc("users/newcomer").set({ ...base, free_recipe_cover_url: null }),
+    );
   });
 });
 
 describe("users — adresse immuable", () => {
   it("un administrateur ne change pas l'adresse d'un autre compte", async () => {
-    await assertFails(db("admin").doc(`users/${READER}`).update({ email: "x@example.com" }));
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ email: "x@example.com" }),
+    );
   });
 
   it("un administrateur ne change pas sa propre adresse", async () => {
     await assertFails(
-      db("admin").doc(`users/${PERSONAS.admin.uid}`).update({ email: "x@example.com" }),
+      db("admin")
+        .doc(`users/${PERSONAS.admin.uid}`)
+        .update({ email: "x@example.com" }),
     );
   });
 
   it("le fondateur ne change pas son adresse", async () => {
-    await assertFails(db("founder").doc("users/founder").update({ email: "x@example.com" }));
+    await assertFails(
+      db("founder").doc("users/founder").update({ email: "x@example.com" }),
+    );
   });
 
   it("un administrateur modifie un champ neutre d'un autre compte", async () => {
@@ -667,15 +868,23 @@ describe("users — adresse immuable", () => {
   });
 
   it("un compte ancien sans adresse reste nommable, sans qu'on lui en ajoute une", async () => {
-    await seedDocs(env, { "users/legacy": { role: "pending", is_revoked: false } });
-    await assertSucceeds(db("admin").doc("users/legacy").update({ role: "reader" }));
-    await assertFails(db("admin").doc("users/legacy").update({ email: FOUNDER_EMAIL }));
+    await seedDocs(env, {
+      "users/legacy": { role: "pending", is_revoked: false },
+    });
+    await assertSucceeds(
+      db("admin").doc("users/legacy").update({ role: "reader" }),
+    );
+    await assertFails(
+      db("admin").doc("users/legacy").update({ email: FOUNDER_EMAIL }),
+    );
   });
 });
 
 describe("users — lecture", () => {
   it("chacun lit son propre document, même en attente", async () => {
-    await assertSucceeds(db("pending").doc(`users/${PERSONAS.pending.uid}`).get());
+    await assertSucceeds(
+      db("pending").doc(`users/${PERSONAS.pending.uid}`).get(),
+    );
   });
 
   it("un lecteur ne lit pas le document d'un autre", async () => {
@@ -719,7 +928,9 @@ describe("user_profiles — profils publics", () => {
   });
 
   it("un lecteur liste les profils publics", async () => {
-    await assertSucceeds(db("reader").collection("user_profiles").limit(200).get());
+    await assertSucceeds(
+      db("reader").collection("user_profiles").limit(200).get(),
+    );
   });
 
   it("un compte en attente ne lit aucun profil", async () => {
@@ -727,7 +938,9 @@ describe("user_profiles — profils publics", () => {
   });
 
   it("un compte révoqué ne lit aucun profil", async () => {
-    await assertFails(db("revokedStaleToken").doc(`user_profiles/${OTHER}`).get());
+    await assertFails(
+      db("revokedStaleToken").doc(`user_profiles/${OTHER}`).get(),
+    );
   });
 
   it("un anonyme ne lit aucun profil", async () => {
@@ -736,12 +949,16 @@ describe("user_profiles — profils publics", () => {
 
   it("personne n'écrit son propre profil côté client", async () => {
     await assertFails(
-      db("reader").doc(`user_profiles/${READER}`).set({ display_name: "Usurpé" }),
+      db("reader")
+        .doc(`user_profiles/${READER}`)
+        .set({ display_name: "Usurpé" }),
     );
   });
 
   it("un éditeur n'écrit pas le profil d'un autre", async () => {
-    await assertFails(db("editor").doc(`user_profiles/${OTHER}`).update({ display_name: "X" }));
+    await assertFails(
+      db("editor").doc(`user_profiles/${OTHER}`).update({ display_name: "X" }),
+    );
   });
 
   it("un administrateur n'écrit pas de profil côté client", async () => {
@@ -771,15 +988,21 @@ describe("books", () => {
   }
 
   it("un lecteur ne crée pas de livre", async () => {
-    await assertFails(db("reader").doc("books/new").set({ title: "x", created_by: READER }));
+    await assertFails(
+      db("reader").doc("books/new").set({ title: "x", created_by: READER }),
+    );
   });
 
   it("un éditeur crée un livre", async () => {
-    await assertSucceeds(db("editor").doc("books/new").set({ title: "x", created_by: EDITOR }));
+    await assertSucceeds(
+      db("editor").doc("books/new").set({ title: "x", created_by: EDITOR }),
+    );
   });
 
   it("un éditeur révoqué n'écrit plus, même jeton périmé", async () => {
-    await assertFails(db("revokedStaleToken").doc("books/public").update({ title: "y" }));
+    await assertFails(
+      db("revokedStaleToken").doc("books/public").update({ title: "y" }),
+    );
   });
 
   it("un éditeur ne supprime pas un livre système", async () => {
@@ -803,7 +1026,9 @@ describe("books", () => {
   });
 
   it("un éditeur modifie son propre livre", async () => {
-    await assertSucceeds(db("editor").doc("books/public").update({ title: "y" }));
+    await assertSucceeds(
+      db("editor").doc("books/public").update({ title: "y" }),
+    );
   });
 
   it("un éditeur ne lit pas le livre privé d'un autre", async () => {
@@ -811,7 +1036,9 @@ describe("books", () => {
   });
 
   it("un éditeur ne modifie pas le livre d'un autre", async () => {
-    await assertFails(db("editor").doc("books/public-other").update({ title: "y" }));
+    await assertFails(
+      db("editor").doc("books/public-other").update({ title: "y" }),
+    );
   });
 
   it("un éditeur ne supprime pas le livre d'un autre", async () => {
@@ -819,15 +1046,21 @@ describe("books", () => {
   });
 
   it("un éditeur ne crée pas de livre au nom d'un autre", async () => {
-    await assertFails(db("editor").doc("books/new").set({ title: "x", created_by: OTHER }));
+    await assertFails(
+      db("editor").doc("books/new").set({ title: "x", created_by: OTHER }),
+    );
   });
 
   it("un éditeur ne change pas created_by de son livre", async () => {
-    await assertFails(db("editor").doc("books/public").update({ created_by: OTHER }));
+    await assertFails(
+      db("editor").doc("books/public").update({ created_by: OTHER }),
+    );
   });
 
   it("un administrateur modifie le livre privé d'un autre", async () => {
-    await assertSucceeds(db("admin").doc("books/private-other").update({ title: "y" }));
+    await assertSucceeds(
+      db("admin").doc("books/private-other").update({ title: "y" }),
+    );
   });
 
   it("un administrateur supprime le livre d'un autre", async () => {
@@ -835,7 +1068,9 @@ describe("books", () => {
   });
 
   it("un administrateur ne change pas created_by d'un livre", async () => {
-    await assertFails(db("admin").doc("books/public-other").update({ created_by: EDITOR }));
+    await assertFails(
+      db("admin").doc("books/public-other").update({ created_by: EDITOR }),
+    );
   });
 
   // Le livre système appartient à l'éditeur : même son propriétaire ne
@@ -849,11 +1084,15 @@ describe("books", () => {
   });
 
   it("le tag d'un livre système ne se perd pas en supprimant le champ", async () => {
-    await assertFails(db("editor").doc("books/system").update({ tags: deleteField() }));
+    await assertFails(
+      db("editor").doc("books/system").update({ tags: deleteField() }),
+    );
   });
 
   it("le propriétaire renomme un livre système", async () => {
-    await assertSucceeds(db("editor").doc("books/system").update({ title: "Mes libres" }));
+    await assertSucceeds(
+      db("editor").doc("books/system").update({ title: "Mes libres" }),
+    );
   });
 
   it("un livre système garde son tag et en reçoit un autre", async () => {
@@ -872,7 +1111,11 @@ describe("books", () => {
     await assertFails(
       db("editor")
         .doc(`books/web_${OTHER}`)
-        .set({ title: "Mes recettes du web", created_by: EDITOR, is_private: false }),
+        .set({
+          title: "Mes recettes du web",
+          created_by: EDITOR,
+          is_private: false,
+        }),
     );
   });
 
@@ -880,7 +1123,11 @@ describe("books", () => {
     await assertFails(
       db("editor")
         .doc(`books/web2_${OTHER}`)
-        .set({ title: "Mes recettes du web", created_by: EDITOR, is_private: false }),
+        .set({
+          title: "Mes recettes du web",
+          created_by: EDITOR,
+          is_private: false,
+        }),
     );
   });
 
@@ -889,7 +1136,12 @@ describe("books", () => {
       await assertFails(
         db("editor")
           .doc(`books/${prefix}_${OTHER}`)
-          .set({ titre: "Mes recettes libres", created_by: EDITOR, tags: [], is_private: false }),
+          .set({
+            titre: "Mes recettes libres",
+            created_by: EDITOR,
+            tags: [],
+            is_private: false,
+          }),
       );
     }
   });
@@ -911,7 +1163,12 @@ describe("books", () => {
     await assertFails(
       db("admin")
         .doc(`books/libres_${OTHER}`)
-        .set({ titre: "Mes recettes libres", created_by: PERSONAS.admin.uid, tags: [], is_private: false }),
+        .set({
+          titre: "Mes recettes libres",
+          created_by: PERSONAS.admin.uid,
+          tags: [],
+          is_private: false,
+        }),
     );
   });
 
@@ -919,7 +1176,12 @@ describe("books", () => {
     await assertSucceeds(
       db("editor")
         .doc("books/libresX")
-        .set({ titre: "Libres", created_by: EDITOR, tags: [], is_private: false }),
+        .set({
+          titre: "Libres",
+          created_by: EDITOR,
+          tags: [],
+          is_private: false,
+        }),
     );
   });
 
@@ -927,7 +1189,12 @@ describe("books", () => {
     await assertSucceeds(
       db("editor")
         .doc(`books/libres_${EDITOR}`)
-        .set({ titre: "Mes recettes libres", created_by: EDITOR, tags: ["__libres"], is_private: false }),
+        .set({
+          titre: "Mes recettes libres",
+          created_by: EDITOR,
+          tags: ["__libres"],
+          is_private: false,
+        }),
     );
   });
 
@@ -935,7 +1202,12 @@ describe("books", () => {
     await assertFails(
       db("editor")
         .doc("books/piege")
-        .set({ title: "x", created_by: EDITOR, tags: ["__web"], is_private: false }),
+        .set({
+          title: "x",
+          created_by: EDITOR,
+          tags: ["__web"],
+          is_private: false,
+        }),
     );
   });
 
@@ -943,12 +1215,20 @@ describe("books", () => {
     await assertSucceeds(
       db("editor")
         .doc("books/libres-neuf")
-        .set({ title: "Mes recettes libres", created_by: EDITOR, tags: ["__libres"] }),
+        .set({
+          title: "Mes recettes libres",
+          created_by: EDITOR,
+          tags: ["__libres"],
+        }),
     );
   });
 
   it("« Mes recettes du web » garde son tag", async () => {
-    await assertFails(db("editor").doc("books/web_editor").update({ tags: ["web"] }));
+    await assertFails(
+      db("editor")
+        .doc("books/web_editor")
+        .update({ tags: ["web"] }),
+    );
   });
 
   // `_ensureWebBookCover` (appelée par `ensureSystemBooks`) pose la couverture
@@ -958,7 +1238,10 @@ describe("books", () => {
     await assertSucceeds(
       db("editor")
         .doc("books/web_editor")
-        .update({ url_couverture: "https://example.com/c.png", updated_at: serverTimestamp() }),
+        .update({
+          url_couverture: "https://example.com/c.png",
+          updated_at: serverTimestamp(),
+        }),
     );
   });
 
@@ -966,12 +1249,19 @@ describe("books", () => {
     await assertFails(
       db("reader")
         .doc("books/web_editor")
-        .update({ url_couverture: "https://example.com/c.png", updated_at: serverTimestamp() }),
+        .update({
+          url_couverture: "https://example.com/c.png",
+          updated_at: serverTimestamp(),
+        }),
     );
   });
 
   it("un livre ordinaire change ses tags librement", async () => {
-    await assertSucceeds(db("editor").doc("books/public").update({ tags: ["été"] }));
+    await assertSucceeds(
+      db("editor")
+        .doc("books/public")
+        .update({ tags: ["été"] }),
+    );
   });
 });
 
@@ -1004,19 +1294,27 @@ describe("recipes — lecture", () => {
   }
 
   it("un lecteur lit sa propre recette privée", async () => {
-    await assertSucceeds(db("reader").doc("recipes/validated-private-reader").get());
+    await assertSucceeds(
+      db("reader").doc("recipes/validated-private-reader").get(),
+    );
   });
 
   it("un administrateur lit la recette privée d'un autre", async () => {
-    await assertSucceeds(db("admin").doc("recipes/validated-private-other").get());
+    await assertSucceeds(
+      db("admin").doc("recipes/validated-private-other").get(),
+    );
   });
 
   it("un lecteur ne lit pas la recette privée validée d'un autre", async () => {
-    await assertFails(db("reader").doc("recipes/validated-private-other").get());
+    await assertFails(
+      db("reader").doc("recipes/validated-private-other").get(),
+    );
   });
 
   it("un éditeur ne lit pas la recette privée d'un autre", async () => {
-    await assertFails(db("editor").doc("recipes/validated-private-other").get());
+    await assertFails(
+      db("editor").doc("recipes/validated-private-other").get(),
+    );
   });
 
   // Un document sans `is_private` n'est pas prouvé partagé : seul son
@@ -1066,7 +1364,11 @@ describe("recipes — écriture", () => {
     await assertSucceeds(
       db("admin")
         .doc("recipes/new")
-        .set({ title: "x", created_by: PERSONAS.admin.uid, review_status: "draft" }),
+        .set({
+          title: "x",
+          created_by: PERSONAS.admin.uid,
+          review_status: "draft",
+        }),
     );
   });
 
@@ -1082,16 +1384,24 @@ describe("recipes — écriture", () => {
     await assertFails(
       db("pending")
         .doc("recipes/new")
-        .set({ title: "x", created_by: PERSONAS.pending.uid, review_status: "draft" }),
+        .set({
+          title: "x",
+          created_by: PERSONAS.pending.uid,
+          review_status: "draft",
+        }),
     );
   });
 
   it("un lecteur ne modifie pas la recette d'un autre", async () => {
-    await assertFails(db("reader").doc("recipes/validated").update({ title: "y" }));
+    await assertFails(
+      db("reader").doc("recipes/validated").update({ title: "y" }),
+    );
   });
 
   it("un lecteur modifie sa recette", async () => {
-    await assertSucceeds(db("reader").doc("recipes/draft-reader").update({ title: "y" }));
+    await assertSucceeds(
+      db("reader").doc("recipes/draft-reader").update({ title: "y" }),
+    );
   });
 
   it("un lecteur ne supprime pas la recette d'un autre", async () => {
@@ -1099,15 +1409,21 @@ describe("recipes — écriture", () => {
   });
 
   it("un lecteur ne vide pas created_by de sa recette", async () => {
-    await assertFails(db("reader").doc("recipes/draft-reader").update({ created_by: "" }));
+    await assertFails(
+      db("reader").doc("recipes/draft-reader").update({ created_by: "" }),
+    );
   });
 
   it("un lecteur ne donne pas sa recette à un autre (created_by)", async () => {
-    await assertFails(db("reader").doc("recipes/draft-reader").update({ created_by: OTHER }));
+    await assertFails(
+      db("reader").doc("recipes/draft-reader").update({ created_by: OTHER }),
+    );
   });
 
   it("un administrateur modifie la recette d'un autre", async () => {
-    await assertSucceeds(db("admin").doc("recipes/validated").update({ title: "y" }));
+    await assertSucceeds(
+      db("admin").doc("recipes/validated").update({ title: "y" }),
+    );
   });
 
   it("un administrateur supprime la recette d'un autre", async () => {
@@ -1115,7 +1431,9 @@ describe("recipes — écriture", () => {
   });
 
   it("un éditeur ne modifie pas la recette d'un autre", async () => {
-    await assertFails(db("editor").doc("recipes/validated").update({ title: "y" }));
+    await assertFails(
+      db("editor").doc("recipes/validated").update({ title: "y" }),
+    );
   });
 
   it("un éditeur ne supprime pas la recette d'un autre", async () => {
@@ -1123,28 +1441,40 @@ describe("recipes — écriture", () => {
   });
 
   it("un éditeur ne change pas created_by de sa propre recette", async () => {
-    await assertFails(db("editor").doc("recipes/editor-own").update({ created_by: OTHER }));
+    await assertFails(
+      db("editor").doc("recipes/editor-own").update({ created_by: OTHER }),
+    );
   });
 
   it("un éditeur modifie sa propre recette", async () => {
-    await assertSucceeds(db("editor").doc("recipes/editor-own").update({ title: "y" }));
+    await assertSucceeds(
+      db("editor").doc("recipes/editor-own").update({ title: "y" }),
+    );
   });
 
   it("un administrateur modifie la recette privée d'un autre", async () => {
-    await assertSucceeds(db("admin").doc("recipes/validated-private-other").update({ title: "y" }));
+    await assertSucceeds(
+      db("admin").doc("recipes/validated-private-other").update({ title: "y" }),
+    );
   });
 
   it("un administrateur supprime la recette privée d'un autre", async () => {
-    await assertSucceeds(db("admin").doc("recipes/validated-private-other").delete());
+    await assertSucceeds(
+      db("admin").doc("recipes/validated-private-other").delete(),
+    );
   });
 
   it("un administrateur ne change pas created_by d'une recette", async () => {
-    await assertFails(db("admin").doc("recipes/validated").update({ created_by: EDITOR }));
+    await assertFails(
+      db("admin").doc("recipes/validated").update({ created_by: EDITOR }),
+    );
   });
 
   it("un administrateur ne crée pas de recette au nom d'un autre", async () => {
     await assertFails(
-      db("admin").doc("recipes/new").set({ title: "x", created_by: OTHER, review_status: "draft" }),
+      db("admin")
+        .doc("recipes/new")
+        .set({ title: "x", created_by: OTHER, review_status: "draft" }),
     );
   });
 });
@@ -1203,7 +1533,9 @@ describe("recipes — adresse de la page d'origine (source_url)", () => {
   });
 
   it("le propriétaire ne modifie pas le nom du site", async () => {
-    await assertFails(db("reader").doc("recipes/web-reader").update({ source_site: "x.fr" }));
+    await assertFails(
+      db("reader").doc("recipes/web-reader").update({ source_site: "x.fr" }),
+    );
   });
 
   it("une copie ne change pas l'adresse au passage", async () => {
@@ -1220,25 +1552,36 @@ describe("recipes — adresse de la page d'origine (source_url)", () => {
 
   it("le propriétaire ne modifie pas l'adresse", async () => {
     await assertFails(
-      db("reader").doc("recipes/web-reader").update({ source_url: "https://autre.fr/x" }),
+      db("reader")
+        .doc("recipes/web-reader")
+        .update({ source_url: "https://autre.fr/x" }),
     );
   });
 
   it("le propriétaire n'efface pas l'adresse", async () => {
-    await assertFails(db("reader").doc("recipes/web-reader").update({ source_url: deleteField() }));
+    await assertFails(
+      db("reader")
+        .doc("recipes/web-reader")
+        .update({ source_url: deleteField() }),
+    );
   });
 
   it("une édition qui réécrit la même adresse passe", async () => {
     await assertSucceeds(
       db("reader")
         .doc("recipes/web-reader")
-        .update({ title: "Quiche lorraine", source_url: "https://www.site.fr/quiche" }),
+        .update({
+          title: "Quiche lorraine",
+          source_url: "https://www.site.fr/quiche",
+        }),
     );
   });
 
   it("l'administrateur non plus ne pose pas une adresse", async () => {
     await assertFails(
-      db("admin").doc("recipes/draft-reader").update({ source_url: "https://a.fr/x" }),
+      db("admin")
+        .doc("recipes/draft-reader")
+        .update({ source_url: "https://a.fr/x" }),
     );
   });
 });
@@ -1255,18 +1598,31 @@ describe("recipes — auteur et nutrition de la page d'origine", () => {
   });
 
   it("une copie recopie l'auteur de la recette copiée", async () => {
-    await assertSucceeds(db("editor").doc("recipes/new").set(copyOf({ source_author: "Marie Dupont" })));
+    await assertSucceeds(
+      db("editor")
+        .doc("recipes/new")
+        .set(copyOf({ source_author: "Marie Dupont" })),
+    );
   });
 
   it("une copie ne pose pas un autre auteur", async () => {
-    await assertFails(db("editor").doc("recipes/new").set(copyOf({ source_author: "Paul" })));
+    await assertFails(
+      db("editor")
+        .doc("recipes/new")
+        .set(copyOf({ source_author: "Paul" })),
+    );
   });
 
   it("une recette saisie ne pose pas d'auteur", async () => {
     await assertFails(
       db("editor")
         .doc("recipes/new")
-        .set({ title: "x", created_by: EDITOR, review_status: "draft", source_author: "Paul" }),
+        .set({
+          title: "x",
+          created_by: EDITOR,
+          review_status: "draft",
+          source_author: "Paul",
+        }),
     );
   });
 
@@ -1274,7 +1630,12 @@ describe("recipes — auteur et nutrition de la page d'origine", () => {
     await assertFails(
       db("editor")
         .doc("recipes/new")
-        .set(copyOf({ source_author: "Marie Dupont", source_nutrition: { per_portion: {} } })),
+        .set(
+          copyOf({
+            source_author: "Marie Dupont",
+            source_nutrition: { per_portion: {} },
+          }),
+        ),
     );
     await assertFails(
       db("editor")
@@ -1306,7 +1667,12 @@ describe("recipes — auteur et nutrition de la page d'origine", () => {
 });
 
 describe("recipes — confidentialité suivant le livre", () => {
-  const draftE = (extra) => ({ title: "x", created_by: EDITOR, review_status: "draft", ...extra });
+  const draftE = (extra) => ({
+    title: "x",
+    created_by: EDITOR,
+    review_status: "draft",
+    ...extra,
+  });
 
   it("création dans son livre privé avec is_private:false : refusée", async () => {
     await assertFails(
@@ -1350,7 +1716,9 @@ describe("recipes — confidentialité suivant le livre", () => {
 
   it("une recette de livre privé ne passe pas à is_private:false", async () => {
     await assertFails(
-      db("reader").doc("recipes/in-reader-private-book").update({ is_private: false }),
+      db("reader")
+        .doc("recipes/in-reader-private-book")
+        .update({ is_private: false }),
     );
   });
 
@@ -1371,7 +1739,9 @@ describe("recipes — confidentialité suivant le livre", () => {
   });
 
   it("une écriture qui ne touche ni livre ni confidentialité n'est pas contrôlée", async () => {
-    await assertSucceeds(db("reader").doc("recipes/in-reader-private-book").update({ title: "y" }));
+    await assertSucceeds(
+      db("reader").doc("recipes/in-reader-private-book").update({ title: "y" }),
+    );
   });
 
   it("book_id contenant « / » : refusé", async () => {
@@ -1400,7 +1770,9 @@ describe("recipes — confidentialité suivant le livre", () => {
   });
 
   it("recette sans livre passée à is_private:true : acceptée", async () => {
-    await assertSucceeds(db("reader").doc("recipes/draft-reader").update({ is_private: true }));
+    await assertSucceeds(
+      db("reader").doc("recipes/draft-reader").update({ is_private: true }),
+    );
   });
 
   // Une page détachée d'un livre privé reste privée (v0.23.8).
@@ -1414,7 +1786,9 @@ describe("recipes — confidentialité suivant le livre", () => {
 
   it("détacher du livre (book_id null) : accepté", async () => {
     await assertSucceeds(
-      db("reader").doc("recipes/in-reader-private-book").update({ book_id: null }),
+      db("reader")
+        .doc("recipes/in-reader-private-book")
+        .update({ book_id: null }),
     );
   });
 });
@@ -1423,7 +1797,12 @@ describe("recipes — confidentialité suivant le livre", () => {
 // propres livres ; l'administrateur partout. Une page déjà rangée chez un
 // autre y reste.
 describe("recipes — ranger dans ses propres livres", () => {
-  const draftE = (extra) => ({ title: "x", created_by: EDITOR, review_status: "draft", ...extra });
+  const draftE = (extra) => ({
+    title: "x",
+    created_by: EDITOR,
+    review_status: "draft",
+    ...extra,
+  });
 
   it("book_id qui n'est ni nul ni une chaîne : refusé", async () => {
     await assertFails(
@@ -1451,7 +1830,9 @@ describe("recipes — ranger dans ses propres livres", () => {
 
   it("un éditeur ne range pas sa recette dans le livre d'un autre", async () => {
     await assertFails(
-      db("editor").doc("recipes/editor-own").update({ book_id: "public-other", is_private: false }),
+      db("editor")
+        .doc("recipes/editor-own")
+        .update({ book_id: "public-other", is_private: false }),
     );
   });
 
@@ -1469,43 +1850,59 @@ describe("recipes — ranger dans ses propres livres", () => {
 
   it("un administrateur déplace une recette vers le livre d'un autre", async () => {
     await assertSucceeds(
-      db("admin").doc("recipes/validated").update({ book_id: "public-other", is_private: false }),
+      db("admin")
+        .doc("recipes/validated")
+        .update({ book_id: "public-other", is_private: false }),
     );
   });
 
   it("une page déjà rangée chez un autre se modifie sans changer de livre", async () => {
-    await assertSucceeds(db("reader").doc("recipes/reader-in-other-book").update({ title: "y" }));
+    await assertSucceeds(
+      db("reader").doc("recipes/reader-in-other-book").update({ title: "y" }),
+    );
   });
 
   it("une page déjà rangée chez un autre se détache", async () => {
     await assertSucceeds(
-      db("reader").doc("recipes/reader-in-other-book").update({ book_id: null }),
+      db("reader")
+        .doc("recipes/reader-in-other-book")
+        .update({ book_id: null }),
     );
   });
 });
 
 describe("recipes — texte d'origine d'une traduction", () => {
   it("un lecteur lit le texte d'origine d'une recette visible", async () => {
-    await assertSucceeds(db("reader").doc("recipes/validated/origine/texte").get());
+    await assertSucceeds(
+      db("reader").doc("recipes/validated/origine/texte").get(),
+    );
   });
 
   it("un lecteur ne lit pas le texte d'origine d'une recette privée d'autrui", async () => {
-    await assertFails(db("reader").doc("recipes/validated-private-other/origine/texte").get());
+    await assertFails(
+      db("reader").doc("recipes/validated-private-other/origine/texte").get(),
+    );
   });
 
   it("un compte en attente ne lit pas le texte d'origine", async () => {
-    await assertFails(db("pending").doc("recipes/validated/origine/texte").get());
+    await assertFails(
+      db("pending").doc("recipes/validated/origine/texte").get(),
+    );
   });
 
   it("un administrateur ne réécrit pas le texte d'origine", async () => {
     await assertFails(
-      db("admin").doc("recipes/validated/origine/texte").set({ langue: "en", titre: "x" }),
+      db("admin")
+        .doc("recipes/validated/origine/texte")
+        .set({ langue: "en", titre: "x" }),
     );
   });
 
   it("un éditeur ne crée pas de texte d'origine", async () => {
     await assertFails(
-      db("editor").doc("recipes/validated/origine/texte").set({ langue: "en", titre: "x" }),
+      db("editor")
+        .doc("recipes/validated/origine/texte")
+        .set({ langue: "en", titre: "x" }),
     );
   });
 });
@@ -1513,32 +1910,44 @@ describe("recipes — texte d'origine d'une traduction", () => {
 describe("recipes — annotations", () => {
   it("un lecteur annote à son nom", async () => {
     await assertSucceeds(
-      db("reader").doc("recipes/validated/annotations/new").set({ uid: READER, text: "ok" }),
+      db("reader")
+        .doc("recipes/validated/annotations/new")
+        .set({ uid: READER, text: "ok" }),
     );
   });
 
   it("un lecteur n'annote pas au nom d'un autre", async () => {
     await assertFails(
-      db("reader").doc("recipes/validated/annotations/new").set({ uid: OTHER, text: "ok" }),
+      db("reader")
+        .doc("recipes/validated/annotations/new")
+        .set({ uid: OTHER, text: "ok" }),
     );
   });
 
   it("un compte en attente ne lit aucune annotation", async () => {
-    await assertFails(db("pending").doc("recipes/validated/annotations/mine").get());
+    await assertFails(
+      db("pending").doc("recipes/validated/annotations/mine").get(),
+    );
   });
 
   it("un lecteur ne lit pas l'annotation d'une recette privée d'autrui", async () => {
-    await assertFails(db("reader").doc("recipes/validated-private-other/annotations/a1").get());
+    await assertFails(
+      db("reader").doc("recipes/validated-private-other/annotations/a1").get(),
+    );
   });
 
   it("un lecteur ne transfère pas son annotation (uid figé)", async () => {
     await assertFails(
-      db("reader").doc("recipes/validated/annotations/mine").update({ uid: OTHER }),
+      db("reader")
+        .doc("recipes/validated/annotations/mine")
+        .update({ uid: OTHER }),
     );
   });
 
   it("un lecteur lit l'annotation d'un autre sur une recette visible", async () => {
-    await assertSucceeds(db("reader").doc("recipes/validated/annotations/other").get());
+    await assertSucceeds(
+      db("reader").doc("recipes/validated/annotations/other").get(),
+    );
   });
 
   it("un lecteur n'annote pas la recette privée d'autrui", async () => {
@@ -1559,22 +1968,30 @@ describe("recipes — annotations", () => {
 
   it("un lecteur modifie le texte de son annotation", async () => {
     await assertSucceeds(
-      db("reader").doc("recipes/validated/annotations/mine").update({ text: "corrigé" }),
+      db("reader")
+        .doc("recipes/validated/annotations/mine")
+        .update({ text: "corrigé" }),
     );
   });
 
   it("un lecteur ne modifie pas l'annotation d'un autre", async () => {
     await assertFails(
-      db("reader").doc("recipes/validated/annotations/other").update({ text: "x" }),
+      db("reader")
+        .doc("recipes/validated/annotations/other")
+        .update({ text: "x" }),
     );
   });
 
   it("un administrateur supprime l'annotation d'un autre", async () => {
-    await assertSucceeds(db("admin").doc("recipes/validated/annotations/other").delete());
+    await assertSucceeds(
+      db("admin").doc("recipes/validated/annotations/other").delete(),
+    );
   });
 
   it("un administrateur lit l'annotation d'une recette privée d'autrui", async () => {
-    await assertSucceeds(db("admin").doc("recipes/validated-private-other/annotations/a1").get());
+    await assertSucceeds(
+      db("admin").doc("recipes/validated-private-other/annotations/a1").get(),
+    );
   });
 });
 
@@ -1591,7 +2008,10 @@ describe("recipe_ratings — confidentialité", () => {
   // `recipe_id` : la règle doit pouvoir la prouver sans lire chaque note.
   it("un lecteur liste les notes d'une recette visible", async () => {
     await assertSucceeds(
-      db("reader").collection("recipe_ratings").where("recipe_id", "==", "validated").get(),
+      db("reader")
+        .collection("recipe_ratings")
+        .where("recipe_id", "==", "validated")
+        .get(),
     );
   });
 
@@ -1608,7 +2028,12 @@ describe("recipe_ratings — confidentialité", () => {
     await assertFails(
       db("reader")
         .doc(`recipe_ratings/${READER}_validated`)
-        .set({ user_id: READER, recipe_id: "validated", rating: "x", updated_at: new Date() }),
+        .set({
+          user_id: READER,
+          recipe_id: "validated",
+          rating: "x",
+          updated_at: new Date(),
+        }),
     );
   });
 
@@ -1616,13 +2041,20 @@ describe("recipe_ratings — confidentialité", () => {
     await assertFails(
       db("reader")
         .doc(`recipe_ratings/${READER}_validated`)
-        .set({ user_id: READER, recipe_id: "validated", rating: 11, updated_at: new Date() }),
+        .set({
+          user_id: READER,
+          recipe_id: "validated",
+          rating: 11,
+          updated_at: new Date(),
+        }),
     );
   });
 
   it("note : une mise à jour sous 0 est refusée", async () => {
     await assertFails(
-      db("reader").doc("recipe_ratings/r1").update({ rating: -1, updated_at: new Date() }),
+      db("reader")
+        .doc("recipe_ratings/r1")
+        .update({ rating: -1, updated_at: new Date() }),
     );
   });
 
@@ -1636,9 +2068,7 @@ describe("recipe_ratings — confidentialité", () => {
 
   it("note : un champ inconnu est refusé", async () => {
     await assertFails(
-      db("reader")
-        .doc(`recipe_ratings/${READER}_validated`)
-        .set({
+      db("reader").doc(`recipe_ratings/${READER}_validated`).set({
         user_id: READER,
         recipe_id: "validated",
         rating: 2,
@@ -1652,26 +2082,46 @@ describe("recipe_ratings — confidentialité", () => {
     await assertFails(
       db("reader")
         .doc("recipe_ratings/autre-id")
-        .set({ user_id: READER, recipe_id: "validated", rating: 10, updated_at: new Date() }),
+        .set({
+          user_id: READER,
+          recipe_id: "validated",
+          rating: 10,
+          updated_at: new Date(),
+        }),
     );
   });
 
   it("note : une ancienne note sans date se remplace par une note complète", async () => {
     await seedDocs(env, {
-      [`recipe_ratings/${READER}_validated`]: { user_id: READER, recipe_id: "validated", rating: 4 },
+      [`recipe_ratings/${READER}_validated`]: {
+        user_id: READER,
+        recipe_id: "validated",
+        rating: 4,
+      },
     });
     await assertSucceeds(
       db("reader")
         .doc(`recipe_ratings/${READER}_validated`)
-        .set({ user_id: READER, recipe_id: "validated", rating: 6, updated_at: new Date() }),
+        .set({
+          user_id: READER,
+          recipe_id: "validated",
+          rating: 6,
+          updated_at: new Date(),
+        }),
     );
   });
 
   it("note : une ancienne note sans date se supprime", async () => {
     await seedDocs(env, {
-      [`recipe_ratings/${READER}_validated`]: { user_id: READER, recipe_id: "validated", rating: 4 },
+      [`recipe_ratings/${READER}_validated`]: {
+        user_id: READER,
+        recipe_id: "validated",
+        rating: 4,
+      },
     });
-    await assertSucceeds(db("reader").doc(`recipe_ratings/${READER}_validated`).delete());
+    await assertSucceeds(
+      db("reader").doc(`recipe_ratings/${READER}_validated`).delete(),
+    );
   });
 
   it("un compte révoqué ne modifie ni ne supprime sa note", async () => {
@@ -1688,19 +2138,19 @@ describe("recipe_ratings — confidentialité", () => {
         .doc("recipe_ratings/r-revoked")
         .update({ rating: 5, updated_at: new Date() }),
     );
-    await assertFails(db("revokedStaleToken").doc("recipe_ratings/r-revoked").delete());
+    await assertFails(
+      db("revokedStaleToken").doc("recipe_ratings/r-revoked").delete(),
+    );
   });
 
   it("un lecteur ne note pas la recette privée d'autrui", async () => {
     await assertFails(
-      db("reader")
-        .doc(`recipe_ratings/${READER}_validated-private-other`)
-        .set({
-          user_id: READER,
-          recipe_id: "validated-private-other",
-          rating: 2,
-          updated_at: new Date(),
-        }),
+      db("reader").doc(`recipe_ratings/${READER}_validated-private-other`).set({
+        user_id: READER,
+        recipe_id: "validated-private-other",
+        rating: 2,
+        updated_at: new Date(),
+      }),
     );
   });
 
@@ -1708,17 +2158,26 @@ describe("recipe_ratings — confidentialité", () => {
     await assertSucceeds(
       db("reader")
         .doc(`recipe_ratings/${READER}_validated`)
-        .set({ user_id: READER, recipe_id: "validated", rating: 2, updated_at: new Date() }),
+        .set({
+          user_id: READER,
+          recipe_id: "validated",
+          rating: 2,
+          updated_at: new Date(),
+        }),
     );
   });
 
   it("un lecteur met à jour sa note", async () => {
-    await assertSucceeds(db("reader").doc("recipe_ratings/r1").update({ rating: 5 }));
+    await assertSucceeds(
+      db("reader").doc("recipe_ratings/r1").update({ rating: 5 }),
+    );
   });
 
   it("note : recipe_id figé en mise à jour", async () => {
     await assertFails(
-      db("reader").doc("recipe_ratings/r1").update({ recipe_id: "validated-private-reader" }),
+      db("reader")
+        .doc("recipe_ratings/r1")
+        .update({ recipe_id: "validated-private-reader" }),
     );
   });
 });
@@ -1730,7 +2189,12 @@ describe("champs propriétaire", () => {
     await assertFails(
       db("reader")
         .doc(`recipe_ratings/${OTHER}_validated`)
-        .set({ user_id: OTHER, recipe_id: "validated", rating: 2, updated_at: new Date() }),
+        .set({
+          user_id: OTHER,
+          recipe_id: "validated",
+          rating: 2,
+          updated_at: new Date(),
+        }),
     );
   });
 
@@ -1751,7 +2215,9 @@ describe("champs propriétaire", () => {
   });
 
   it("un repas planifié ne se crée pas au nom d'un autre", async () => {
-    await assertFails(db("editor").doc("planned_meals/new").set({ uid: OTHER }));
+    await assertFails(
+      db("editor").doc("planned_meals/new").set({ uid: OTHER }),
+    );
   });
 
   it("un lecteur ne lit pas le repas d'un autre", async () => {
@@ -1759,11 +2225,15 @@ describe("champs propriétaire", () => {
   });
 
   it("note : user_id figé en mise à jour", async () => {
-    await assertFails(db("reader").doc("recipe_ratings/r1").update({ user_id: OTHER }));
+    await assertFails(
+      db("reader").doc("recipe_ratings/r1").update({ user_id: OTHER }),
+    );
   });
 
   it("groupe : owner_id figé en mise à jour", async () => {
-    await assertFails(db("editor").doc("groups/g1").update({ owner_id: OTHER }));
+    await assertFails(
+      db("editor").doc("groups/g1").update({ owner_id: OTHER }),
+    );
   });
 
   // Depuis les invitations, le propriétaire n'ajoute plus personne : il
@@ -1787,7 +2257,9 @@ describe("champs propriétaire", () => {
   });
 
   it("repas planifié : uid figé en mise à jour", async () => {
-    await assertFails(db("editor").doc("planned_meals/m-editor").update({ uid: OTHER }));
+    await assertFails(
+      db("editor").doc("planned_meals/m-editor").update({ uid: OTHER }),
+    );
   });
 });
 
@@ -1810,17 +2282,26 @@ function errorReport(uid) {
 
 describe("données personnelles — pending et révoqué", () => {
   it("un anonyme n'écrit pas de rapport d'erreur", async () => {
-    await assertFails(db("anonymous").doc("error_reports/new").set({ user_id: "x" }));
+    await assertFails(
+      db("anonymous").doc("error_reports/new").set({ user_id: "x" }),
+    );
   });
 
   it("un lecteur écrit son rapport d'erreur", async () => {
-    await assertSucceeds(db("reader").doc("error_reports/new").set(errorReport(READER)));
+    await assertSucceeds(
+      db("reader").doc("error_reports/new").set(errorReport(READER)),
+    );
   });
 
   // Audit sécurité : champs et tailles libres, ouverts même à un compte en attente.
   it("un rapport d'erreur au champ de 500 Ko est refusé", async () => {
     const huge = "x".repeat(500 * 1024);
-    for (const field of ["error_message", "stack_trace", "context", "feature"]) {
+    for (const field of [
+      "error_message",
+      "stack_trace",
+      "context",
+      "feature",
+    ]) {
       await assertFails(
         db("pending")
           .doc("error_reports/new")
@@ -1846,7 +2327,9 @@ describe("données personnelles — pending et révoqué", () => {
   });
 
   it("un rapport d'erreur au nom d'un autre compte est refusé", async () => {
-    await assertFails(db("reader").doc("error_reports/new").set(errorReport(OTHER)));
+    await assertFails(
+      db("reader").doc("error_reports/new").set(errorReport(OTHER)),
+    );
   });
 
   it("un rapport aux longueurs maximales du client passe", async () => {
@@ -1863,13 +2346,19 @@ describe("données personnelles — pending et révoqué", () => {
   });
 
   it("un éditeur planifie un repas et écrit planning_config", async () => {
-    await assertSucceeds(db("editor").doc("planned_meals/new").set({ uid: EDITOR }));
-    await assertSucceeds(db("editor").doc(`planning_config/${EDITOR}`).set({ days: 7 }));
+    await assertSucceeds(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR }),
+    );
+    await assertSucceeds(
+      db("editor").doc(`planning_config/${EDITOR}`).set({ days: 7 }),
+    );
   });
 
   it("un compte en attente écrit son rapport d'erreur", async () => {
     await assertSucceeds(
-      db("pending").doc("error_reports/new").set(errorReport(PERSONAS.pending.uid)),
+      db("pending")
+        .doc("error_reports/new")
+        .set(errorReport(PERSONAS.pending.uid)),
     );
   });
 
@@ -1893,41 +2382,60 @@ describe("données personnelles — pending et révoqué", () => {
 
   it("un compte révoqué ne modifie pas son repas planifié", async () => {
     await seedDocs(env, {
-      "planned_meals/m-revoked": { uid: PERSONAS.revoked.uid, date: "2026-10-09" },
+      "planned_meals/m-revoked": {
+        uid: PERSONAS.revoked.uid,
+        date: "2026-10-09",
+      },
     });
     await assertFails(
-      db("revoked").doc("planned_meals/m-revoked").update({ date: "2026-10-10" }),
+      db("revoked")
+        .doc("planned_meals/m-revoked")
+        .update({ date: "2026-10-10" }),
     );
   });
 
   it("un compte en attente relit sa configuration de planning", async () => {
-    await seedDocs(env, { [`planning_config/${PERSONAS.pending.uid}`]: { days: 7 } });
-    await assertSucceeds(db("pending").doc(`planning_config/${PERSONAS.pending.uid}`).get());
+    await seedDocs(env, {
+      [`planning_config/${PERSONAS.pending.uid}`]: { days: 7 },
+    });
+    await assertSucceeds(
+      db("pending").doc(`planning_config/${PERSONAS.pending.uid}`).get(),
+    );
   });
 
   it("un compte en attente ne planifie pas de repas", async () => {
-    await assertFails(db("pending").doc("planned_meals/new").set({ uid: PERSONAS.pending.uid }));
+    await assertFails(
+      db("pending").doc("planned_meals/new").set({ uid: PERSONAS.pending.uid }),
+    );
   });
 
   it("un compte révoqué ne planifie pas de repas", async () => {
-    await assertFails(db("revoked").doc("planned_meals/new").set({ uid: PERSONAS.revoked.uid }));
+    await assertFails(
+      db("revoked").doc("planned_meals/new").set({ uid: PERSONAS.revoked.uid }),
+    );
   });
 
   it("un compte en attente n'écrit pas planning_config", async () => {
     await assertFails(
-      db("pending").doc(`planning_config/${PERSONAS.pending.uid}`).set({ days: 7 }),
+      db("pending")
+        .doc(`planning_config/${PERSONAS.pending.uid}`)
+        .set({ days: 7 }),
     );
   });
 
   it("un compte révoqué n'écrit pas planning_config", async () => {
     await assertFails(
-      db("revoked").doc(`planning_config/${PERSONAS.revoked.uid}`).set({ days: 7 }),
+      db("revoked")
+        .doc(`planning_config/${PERSONAS.revoked.uid}`)
+        .set({ days: 7 }),
     );
   });
 
   it("un compte révoqué n'écrit pas de rapport d'erreur", async () => {
     await assertFails(
-      db("revoked").doc("error_reports/new").set(errorReport(PERSONAS.revoked.uid)),
+      db("revoked")
+        .doc("error_reports/new")
+        .set(errorReport(PERSONAS.revoked.uid)),
     );
   });
 });
@@ -1940,11 +2448,15 @@ describe("données personnelles — pending et révoqué", () => {
 
 describe("plannings partagés — le lecteur ne planifie plus", () => {
   it("un lecteur ne crée pas de repas", async () => {
-    await assertFails(db("reader").doc("planned_meals/new").set({ uid: READER }));
+    await assertFails(
+      db("reader").doc("planned_meals/new").set({ uid: READER }),
+    );
   });
 
   it("un lecteur ne modifie pas son ancien repas", async () => {
-    await assertFails(db("reader").doc("planned_meals/m1").update({ date: "2026-10-10" }));
+    await assertFails(
+      db("reader").doc("planned_meals/m1").update({ date: "2026-10-10" }),
+    );
   });
 
   // Planning de groupe : un lecteur ne supprime plus aucun repas, pas même
@@ -1955,7 +2467,9 @@ describe("plannings partagés — le lecteur ne planifie plus", () => {
   });
 
   it("un lecteur n'écrit pas planning_config", async () => {
-    await assertFails(db("reader").doc(`planning_config/${READER}`).set({ days: 7 }));
+    await assertFails(
+      db("reader").doc(`planning_config/${READER}`).set({ days: 7 }),
+    );
     await assertFails(
       db("reader")
         .doc(`planning_config/${READER}`)
@@ -1970,7 +2484,10 @@ describe("plannings partagés — lecture", () => {
       "planning_reach/reader": { uids: [EDITOR] },
       "planning_reach/revoked-stale": { uids: [EDITOR] },
       "planning_reach/pending": { uids: [EDITOR] },
-      "planned_meals/m-stranger": { uid: PERSONAS.stranger.uid, date: "2026-10-12" },
+      "planned_meals/m-stranger": {
+        uid: PERSONAS.stranger.uid,
+        date: "2026-10-12",
+      },
     });
   });
 
@@ -1994,7 +2511,9 @@ describe("plannings partagés — lecture", () => {
   });
 
   it("révoqué ou en attente, même avec planning_reach : rien", async () => {
-    await assertFails(db("revokedStaleToken").doc("planned_meals/m-editor").get());
+    await assertFails(
+      db("revokedStaleToken").doc("planned_meals/m-editor").get(),
+    );
     await assertFails(db("pending").doc("planned_meals/m-editor").get());
   });
 
@@ -2074,9 +2593,21 @@ describe("plannings partagés — planning_reach et shared_group_ids", () => {
   });
 
   it("planning_reach : aucune écriture du client, administrateur compris", async () => {
-    await assertFails(db("reader").doc("planning_reach/reader").set({ uids: [EDITOR] }));
-    await assertFails(db("stranger").doc("planning_reach/stranger").set({ uids: [READER] }));
-    await assertFails(db("admin").doc("planning_reach/reader").set({ uids: [EDITOR] }));
+    await assertFails(
+      db("reader")
+        .doc("planning_reach/reader")
+        .set({ uids: [EDITOR] }),
+    );
+    await assertFails(
+      db("stranger")
+        .doc("planning_reach/stranger")
+        .set({ uids: [READER] }),
+    );
+    await assertFails(
+      db("admin")
+        .doc("planning_reach/reader")
+        .set({ uids: [EDITOR] }),
+    );
   });
 
   it("un éditeur coche les groupes qui voient son planning", async () => {
@@ -2090,10 +2621,14 @@ describe("plannings partagés — planning_reach et shared_group_ids", () => {
   it("shared_group_ids : liste de 50 groupes au plus", async () => {
     const many = Array.from({ length: 51 }, (_, i) => `g${i}`);
     await assertFails(
-      db("editor").doc(`planning_config/${EDITOR}`).set({ shared_group_ids: many }),
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ shared_group_ids: many }),
     );
     await assertFails(
-      db("editor").doc(`planning_config/${EDITOR}`).set({ shared_group_ids: "famille" }),
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ shared_group_ids: "famille" }),
     );
   });
 
@@ -2111,12 +2646,18 @@ describe("plannings partagés — planning_reach et shared_group_ids", () => {
         .doc(`planning_config/${EDITOR}`)
         .set({ group_portions: { gp: 4 } }),
     );
-    const many = Object.fromEntries(Array.from({ length: 51 }, (_, i) => [`g${i}`, 4]));
-    await assertFails(
-      db("editor").doc(`planning_config/${EDITOR}`).set({ group_portions: many }),
+    const many = Object.fromEntries(
+      Array.from({ length: 51 }, (_, i) => [`g${i}`, 4]),
     );
     await assertFails(
-      db("editor").doc(`planning_config/${EDITOR}`).set({ group_portions: [4] }),
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ group_portions: many }),
+    );
+    await assertFails(
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ group_portions: [4] }),
     );
   });
 });
@@ -2140,9 +2681,21 @@ describe("plannings de groupe", () => {
         member_ids: [EDITOR, READER],
         invited_ids: [OTHER],
       },
-      "planning_reach/editor": { uids: [], group_ids: ["gp"], masked_group_ids: [] },
-      "planning_reach/reader": { uids: [], group_ids: ["gp"], masked_group_ids: [] },
-      "planning_reach/other-reader": { uids: [], group_ids: [], masked_group_ids: [] },
+      "planning_reach/editor": {
+        uids: [],
+        group_ids: ["gp"],
+        masked_group_ids: [],
+      },
+      "planning_reach/reader": {
+        uids: [],
+        group_ids: ["gp"],
+        masked_group_ids: [],
+      },
+      "planning_reach/other-reader": {
+        uids: [],
+        group_ids: [],
+        masked_group_ids: [],
+      },
       "planned_meals/gm1": { uid: EDITOR, group_id: "gp", planned_at: at },
     });
   });
@@ -2194,7 +2747,10 @@ describe("plannings de groupe", () => {
 
   it("requête sans filtre sur le propriétaire du groupe : refusée", async () => {
     await assertFails(
-      db("reader").collection("planned_meals").where("group_id", "==", "gp").get(),
+      db("reader")
+        .collection("planned_meals")
+        .where("group_id", "==", "gp")
+        .get(),
     );
   });
 
@@ -2215,17 +2771,25 @@ describe("plannings de groupe", () => {
 
   it("un membre n'écrit pas le planning du groupe", async () => {
     await assertFails(
-      db("reader").doc("planned_meals/new").set({ uid: READER, group_id: "gp", planned_at: at }),
+      db("reader")
+        .doc("planned_meals/new")
+        .set({ uid: READER, group_id: "gp", planned_at: at }),
     );
-    await assertFails(db("reader").doc("planned_meals/gm1").update({ recipe_titre: "x" }));
+    await assertFails(
+      db("reader").doc("planned_meals/gm1").update({ recipe_titre: "x" }),
+    );
     await assertFails(db("reader").doc("planned_meals/gm1").delete());
   });
 
   it("le propriétaire du groupe crée, modifie, lit et supprime", async () => {
     await assertSucceeds(
-      db("editor").doc("planned_meals/new").set({ uid: EDITOR, group_id: "gp", planned_at: at }),
+      db("editor")
+        .doc("planned_meals/new")
+        .set({ uid: EDITOR, group_id: "gp", planned_at: at }),
     );
-    await assertSucceeds(db("editor").doc("planned_meals/gm1").update({ recipe_titre: "Gratin" }));
+    await assertSucceeds(
+      db("editor").doc("planned_meals/gm1").update({ recipe_titre: "Gratin" }),
+    );
     await assertSucceeds(groupQuery("editor").get());
     await assertSucceeds(db("editor").doc("planned_meals/gm1").delete());
   });
@@ -2243,23 +2807,37 @@ describe("plannings de groupe", () => {
         .set({ uid: EDITOR, group_id: "absent", planned_at: at }),
     );
     await assertFails(
-      db("editor").doc("planned_meals/new").set({ uid: EDITOR, group_id: 42, planned_at: at }),
+      db("editor")
+        .doc("planned_meals/new")
+        .set({ uid: EDITOR, group_id: 42, planned_at: at }),
     );
   });
 
   it("un membre éditeur non propriétaire ne planifie pas pour le groupe", async () => {
     await seedDocs(env, {
-      "groups/gp": { name: "Famille Dupont", owner_id: OTHER, member_ids: [OTHER, EDITOR] },
+      "groups/gp": {
+        name: "Famille Dupont",
+        owner_id: OTHER,
+        member_ids: [OTHER, EDITOR],
+      },
     });
     await assertFails(
-      db("editor").doc("planned_meals/new").set({ uid: EDITOR, group_id: "gp", planned_at: at }),
+      db("editor")
+        .doc("planned_meals/new")
+        .set({ uid: EDITOR, group_id: "gp", planned_at: at }),
     );
   });
 
   it("group_id est figé", async () => {
-    await assertFails(db("editor").doc("planned_meals/gm1").update({ group_id: null }));
-    await assertFails(db("editor").doc("planned_meals/gm1").update({ group_id: deleteField() }));
-    await assertFails(db("editor").doc("planned_meals/m-editor").update({ group_id: "gp" }));
+    await assertFails(
+      db("editor").doc("planned_meals/gm1").update({ group_id: null }),
+    );
+    await assertFails(
+      db("editor").doc("planned_meals/gm1").update({ group_id: deleteField() }),
+    );
+    await assertFails(
+      db("editor").doc("planned_meals/m-editor").update({ group_id: "gp" }),
+    );
   });
 
   it("un lecteur ne supprime aucun repas, pas même le sien", async () => {
@@ -2274,7 +2852,11 @@ describe("plannings de groupe", () => {
     // portent plus (déclencheur `syncPlanningReachOnRole`). Rien n'est effacé.
     await seedDocs(env, {
       [`users/${EDITOR}`]: { ...PERSONAS.editor.doc, role: "reader" },
-      "planning_reach/reader": { uids: [], group_ids: [], masked_group_ids: ["gp"] },
+      "planning_reach/reader": {
+        uids: [],
+        group_ids: [],
+        masked_group_ids: ["gp"],
+      },
       "group_reach/reader": { uids: [] },
     });
     await assertFails(db("reader").doc("planned_meals/gm1").get());
@@ -2307,11 +2889,15 @@ describe("app_config", () => {
   });
 
   it("un lecteur n'écrit pas la grille tarifaire", async () => {
-    await assertFails(db("reader").doc("app_config/ai_pricing").set({ models: {} }));
+    await assertFails(
+      db("reader").doc("app_config/ai_pricing").set({ models: {} }),
+    );
   });
 
   it("un éditeur n'écrit pas la politique nutrition", async () => {
-    await assertFails(db("editor").doc("app_config/nutrition_policy").set({ mode: "open" }));
+    await assertFails(
+      db("editor").doc("app_config/nutrition_policy").set({ mode: "open" }),
+    );
   });
 
   it("un lecteur met à jour les compteurs de usage", async () => {
@@ -2323,11 +2909,15 @@ describe("app_config", () => {
   });
 
   it("un lecteur n'ajoute pas d'autre champ à usage", async () => {
-    await assertFails(db("reader").doc("app_config/usage").update({ plafond: 1e9 }));
+    await assertFails(
+      db("reader").doc("app_config/usage").update({ plafond: 1e9 }),
+    );
   });
 
   it("un administrateur écrit la configuration", async () => {
-    await assertSucceeds(db("admin").doc("app_config/nutrition_policy").set({ mode: "open" }));
+    await assertSucceeds(
+      db("admin").doc("app_config/nutrition_policy").set({ mode: "open" }),
+    );
   });
 
   // Programmation et état des backfills : écrits par le serveur seul
@@ -2336,34 +2926,56 @@ describe("app_config", () => {
     await assertFails(
       db("admin")
         .doc("app_config/backfill_schedules")
-        .set({ recipe_roles: { enabled: true, days: [7], hour: 3, programme_par_uid: OTHER } }),
+        .set({
+          recipe_roles: {
+            enabled: true,
+            days: [7],
+            hour: 3,
+            programme_par_uid: OTHER,
+          },
+        }),
     );
   });
 
   it("un administrateur n'écrit pas l'état d'un backfill", async () => {
     await assertFails(
-      db("admin").doc("app_config/backfill_run_nutrition").update({ dernier_passage_statut: null }),
+      db("admin")
+        .doc("app_config/backfill_run_nutrition")
+        .update({ dernier_passage_statut: null }),
     );
     await assertFails(
-      db("admin").doc("app_config/backfill_run_estimated_times").set({ termine_par: "manuel" }),
+      db("admin")
+        .doc("app_config/backfill_run_estimated_times")
+        .set({ termine_par: "manuel" }),
     );
   });
 
   it("un administrateur lit la programmation et l'état des backfills", async () => {
-    await assertSucceeds(db("admin").doc("app_config/backfill_schedules").get());
-    await assertSucceeds(db("admin").doc("app_config/backfill_run_nutrition").get());
     await assertSucceeds(
-      db("admin").collection("app_config").where("doc_type", "==", "backfill_run").get(),
+      db("admin").doc("app_config/backfill_schedules").get(),
+    );
+    await assertSucceeds(
+      db("admin").doc("app_config/backfill_run_nutrition").get(),
+    );
+    await assertSucceeds(
+      db("admin")
+        .collection("app_config")
+        .where("doc_type", "==", "backfill_run")
+        .get(),
     );
   });
 
   it("un lecteur ne lit pas l'état des backfills", async () => {
-    await assertFails(db("reader").doc("app_config/backfill_run_nutrition").get());
+    await assertFails(
+      db("reader").doc("app_config/backfill_run_nutrition").get(),
+    );
     await assertFails(db("reader").doc("app_config/backfill_schedules").get());
   });
 
   it("usage : storage_bytes reste un entier positif", async () => {
-    await assertFails(db("reader").doc("app_config/usage").update({ storage_bytes: -1 }));
+    await assertFails(
+      db("reader").doc("app_config/usage").update({ storage_bytes: -1 }),
+    );
   });
 
   it("usage : le compteur de scans du mois reste positif", async () => {
@@ -2375,12 +2987,18 @@ describe("app_config", () => {
   });
 
   it("usage : storage_bytes ne recule pas", async () => {
-    await assertFails(db("reader").doc("app_config/usage").update({ storage_bytes: 0 }));
+    await assertFails(
+      db("reader").doc("app_config/usage").update({ storage_bytes: 0 }),
+    );
   });
 
   it("usage : storage_bytes reste un entier", async () => {
-    await assertFails(db("reader").doc("app_config/usage").update({ storage_bytes: "20" }));
-    await assertFails(db("reader").doc("app_config/usage").update({ storage_bytes: 20.5 }));
+    await assertFails(
+      db("reader").doc("app_config/usage").update({ storage_bytes: "20" }),
+    );
+    await assertFails(
+      db("reader").doc("app_config/usage").update({ storage_bytes: 20.5 }),
+    );
   });
 
   it("usage : un incrément du client passe", async () => {
@@ -2399,7 +3017,9 @@ describe("app_config", () => {
   });
 
   it("usage : un administrateur remet un compteur à zéro", async () => {
-    await assertSucceeds(db("admin").doc("app_config/usage").update({ storage_bytes: 0 }));
+    await assertSucceeds(
+      db("admin").doc("app_config/usage").update({ storage_bytes: 0 }),
+    );
   });
 });
 
@@ -2418,11 +3038,15 @@ describe("collections de coût — écriture serveur seule", () => {
 
   for (const path of serverOnly) {
     it(`${path.split("/")[0]} : même un administrateur n'écrit pas`, async () => {
-      await assertFails(db("admin").doc(path).set({ uid: PERSONAS.admin.uid, cost_usd: 0 }));
+      await assertFails(
+        db("admin").doc(path).set({ uid: PERSONAS.admin.uid, cost_usd: 0 }),
+      );
     });
 
     it(`${path.split("/")[0]} : un lecteur n'écrit pas à son nom`, async () => {
-      await assertFails(db("reader").doc(path).set({ uid: READER, cost_usd: 0 }));
+      await assertFails(
+        db("reader").doc(path).set({ uid: READER, cost_usd: 0 }),
+      );
     });
   }
 
@@ -2435,7 +3059,9 @@ describe("collections de coût — écriture serveur seule", () => {
   });
 
   it("un lecteur ne remet pas son compteur journalier à zéro", async () => {
-    await assertFails(db("reader").doc("ai_daily_spend/d1").update({ total: 0 }));
+    await assertFails(
+      db("reader").doc("ai_daily_spend/d1").update({ total: 0 }),
+    );
   });
 
   it("un administrateur lit la ligne ai_usage d'un autre", async () => {
@@ -2447,22 +3073,30 @@ describe("collections de coût — écriture serveur seule", () => {
 
 describe("url_import_daily", () => {
   it("le titulaire lit son compteur", async () => {
-    await assertSucceeds(db("editor").doc("url_import_daily/editor_2026-10-11").get());
+    await assertSucceeds(
+      db("editor").doc("url_import_daily/editor_2026-10-11").get(),
+    );
   });
 
   it("un autre compte ne le lit pas", async () => {
-    await assertFails(db("reader").doc("url_import_daily/editor_2026-10-11").get());
+    await assertFails(
+      db("reader").doc("url_import_daily/editor_2026-10-11").get(),
+    );
   });
 
   it("le titulaire ne remet pas son compteur à zéro", async () => {
     await assertFails(
-      db("editor").doc("url_import_daily/editor_2026-10-11").update({ count: 0 }),
+      db("editor")
+        .doc("url_import_daily/editor_2026-10-11")
+        .update({ count: 0 }),
     );
   });
 
   it("personne ne crée de compteur depuis le client", async () => {
     await assertFails(
-      db("admin").doc("url_import_daily/admin_2026-10-11").set({ uid: "admin", count: 0 }),
+      db("admin")
+        .doc("url_import_daily/admin_2026-10-11")
+        .set({ uid: "admin", count: 0 }),
     );
   });
 });
@@ -2471,22 +3105,30 @@ describe("url_import_daily", () => {
 
 describe("web_search_daily", () => {
   it("le titulaire lit son compteur", async () => {
-    await assertSucceeds(db("reader").doc("web_search_daily/reader_2026-10-12").get());
+    await assertSucceeds(
+      db("reader").doc("web_search_daily/reader_2026-10-12").get(),
+    );
   });
 
   it("un autre compte ne le lit pas", async () => {
-    await assertFails(db("editor").doc("web_search_daily/reader_2026-10-12").get());
+    await assertFails(
+      db("editor").doc("web_search_daily/reader_2026-10-12").get(),
+    );
   });
 
   it("le titulaire ne remet pas son compteur à zéro", async () => {
     await assertFails(
-      db("reader").doc("web_search_daily/reader_2026-10-12").update({ count: 0 }),
+      db("reader")
+        .doc("web_search_daily/reader_2026-10-12")
+        .update({ count: 0 }),
     );
   });
 
   it("personne ne crée de compteur depuis le client", async () => {
     await assertFails(
-      db("admin").doc("web_search_daily/admin_2026-10-12").set({ uid: "admin", count: 0 }),
+      db("admin")
+        .doc("web_search_daily/admin_2026-10-12")
+        .set({ uid: "admin", count: 0 }),
     );
   });
 });
@@ -2500,8 +3142,12 @@ describe("web_search_cache", () => {
   });
 
   it("aucun rôle n'y écrit", async () => {
-    await assertFails(db("editor").doc("web_search_cache/abc").set({ results: [] }));
-    await assertFails(db("admin").doc("web_search_cache/new").set({ results: [] }));
+    await assertFails(
+      db("editor").doc("web_search_cache/abc").set({ results: [] }),
+    );
+    await assertFails(
+      db("admin").doc("web_search_cache/new").set({ results: [] }),
+    );
   });
 });
 
@@ -2525,7 +3171,9 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
 
   it("un administrateur lit une invitation et la liste", async () => {
     await assertSucceeds(db("admin").doc("invitations/inv1").get());
-    await assertSucceeds(db("admin").collection("invitations").orderBy("created_at", "desc").get());
+    await assertSucceeds(
+      db("admin").collection("invitations").orderBy("created_at", "desc").get(),
+    );
   });
 
   for (const persona of ["reader", "pending", "revoked", "anonymous"]) {
@@ -2538,8 +3186,18 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
   describe("propriétaire d'un groupe non administrateur", () => {
     beforeEach(async () => {
       await seedDocs(env, {
-        "groups/g1": { name: "Famille", owner_id: EDITOR, member_ids: [EDITOR, OTHER], invited_ids: [] },
-        "groups/g2": { name: "Amis", owner_id: OTHER, member_ids: [OTHER], invited_ids: [] },
+        "groups/g1": {
+          name: "Famille",
+          owner_id: EDITOR,
+          member_ids: [EDITOR, OTHER],
+          invited_ids: [],
+        },
+        "groups/g2": {
+          name: "Amis",
+          owner_id: OTHER,
+          member_ids: [OTHER],
+          invited_ids: [],
+        },
         "invitations/inv2": { ...INVITATION, group_id: "g2" },
       });
     });
@@ -2547,14 +3205,20 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
     it("lit une invitation de son groupe, document et requête filtrée", async () => {
       await assertSucceeds(db("editor").doc("invitations/inv1").get());
       await assertSucceeds(
-        db("editor").collection("invitations").where("group_id", "==", "g1").get(),
+        db("editor")
+          .collection("invitations")
+          .where("group_id", "==", "g1")
+          .get(),
       );
     });
 
     it("ne lit pas l'invitation d'un groupe qui n'est pas le sien", async () => {
       await assertFails(db("editor").doc("invitations/inv2").get());
       await assertFails(
-        db("editor").collection("invitations").where("group_id", "==", "g2").get(),
+        db("editor")
+          .collection("invitations")
+          .where("group_id", "==", "g2")
+          .get(),
       );
     });
 
@@ -2565,26 +3229,51 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
     it("un membre non propriétaire ne lit rien", async () => {
       await assertFails(db("otherReader").doc("invitations/inv1").get());
       await assertFails(
-        db("otherReader").collection("invitations").where("group_id", "==", "g1").get(),
+        db("otherReader")
+          .collection("invitations")
+          .where("group_id", "==", "g1")
+          .get(),
       );
     });
 
     it("un propriétaire révoqué ou en attente ne lit rien", async () => {
       await seedDocs(env, {
-        "groups/gR": { name: "R", owner_id: PERSONAS.revoked.uid, member_ids: [PERSONAS.revoked.uid] },
-        "groups/gP": { name: "P", owner_id: PERSONAS.pending.uid, member_ids: [PERSONAS.pending.uid] },
+        "groups/gR": {
+          name: "R",
+          owner_id: PERSONAS.revoked.uid,
+          member_ids: [PERSONAS.revoked.uid],
+        },
+        "groups/gP": {
+          name: "P",
+          owner_id: PERSONAS.pending.uid,
+          member_ids: [PERSONAS.pending.uid],
+        },
         "invitations/invR": { ...INVITATION, group_id: "gR" },
         "invitations/invP": { ...INVITATION, group_id: "gP" },
       });
       await assertFails(db("revoked").doc("invitations/invR").get());
-      await assertFails(db("revoked").collection("invitations").where("group_id", "==", "gR").get());
+      await assertFails(
+        db("revoked")
+          .collection("invitations")
+          .where("group_id", "==", "gR")
+          .get(),
+      );
       await assertFails(db("pending").doc("invitations/invP").get());
-      await assertFails(db("pending").collection("invitations").where("group_id", "==", "gP").get());
+      await assertFails(
+        db("pending")
+          .collection("invitations")
+          .where("group_id", "==", "gP")
+          .get(),
+      );
     });
 
     it("un lecteur propriétaire lit les invitations de son groupe", async () => {
       await seedDocs(env, {
-        "groups/gL": { name: "L", owner_id: PERSONAS.reader.uid, member_ids: [PERSONAS.reader.uid] },
+        "groups/gL": {
+          name: "L",
+          owner_id: PERSONAS.reader.uid,
+          member_ids: [PERSONAS.reader.uid],
+        },
         "invitations/invL": { ...INVITATION, group_id: "gL" },
       });
       await assertSucceeds(db("reader").doc("invitations/invL").get());
@@ -2594,40 +3283,59 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
       "un compte qui recrée un groupe supprimé sous le même identifiant ne lit pas ses invitations",
       OPEN_FLAW,
       async () => {
-        await seedDocs(env, { "invitations/invD": { ...INVITATION, group_id: "gDeleted" } });
+        await seedDocs(env, {
+          "invitations/invD": { ...INVITATION, group_id: "gDeleted" },
+        });
         await assertSucceeds(
-          db("editor").doc("groups/gDeleted").set({
-            name: "Pirate",
-            owner_id: EDITOR,
-            member_ids: [EDITOR],
-            invited_ids: [],
-          }),
+          db("editor")
+            .doc("groups/gDeleted")
+            .set({
+              name: "Pirate",
+              owner_id: EDITOR,
+              member_ids: [EDITOR],
+              invited_ids: [],
+            }),
         );
         await assertFails(
-          db("editor").collection("invitations").where("group_id", "==", "gDeleted").get(),
+          db("editor")
+            .collection("invitations")
+            .where("group_id", "==", "gDeleted")
+            .get(),
         );
       },
     );
 
     it("n'écrit toujours pas", async () => {
-      await assertFails(db("editor").doc("invitations/inv1").update({ status: "accepted" }));
+      await assertFails(
+        db("editor").doc("invitations/inv1").update({ status: "accepted" }),
+      );
       await assertFails(db("editor").doc("invitations/inv1").delete());
     });
   });
 
   it("aucun rôle n'écrit une invitation depuis le client", async () => {
     await assertFails(db("admin").doc("invitations/new").set(INVITATION));
-    await assertFails(db("admin").doc("invitations/inv1").update({ status: "accepted" }));
+    await assertFails(
+      db("admin").doc("invitations/inv1").update({ status: "accepted" }),
+    );
     await assertFails(db("admin").doc("invitations/inv1").delete());
     await assertFails(db("pending").doc("invitations/self").set(INVITATION));
-    await assertFails(db("editor").doc("invitations/inv1").update({ role: "editor" }));
+    await assertFails(
+      db("editor").doc("invitations/inv1").update({ role: "editor" }),
+    );
   });
 
   it("le compteur d'envois : lu par l'administrateur, écrit par personne", async () => {
-    await assertSucceeds(db("admin").doc("invitation_sends_daily/admin_2026-10-12").get());
-    await assertFails(db("editor").doc("invitation_sends_daily/admin_2026-10-12").get());
+    await assertSucceeds(
+      db("admin").doc("invitation_sends_daily/admin_2026-10-12").get(),
+    );
     await assertFails(
-      db("admin").doc("invitation_sends_daily/admin_2026-10-12").update({ count: 0 }),
+      db("editor").doc("invitation_sends_daily/admin_2026-10-12").get(),
+    );
+    await assertFails(
+      db("admin")
+        .doc("invitation_sends_daily/admin_2026-10-12")
+        .update({ count: 0 }),
     );
   });
 });
@@ -2638,17 +3346,30 @@ describe("member_email_search_daily — compteur serveur seul", () => {
   const DOC = "member_email_search_daily/reader_2026-10-12";
 
   beforeEach(async () => {
-    await seedDocs(env, { [DOC]: { uid: READER, day: "2026-10-12", count: 3 } });
+    await seedDocs(env, {
+      [DOC]: { uid: READER, day: "2026-10-12", count: 3 },
+    });
   });
 
-  for (const persona of ["admin", "editor", "reader", "pending", "revoked", "anonymous"]) {
+  for (const persona of [
+    "admin",
+    "editor",
+    "reader",
+    "pending",
+    "revoked",
+    "anonymous",
+  ]) {
     it(`${persona} ne lit ni n'écrit le compteur`, async () => {
       await assertFails(db(persona).doc(DOC).get());
-      await assertFails(db(persona).collection("member_email_search_daily").get());
+      await assertFails(
+        db(persona).collection("member_email_search_daily").get(),
+      );
       await assertFails(db(persona).doc(DOC).update({ count: 0 }));
       await assertFails(db(persona).doc(DOC).delete());
       await assertFails(
-        db(persona).doc("member_email_search_daily/new").set({ uid: READER, count: 0 }),
+        db(persona)
+          .doc("member_email_search_daily/new")
+          .set({ uid: READER, count: 0 }),
       );
     });
   }
@@ -2659,19 +3380,25 @@ describe("member_email_search_daily — compteur serveur seul", () => {
 describe("processing_jobs", () => {
   it("un lecteur ne crée pas de job d'import", async () => {
     await assertFails(
-      db("reader").doc("processing_jobs/new").set({ created_by: READER, status: "queued" }),
+      db("reader")
+        .doc("processing_jobs/new")
+        .set({ created_by: READER, status: "queued" }),
     );
   });
 
   it("un éditeur crée un job à son nom", async () => {
     await assertSucceeds(
-      db("editor").doc("processing_jobs/new").set({ created_by: EDITOR, status: "queued" }),
+      db("editor")
+        .doc("processing_jobs/new")
+        .set({ created_by: EDITOR, status: "queued" }),
     );
   });
 
   it("un éditeur ne crée pas de job au nom d'un autre", async () => {
     await assertFails(
-      db("editor").doc("processing_jobs/new").set({ created_by: READER, status: "queued" }),
+      db("editor")
+        .doc("processing_jobs/new")
+        .set({ created_by: READER, status: "queued" }),
     );
   });
 
@@ -2695,7 +3422,9 @@ describe("processing_jobs", () => {
   });
 
   it("un import par lien terminé ne se remet pas en file", async () => {
-    await assertFails(db("editor").doc("processing_jobs/url-done").update({ status: "queued" }));
+    await assertFails(
+      db("editor").doc("processing_jobs/url-done").update({ status: "queued" }),
+    );
     await assertFails(
       db("editor")
         .doc("processing_jobs/url-done")
@@ -2720,7 +3449,11 @@ describe("processing_jobs", () => {
   });
 
   it("une relance d'import par lien sans compteur est refusée", async () => {
-    await assertFails(db("editor").doc("processing_jobs/url-timeout").update({ status: "queued" }));
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/url-timeout")
+        .update({ status: "queued" }),
+    );
   });
 
   it("au-delà de deux relances, l'import par lien ne se relance plus", async () => {
@@ -2735,7 +3468,11 @@ describe("processing_jobs", () => {
     await assertFails(
       db("editor")
         .doc("processing_jobs/url-processing")
-        .update({ status: "error", cancel_requested: true, url_retry_count: 0 }),
+        .update({
+          status: "error",
+          cancel_requested: true,
+          url_retry_count: 0,
+        }),
     );
     await assertSucceeds(
       db("editor")
@@ -2769,11 +3506,17 @@ describe("processing_jobs", () => {
   });
 
   it("un lecteur propriétaire ne remet pas son job en file (queued)", async () => {
-    await assertFails(db("reader").doc("processing_jobs/job-reader").update({ status: "queued" }));
+    await assertFails(
+      db("reader")
+        .doc("processing_jobs/job-reader")
+        .update({ status: "queued" }),
+    );
   });
 
   it("un lecteur propriétaire ne vide pas le statut (relance déguisée)", async () => {
-    await assertFails(db("reader").doc("processing_jobs/job-reader").update({ status: "" }));
+    await assertFails(
+      db("reader").doc("processing_jobs/job-reader").update({ status: "" }),
+    );
   });
 
   it("une annulation ne touche pas d'autre champ", async () => {
@@ -2788,7 +3531,9 @@ describe("processing_jobs", () => {
 
   it("un éditeur propriétaire relance son job", async () => {
     await assertSucceeds(
-      db("editor").doc("processing_jobs/job-editor").update({ status: "queued" }),
+      db("editor")
+        .doc("processing_jobs/job-editor")
+        .update({ status: "queued" }),
     );
   });
 
@@ -2811,7 +3556,10 @@ describe("processing_jobs", () => {
 
   it("un éditeur liste ses jobs, comme la file de travail", async () => {
     await assertSucceeds(
-      db("editor").collection("processing_jobs").where("created_by", "==", EDITOR).get(),
+      db("editor")
+        .collection("processing_jobs")
+        .where("created_by", "==", EDITOR)
+        .get(),
     );
   });
 
@@ -2823,9 +3571,192 @@ describe("processing_jobs", () => {
     await assertSucceeds(db("admin").collection("processing_jobs").get());
   });
 
-  it("seul un administrateur supprime un job", async () => {
+  it("seul un administrateur supprime un job, hors attente de doublon", async () => {
     await assertFails(db("editor").doc("processing_jobs/job-editor").delete());
-    await assertSucceeds(db("admin").doc("processing_jobs/job-editor").delete());
+    await assertSucceeds(
+      db("admin").doc("processing_jobs/job-editor").delete(),
+    );
+  });
+
+  // Doublon possible : l'import s'est arrêté après sa transcription.
+  it("le propriétaire supprime son import en attente de doublon", async () => {
+    await assertSucceeds(
+      db("editor").doc("processing_jobs/dup-editor").delete(),
+    );
+  });
+
+  it("un autre compte ne supprime pas un import en attente de doublon", async () => {
+    await assertFails(db("editor").doc("processing_jobs/dup-reader").delete());
+  });
+
+  it("« Ce n'est pas un doublon » reprend l'import sans toucher aux brouillons créés", async () => {
+    await assertSucceeds(
+      db("editor").doc("processing_jobs/dup-editor").update({
+        status: "queued",
+        duplicate_override: true,
+        error_message: null,
+        current_step: null,
+        updated_at: new Date(),
+      }),
+    );
+  });
+
+  it("la reprise d'un doublon ne vide pas created_recipe_ids", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/dup-editor").update({
+        status: "queued",
+        duplicate_override: true,
+        created_recipe_ids: [],
+      }),
+    );
+  });
+
+  it("la reprise exige duplicate_override", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/dup-editor").update({
+        status: "queued",
+        duplicate_override: false,
+      }),
+    );
+  });
+
+  it("duplicate_override ne se pose pas sur un job qui n'attend pas", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/job-editor").update({
+        status: "queued",
+        duplicate_override: true,
+      }),
+    );
+  });
+
+  it("un éditeur ne crée pas un job déjà vérifié ou porteur de clés de titre", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/faux-1").set({
+        created_by: EDITOR,
+        status: "processing",
+        book_id: "b1",
+      }),
+    );
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/faux-2")
+        .set({
+          created_by: EDITOR,
+          status: "queued",
+          titre_keys: ["pate brisee"],
+        }),
+    );
+    await assertFails(
+      db("editor").doc("processing_jobs/faux-3").set({
+        created_by: EDITOR,
+        status: "queued",
+        duplicate_checked: true,
+      }),
+    );
+    await assertSucceeds(
+      db("editor")
+        .doc("processing_jobs/vrai")
+        .set({ created_by: EDITOR, status: "queued" }),
+    );
+  });
+
+  it("un import en attente de doublon ne se relance pas comme un job en erreur", async () => {
+    await assertFails(
+      db("editor").doc("processing_jobs/dup-editor").update({
+        status: "queued",
+        created_recipe_ids: [],
+      }),
+    );
+  });
+
+  it("une relance ne pose pas le statut 'duplicate'", async () => {
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/job-editor")
+        .update({ status: "duplicate" }),
+    );
+    await assertFails(
+      db("editor").doc("processing_jobs/url-timeout").update({
+        status: "duplicate",
+        url_retry_count: 1,
+      }),
+    );
+  });
+
+  it("un lecteur ne reprend pas son import en attente de doublon", async () => {
+    await assertFails(
+      db("reader").doc("processing_jobs/dup-reader").update({
+        status: "queued",
+        duplicate_override: true,
+      }),
+    );
+  });
+});
+
+// ── recipes : marque « doublon possible » ─────────────────────────────────
+
+describe("recipes — marque de doublon possible (duplicate_of)", () => {
+  it("le client ne crée pas une recette marquée", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/new")
+        .set({
+          title: "x",
+          created_by: EDITOR,
+          review_status: "draft",
+          duplicate_of: {
+            titre: "x",
+            page: null,
+            recipe_id: "editor-own",
+            job_id: null,
+          },
+        }),
+    );
+  });
+
+  it("valider efface la marque", async () => {
+    await assertSucceeds(
+      db("editor").doc("recipes/dup-editor").update({
+        review_status: "validated",
+        duplicate_of: deleteField(),
+      }),
+    );
+  });
+
+  it("le client ne change pas la marque", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/dup-editor")
+        .update({
+          duplicate_of: {
+            titre: "Autre",
+            page: 3,
+            recipe_id: null,
+            job_id: null,
+          },
+        }),
+    );
+  });
+
+  it("le client ne pose pas la marque sur une recette qui n'en a pas", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/editor-own")
+        .update({
+          duplicate_of: {
+            titre: "Gratin",
+            page: null,
+            recipe_id: null,
+            job_id: null,
+          },
+        }),
+    );
+  });
+
+  it("une autre mise à jour garde la marque", async () => {
+    await assertSucceeds(
+      db("editor").doc("recipes/dup-editor").update({ title: "Pâte brisée" }),
+    );
   });
 });
 
@@ -2833,7 +3764,9 @@ describe("processing_jobs", () => {
 
 describe("référentiels", () => {
   it("un lecteur lit les ingrédients, un compte en attente non", async () => {
-    await assertSucceeds(db("reader").doc("nutrition_ingredients/farine").get());
+    await assertSucceeds(
+      db("reader").doc("nutrition_ingredients/farine").get(),
+    );
     await assertFails(db("pending").doc("nutrition_ingredients/farine").get());
   });
 
@@ -2847,12 +3780,14 @@ describe("référentiels", () => {
 
   it("un administrateur corrige les allergènes d'un ingrédient", async () => {
     await assertSucceeds(
-      db("admin").doc("nutrition_ingredients/farine").update({
-        allergens: ["gluten"],
-        allergens_source: "admin",
-        allergens_at: 1,
-        updated_at: 1,
-      }),
+      db("admin")
+        .doc("nutrition_ingredients/farine")
+        .update({
+          allergens: ["gluten"],
+          allergens_source: "admin",
+          allergens_at: 1,
+          updated_at: 1,
+        }),
     );
   });
 
@@ -2860,7 +3795,11 @@ describe("référentiels", () => {
     await assertFails(
       db("admin")
         .doc("nutrition_ingredients/farine")
-        .update({ allergens: "gluten", allergens_source: "admin", allergens_at: 1 }),
+        .update({
+          allergens: "gluten",
+          allergens_source: "admin",
+          allergens_at: 1,
+        }),
     );
   });
 
@@ -2868,7 +3807,11 @@ describe("référentiels", () => {
     await assertFails(
       db("admin")
         .doc("nutrition_ingredients/farine")
-        .update({ allergens: ["gluten"], allergens_source: "ai_estimated", allergens_at: 1 }),
+        .update({
+          allergens: ["gluten"],
+          allergens_source: "ai_estimated",
+          allergens_at: 1,
+        }),
     );
   });
 
@@ -2881,11 +3824,15 @@ describe("référentiels", () => {
   });
 
   it("un administrateur ne réécrit pas les valeurs nutritionnelles", async () => {
-    await assertFails(db("admin").doc("nutrition_ingredients/farine").update({ kcal: 0 }));
+    await assertFails(
+      db("admin").doc("nutrition_ingredients/farine").update({ kcal: 0 }),
+    );
   });
 
   it("personne ne crée d'ingrédient côté client", async () => {
-    await assertFails(db("admin").doc("nutrition_ingredients/new").set({ name: "x" }));
+    await assertFails(
+      db("admin").doc("nutrition_ingredients/new").set({ name: "x" }),
+    );
   });
 
   for (const col of ["nutrition_units", "meal_staples"]) {
@@ -3016,7 +3963,10 @@ describe("requêtes du client", () => {
   // un `get()` aux mêmes filtres.
   it("comptage d'un livre : les miennes + partagées de mes groupes (éditeur)", async () => {
     await assertSucceeds(
-      recipes("editor").where("book_id", "==", "public").where("created_by", "==", EDITOR).get(),
+      recipes("editor")
+        .where("book_id", "==", "public")
+        .where("created_by", "==", EDITOR)
+        .get(),
     );
     await assertSucceeds(
       recipes("editor")
@@ -3028,7 +3978,9 @@ describe("requêtes du client", () => {
   });
 
   it("recherche : mes recettes (created_by in [moi])", async () => {
-    await assertSucceeds(recipes("reader").where("created_by", "in", [READER]).get());
+    await assertSucceeds(
+      recipes("reader").where("created_by", "in", [READER]).get(),
+    );
   });
 
   it("recherche et planning : recettes validées partagées de la famille", async () => {
@@ -3065,22 +4017,34 @@ describe("requêtes du client", () => {
   });
 
   it("livres de la famille sans filtre de confidentialité : refusé", async () => {
-    await assertFails(db("reader").collection("books").where("created_by", "in", [OTHER]).get());
+    await assertFails(
+      db("reader").collection("books").where("created_by", "in", [OTHER]).get(),
+    );
   });
 
   it("annotations d'une recette visible, triées", async () => {
     await assertSucceeds(
-      db("reader").collection("recipes/validated/annotations").orderBy("created_at", "desc").get(),
+      db("reader")
+        .collection("recipes/validated/annotations")
+        .orderBy("created_at", "desc")
+        .get(),
     );
   });
 
   it("annotations d'une recette privée d'autrui : refusé", async () => {
-    await assertFails(db("reader").collection("recipes/validated-private-other/annotations").get());
+    await assertFails(
+      db("reader")
+        .collection("recipes/validated-private-other/annotations")
+        .get(),
+    );
   });
 
   it("mes notes (user_id == moi)", async () => {
     await assertSucceeds(
-      db("reader").collection("recipe_ratings").where("user_id", "==", READER).get(),
+      db("reader")
+        .collection("recipe_ratings")
+        .where("user_id", "==", READER)
+        .get(),
     );
   });
 });
@@ -3106,7 +4070,9 @@ describe("groupes — cloisonnement des lectures", () => {
 
   it("un membre du groupe lit la note et l'annotation d'un autre membre", async () => {
     await assertSucceeds(db("reader").doc("recipe_ratings/r-other").get());
-    await assertSucceeds(db("reader").doc("recipes/validated/annotations/other").get());
+    await assertSucceeds(
+      db("reader").doc("recipes/validated/annotations/other").get(),
+    );
   });
 
   it("un compte hors groupe ne lit pas le livre partagé", async () => {
@@ -3119,13 +4085,19 @@ describe("groupes — cloisonnement des lectures", () => {
 
   it("un compte hors groupe ne lit ni la note ni l'annotation", async () => {
     await assertFails(db("stranger").doc("recipe_ratings/r-other").get());
-    await assertFails(db("stranger").doc("recipes/validated/annotations/other").get());
-    await assertFails(db("stranger").collection("recipes/validated/annotations").get());
+    await assertFails(
+      db("stranger").doc("recipes/validated/annotations/other").get(),
+    );
+    await assertFails(
+      db("stranger").collection("recipes/validated/annotations").get(),
+    );
   });
 
   it("un compte hors groupe n'annote ni ne note la recette", async () => {
     await assertFails(
-      db("stranger").doc("recipes/validated/annotations/new").set({ uid: STRANGER, text: "x" }),
+      db("stranger")
+        .doc("recipes/validated/annotations/new")
+        .set({ uid: STRANGER, text: "x" }),
     );
     await assertFails(
       db("stranger")
@@ -3162,7 +4134,12 @@ describe("groupes — cloisonnement des lectures", () => {
 
   it("un membre ne lit pas ce que partage un compte hors de ses groupes", async () => {
     await seedDocs(env, {
-      "books/stranger-book": { title: "x", created_by: STRANGER, is_private: false, tags: [] },
+      "books/stranger-book": {
+        title: "x",
+        created_by: STRANGER,
+        is_private: false,
+        tags: [],
+      },
       "recipes/stranger-recipe": {
         title: "x",
         created_by: STRANGER,
@@ -3179,7 +4156,11 @@ describe("groupes — cloisonnement des lectures", () => {
     // Le lecteur quitte la famille : `syncGroupReach` vide sa portée et
     // retire son uid de celle des autres.
     await seedDocs(env, {
-      "groups/famille": { name: "Famille", owner_id: OTHER, member_ids: [OTHER, EDITOR] },
+      "groups/famille": {
+        name: "Famille",
+        owner_id: OTHER,
+        member_ids: [OTHER, EDITOR],
+      },
       "group_reach/reader": { uids: [] },
       "group_reach/other-reader": { uids: [EDITOR] },
       "group_reach/editor": { uids: [OTHER] },
@@ -3197,13 +4178,17 @@ describe("groupes — cloisonnement des lectures", () => {
     );
     // Et les membres restants ne lisent plus ce qu'il partage.
     await assertFails(db("otherReader").doc("books/public-reader").get());
-    await assertFails(db("otherReader").doc("recipes/reader-in-other-book").get());
+    await assertFails(
+      db("otherReader").doc("recipes/reader-in-other-book").get(),
+    );
   });
 
   it("le membre sorti garde ses propres livres et recettes", async () => {
     await seedDocs(env, { "group_reach/reader": { uids: [] } });
     await assertSucceeds(db("reader").doc("books/public-reader").get());
-    await assertSucceeds(db("reader").doc("recipes/reader-in-other-book").get());
+    await assertSucceeds(
+      db("reader").doc("recipes/reader-in-other-book").get(),
+    );
   });
 
   it("sans document de portée, on ne lit rien des autres", async () => {
@@ -3231,7 +4216,11 @@ describe("group_reach — portée des groupes", () => {
   });
 
   it("personne ne l'écrit depuis le client, administrateur compris", async () => {
-    await assertFails(db("stranger").doc("group_reach/stranger").set({ uids: [READER] }));
+    await assertFails(
+      db("stranger")
+        .doc("group_reach/stranger")
+        .set({ uids: [READER] }),
+    );
     await assertFails(
       db("reader")
         .doc("group_reach/reader")
@@ -3251,15 +4240,28 @@ describe("groupes — invitations", () => {
   const STRANGER = PERSONAS.stranger.uid;
   const invite = () =>
     seedDocs(env, {
-      "groups/g1": { name: "Famille", owner_id: EDITOR, member_ids: [EDITOR], invited_ids: [STRANGER] },
+      "groups/g1": {
+        name: "Famille",
+        owner_id: EDITOR,
+        member_ids: [EDITOR],
+        invited_ids: [STRANGER],
+      },
     });
 
   it("le propriétaire invite un compte", async () => {
-    await assertSucceeds(db("editor").doc("groups/g1").update({ invited_ids: [STRANGER] }));
+    await assertSucceeds(
+      db("editor")
+        .doc("groups/g1")
+        .update({ invited_ids: [STRANGER] }),
+    );
   });
 
   it("le propriétaire n'invite pas un compte déjà membre", async () => {
-    await assertFails(db("editor").doc("groups/g1").update({ invited_ids: [EDITOR] }));
+    await assertFails(
+      db("editor")
+        .doc("groups/g1")
+        .update({ invited_ids: [EDITOR] }),
+    );
   });
 
   it("un membre qui n'est pas propriétaire n'invite pas", async () => {
@@ -3274,7 +4276,12 @@ describe("groupes — invitations", () => {
     await assertFails(
       db("editor")
         .doc("groups/new")
-        .set({ name: "Famille", owner_id: EDITOR, member_ids: [EDITOR], invited_ids: [OTHER] }),
+        .set({
+          name: "Famille",
+          owner_id: EDITOR,
+          member_ids: [EDITOR],
+          invited_ids: [OTHER],
+        }),
     );
   });
 
@@ -3298,7 +4305,10 @@ describe("groupes — invitations", () => {
     await invite();
     await assertSucceeds(db("stranger").doc("groups/g1").get());
     await assertSucceeds(
-      db("stranger").collection("groups").where("invited_ids", "array-contains", STRANGER).get(),
+      db("stranger")
+        .collection("groups")
+        .where("invited_ids", "array-contains", STRANGER)
+        .get(),
     );
   });
 
@@ -3354,12 +4364,16 @@ describe("groupes — invitations", () => {
 
   it("l'invité refuse", async () => {
     await invite();
-    await assertSucceeds(db("stranger").doc("groups/g1").update({ invited_ids: [] }));
+    await assertSucceeds(
+      db("stranger").doc("groups/g1").update({ invited_ids: [] }),
+    );
   });
 
   it("le propriétaire annule l'invitation", async () => {
     await invite();
-    await assertSucceeds(db("editor").doc("groups/g1").update({ invited_ids: [] }));
+    await assertSucceeds(
+      db("editor").doc("groups/g1").update({ invited_ids: [] }),
+    );
   });
 
   it("un membre quitte le groupe", async () => {
@@ -3387,8 +4401,16 @@ describe("groupes — invitations", () => {
   });
 
   it("le nom d'un groupe compte 60 caractères au plus", async () => {
-    await assertSucceeds(db("editor").doc("groups/g1").update({ name: "a".repeat(60) }));
-    await assertFails(db("editor").doc("groups/g1").update({ name: "a".repeat(61) }));
+    await assertSucceeds(
+      db("editor")
+        .doc("groups/g1")
+        .update({ name: "a".repeat(60) }),
+    );
+    await assertFails(
+      db("editor")
+        .doc("groups/g1")
+        .update({ name: "a".repeat(61) }),
+    );
     await assertFails(
       db("editor")
         .doc("groups/new")
@@ -3398,13 +4420,25 @@ describe("groupes — invitations", () => {
 
   it("un groupe compte 50 invitations en attente au plus", async () => {
     const many = (n) => Array.from({ length: n }, (_, i) => `invite-${i}`);
-    await assertSucceeds(db("editor").doc("groups/g1").update({ invited_ids: many(50) }));
-    await assertFails(db("editor").doc("groups/g1").update({ invited_ids: many(51) }));
+    await assertSucceeds(
+      db("editor")
+        .doc("groups/g1")
+        .update({ invited_ids: many(50) }),
+    );
+    await assertFails(
+      db("editor")
+        .doc("groups/g1")
+        .update({ invited_ids: many(51) }),
+    );
   });
 
   it("le propriétaire éditeur retire un membre", async () => {
     await seedDocs(env, {
-      "groups/g1": { name: "Famille", owner_id: EDITOR, member_ids: [EDITOR, OTHER, READER] },
+      "groups/g1": {
+        name: "Famille",
+        owner_id: EDITOR,
+        member_ids: [EDITOR, OTHER, READER],
+      },
     });
     await assertSucceeds(
       db("editor")
@@ -3452,7 +4486,11 @@ describe("groupes — rôle éditeur requis", () => {
     await assertFails(
       db("readerNoClaim")
         .doc("groups/new")
-        .set({ name: "Famille", owner_id: "reader-no-claim", member_ids: ["reader-no-claim"] }),
+        .set({
+          name: "Famille",
+          owner_id: "reader-no-claim",
+          member_ids: ["reader-no-claim"],
+        }),
     );
     await assertFails(
       db("pending")
@@ -3473,16 +4511,26 @@ describe("groupes — rôle éditeur requis", () => {
     await assertFails(
       db("revokedStaleToken")
         .doc("groups/new")
-        .set({ name: "Famille", owner_id: "revoked-stale", member_ids: ["revoked-stale"] }),
+        .set({
+          name: "Famille",
+          owner_id: "revoked-stale",
+          member_ids: ["revoked-stale"],
+        }),
     );
   });
 
   it("un lecteur propriétaire ne renomme plus son groupe", async () => {
-    await assertFails(db("reader").doc("groups/g-reader").update({ name: "Autre" }));
+    await assertFails(
+      db("reader").doc("groups/g-reader").update({ name: "Autre" }),
+    );
   });
 
   it("un lecteur propriétaire n'invite plus", async () => {
-    await assertFails(db("reader").doc("groups/g-reader").update({ invited_ids: [STRANGER] }));
+    await assertFails(
+      db("reader")
+        .doc("groups/g-reader")
+        .update({ invited_ids: [STRANGER] }),
+    );
   });
 
   it("un lecteur propriétaire annule encore une invitation", async () => {
@@ -3494,7 +4542,9 @@ describe("groupes — rôle éditeur requis", () => {
         invited_ids: [STRANGER],
       },
     });
-    await assertSucceeds(db("reader").doc("groups/g-reader").update({ invited_ids: [] }));
+    await assertSucceeds(
+      db("reader").doc("groups/g-reader").update({ invited_ids: [] }),
+    );
   });
 
   it("un lecteur propriétaire ne remplace pas une invitation par une autre", async () => {
@@ -3506,7 +4556,11 @@ describe("groupes — rôle éditeur requis", () => {
         invited_ids: [STRANGER],
       },
     });
-    await assertFails(db("reader").doc("groups/g-reader").update({ invited_ids: [OTHER] }));
+    await assertFails(
+      db("reader")
+        .doc("groups/g-reader")
+        .update({ invited_ids: [OTHER] }),
+    );
   });
 
   it("un lecteur propriétaire ne fait entrer personne en réduisant", async () => {
@@ -3520,7 +4574,9 @@ describe("groupes — rôle éditeur requis", () => {
     });
     const ref = db("reader").doc("groups/g-reader");
     await assertFails(ref.update({ member_ids: [READER, OTHER] }));
-    await assertFails(ref.update({ member_ids: [READER, STRANGER], invited_ids: [] }));
+    await assertFails(
+      ref.update({ member_ids: [READER, STRANGER], invited_ids: [] }),
+    );
     await assertFails(ref.update({ invited_ids: [], x: 1 }));
     await assertFails(ref.update({ member_ids: deleteField() }));
   });
@@ -3569,9 +4625,13 @@ describe("groupes — rôle éditeur requis", () => {
   });
 
   it("un administrateur gère le groupe d'un lecteur", async () => {
-    await assertSucceeds(db("admin").doc("groups/g-reader").update({ name: "Autre" }));
     await assertSucceeds(
-      db("admin").doc("groups/g-reader").update({ invited_ids: [STRANGER] }),
+      db("admin").doc("groups/g-reader").update({ name: "Autre" }),
+    );
+    await assertSucceeds(
+      db("admin")
+        .doc("groups/g-reader")
+        .update({ invited_ids: [STRANGER] }),
     );
     await assertSucceeds(
       db("admin")
@@ -3606,7 +4666,9 @@ describe("groupes — rôle éditeur requis", () => {
         .doc("groups/g1")
         .update({ member_ids: [EDITOR, READER], invited_ids: [OTHER] }),
     );
-    await assertSucceeds(db("otherReader").doc("groups/g1").update({ invited_ids: [] }));
+    await assertSucceeds(
+      db("otherReader").doc("groups/g1").update({ invited_ids: [] }),
+    );
   });
 });
 
@@ -3628,7 +4690,9 @@ describe("planning_runs — écrites par le serveur seul", () => {
   });
 
   it("le titulaire ne remet pas son compteur de conceptions à zéro", async () => {
-    await assertFails(db("reader").doc(own).update({ concepts_used: 0, concepts_max: 99 }));
+    await assertFails(
+      db("reader").doc(own).update({ concepts_used: 0, concepts_max: 99 }),
+    );
   });
 
   it("le titulaire ne crée pas de génération", async () => {
@@ -3656,7 +4720,10 @@ describe("planning_runs — écrites par le serveur seul", () => {
 describe("planning_refusals — mémoire des refus, au titulaire seul", () => {
   const own = `users/${READER}/preferences/planning_refusals`;
   const others = `users/${OTHER}/preferences/planning_refusals`;
-  const entry = () => ({ refused_at: new Date("2026-10-09T12:00:00Z"), count: 1 });
+  const entry = () => ({
+    refused_at: new Date("2026-10-09T12:00:00Z"),
+    count: 1,
+  });
 
   beforeEach(async () => {
     await seedDocs(env, {
@@ -3681,9 +4748,13 @@ describe("planning_refusals — mémoire des refus, au titulaire seul", () => {
   });
 
   it("un champ hors forme est refusé", async () => {
-    await assertFails(db("reader").doc(own).set({ entries: {}, role: "admin" }));
+    await assertFails(
+      db("reader").doc(own).set({ entries: {}, role: "admin" }),
+    );
     await assertFails(db("reader").doc(own).set({ entries: "x" }));
-    await assertFails(db("reader").doc(own).set({ entries: {}, updated_at: "hier" }));
+    await assertFails(
+      db("reader").doc(own).set({ entries: {}, updated_at: "hier" }),
+    );
   });
 
   it("plus de 300 entrées sont refusées", async () => {
@@ -3699,7 +4770,9 @@ describe("planning_refusals — mémoire des refus, au titulaire seul", () => {
 
   it("les autres préférences du titulaire gardent leur règle", async () => {
     await assertSucceeds(
-      db("reader").doc(`users/${READER}/preferences/book_order`).set({ order: ["b1"] }),
+      db("reader")
+        .doc(`users/${READER}/preferences/book_order`)
+        .set({ order: ["b1"] }),
     );
   });
 });
@@ -3737,7 +4810,9 @@ describe("recipes — durées estimées (estimated_times)", () => {
 
   it("le propriétaire ne pose pas d'estimation", async () => {
     await assertFails(
-      db("reader").doc("recipes/draft-reader").update({ estimated_times: estimate }),
+      db("reader")
+        .doc("recipes/draft-reader")
+        .update({ estimated_times: estimate }),
     );
   });
 
@@ -3751,19 +4826,25 @@ describe("recipes — durées estimées (estimated_times)", () => {
 
   it("le propriétaire n'efface pas l'estimation", async () => {
     await assertFails(
-      db("reader").doc("recipes/estimated-reader").update({ estimated_times: deleteField() }),
+      db("reader")
+        .doc("recipes/estimated-reader")
+        .update({ estimated_times: deleteField() }),
     );
   });
 
   it("l'administrateur non plus", async () => {
     await assertFails(
-      db("admin").doc("recipes/estimated-reader").update({ estimated_times: deleteField() }),
+      db("admin")
+        .doc("recipes/estimated-reader")
+        .update({ estimated_times: deleteField() }),
     );
   });
 
   it("une édition qui ne touche pas l'estimation passe", async () => {
     await assertSucceeds(
-      db("reader").doc("recipes/estimated-reader").update({ title: "Gratin dauphinois" }),
+      db("reader")
+        .doc("recipes/estimated-reader")
+        .update({ title: "Gratin dauphinois" }),
     );
   });
 });
@@ -3794,12 +4875,18 @@ describe("recipes — compteurs des reprises automatiques", () => {
 
   for (const field of Object.keys(counters)) {
     it(`l'éditeur créateur ne change pas ${field}`, async () => {
-      await assertFails(db("editor").doc("recipes/retry-editor").update({ [field]: 0 }));
+      await assertFails(
+        db("editor")
+          .doc("recipes/retry-editor")
+          .update({ [field]: 0 }),
+      );
     });
 
     it(`l'éditeur créateur n'efface pas ${field}`, async () => {
       await assertFails(
-        db("editor").doc("recipes/retry-editor").update({ [field]: deleteField() }),
+        db("editor")
+          .doc("recipes/retry-editor")
+          .update({ [field]: deleteField() }),
       );
     });
 
@@ -3807,14 +4894,21 @@ describe("recipes — compteurs des reprises automatiques", () => {
       await assertFails(
         db("editor")
           .doc("recipes/new-retry")
-          .set({ title: "x", created_by: EDITOR, review_status: "draft", [field]: 0 }),
+          .set({
+            title: "x",
+            created_by: EDITOR,
+            review_status: "draft",
+            [field]: 0,
+          }),
       );
     });
   }
 
   it("l'éditeur créateur change le titre seul", async () => {
     await assertSucceeds(
-      db("editor").doc("recipes/retry-editor").update({ title: "Quiche lorraine" }),
+      db("editor")
+        .doc("recipes/retry-editor")
+        .update({ title: "Quiche lorraine" }),
     );
   });
 });
@@ -3848,7 +4942,9 @@ describe("users/{uid}/preferences/explore_filters — forme", () => {
   const path = `users/${READER}/preferences/explore_filters`;
 
   it("une clé inconnue est refusée", async () => {
-    await assertFails(db("reader").doc(path).set({ sort: "title", notes: "texte libre" }));
+    await assertFails(
+      db("reader").doc(path).set({ sort: "title", notes: "texte libre" }),
+    );
   });
 
   it("des sources hors bornes sont refusées", async () => {
@@ -3873,7 +4969,11 @@ describe("users/{uid}/preferences/explore_filters — forme", () => {
   });
 
   it("des filtres qui ne sont pas une carte sont refusés", async () => {
-    await assertFails(db("reader").doc(path).set({ filters: ["plat"] }));
+    await assertFails(
+      db("reader")
+        .doc(path)
+        .set({ filters: ["plat"] }),
+    );
   });
 
   it("l'aller-retour normal est accepté", async () => {
@@ -3891,7 +4991,9 @@ describe("users/{uid}/preferences/explore_filters — forme", () => {
   });
 
   it("un administrateur lit les filtres d'un autre", async () => {
-    await assertSucceeds(db("admin").doc(`users/${OTHER}/preferences/explore_filters`).get());
+    await assertSucceeds(
+      db("admin").doc(`users/${OTHER}/preferences/explore_filters`).get(),
+    );
   });
 });
 
@@ -3899,11 +5001,17 @@ describe("users/{uid}/preferences/explore_filters — bornes", () => {
   const path = `users/${READER}/preferences/explore_filters`;
 
   it("un tri de 33 caractères est refusé", async () => {
-    await assertFails(db("reader").doc(path).set({ sort: "a".repeat(33) }));
+    await assertFails(
+      db("reader")
+        .doc(path)
+        .set({ sort: "a".repeat(33) }),
+    );
   });
 
   it("des filtres à 21 clés sont refusés", async () => {
-    const filters = Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`f${i}`, []]));
+    const filters = Object.fromEntries(
+      Array.from({ length: 21 }, (_, i) => [`f${i}`, []]),
+    );
     await assertFails(db("reader").doc(path).set({ filters }));
   });
 });
@@ -3925,7 +5033,9 @@ describe("users/{uid}/preferences/planning_visibility", () => {
   });
 
   it("la liste d'un seul rôle est acceptée", async () => {
-    await assertSucceeds(db("reader").doc(path).set({ editor: [] }, { merge: true }));
+    await assertSucceeds(
+      db("reader").doc(path).set({ editor: [] }, { merge: true }),
+    );
   });
 
   it("personne d'autre ne lit ni n'écrit la sélection d'un compte", async () => {
@@ -3935,7 +5045,9 @@ describe("users/{uid}/preferences/planning_visibility", () => {
   });
 
   it("une clé inconnue est refusée", async () => {
-    await assertFails(db("reader").doc(path).set({ reader: [], notes: "texte libre" }));
+    await assertFails(
+      db("reader").doc(path).set({ reader: [], notes: "texte libre" }),
+    );
   });
 
   it("une liste de 101 entrées est refusée", async () => {
@@ -3991,7 +5103,10 @@ describe("tickets — lecture et écriture", () => {
 
   it("l'auteur liste ses tickets", async () => {
     await assertSucceeds(
-      db("reader").collection("tickets").where("author_uid", "==", READER).get(),
+      db("reader")
+        .collection("tickets")
+        .where("author_uid", "==", READER)
+        .get(),
     );
   });
 
@@ -4031,14 +5146,20 @@ describe("tickets — lecture et écriture", () => {
   });
 
   it("l'auteur pose seen_by_author_at à l'heure du serveur", async () => {
-    await assertSucceeds(db("reader").doc(MINE).update({ seen_by_author_at: serverTimestamp() }));
+    await assertSucceeds(
+      db("reader").doc(MINE).update({ seen_by_author_at: serverTimestamp() }),
+    );
   });
 
   it("l'auteur ne pose pas seen_by_author_at à une date de son choix", async () => {
     await assertFails(
       db("reader")
         .doc(MINE)
-        .update({ seen_by_author_at: firebase.firestore.Timestamp.fromDate(new Date(2099, 0, 1)) }),
+        .update({
+          seen_by_author_at: firebase.firestore.Timestamp.fromDate(
+            new Date(2099, 0, 1),
+          ),
+        }),
     );
   });
 
@@ -4050,38 +5171,56 @@ describe("tickets — lecture et écriture", () => {
         .doc(MINE)
         .update({ seen_by_author_at: serverTimestamp(), title: "Autre titre" }),
     );
-    await assertFails(db("reader").doc(MINE).update({ screenshot_path: "tickets/x/y.png" }));
+    await assertFails(
+      db("reader").doc(MINE).update({ screenshot_path: "tickets/x/y.png" }),
+    );
   });
 
   it("l'auteur n'écrit pas la PR de livraison de son ticket", async () => {
-    await assertFails(db("reader").doc(MINE).update({ delivered_pr_number: 57 }));
     await assertFails(
-      db("reader")
-        .doc(MINE)
-        .update({ delivered_pr_url: "https://github.com/ChinaFred/KassDalle/pull/57" }),
+      db("reader").doc(MINE).update({ delivered_pr_number: 57 }),
     );
     await assertFails(
       db("reader")
         .doc(MINE)
-        .update({ seen_by_author_at: serverTimestamp(), delivered_pr_number: 57 }),
+        .update({
+          delivered_pr_url: "https://github.com/ChinaFred/KassDalle/pull/57",
+        }),
     );
-    await assertFails(db("reader").doc(MINE).update({ delivered_version: "0.23.80" }));
     await assertFails(
       db("reader")
         .doc(MINE)
-        .update({ seen_by_author_at: serverTimestamp(), delivered_version: "0.23.80" }),
+        .update({
+          seen_by_author_at: serverTimestamp(),
+          delivered_pr_number: 57,
+        }),
+    );
+    await assertFails(
+      db("reader").doc(MINE).update({ delivered_version: "0.23.80" }),
+    );
+    await assertFails(
+      db("reader")
+        .doc(MINE)
+        .update({
+          seen_by_author_at: serverTimestamp(),
+          delivered_version: "0.23.80",
+        }),
     );
   });
 
   it("un autre membre ne pose pas seen_by_author_at", async () => {
     await assertFails(
-      db("otherReader").doc(MINE).update({ seen_by_author_at: serverTimestamp() }),
+      db("otherReader")
+        .doc(MINE)
+        .update({ seen_by_author_at: serverTimestamp() }),
     );
   });
 
   it("un compte révoqué ou en attente ne pose pas seen_by_author_at", async () => {
     await assertFails(
-      db("revoked").doc("tickets/t-revoked").update({ seen_by_author_at: serverTimestamp() }),
+      db("revoked")
+        .doc("tickets/t-revoked")
+        .update({ seen_by_author_at: serverTimestamp() }),
     );
     await assertFails(
       db("revokedStaleToken")
@@ -4089,20 +5228,26 @@ describe("tickets — lecture et écriture", () => {
         .update({ seen_by_author_at: serverTimestamp() }),
     );
     await assertFails(
-      db("pending").doc("tickets/t-pending").update({ seen_by_author_at: serverTimestamp() }),
+      db("pending")
+        .doc("tickets/t-pending")
+        .update({ seen_by_author_at: serverTimestamp() }),
     );
   });
 
   it("personne ne crée ni ne supprime un ticket depuis le client", async () => {
     await assertFails(db("reader").doc("tickets/nouveau").set(ticket(READER)));
-    await assertFails(db("admin").doc("tickets/nouveau").set(ticket(PERSONAS.admin.uid)));
+    await assertFails(
+      db("admin").doc("tickets/nouveau").set(ticket(PERSONAS.admin.uid)),
+    );
     await assertFails(db("reader").doc(MINE).delete());
     await assertFails(db("admin").doc(MINE).delete());
   });
 
   it("l'administrateur ne modifie pas le ticket d'un membre", async () => {
     await assertFails(db("admin").doc(MINE).update({ status: "refused" }));
-    await assertFails(db("admin").doc(MINE).update({ seen_by_author_at: serverTimestamp() }));
+    await assertFails(
+      db("admin").doc(MINE).update({ seen_by_author_at: serverTimestamp() }),
+    );
   });
 
   it("un ticket clos se lit comme les autres : auteur et administrateur seuls", async () => {
@@ -4139,14 +5284,18 @@ describe("tickets/{id}/admin — analyses, lecture administrateur seule", () => 
         github_issue_number: 12,
       },
       [ANALYSIS]: {
-        analyses: [{ comment_id: 1, body: "## Analyse\n\nCause.", truncated: false }],
+        analyses: [
+          { comment_id: 1, body: "## Analyse\n\nCause.", truncated: false },
+        ],
       },
     });
   });
 
   it("l'administrateur lit les analyses", async () => {
     await assertSucceeds(db("admin").doc(ANALYSIS).get());
-    await assertSucceeds(db("admin").collection("tickets/t-reader/admin").get());
+    await assertSucceeds(
+      db("admin").collection("tickets/t-reader/admin").get(),
+    );
   });
 
   it("l'auteur du ticket, un éditeur et un autre lecteur ne lisent pas les analyses", async () => {
@@ -4163,7 +5312,9 @@ describe("tickets/{id}/admin — analyses, lecture administrateur seule", () => 
       await assertFails(db(persona).doc(ANALYSIS).set({ analyses: [] }));
       await assertFails(db(persona).doc(ANALYSIS).update({ analyses: [] }));
       await assertFails(db(persona).doc(ANALYSIS).delete());
-      await assertFails(db(persona).doc("tickets/t-reader/admin/autre").set({ x: 1 }));
+      await assertFails(
+        db(persona).doc("tickets/t-reader/admin/autre").set({ x: 1 }),
+      );
     });
   }
 });
@@ -4232,7 +5383,9 @@ describe("tickets/{id}/admin/delivery — état « PR prête », lecture adminis
         eligible_pr_count: 1,
         pr_number: 57,
         ready: true,
-        reports: [{ kind: "blocked", body: "## Livraison — blocage\n\nConflit." }],
+        reports: [
+          { kind: "blocked", body: "## Livraison — blocage\n\nConflit." },
+        ],
       },
     });
   });
@@ -4276,10 +5429,19 @@ describe("ticket_quotas — compteur serveur seul", () => {
     });
   });
 
-  for (const persona of ["admin", "editor", "reader", "pending", "revoked", "anonymous"]) {
+  for (const persona of [
+    "admin",
+    "editor",
+    "reader",
+    "pending",
+    "revoked",
+    "anonymous",
+  ]) {
     it(`${persona} ne lit ni n'écrit les compteurs`, async () => {
       await assertFails(db(persona).doc(DOC).get());
-      await assertFails(db(persona).doc("ticket_quotas/_global_20261013").get());
+      await assertFails(
+        db(persona).doc("ticket_quotas/_global_20261013").get(),
+      );
       await assertFails(db(persona).collection("ticket_quotas").get());
       await assertFails(db(persona).doc(DOC).update({ count: 0 }));
       await assertFails(db(persona).doc(DOC).delete());
@@ -4306,14 +5468,20 @@ describe("app_config — tickets et tickets_status", () => {
   });
 
   it("un membre n'écrit pas les plafonds", async () => {
-    await assertFails(db("reader").doc("app_config/tickets").update({ per_member_per_day: 99 }));
+    await assertFails(
+      db("reader").doc("app_config/tickets").update({ per_member_per_day: 99 }),
+    );
   });
 
   it("l'administrateur écrit les plafonds des tickets", async () => {
     await assertSucceeds(
-      db("admin").doc("app_config/tickets").set({ per_member_per_day: 3, global_per_day: 20 }),
+      db("admin")
+        .doc("app_config/tickets")
+        .set({ per_member_per_day: 3, global_per_day: 20 }),
     );
-    await assertSucceeds(db("admin").doc("app_config/tickets").update({ global_per_day: 40 }));
+    await assertSucceeds(
+      db("admin").doc("app_config/tickets").update({ global_per_day: 40 }),
+    );
   });
 
   it("seul l'administrateur lit l'état du jeton GitHub", async () => {
@@ -4324,7 +5492,9 @@ describe("app_config — tickets et tickets_status", () => {
 
   it("personne n'écrit l'état du jeton depuis le client, pas même l'administrateur", async () => {
     await assertFails(
-      db("admin").doc("app_config/tickets_status").set({ token_invalid_since: null }),
+      db("admin")
+        .doc("app_config/tickets_status")
+        .set({ token_invalid_since: null }),
     );
   });
 
@@ -4332,7 +5502,10 @@ describe("app_config — tickets et tickets_status", () => {
     await assertFails(
       db("admin")
         .doc("app_config/tickets_status")
-        .set({ launches_today: { day: "20261014", count: 0 } }, { merge: true }),
+        .set(
+          { launches_today: { day: "20261014", count: 0 } },
+          { merge: true },
+        ),
     );
     await assertFails(
       db("admin")
@@ -4352,27 +5525,53 @@ describe("users/{uid}/devices — jetons de notification des administrateurs", (
   });
 
   it("un administrateur enregistre son propre appareil", async () => {
-    await assertSucceeds(db("admin").doc(`users/${ADMIN}/devices/${TOKEN}`).set(doc()));
+    await assertSucceeds(
+      db("admin").doc(`users/${ADMIN}/devices/${TOKEN}`).set(doc()),
+    );
   });
 
-  for (const persona of ["editor", "reader", "pending", "revoked", "anonymous"]) {
+  for (const persona of [
+    "editor",
+    "reader",
+    "pending",
+    "revoked",
+    "anonymous",
+  ]) {
     it(`${persona} n'enregistre aucun appareil`, async () => {
       const uid = persona === "anonymous" ? "x" : PERSONAS[persona].uid;
-      await assertFails(db(persona).doc(`users/${uid}/devices/${TOKEN}`).set(doc()));
+      await assertFails(
+        db(persona).doc(`users/${uid}/devices/${TOKEN}`).set(doc()),
+      );
     });
   }
 
   it("un administrateur n'écrit pas sur le compte d'un autre", async () => {
-    await assertFails(db("admin").doc(`users/${READER}/devices/${TOKEN}`).set(doc()));
+    await assertFails(
+      db("admin").doc(`users/${READER}/devices/${TOKEN}`).set(doc()),
+    );
   });
 
   it("la forme est bornée : jeton égal à l'identifiant, plateforme android, champs connus", async () => {
     const path = `users/${ADMIN}/devices/${TOKEN}`;
-    await assertFails(db("admin").doc(path).set({ ...doc(), token: "autre" }));
-    await assertFails(db("admin").doc(path).set({ ...doc(), platform: "ios" }));
-    await assertFails(db("admin").doc(path).set({ ...doc(), extra: 1 }));
     await assertFails(
-      db("admin").doc(path).set({ ...doc(), updated_at: "hier" }),
+      db("admin")
+        .doc(path)
+        .set({ ...doc(), token: "autre" }),
+    );
+    await assertFails(
+      db("admin")
+        .doc(path)
+        .set({ ...doc(), platform: "ios" }),
+    );
+    await assertFails(
+      db("admin")
+        .doc(path)
+        .set({ ...doc(), extra: 1 }),
+    );
+    await assertFails(
+      db("admin")
+        .doc(path)
+        .set({ ...doc(), updated_at: "hier" }),
     );
   });
 
@@ -4380,24 +5579,34 @@ describe("users/{uid}/devices — jetons de notification des administrateurs", (
     await seedDocs(env, { [`users/${ADMIN}/devices/${TOKEN}`]: doc() });
     await assertFails(db("admin").doc(`users/${ADMIN}/devices/${TOKEN}`).get());
     await assertFails(db("admin").collection(`users/${ADMIN}/devices`).get());
-    await assertFails(db("reader").doc(`users/${ADMIN}/devices/${TOKEN}`).get());
+    await assertFails(
+      db("reader").doc(`users/${ADMIN}/devices/${TOKEN}`).get(),
+    );
   });
 
   it("le titulaire supprime son jeton, un autre compte non", async () => {
     await seedDocs(env, { [`users/${ADMIN}/devices/${TOKEN}`]: doc() });
-    await assertFails(db("reader").doc(`users/${ADMIN}/devices/${TOKEN}`).delete());
-    await assertSucceeds(db("admin").doc(`users/${ADMIN}/devices/${TOKEN}`).delete());
+    await assertFails(
+      db("reader").doc(`users/${ADMIN}/devices/${TOKEN}`).delete(),
+    );
+    await assertSucceeds(
+      db("admin").doc(`users/${ADMIN}/devices/${TOKEN}`).delete(),
+    );
   });
 });
 
 describe("app_config/apk_notification — serveur seul", () => {
   beforeEach(async () => {
-    await seedDocs(env, { "app_config/apk_notification": { key: "0.23.80+427" } });
+    await seedDocs(env, {
+      "app_config/apk_notification": { key: "0.23.80+427" },
+    });
   });
 
   it("l'administrateur lit mais n'écrit pas la dernière version notifiée", async () => {
     await assertSucceeds(db("admin").doc("app_config/apk_notification").get());
-    await assertFails(db("admin").doc("app_config/apk_notification").set({ key: "x" }));
+    await assertFails(
+      db("admin").doc("app_config/apk_notification").set({ key: "x" }),
+    );
     await assertFails(db("admin").doc("app_config/apk_notification").delete());
   });
 

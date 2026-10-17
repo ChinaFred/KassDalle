@@ -14,6 +14,8 @@ import '../../../processing/presentation/processing_trail_row.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../domain/recipe.dart';
 import '../url_import/recipe_source_link.dart' show openExternalPage;
+import '../../domain/duplicate_reference.dart';
+import 'duplicate_widgets.dart';
 import '../../../../core/theme/app_icon_size.dart';
 
 // ── Mode de filtre (public car utilisé par le screen) ─────────────────────────
@@ -196,13 +198,55 @@ class WorkQueueSectionHeader extends ConsumerWidget {
   }
 }
 
+// ── Compteur des doublons possibles ───────────────────────────────────────────
+
+/// « 2 doublons possibles à trancher », en tête de la file, dans la teinte
+/// des lignes « Doublon possible ». Ces lignes ne disparaissent jamais
+/// d'elles-mêmes : le compteur dit qu'il reste des décisions à prendre.
+class WorkQueueDuplicatesCounter extends StatelessWidget {
+  const WorkQueueDuplicatesCounter({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.tertiaryContainer.withValues(alpha: 0.35),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              Icons.content_copy_outlined,
+              size: AppIconSize.inline,
+              color: scheme.tertiary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: scheme.tertiary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Barre d'actions d'une sélection ───────────────────────────────────────────
 
 /// Les actions d'une sélection, en bas de l'écran, avec le nombre d'éléments
 /// que chacune touche.
 ///
 /// « Valider » ne concerne que les brouillons, « Relancer » que les traitements
-/// en erreur ou rejetés, « Supprimer » tout ce qui est coché. Un compte nul
+/// en erreur ou rejetés, « Supprimer » tout ce qui est coché. Un traitement
+/// « Doublon possible » n'entre que dans « Supprimer » : il n'est pas un
+/// brouillon, et le relancer referait la détection. Un compte nul
 /// masque l'action, sauf « Valider » : il reste affiché à zéro quand des
 /// brouillons sont cochés mais qu'aucun n'est admis, et l'appui dit pourquoi.
 /// Une sélection mêlée garde ainsi chaque action disponible, sur la part qui
@@ -211,6 +255,11 @@ class WorkQueueSectionHeader extends ConsumerWidget {
 class WorkQueueSelectionBar extends StatelessWidget {
   /// Nul : aucun brouillon coché, l'action est masquée.
   final int? validateCount;
+
+  /// Faux quand des brouillons marqués « Doublon possible » sont cochés : leur
+  /// marque n'est relue qu'à l'appui, le nombre à valider n'est pas connu
+  /// avant. Le bouton s'affiche alors « Valider », sans nombre.
+  final bool showValidateCount;
 
   /// Nul : aucun traitement relançable coché, l'action est masquée.
   final int? retryCount;
@@ -222,6 +271,7 @@ class WorkQueueSelectionBar extends StatelessWidget {
   const WorkQueueSelectionBar({
     super.key,
     required this.validateCount,
+    this.showValidateCount = true,
     required this.retryCount,
     required this.deleteCount,
     required this.onValidate,
@@ -261,7 +311,9 @@ class WorkQueueSelectionBar extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onValidate,
                   icon: const Icon(Icons.check_circle_outline),
-                  label: Text('Valider ($validateCount)'),
+                  label: Text(
+                    showValidateCount ? 'Valider ($validateCount)' : 'Valider',
+                  ),
                 ),
             ],
           ),
@@ -324,6 +376,15 @@ class QueueJobTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onCancel;
 
+  /// « Ce n'est pas un doublon », sur un job `duplicate`. `null` pour qui ne
+  /// peut pas reprendre le job : les règles ne l'admettent qu'au propriétaire
+  /// éditeur.
+  final VoidCallback? onNotDuplicate;
+
+  /// Vrai pendant l'écriture de la reprise : « Ce n'est pas un doublon »
+  /// reste visible, désactivé, contre un second appui.
+  final bool notDuplicateBusy;
+
   const QueueJobTile({
     super.key,
     required this.job,
@@ -335,6 +396,8 @@ class QueueJobTile extends StatelessWidget {
     required this.onDelete,
     this.isAdmin = false,
     this.onCancel,
+    this.onNotDuplicate,
+    this.notDuplicateBusy = false,
   });
 
   @override
@@ -353,6 +416,7 @@ class QueueJobTile extends StatelessWidget {
 
     final enTraitement =
         job.status == ProcessingJobStatus.processing && job.currentStep != null;
+    final doublon = job.isDuplicate;
 
     final tuile = ListTile(
       selected: isSelected,
@@ -362,10 +426,14 @@ class QueueJobTile extends StatelessWidget {
       leading: isSelecting
           ? Checkbox(value: isSelected, onChanged: (_) => onTap())
           : CircleAvatar(
-              backgroundColor: theme.colorScheme.secondaryContainer,
+              backgroundColor: doublon
+                  ? theme.colorScheme.tertiaryContainer
+                  : theme.colorScheme.secondaryContainer,
               child: Icon(
                 _iconForType(job.type),
-                color: theme.colorScheme.onSecondaryContainer,
+                color: doublon
+                    ? theme.colorScheme.onTertiaryContainer
+                    : theme.colorScheme.onSecondaryContainer,
               ),
             ),
       // Le titre lu par l'IA dès que le serveur l'a posé, le nom de fichier
@@ -401,7 +469,15 @@ class QueueJobTile extends StatelessWidget {
               ),
             ],
           ),
-          if (urlFailure != null)
+          if (doublon)
+            _DuplicateJobPanel(
+              job: job,
+              showActions: !isSelecting,
+              onNotDuplicate: onNotDuplicate,
+              notDuplicateBusy: notDuplicateBusy,
+              onDelete: onDelete,
+            )
+          else if (urlFailure != null)
             UrlImportFailurePanel(
               job: job,
               failure: urlFailure,
@@ -590,6 +666,9 @@ class QueueJobTile extends StatelessWidget {
         );
       case ProcessingJobStatus.done:
         return null;
+      // Ses deux actions sont dans son panneau, sous la liste des doublons.
+      case ProcessingJobStatus.duplicate:
+        return null;
     }
   }
 
@@ -727,6 +806,29 @@ class QueueDraftTile extends StatelessWidget {
                 ),
               ],
             ),
+          // Brouillon d'un import de livre entier, déjà présent dans le
+          // livre : la validation en lot l'écarte, la relecture le montre.
+          if (recipe.duplicateOf != null)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.content_copy_outlined,
+                  size: AppIconSize.badge,
+                  color: theme.colorScheme.tertiary,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    recipe.duplicateOf!.bannerLabel,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.tertiary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
       trailing: isSelecting
@@ -750,6 +852,10 @@ class QueueDraftTile extends StatelessWidget {
                     onSelected: (action) async {
                       if (action == _DraftMenuAction.validate) {
                         onValidate?.call();
+                      }
+                      if (action == _DraftMenuAction.review &&
+                          context.mounted) {
+                        context.go('/drafts/${recipe.id}');
                       }
                       if (action == _DraftMenuAction.delete) {
                         onDelete?.call();
@@ -782,7 +888,20 @@ class QueueDraftTile extends StatelessWidget {
                       }
                     },
                     itemBuilder: (_) => [
-                      if (onValidate != null)
+                      // Un doublon possible se tranche à la relecture, où le
+                      // bandeau montre la recette existante : « Valider »
+                      // depuis la file l'aurait laissé de côté sans rien
+                      // montrer.
+                      if (onValidate != null && recipe.duplicateOf != null)
+                        const PopupMenuItem(
+                          value: _DraftMenuAction.review,
+                          child: ListTile(
+                            leading: Icon(Icons.rate_review_outlined),
+                            title: Text('Relire'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        )
+                      else if (onValidate != null)
                         const PopupMenuItem(
                           value: _DraftMenuAction.validate,
                           child: ListTile(
@@ -837,7 +956,7 @@ class QueueDraftTile extends StatelessWidget {
   }
 }
 
-enum _DraftMenuAction { validate, delete, viewSource, downloadSource }
+enum _DraftMenuAction { validate, review, delete, viewSource, downloadSource }
 
 // ── Chip statut traitement ────────────────────────────────────────────────────
 
@@ -848,7 +967,8 @@ enum _DraftMenuAction { validate, delete, viewSource, downloadSource }
 /// puce « Traitement » qu'il faut lire. Un traitement en file ou en cours
 /// porte donc la teinte secondaire sur toute sa ligne, avec un liseré à
 /// gauche ; un traitement en erreur ou rejeté porte la teinte d'erreur ; un
-/// brouillon garde le fond de la liste. La même teinte secondaire sert à la
+/// doublon possible, qui attend une décision et n'est ni en cours ni en
+/// échec, porte la teinte tertiaire ; un brouillon garde le fond de la liste. La même teinte secondaire sert à la
 /// puce et à l'icône du traitement : une seule couleur veut dire « en cours ».
 class _TeinteDeTraitement extends StatelessWidget {
   const _TeinteDeTraitement({required this.status, required this.child});
@@ -867,6 +987,10 @@ class _TeinteDeTraitement extends StatelessWidget {
       ProcessingJobStatus.error || ProcessingJobStatus.rejected => (
         scheme.errorContainer.withValues(alpha: 0.35),
         scheme.error,
+      ),
+      ProcessingJobStatus.duplicate => (
+        scheme.tertiaryContainer.withValues(alpha: 0.35),
+        scheme.tertiary,
       ),
       ProcessingJobStatus.done => (Colors.transparent, Colors.transparent),
     };
@@ -919,6 +1043,11 @@ class _JobStatusChip extends StatelessWidget {
         theme.colorScheme.error,
         theme.colorScheme.onError,
       ),
+      ProcessingJobStatus.duplicate => (
+        'Doublon possible',
+        theme.colorScheme.tertiaryContainer,
+        theme.colorScheme.onTertiaryContainer,
+      ),
     };
     return Chip(
       label: Text(label),
@@ -962,6 +1091,102 @@ class _DraftStatusChip extends StatelessWidget {
       labelStyle: TextStyle(color: fg, fontSize: 11),
       padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+// ── Doublon possible ──────────────────────────────────────────────────────────
+
+/// Les recettes retenues comme doublons possibles, et les deux décisions.
+///
+/// Chaque recette dit ce qui existe déjà : la recette du livre, avec un lien
+/// qui l'ouvre, ou l'import plus ancien encore en cours. En mode sélection,
+/// les boutons sont masqués et les liens ne naviguent pas.
+class _DuplicateJobPanel extends StatelessWidget {
+  const _DuplicateJobPanel({
+    required this.job,
+    required this.showActions,
+    required this.onNotDuplicate,
+    required this.onDelete,
+    this.notDuplicateBusy = false,
+  });
+
+  final ProcessingJob job;
+  final bool showActions;
+  final VoidCallback? onNotDuplicate;
+  final bool notDuplicateBusy;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Une liste vide (donnée historique ou mal formée) ne doit pas
+        // laisser une décision à prendre sans dire laquelle.
+        if (job.duplicates.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Une recette de cette page semble déjà dans le livre.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        for (final entry in job.duplicates) ...[
+          const SizedBox(height: 4),
+          if (entry.titre.isNotEmpty)
+            Text(
+              entry.titre,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          DuplicateReferenceLink(
+            recipeId: entry.recipeId,
+            jobId: entry.jobId,
+            existingTitre: entry.existingTitre,
+            // Une référence-recette garde le titre et la page écrits par le
+            // serveur ; une référence-import prend ceux de la recette créée
+            // depuis.
+            linkLabel: (recipe) => entry.recipeId != null
+                ? entry.referenceLabel
+                : duplicateFoundLabel(recipe),
+            plainLabel: entry.recipeId != null
+                ? entry.referenceLabel
+                : 'Déjà dans le livre : ${entry.existingTitre}',
+            pendingLabel: entry.referenceLabel,
+            enabled: showActions,
+          ),
+        ],
+        if (showActions)
+          Wrap(
+            spacing: 4,
+            children: [
+              if (onNotDuplicate != null)
+                TextButton.icon(
+                  onPressed: notDuplicateBusy ? null : onNotDuplicate,
+                  icon: const Icon(
+                    Icons.playlist_add_check,
+                    size: AppIconSize.inline,
+                  ),
+                  label: const Text('Ce n\'est pas un doublon'),
+                ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                ),
+                onPressed: onDelete,
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: AppIconSize.inline,
+                ),
+                label: const Text('Supprimer'),
+              ),
+            ],
+          ),
+      ],
     );
   }
 }

@@ -20,13 +20,31 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
-### v0.23.96 — fonctionnel
+### v0.23.98 — fonctionnel
 
-Admin › Tickets des membres : nouvelle décision « Clore », pour un ticket Reçu, Analysé, Validé ou En cours, de tout type. L'administrateur écrit un commentaire (5 à 4 000 caractères, sans adresse e-mail) ; il est publié sur GitHub en « Réponse : … », l'Issue est fermée et le ticket passe à « Clos ». Le membre lit le commentaire dans « Mes tickets » (« Ce ticket est clos. », « L'administrateur vous a répondu ci-dessous. »). « Clore » est masqué pendant une livraison de ce ticket. Un ticket Clos est final : plus de validation, de refus, de réponse ni de lancement. Le filtre de statut de l'administrateur gagne la puce « Clos » (neuf statuts). Le type « Question » n'est plus proposé à la création d'un ticket (« Bug », « Évolution », « Nouvelle fonctionnalité », aucun présélectionné) et le serveur le refuse ; les tickets Question déjà créés restent lisibles et filtrables. L'état vide de « Mes tickets » dit « Un bug, une idée ? Envoyez-les à l'administrateur. ». Les versions installées avant celle-ci ne connaissent pas le statut Clos et affichent « Reçu » pour un ticket clos, jusqu'à leur mise à jour.
+Admin › Tickets des membres : nouvelle décision « Clore », pour un ticket Reçu, Analysé, Validé ou En cours, de tout type. L'administrateur écrit un commentaire (5 à 4 000 caractères, sans adresse e-mail) ; il est publié sur GitHub en « Réponse : … », l'Issue est fermée et le ticket passe à « Clos ». Le membre lit le commentaire dans « Mes tickets » (« Ce ticket est clos. », « L'administrateur vous a répondu ci-dessous. »). « Clore » est masqué pendant une livraison de ce ticket. Un ticket Clos est final : plus de validation, de refus, de réponse ni de lancement. Le filtre de statut de l'administrateur gagne la puce « Clos » (neuf statuts). Le type « Question » n'est plus proposé à la création d'un ticket (« Bug », présélectionné, « Évolution », « Nouvelle fonctionnalité ») et le serveur le refuse ; les tickets Question déjà créés restent lisibles et filtrables. L'état vide de « Mes tickets » dit « Un bug, une idée ? Envoyez-les à l'administrateur. ». Les versions installées avant celle-ci ne connaissent pas le statut Clos et affichent « Reçu » pour un ticket clos, jusqu'à leur mise à jour.
 
-### v0.23.96 — technique
+### v0.23.98 — technique
 
 Callable `closeTicket` (`tickets/decisions.ts`, `closeTicketDecision`), calquée sur `refuseTicket` : bail `decision_lease_until`, refus pendant une livraison de ce ticket (`launchRunState` livraison ou verrou `delivery_running` sur ce ticket), commentaire publié sauf s'il l'est déjà (`sameReply`), étiquette `statut:clos` puis `closeIssueCompleted` (`github.ts`), écriture de `closed` et `reply_text`. Échecs : `close_published_close_failed` (`aborted`), `ticket_not_updated` (`internal`), `issue_closed`. Nouveau statut final `closed` dans `TICKET_STATUSES`, `FINAL_STATUSES` et `STATUS_RANK` ; `statusFromIssue` lit une Issue fermée portant `statut:clos` comme `closed`, quelle que soit la raison de fermeture. `closePrecondition` et `ticketDecisions.canClose` (`rules.ts`), `ticketCanClose` et `AdminTicketDecisions.canClose` (`ticket.dart`) : logique dupliquée Dart ↔ TypeScript, cas ajoutés d'abord à `ticket_decisions.json` (`can_close` par ligne de `cases`, lignes `closed`, section `close_cases`, `close_partial_reason`). `readCloseComment` réutilise les contrôles de `readAnswerText` (champ `comment`). `CREATABLE_TICKET_TYPES` (serveur) et `creatableTicketTypes` (client) séparent les types créables des types connus : `submitTicket` refuse `question`. Aucune règle Firestore ni Storage ne change ; deux tests s'ajoutent dans `rules-tests` (ticket `closed` lu par son auteur et l'administrateur seulement, non modifiable par l'auteur). Étiquette `statut:clos` créée par GitHub à sa première pose : sa couleur se donne à la main. Documents mis à jour : FunctionalRequirements (§5.13, §8.5), TechnicalRequirements, cas d'utilisation, architecture, diagrammes de séquence et de classes, handbook. Le tableau « Logique dupliquée » de `CLAUDE.md` (ligne `ticket_decisions.json`) n'est pas mis à jour dans ce changement : il liste encore ni `closePrecondition` ni `kTicketClosePartialReason`. Aucun backfill, aucun poste d'IA, aucune nouvelle dépendance.
+
+### v0.23.97 — fonctionnel
+
+Doublons à l'import. Un scan de page dont la recette a le même titre qu'une recette du livre (brouillon ou validée), ou qu'un import du même livre encore en cours, s'arrête après la transcription au statut « Doublon possible ». Deux numéros de page connus et différents écartent le doublon. La file des brouillons montre la recette existante en lien, et propose « Ce n'est pas un doublon » (le traitement reprend sans refaire la transcription) ou « Supprimer ». L'import d'un livre entier marque les recettes déjà présentes comme brouillons « Doublon possible » ; la validation en lot les saute, la relecture permet de les valider. À l'import d'un fichier en nouveau livre, un livre déjà dans la bibliothèque (même titre et auteur compatible, ou même fichier) est signalé, avec « Importer dans ce livre » ou « Créer un nouveau livre quand même ». Après le déploiement, lancer une fois Admin › Backfills › « Clé de titre des recettes » pour que les recettes existantes servent de référence.
+
+### v0.23.97 — technique
+
+Détection sans appel de modèle (`pipeline/duplicateDetection.ts`) : `titre_key` sur les recettes (posé à l'import, recalculé par `onRecipeWritten`, repris par le backfill ponctuel `recipe_title_keys`, `backfillTitleKeysFn`), `titre_keys` / `titre_key_pages` / `titre_key_titres` / `duplicate_checked` sur les jobs, deux index composites. Nouveau statut de job `duplicate` avec `duplicates`, `pending_items`, reprise par `duplicate_override` écrit par le client. `duplicate_of` sur les brouillons d'un import de livre, effaçable seulement. `books.source_file_sha256` et `existingBook` dans la réponse d'`analyzeBookFileFn`. Règles : création de job sans champ serveur et en file, relance limitée à `queued`/`error`, reprise et suppression d'un job `duplicate` par son propriétaire éditeur. Une écriture qui ne change que `titre_key` ne relance aucun traitement de `onRecipeWritten`.
+
+### v0.23.96 — fonctionnel
+
+#### Signaler ou proposer (`/tickets/new`)
+
+- Le type « Bug » est sélectionné à l'ouverture du formulaire, avec son aide de description.
+  Le membre peut en choisir un autre avant l'envoi. Demandé par le ticket #127 : la plupart des
+  tickets sont des bugs, et le choix du type était une étape de plus.
+- Le message « Choisissez le type de ticket. » n'apparaît plus dans le parcours normal ;
+  `validateTicketForm` garde ce contrôle.
 
 ### v0.23.95 — fonctionnel
 

@@ -676,6 +676,9 @@ flowchart LR
     c7(["Contrôler l'adresse, le plafond du jour&lt;br/&gt;et le doublon dans mes recettes"])
     c8(["Lire les données schema.org/Recipe&lt;br/&gt;de la page, sans IA"])
     c9(["Modérer la photo de la page"])
+    b25(["Trancher un doublon possible&lt;br/&gt;« Ce n'est pas un doublon » ou « Supprimer »"])
+    c10(["Comparer aux recettes du livre&lt;br/&gt;titre et page, sans IA"])
+    c11(["Repérer un livre déjà en bibliothèque&lt;br/&gt;titre et auteur, ou même fichier"])
   end
 
   EDI --- b1
@@ -702,6 +705,11 @@ flowchart LR
   b15 -.->|"inclut"| c4
   b15 -.->|"une tranche = un import"| c2
   b16 -.->|"relancer relève le plafond"| c4
+  c2 -.->|"inclut, livre cible"| c10
+  c10 -.->|"page scannée déjà dans le livre : en attente"| b25
+  EDI --- b25
+  b25 -.->|"Ce n'est pas un doublon : reprise au balisage"| c2
+  b15 -.->|"étend : mode nouveau livre"| c11
   b2 -.->|"à l'écriture, si aucun rôle"| c5
   b3 -.->|"à l'écriture, si aucun rôle"| c5
   b4 -.->|"à l'écriture, si aucun rôle"| c5
@@ -797,6 +805,21 @@ flowchart LR
         l'utilisateur ouvre la page et en colle le texte.
         <b>Un lot ne valide pas ce que personne n'a relu</b> : un brouillon avec une réserve de
         fidélité, ou vide, reste de côté.
+        <b>Trancher un doublon possible.</b> Après la lecture d'une page rattachée à un livre, le
+        serveur compare chaque titre lu aux recettes du livre, de tout auteur, et aux imports du
+        même compte sur ce livre encore en cours : même titre sans casse, accents ni
+        ponctuation, pages compatibles. Aucun appel d'IA. Une page scannée en double s'arrête en
+        « Doublon possible » dans la file, avec la recette existante en lien. Son propriétaire,
+        s'il est <code>editor</code> ou <code>admin</code>, choisit « Ce n'est pas un doublon »
+        (le traitement reprend au balisage, sans relire la page) ou « Supprimer ». Un
+        administrateur supprime aussi la ligne d'un autre ; l'écran ne lui propose pas de la
+        reprendre, que les règles lui admettent comme toute écriture d'administrateur. Pour un
+        autre compte, les règles n'admettent la reprise que depuis ce statut et par le
+        propriétaire éditeur (<code>isDuplicateResume</code>). Une recette d'un livre entier déjà présente devient un
+        brouillon marqué : la validation en lot l'écarte, la relecture le valide et efface la
+        marque. En mode nouveau livre, l'écran de confirmation d'un import de livre signale un
+        livre déjà en bibliothèque et propose « Importer dans ce livre » ou « Créer un nouveau
+        livre quand même ».
         <span class="expect">
           <b>Le groupe familial a quitté ce diagramme</b> : le créer, y inviter, accepter
           une invitation et le quitter sont ouverts au <code>reader</code>, qui peut aussi en être le propriétaire. Il figure

@@ -43,7 +43,7 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
   final _titleFocus = FocusNode();
   final _descriptionFocus = FocusNode();
 
-  TicketType? _type;
+  TicketType _type = TicketType.bug;
   late String _screen = ticketScreenValue(widget.initialScreen);
 
   /// Image de l'écran quitté, prise par le shell. Jointe seulement si la
@@ -254,7 +254,7 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
           .read(ticketRepositoryProvider)
           .submit(
             uid: user.uid,
-            type: _type!,
+            type: _type,
             title: _titleCtrl.text,
             description: _descriptionCtrl.text,
             screen: _screen,
@@ -365,10 +365,7 @@ class _TicketFormScreenState extends ConsumerState<TicketFormScreen> {
     );
 
     final side = [
-      if (isWide && _type != null) ...[
-        _TypeHelp(type: _type!),
-        const SizedBox(height: 16),
-      ],
+      if (isWide) ...[_TypeHelp(type: _type), const SizedBox(height: 16)],
       const _PublicWarning(),
       const SizedBox(height: 16),
       const _SendInfo(),

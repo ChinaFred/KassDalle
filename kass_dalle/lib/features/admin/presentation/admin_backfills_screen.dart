@@ -183,6 +183,12 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'listé dans « À revoir ». On peut relancer.\n\n'
             'Aucun appel d\'IA. Deux à trois appels GitHub par ticket, cent '
             'tickets par passage.';
+      case BackfillKeys.recipeTitleKeys:
+        return 'Pose sur chaque recette la clé de titre (titre en minuscules, '
+            'sans accents ni ponctuation) que l\'import compare pour signaler '
+            'une page déjà présente dans le livre. Une recette déjà à jour '
+            'n\'est pas réécrite ; on peut relancer.\n\n'
+            'Aucun appel d\'IA. Deux mille recettes au plus par passage.';
       default:
         return '';
     }
@@ -359,6 +365,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreur GitHub : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.recipeTitleKeys:
+        final r = await _repo.backfillTitleKeys();
+        return _fromCounts(
+          r,
+          'Recettes : examinées=${r['examinees']}, clés posées=${r['posees']}, '
+          'déjà à jour=${r['identiques']}, échecs=${r['echouees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreurs d\'écriture : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
       default:
@@ -1019,6 +1036,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
     BackfillKeys.ticketAnalyses: Icons.manage_search,
     BackfillKeys.ticketDeliveredPr: Icons.merge_type,
+    BackfillKeys.recipeTitleKeys: Icons.content_copy_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

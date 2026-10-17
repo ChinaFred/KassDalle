@@ -25,6 +25,7 @@ class BookImportAnalysis {
     this.maxBudgetPerWindowUsd,
     this.budgetUsdToEur,
     this.usdToEur,
+    this.existingBook,
   });
 
   /// `pdf`, `epub` ou `docx`.
@@ -82,6 +83,10 @@ class BookImportAnalysis {
   /// Taux dollar → euro relevé sur la facturation, ou null.
   final double? usdToEur;
 
+  /// Un livre de l'utilisateur qui semble être celui-ci, ou null. L'écran
+  /// n'en tient compte qu'en mode « nouveau livre ».
+  final ExistingBookMatch? existingBook;
+
   factory BookImportAnalysis.fromMap(Map<String, dynamic> map) {
     return BookImportAnalysis(
       kind: map['kind'] as String? ?? 'pdf',
@@ -100,6 +105,7 @@ class BookImportAnalysis {
       maxBudgetPerWindowUsd: (map['maxBudgetPerWindowUsd'] as num?)?.toDouble(),
       budgetUsdToEur: (map['budgetUsdToEur'] as num?)?.toDouble(),
       usdToEur: (map['usdToEur'] as num?)?.toDouble(),
+      existingBook: ExistingBookMatch.fromMap(map['existingBook']),
     );
   }
 
@@ -118,6 +124,69 @@ class BookImportAnalysis {
   String get sizeLabel {
     final mb = sizeBytes / (1024 * 1024);
     return '${NumberFormat('0.#', 'fr_FR').format(mb)} Mo';
+  }
+}
+
+/// Le livre déjà en bibliothèque que le serveur a rapproché du fichier lu
+/// (`existingBook` de `analyzeBookFileFn`).
+///
+/// [sameFile] : même empreinte SHA-256 qu'un livre importé depuis un fichier.
+/// [sameTitle] : titre normalisé égal et auteurs compatibles.
+class ExistingBookMatch {
+  const ExistingBookMatch({
+    required this.id,
+    required this.titre,
+    this.auteur,
+    this.sameFile = false,
+    this.sameTitle = false,
+    this.importedAt,
+  });
+
+  final String id;
+  final String titre;
+  final String? auteur;
+  final bool sameFile;
+  final bool sameTitle;
+
+  /// Date du premier import du même fichier, quand le serveur la connaît.
+  final DateTime? importedAt;
+
+  /// Lecture tolérante : absent, nul, ou sans identifiant vaut « aucun ».
+  static ExistingBookMatch? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['id'];
+    if (id is! String || id.isEmpty) return null;
+    final titre = raw['titre'];
+    final auteur = raw['auteur'];
+    final importedAt = raw['importedAt'];
+    return ExistingBookMatch(
+      id: id,
+      titre: titre is String ? titre : '',
+      auteur: auteur is String && auteur.trim().isNotEmpty ? auteur : null,
+      sameFile: raw['sameFile'] == true,
+      sameTitle: raw['sameTitle'] == true,
+      importedAt: importedAt is String
+          ? DateTime.tryParse(importedAt)?.toLocal()
+          : null,
+    );
+  }
+
+  /// « Ce livre semble déjà dans votre bibliothèque : Le Riz Jaune, Thaï
+  /// Liou. », sans l'auteur quand il est inconnu.
+  String get warningLabel {
+    final who = auteur == null ? titre : '$titre, $auteur';
+    return 'Ce livre semble déjà dans votre bibliothèque : $who.';
+  }
+
+  /// « Ce fichier a déjà été importé le 12/03/2026. » quand l'empreinte
+  /// correspond, null sinon. Sans date connue, la phrase s'arrête au verbe.
+  String? get sameFileLabel {
+    if (!sameFile) return null;
+    final date = importedAt;
+    return date == null
+        ? 'Ce fichier a déjà été importé.'
+        : 'Ce fichier a déjà été importé le '
+              '${DateFormat('dd/MM/yyyy').format(date)}.';
   }
 }
 

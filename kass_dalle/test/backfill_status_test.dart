@@ -406,13 +406,14 @@ void main() {
         'move_meals_to_group',
         'ticket_analyses',
         'ticket_delivered_pr',
+        'recipe_title_keys',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['system_books']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(6));
+      expect(sections.ponctuelsALancer, hasLength(7));
       expect(sections.ponctuelsTermines, isEmpty);
     });
 
