@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'package:kass_dalle/core/widgets/provider_retry.dart';
@@ -15,6 +16,7 @@ import 'package:kass_dalle/features/planning/presentation/meal_suggestion_provid
 import 'package:kass_dalle/features/planning/presentation/meal_suggestions_window.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_providers.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_screen.dart';
+import 'package:kass_dalle/features/planning/presentation/suggest_meal_screen.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
 
 import '../support/test_backend.dart';
@@ -73,7 +75,22 @@ void main() {
           ),
           suggestableRecipesProvider.overrideWith((ref) async => recipes),
         ],
-        child: const MaterialApp(locale: Locale('fr'), home: PlanningScreen()),
+        child: MaterialApp.router(
+          locale: const Locale('fr'),
+          routerConfig: GoRouter(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (context, state) => const PlanningScreen(),
+              ),
+              GoRoute(
+                path: '/planning/suggest',
+                builder: (context, state) =>
+                    SuggestMealScreen(args: state.extra! as SuggestMealArgs),
+              ),
+            ],
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -105,7 +122,7 @@ void main() {
     expect(find.byTooltip('Suggestions des membres'), findsNothing);
   });
 
-  testWidgets('la feuille envoie une recette privée, et prévient', (
+  testWidgets('l\'écran envoie une recette privée, et prévient', (
     tester,
   ) async {
     final backend = await pump(
@@ -121,8 +138,8 @@ void main() {
     final send = find.widgetWithText(FilledButton, 'Envoyer la suggestion');
     expect(tester.widget<FilledButton>(send).onPressed, isNull);
 
-    await tester.tap(find.text('Choisir une recette'));
-    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Lasa');
+    await tester.pump();
     await tester.tap(find.text('Lasagnes'));
     await tester.pumpAndSettle();
     expect(
@@ -130,7 +147,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Un mot pour Marie (facultatif)'), findsOneWidget);
-    await tester.enterText(find.byType(TextField), 'Pour Léo');
+    await tester.enterText(find.byType(TextField).last, 'Pour Léo');
     await tester.tap(send);
     await tester.pumpAndSettle();
 

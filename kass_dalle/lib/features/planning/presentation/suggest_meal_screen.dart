@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/presentation/leave_guard.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/utils/context_extensions.dart';
@@ -107,10 +108,28 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
 
   static final _dayFormat = DateFormat('EEEE d MMMM', 'fr');
 
+  late final LeaveGuardNotifier _leaveGuardNotifier;
+  late final LeaveGuard _leaveGuard = _confirmLeave;
+
+  @override
+  void initState() {
+    super.initState();
+    _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
+    // Le garde couvre la navigation du bas et le menu latéral, que `PopScope`
+    // ne voit pas. Posé après la première image : Riverpod refuse de modifier
+    // un provider pendant la construction de l'arbre.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _leaveGuardNotifier.set(_leaveGuard);
+    });
+  }
+
   bool get _fixedGroupAndDay => widget.args.group != null && _day != null;
 
   @override
   void dispose() {
+    final notifier = _leaveGuardNotifier;
+    final guard = _leaveGuard;
+    Future.microtask(() => notifier.clearIf(guard));
     _dishCtrl.dispose();
     _noteCtrl.dispose();
     super.dispose();
@@ -240,7 +259,9 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
     }
   }
 
-  Future<void> _confirmLeave() async {
+  /// Vrai quand l'écran peut se fermer : rien à perdre, ou abandon confirmé.
+  Future<bool> _confirmLeave() async {
+    if (!_dirty || _leaving) return true;
     final leave = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -258,7 +279,7 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
         ],
       ),
     );
-    if (leave == true && mounted) Navigator.of(context).pop();
+    return leave ?? false;
   }
 
   @override
@@ -307,7 +328,10 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
         child: PopScope(
           canPop: !_dirty || _leaving,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) _confirmLeave();
+            if (didPop) return;
+            _confirmLeave().then((leave) {
+              if (leave && context.mounted) Navigator.of(context).pop();
+            });
           },
           child: Scaffold(
             appBar: AppBar(
@@ -462,10 +486,22 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
                                 if (recipesAsync.hasError)
                                   Padding(
                                     padding: const EdgeInsets.only(bottom: 8),
-                                    child: Text(
-                                      'Les recettes n\'ont pas pu être lues. '
-                                      'Un nom libre reste possible.',
-                                      style: errorStyle,
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            'Les recettes n\'ont pas pu être '
+                                            'lues. Un nom libre reste possible.',
+                                            style: errorStyle,
+                                          ),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => ref.invalidate(
+                                            suggestableRecipesProvider,
+                                          ),
+                                          child: const Text('Réessayer'),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 if (showFreeTile)
@@ -511,6 +547,8 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
                                           child: Icon(
                                             Icons.lock_outline,
                                             size: AppIconSize.small,
+                                            semanticLabel:
+                                                'Seul le titre est visible',
                                             color: theme
                                                 .colorScheme
                                                 .onSurfaceVariant,
@@ -555,6 +593,7 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
                                         height: 16,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
+                                          semanticsLabel: 'Envoi en cours',
                                         ),
                                       )
                                     : const Icon(Icons.send_outlined),

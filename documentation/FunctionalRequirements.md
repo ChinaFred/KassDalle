@@ -971,14 +971,14 @@ lui-même celles qu'il retient.
   d'origine avec « Suggestion envoyée à Marie. » Échec : « Suggestion non envoyée.
   Réessayez. » ; quota atteint : « Vous avez déjà fait 5 suggestions pour ce jour. » ;
   l'écran reste ouvert et la saisie est conservée. Quitter avec un plat ou un mot saisi
-  demande « Abandonner la suggestion ? » (Rester, Abandonner). Ctrl+Entrée ou Ctrl+S
+  demande « Abandonner la suggestion ? » (Rester, Abandonner), aussi quand on passe par la navigation du bas ou le menu latéral. Ctrl+Entrée ou Ctrl+S
   (Cmd sur Mac) envoient.
 - **Une recette privée se suggère par son titre.** L'écran le dit : « Recette
   privée : Marie ne verra que son titre. » Le propriétaire lit ce titre, avec un
   cadenas « Recette non partagée », sans pouvoir ouvrir la fiche. Une recette qu'il
   lit s'affiche sous son titre actuel, pas sous celui copié à l'envoi.
 - **Cinq suggestions au plus** par membre, par groupe et par jour, imposées par les
-  règles Firestore. Au-delà, la feuille dit « Vous avez déjà fait 5 suggestions pour
+  règles Firestore. Au-delà, l'écran dit « Vous avez déjà fait 5 suggestions pour
   ce jour. » Une suggestion retirée libère sa place.
 - **Pas de statut.** Le propriétaire n'accepte ni ne décline. Une suggestion déjà
   reprise par le planning du groupe ce jour-là (même recette ou même titre) porte
