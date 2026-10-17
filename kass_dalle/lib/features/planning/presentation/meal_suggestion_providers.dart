@@ -6,6 +6,7 @@ import '../../groups/domain/family_group.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../../recipes/domain/recipe.dart';
 import '../data/meal_suggestion_repository.dart';
+import '../data/private_titles_repository.dart';
 import '../domain/meal_suggestion.dart';
 import 'planning_providers.dart';
 
@@ -88,6 +89,24 @@ final upcomingSentCountProvider = Provider.autoDispose<int>((ref) {
     DateTime.now(),
   );
 });
+
+final privateTitlesRepositoryProvider = Provider<PrivateTitlesRepository>(
+  (ref) => PrivateTitlesRepository(),
+);
+
+/// Les recettes validées des livres privés des membres de mes groupes, en
+/// titre seul (recettes creuses, `isPrivate`). Si la lecture échoue, la liste
+/// habituelle reste proposée sans cette section : l'erreur est déjà au
+/// rapport (`meal_suggestions.load_private_titles`).
+final suggestablePrivateTitlesProvider =
+    FutureProvider.autoDispose<List<Recipe>>((ref) async {
+      try {
+        final titles = await ref.watch(privateTitlesRepositoryProvider).list();
+        return [for (final t in titles) t.toRecipe()];
+      } catch (_) {
+        return const [];
+      }
+    });
 
 /// Les recettes qu'un membre peut suggérer : les siennes validées et celles,
 /// validées et non privées, des membres de ses groupes. Triées par titre,
