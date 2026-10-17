@@ -370,11 +370,20 @@ class PlanningPreferences {
   /// Le cycle commence au prochain [cycleStartDay], aujourd'hui compris :
   /// ouvrir l'écran un vendredi quand le cycle démarre le vendredi doit
   /// proposer ce vendredi-ci, pas le suivant.
-  List<DateTime> nextCycleDates() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final daysUntilStart = (cycleStartDay - today.weekday + 7) % 7;
-    final start = today.add(Duration(days: daysUntilStart));
-    return List.generate(mealsPerCycle, (i) => start.add(Duration(days: i)));
-  }
+  List<DateTime> nextCycleDates() =>
+      cycleDatesFrom(DateTime.now(), cycleStartDay, mealsPerCycle);
+}
+
+/// Dates de [count] jours consécutifs à partir du prochain [cycleStartDay]
+/// (1 = lundi … 7 = dimanche), [now] compris.
+///
+/// Chaque date passe par le constructeur calendaire : `Duration(days: n)` vaut
+/// `n × 24 h`, et un cycle qui franchit un changement d'heure rendrait alors un
+/// jour en double (à 23 h) et en perdrait un autre.
+List<DateTime> cycleDatesFrom(DateTime now, int cycleStartDay, int count) {
+  final daysUntilStart = (cycleStartDay - now.weekday + 7) % 7;
+  return List.generate(
+    count,
+    (i) => DateTime(now.year, now.month, now.day + daysUntilStart + i),
+  );
 }
