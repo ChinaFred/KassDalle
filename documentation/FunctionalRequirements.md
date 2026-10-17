@@ -1407,7 +1407,9 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     ticket, depuis moins d'une heure (analyse) ou de trois heures (développement), le bouton
     est masqué et la barre affiche « Analyse en cours depuis hh:mm » (« … depuis le jj/mm/aa à
     hh:mm » un autre jour) ou « Développement en cours depuis … ». Un résultat inconnu compte
-    comme un lancement. Passé ce délai, le bouton devient « Relancer l'analyse » ou « Relancer
+    comme un lancement. Une analyse publiée sur l'Issue après le lancement (une question
+    « compléments » comprise) le termine avant ce délai : la ligne « en cours » disparaît,
+    « Répondre » est offert et le bouton devient « Relancer l'analyse ». Passé le délai, le bouton devient « Relancer l'analyse » ou « Relancer
     le développement », et la confirmation ajoute « Le lancement du jj/mm/aa à hh:mm n'a rien
     changé au ticket. Vérifiez sur claude.ai/code qu'aucune session ne tourne encore. », avec
     le bouton « Relancer ». Le serveur refuse aussi : « Une analyse a été lancée le jj/mm/aa

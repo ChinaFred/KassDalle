@@ -210,6 +210,10 @@ class TicketLaunchRunState {
 /// Livraison seulement : un compte rendu « ## Livraison — blocage »
 /// ([deliveryBlockedAt]) strictement postérieur au lancement la termine avant
 /// son échéance — relance proposée, [TicketLaunchRunState.blocked] vrai.
+///
+/// Analyse seulement : une analyse du mainteneur (« compléments » comprise)
+/// ([analysisPublishedAt]) strictement postérieure au lancement la termine
+/// avant son échéance — relance proposée, [TicketLaunchRunState.blocked] faux.
 TicketLaunchRunState ticketLaunchRunState({
   required List<TicketLaunch> launches,
   required TicketLaunchAction action,
@@ -217,6 +221,7 @@ TicketLaunchRunState ticketLaunchRunState({
   required DateTime now,
   DateTime? statusChangedAt,
   DateTime? deliveryBlockedAt,
+  DateTime? analysisPublishedAt,
 }) {
   TicketLaunch? last;
   for (final e in launches) {
@@ -239,6 +244,12 @@ TicketLaunchRunState ticketLaunchRunState({
       : null;
   if (blockedAt != null && blockedAt.isAfter(last.launchedAt!)) {
     return TicketLaunchRunState(relaunchOf: last.launchedAt, blocked: true);
+  }
+  final publishedAt = action == TicketLaunchAction.analysis
+      ? analysisPublishedAt
+      : null;
+  if (publishedAt != null && publishedAt.isAfter(last.launchedAt!)) {
+    return TicketLaunchRunState(relaunchOf: last.launchedAt);
   }
   if (now.isBefore(retryAfter)) {
     return TicketLaunchRunState(

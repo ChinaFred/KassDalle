@@ -1181,7 +1181,11 @@ export interface LaunchEntryView {
  *
  * Livraison seulement : un compte rendu « ## Livraison — blocage » du
  * mainteneur strictement postérieur au lancement (`deliveryBlockedAtMs`) la
- * termine avant son échéance — relance proposée, `blocked` vrai. Pure ;
+ * termine avant son échéance — relance proposée, `blocked` vrai.
+ *
+ * Analyse seulement : une analyse du mainteneur (« compléments » comprise)
+ * strictement postérieure au lancement (`analysisPublishedAtMs`) la termine
+ * avant son échéance — relance proposée, `blocked` faux. Pure ;
  * fixture `ticket_decisions.json`, section `launch_runs`.
  */
 export function launchRunState(args: {
@@ -1191,6 +1195,7 @@ export function launchRunState(args: {
   nowMs: number;
   statusChangedAtMs?: number | null;
   deliveryBlockedAtMs?: number | null;
+  analysisPublishedAtMs?: number | null;
 }): {
   running: boolean;
   runningSinceMs: number | null;
@@ -1216,6 +1221,15 @@ export function launchRunState(args: {
       runningSinceMs: null,
       relaunchOfMs: last.launched_at_ms,
       blocked: true,
+    };
+  }
+  const publishedAt = args.action === "analyse" ? (args.analysisPublishedAtMs ?? null) : null;
+  if (publishedAt !== null && publishedAt > last.launched_at_ms) {
+    return {
+      running: false,
+      runningSinceMs: null,
+      relaunchOfMs: last.launched_at_ms,
+      blocked: false,
     };
   }
   if (args.nowMs < last.retry_after_ms) {
