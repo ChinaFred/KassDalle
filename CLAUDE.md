@@ -395,6 +395,15 @@ ligne, à corriger comme ci-dessus.
   même commit, sous la date du jour en `## AAAA-MM-JJ`, la plus récente en tête.
   L'entrée dit ce qui change et pourquoi, en quelques phrases. Les deux specs ci-dessous
   décrivent l'état actuel ; l'historique ne vit qu'ici.
+
+  **L'entrée « fonctionnel » s'écrit pour la famille.** L'écran « Nouveautés » de
+  l'application affiche telles quelles les six dernières, à tous les rôles. Elle dit ce que
+  voit un membre, avec les libellés de l'écran : ni route, ni fichier, ni fonction, ni champ,
+  ni numéro de ticket, ni « PR » ou « Issue ». Un changement réservé à l'administrateur
+  commence par « Pour l'administrateur : ». Une consigne à suivre après le déploiement
+  (backfill à lancer, réglage à faire) et le numéro du ticket d'origine vont dans l'entrée
+  « technique ». `.github/scripts/changelog-recent.mjs` refuse une entrée extraite qui
+  contient un accent grave, un numéro de ticket (`#12`) ou une image : la CI échoue.
 - `documentation/FunctionalRequirements.md` — intention, parcours, modules, rôles et règles d'accès,
   couverture mobile / web / desktop.
 - `documentation/TechnicalRequirements.md` — architecture, schéma Firestore complet (champs +

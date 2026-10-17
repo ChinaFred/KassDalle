@@ -19,13 +19,34 @@
 // Échoue (code 1) si l'extraction rend moins de <nombre> versions : une liste
 // tronquée ne part pas en production. Échoue aussi si un texte extrait contient
 // une image Markdown (« ![ ») : l'écran ne charge aucune image, et une adresse
-// externe dans l'APK servirait de pixel de suivi.
+// externe dans l'APK servirait de pixel de suivi. Échoue enfin sur un accent
+// grave ou un numéro de ticket (« #12 ») : l'entrée « fonctionnel » s'écrit pour
+// la famille (CLAUDE.md, « Documentation à tenir à jour »), sans nom de code ni
+// référence GitHub.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const DATE_HEADING = /^## (\d{4}-\d{2}-\d{2})\s*$/;
 const VERSION_HEADING = /^### v(\S+) — (fonctionnel|technique)\s*$/;
+
+// Ce que le texte d'une entrée « fonctionnel » ne contient pas.
+const FORBIDDEN = [
+  { pattern: /!\[/, label: 'une image Markdown' },
+  { pattern: /`/, label: 'un accent grave (nom de code)' },
+  { pattern: /#\d/, label: 'un numéro de ticket' },
+];
+
+/** Les problèmes de rédaction de chaque version extraite. */
+export function writingProblems(versions) {
+  const problems = [];
+  for (const v of versions) {
+    for (const { pattern, label } of FORBIDDEN) {
+      if (pattern.test(v.text)) problems.push(`v${v.version} contient ${label}`);
+    }
+  }
+  return problems;
+}
 
 /**
  * Les `count` dernières versions qui ont une entrée « fonctionnel ».
@@ -101,10 +122,13 @@ export function main(argv) {
     );
     return 1;
   }
-  const withImage = versions.filter((v) => v.text.includes('!['));
-  if (withImage.length > 0) {
+  const problems = writingProblems(versions);
+  if (problems.length > 0) {
+    for (const problem of problems) {
+      console.error(`::error file=${source}::Entrée « fonctionnel » : ${problem}.`);
+    }
     console.error(
-      `::error file=${source}::Image Markdown dans l'entrée « fonctionnel » de ${withImage.map((v) => `v${v.version}`).join(', ')} : retirer l'image.`,
+      "L'entrée « fonctionnel » s'écrit pour la famille : voir CLAUDE.md, « Documentation à tenir à jour ».",
     );
     return 1;
   }

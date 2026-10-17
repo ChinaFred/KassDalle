@@ -137,7 +137,8 @@ jobs:
         # L'écran « Nouveautés » lit un extrait du CHANGELOG embarqué comme
         # asset. Il est régénéré ici, avant les tests et le build web, comme
         # dans deploy.yml : le script échoue s'il ne trouve pas six versions, ou
-        # si l'une d'elles contient une image Markdown.
+        # si l'une d'elles contient une image, un accent grave ou un numéro de
+        # ticket (règle de rédaction de CLAUDE.md).
       - name: Extrait du CHANGELOG
         run: |
           node --test ../.github/scripts/changelog-recent.test.mjs

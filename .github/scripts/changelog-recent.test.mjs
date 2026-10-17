@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { extractRecent, main } from './changelog-recent.mjs';
+import { extractRecent, main, writingProblems } from './changelog-recent.mjs';
 
 const SAMPLE = `# Historique des versions
 
@@ -25,7 +25,7 @@ Deuxième paragraphe.
 
 ### v0.23.98 — technique
 
-Callable \`closeTicket\`.
+Callable closeTicket.
 
 ### v0.23.97 — technique
 
@@ -98,4 +98,21 @@ test('une image dans un texte extrait fait échouer le script', () => {
   writeFileSync(source, SAMPLE);
   assert.equal(main([source, output, '3']), 0);
   assert.equal(JSON.parse(readFileSync(output, 'utf8')).versions.length, 3);
+});
+
+test('refuse un accent grave et un numéro de ticket', () => {
+  const problems = writingProblems([
+    { version: '1.0.0', text: 'Route `/tickets/new`.' },
+    { version: '1.0.1', text: 'Demande du ticket #127.' },
+    { version: '1.0.2', text: '#### Signaler ou proposer' },
+  ]);
+  assert.deepEqual(problems, [
+    'v1.0.0 contient un accent grave (nom de code)',
+    'v1.0.1 contient un numéro de ticket',
+  ]);
+});
+
+test('les six entrées du CHANGELOG du dépôt respectent la rédaction', () => {
+  const markdown = readFileSync(new URL('../../documentation/CHANGELOG.md', import.meta.url), 'utf8');
+  assert.deepEqual(writingProblems(extractRecent(markdown, 6)), []);
 });

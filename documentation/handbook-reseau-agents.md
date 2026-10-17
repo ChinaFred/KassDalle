@@ -464,7 +464,7 @@ Les agents travaillent en parallèle quand leurs tâches sont indépendantes : `
 | `.github/workflows/deploy.yml` | déploiement après une CI verte sur `master` |
 | `.github/scripts/check-version.sh` | refuse un numéro de version déjà pris ou sans entrée au CHANGELOG |
 | `.github/scripts/firebase-deploy.sh` | déploiement vérifié et relance ciblée (section 11) |
-| `.github/scripts/changelog-recent.mjs` | extrait les six dernières versions « fonctionnel » du CHANGELOG pour l'écran « Nouveautés » ; testé par `changelog-recent.test.mjs` |
+| `.github/scripts/changelog-recent.mjs` | extrait les six dernières versions « fonctionnel » du CHANGELOG pour l'écran « Nouveautés » ; refuse un accent grave, un numéro de ticket ou une image dans le texte extrait (règle « L'entrée fonctionnel s'écrit pour la famille » de `CLAUDE.md`) ; testé par `changelog-recent.test.mjs` |
 | `.gitattributes` | `*.sh text eol=lf` |
 | `.gitignore` | `build/`, `Release/`, `.dart_tool/`, `node_modules/` |
 
