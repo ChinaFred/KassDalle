@@ -9,8 +9,10 @@ Les entrées sont classées de la plus récente à la plus ancienne. Chacune por
 texte : `fonctionnel` pour ce que voit l'utilisateur, `technique` pour ce qui touche à
 l'architecture, au schéma de données ou au déploiement.
 
-**Rien n'a été réécrit.** Les sections ont été déplacées telles quelles, y compris les entrées
-anciennes sans accents.
+**Rien n'a été réécrit**, sauf une fois. Les sections ont été déplacées telles quelles, y compris
+les entrées anciennes sans accents. En v0.24.0, les entrées « fonctionnel » de la v0.23.95 à la
+v0.23.99 ont été réécrites pour l'écran « Nouveautés » : leurs détails techniques sont passés
+dans l'entrée « technique » de la même version, ou dans celle de la v0.24.0 pour la v0.23.96.
 
 Depuis la v0.23.3, chaque version incrémentée reçoit son entrée dans le commit qui change
 `version:` (voir `CLAUDE.md`, « Documentation à tenir à jour »). Les entrées de la v0.22.104 à
@@ -26,7 +28,7 @@ Nouveautés : les textes des dernières versions sont réécrits pour être lus 
 
 ### v0.24.0 — technique
 
-Nouvelle règle de `CLAUDE.md` (« Documentation à tenir à jour ») : l'entrée « fonctionnel » s'écrit pour la famille, sans route, fichier, fonction, champ, numéro de ticket, « PR » ni « Issue » ; un changement réservé à l'administrateur commence par « Pour l'administrateur : » ; une consigne d'après déploiement et le numéro du ticket vont dans l'entrée « technique ». `.github/scripts/changelog-recent.mjs` la vérifie (`writingProblems`) : il échoue si un texte extrait contient un accent grave, un numéro de ticket ou une image, et la CI échoue avec lui ; deux tests s'ajoutent à `changelog-recent.test.mjs`. Les entrées « fonctionnel » de la v0.23.95 à la v0.23.99 sont réécrites selon la règle ; leurs détails passent dans les entrées « technique », et la v0.23.96 en reçoit une. `deploy.ps1` régénère l'asset avant son build, comme `deploy.yml`. Reprise de la PR #133, fermée sans fusion après la livraison de l'écran par la #134. Ni `ci.yml` ni `deploy.yml` ne changent.
+Nouvelle règle de `CLAUDE.md` (« Documentation à tenir à jour ») : l'entrée « fonctionnel » s'écrit pour la famille, sans route, fichier, fonction, champ, numéro de ticket, « PR » ni « Issue » ; un changement réservé à l'administrateur commence par « Pour l'administrateur : » ; une consigne d'après déploiement et le numéro du ticket vont dans l'entrée « technique ». `.github/scripts/changelog-recent.mjs` la vérifie (`writingProblems`) : il échoue si un texte extrait contient un accent grave, un numéro de ticket ou une image, et la CI échoue avec lui ; deux tests s'ajoutent à `changelog-recent.test.mjs`. Les entrées « fonctionnel » de la v0.23.95 à la v0.23.99 sont réécrites selon la règle ; leurs détails passent dans les entrées « technique » de la même version. La v0.23.96 n'en a pas : ses détails sont ici (ticket #127 ; dans le formulaire `/tickets/new`, `validateTicketForm` garde le contrôle « Choisissez le type de ticket. »). `deploy.ps1` régénère l'asset avant son build, comme `deploy.yml`. Reprise de la PR #133, fermée sans fusion après la livraison de l'écran par la #134. Ni `ci.yml` ni `deploy.yml` ne changent.
 
 ### v0.23.99 — fonctionnel
 
@@ -57,10 +59,6 @@ Après le déploiement, lancer une fois Admin › Backfills › « Clé de titre
 ### v0.23.96 — fonctionnel
 
 Signaler ou proposer : le type « Bug » est choisi d'avance à l'ouverture du formulaire, avec son aide. On peut en choisir un autre avant l'envoi. La plupart des tickets sont des bugs : le choix du type était une étape de plus. Le message « Choisissez le type de ticket. » n'apparaît donc plus en temps normal.
-
-### v0.23.96 — technique
-
-Ticket #127. Formulaire `/tickets/new` : `validateTicketForm` garde le contrôle « Choisissez le type de ticket. ». Entrée ajoutée en v0.24.0, quand l'entrée « fonctionnel » a été réécrite pour l'écran « Nouveautés ».
 
 ### v0.23.95 — fonctionnel
 
