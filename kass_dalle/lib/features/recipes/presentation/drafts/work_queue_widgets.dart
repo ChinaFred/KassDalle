@@ -14,6 +14,7 @@ import '../../../processing/presentation/processing_trail_row.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../domain/recipe.dart';
 import '../url_import/recipe_source_link.dart' show openExternalPage;
+import '../../domain/duplicate_reference.dart';
 import 'duplicate_widgets.dart';
 import '../../../../core/theme/app_icon_size.dart';
 
@@ -255,6 +256,11 @@ class WorkQueueSelectionBar extends StatelessWidget {
   /// Nul : aucun brouillon coché, l'action est masquée.
   final int? validateCount;
 
+  /// Faux quand des brouillons marqués « Doublon possible » sont cochés : leur
+  /// marque n'est relue qu'à l'appui, le nombre à valider n'est pas connu
+  /// avant. Le bouton s'affiche alors « Valider », sans nombre.
+  final bool showValidateCount;
+
   /// Nul : aucun traitement relançable coché, l'action est masquée.
   final int? retryCount;
   final int deleteCount;
@@ -265,6 +271,7 @@ class WorkQueueSelectionBar extends StatelessWidget {
   const WorkQueueSelectionBar({
     super.key,
     required this.validateCount,
+    this.showValidateCount = true,
     required this.retryCount,
     required this.deleteCount,
     required this.onValidate,
@@ -304,7 +311,9 @@ class WorkQueueSelectionBar extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onValidate,
                   icon: const Icon(Icons.check_circle_outline),
-                  label: Text('Valider ($validateCount)'),
+                  label: Text(
+                    showValidateCount ? 'Valider ($validateCount)' : 'Valider',
+                  ),
                 ),
             ],
           ),
@@ -372,6 +381,10 @@ class QueueJobTile extends StatelessWidget {
   /// éditeur.
   final VoidCallback? onNotDuplicate;
 
+  /// Vrai pendant l'écriture de la reprise : « Ce n'est pas un doublon »
+  /// reste visible, désactivé, contre un second appui.
+  final bool notDuplicateBusy;
+
   const QueueJobTile({
     super.key,
     required this.job,
@@ -384,6 +397,7 @@ class QueueJobTile extends StatelessWidget {
     this.isAdmin = false,
     this.onCancel,
     this.onNotDuplicate,
+    this.notDuplicateBusy = false,
   });
 
   @override
@@ -460,6 +474,7 @@ class QueueJobTile extends StatelessWidget {
               job: job,
               showActions: !isSelecting,
               onNotDuplicate: onNotDuplicate,
+              notDuplicateBusy: notDuplicateBusy,
               onDelete: onDelete,
             )
           else if (urlFailure != null)
@@ -838,6 +853,10 @@ class QueueDraftTile extends StatelessWidget {
                       if (action == _DraftMenuAction.validate) {
                         onValidate?.call();
                       }
+                      if (action == _DraftMenuAction.review &&
+                          context.mounted) {
+                        context.go('/drafts/${recipe.id}');
+                      }
                       if (action == _DraftMenuAction.delete) {
                         onDelete?.call();
                       }
@@ -869,7 +888,20 @@ class QueueDraftTile extends StatelessWidget {
                       }
                     },
                     itemBuilder: (_) => [
-                      if (onValidate != null)
+                      // Un doublon possible se tranche à la relecture, où le
+                      // bandeau montre la recette existante : « Valider »
+                      // depuis la file l'aurait laissé de côté sans rien
+                      // montrer.
+                      if (onValidate != null && recipe.duplicateOf != null)
+                        const PopupMenuItem(
+                          value: _DraftMenuAction.review,
+                          child: ListTile(
+                            leading: Icon(Icons.rate_review_outlined),
+                            title: Text('Relire'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        )
+                      else if (onValidate != null)
                         const PopupMenuItem(
                           value: _DraftMenuAction.validate,
                           child: ListTile(
@@ -924,7 +956,7 @@ class QueueDraftTile extends StatelessWidget {
   }
 }
 
-enum _DraftMenuAction { validate, delete, viewSource, downloadSource }
+enum _DraftMenuAction { validate, review, delete, viewSource, downloadSource }
 
 // ── Chip statut traitement ────────────────────────────────────────────────────
 
@@ -1076,11 +1108,13 @@ class _DuplicateJobPanel extends StatelessWidget {
     required this.showActions,
     required this.onNotDuplicate,
     required this.onDelete,
+    this.notDuplicateBusy = false,
   });
 
   final ProcessingJob job;
   final bool showActions;
   final VoidCallback? onNotDuplicate;
+  final bool notDuplicateBusy;
   final VoidCallback onDelete;
 
   @override
@@ -1090,6 +1124,16 @@ class _DuplicateJobPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Une liste vide (donnée historique ou mal formée) ne doit pas
+        // laisser une décision à prendre sans dire laquelle.
+        if (job.duplicates.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Une recette de cette page semble déjà dans le livre.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
         for (final entry in job.duplicates) ...[
           const SizedBox(height: 4),
           if (entry.titre.isNotEmpty)
@@ -1101,7 +1145,18 @@ class _DuplicateJobPanel extends StatelessWidget {
             ),
           DuplicateReferenceLink(
             recipeId: entry.recipeId,
-            label: entry.referenceLabel,
+            jobId: entry.jobId,
+            existingTitre: entry.existingTitre,
+            // Une référence-recette garde le titre et la page écrits par le
+            // serveur ; une référence-import prend ceux de la recette créée
+            // depuis.
+            linkLabel: (recipe) => entry.recipeId != null
+                ? entry.referenceLabel
+                : duplicateFoundLabel(recipe),
+            plainLabel: entry.recipeId != null
+                ? entry.referenceLabel
+                : 'Déjà dans le livre : ${entry.existingTitre}',
+            pendingLabel: entry.referenceLabel,
             enabled: showActions,
           ),
         ],
@@ -1111,7 +1166,7 @@ class _DuplicateJobPanel extends StatelessWidget {
             children: [
               if (onNotDuplicate != null)
                 TextButton.icon(
-                  onPressed: onNotDuplicate,
+                  onPressed: notDuplicateBusy ? null : onNotDuplicate,
                   icon: const Icon(
                     Icons.playlist_add_check,
                     size: AppIconSize.inline,

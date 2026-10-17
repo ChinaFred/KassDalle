@@ -38,9 +38,14 @@ Recipe _brouillon({
   duplicateOf: duplicateOf,
 );
 
-ProcessingJob _job(String id, ProcessingJobStatus status) {
+ProcessingJob _job(
+  String id,
+  ProcessingJobStatus status, {
+  List<String> created = const [],
+}) {
   final now = DateTime(2026, 10, 1);
   return ProcessingJob(
+    createdRecipeIds: created,
     id: id,
     type: ProcessingJobType.bookDocumentScan,
     status: status,
@@ -338,7 +343,10 @@ void main() {
             _brouillon(id: 'rejete', duplicateOf: byJob('j-rejected')),
             _brouillon(id: 'encours', duplicateOf: byJob('j-processing')),
             _brouillon(id: 'termine', duplicateOf: byJob('j-done')),
+            _brouillon(id: 'efface', duplicateOf: byJob('j-done-gone')),
+            _brouillon(id: 'attente', duplicateOf: byJob('j-duplicate')),
           ],
+          recipes: {'r-done': true},
           jobs: {
             'j-error': _job('j-error', ProcessingJobStatus.error),
             'j-rejected': _job('j-rejected', ProcessingJobStatus.rejected),
@@ -346,10 +354,22 @@ void main() {
               'j-processing',
               ProcessingJobStatus.processing,
             ),
-            'j-done': _job('j-done', ProcessingJobStatus.done),
+            'j-done': _job(
+              'j-done',
+              ProcessingJobStatus.done,
+              created: ['r-gone', 'r-done'],
+            ),
+            // Terminé, mais sa recette a été supprimée depuis.
+            'j-done-gone': _job(
+              'j-done-gone',
+              ProcessingJobStatus.done,
+              created: ['r-gone'],
+            ),
+            // Arrêté en doublon : sa recette peut encore naître.
+            'j-duplicate': _job('j-duplicate', ProcessingJobStatus.duplicate),
           },
         );
-        expect(stale, {'absent', 'erreur', 'rejete'});
+        expect(stale, {'absent', 'erreur', 'rejete', 'efface'});
       },
     );
 
@@ -367,6 +387,26 @@ void main() {
       );
       expect(stale, isEmpty);
       expect(errors, ['prive']);
+    });
+
+    test('relecture en parallèle, progression jusqu\'au total', () async {
+      final progress = <String>[];
+      final stale = await staleDuplicateMarks(
+        [
+          for (final id in ['a', 'b', 'c'])
+            _brouillon(
+              id: id,
+              duplicateOf: RecipeDuplicateRef(titre: 'X', recipeId: 'r-$id'),
+            ),
+          _brouillon(id: 'plain'),
+        ],
+        readRecipe: (id) async => id == 'r-b' ? null : _brouillon(id: id),
+        readJob: (_) async => null,
+        onReadError: (_, _, _) {},
+        onProgress: (done, total) => progress.add('$done/$total'),
+      );
+      expect(stale, {'b'});
+      expect(progress, ['1/3', '2/3', '3/3']);
     });
   });
 

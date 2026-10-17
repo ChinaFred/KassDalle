@@ -823,8 +823,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 // contester sa décision chaque fois qu'il ouvre le plat.
                 FidelityBanner(recipe: recipe),
                 // Brouillon d'un import de livre entier, déjà présent dans le
-                // livre : « Valider » efface la marque.
-                DuplicateOfBanner(recipe: recipe),
+                // livre : « Valider » efface la marque. Replié sur une ligne
+                // sur téléphone, comme la réserve de fidélité au-dessus : les
+                // deux bandeaux sont fixes au-dessus de l'éditeur.
+                DuplicateOfBanner(recipe: recipe, initiallyExpanded: isWide),
                 Expanded(
                   child: isWide
                       ? Row(

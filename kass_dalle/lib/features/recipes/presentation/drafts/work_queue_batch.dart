@@ -96,41 +96,68 @@ DraftValidationPlan planDraftValidation(
 /// - Référence `recipe_id` : la marque tombe quand [readRecipe] ne renvoie
 ///   rien (recette supprimée).
 /// - Référence `job_id` : la marque tombe quand [readJob] ne renvoie rien
-///   (import supprimé) ou que l'import est en erreur ou rejeté : sa recette
-///   n'existera pas.
+///   (import supprimé), que l'import est en erreur ou rejeté, ou qu'il est
+///   terminé et qu'aucune des recettes qu'il a créées n'existe plus
+///   (supprimées depuis). Un import en file, en cours ou lui-même arrêté en
+///   doublon garde la marque : sa recette peut encore naître.
 ///
 /// Une lecture qui échoue (permission refusée sur la recette d'un autre
 /// membre, réseau) garde la marque : on ne publie pas sur un doute. L'erreur
-/// est remise à [onReadError], qui la signale.
+/// est remise à [onReadError], qui décide de la signaler.
+///
+/// Les brouillons sont relus en parallèle ; [onProgress] reçoit le nombre de
+/// brouillons marqués relus et leur total.
 Future<Set<String>> staleDuplicateMarks(
   Iterable<Recipe> drafts, {
   required Future<Object?> Function(String recipeId) readRecipe,
   required Future<ProcessingJob?> Function(String jobId) readJob,
   required void Function(Object error, StackTrace stackTrace, Recipe draft)
   onReadError,
+  void Function(int done, int total)? onProgress,
 }) async {
-  final stale = <String>{};
-  for (final draft in drafts) {
-    final mark = draft.duplicateOf;
-    if (mark == null) continue;
+  final marked = drafts.where((d) => d.duplicateOf != null).toList();
+  var done = 0;
+
+  Future<bool> isStale(Recipe draft) async {
+    final mark = draft.duplicateOf!;
     try {
       final recipeId = mark.recipeId;
       final jobId = mark.jobId;
-      if (recipeId != null) {
-        if (await readRecipe(recipeId) == null) stale.add(draft.id);
-      } else if (jobId != null) {
-        final job = await readJob(jobId);
-        if (job == null ||
-            job.status == ProcessingJobStatus.error ||
-            job.status == ProcessingJobStatus.rejected) {
-          stale.add(draft.id);
-        }
+      if (recipeId != null) return await readRecipe(recipeId) == null;
+      if (jobId == null) return false;
+      final job = await readJob(jobId);
+      if (job == null) return true;
+      switch (job.status) {
+        // Un import arrêté en doublon attend la décision de son auteur : « Ce
+        // n'est pas un doublon » créerait la recette. Dans le doute, la marque
+        // reste.
+        case ProcessingJobStatus.queued:
+        case ProcessingJobStatus.processing:
+        case ProcessingJobStatus.duplicate:
+          return false;
+        case ProcessingJobStatus.error:
+        case ProcessingJobStatus.rejected:
+          return true;
+        case ProcessingJobStatus.done:
+          final created = await Future.wait(
+            job.createdRecipeIds.map(readRecipe),
+          );
+          return created.every((r) => r == null);
       }
     } catch (error, stackTrace) {
       onReadError(error, stackTrace, draft);
+      return false;
+    } finally {
+      done++;
+      onProgress?.call(done, marked.length);
     }
   }
-  return stale;
+
+  final results = await Future.wait(marked.map(isStale));
+  return {
+    for (var i = 0; i < marked.length; i++)
+      if (results[i]) marked[i].id,
+  };
 }
 
 /// « 1 brouillon », « 3 brouillons ». Zéro et un prennent le singulier.

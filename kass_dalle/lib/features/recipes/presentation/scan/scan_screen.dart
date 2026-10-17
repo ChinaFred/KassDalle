@@ -1143,11 +1143,13 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
       return 'Les recettes seront rattachées au livre '
           '« ${widget.targetBookTitre ?? ''} ».';
     }
-    final titre = analysis.titre;
-    return titre == null
+    // Un livre déjà en bibliothèque : la création n'est plus qu'un choix
+    // parmi deux, celui que fait le bouton du bas.
+    final head = analysis.existingBook == null
         ? 'Un nouveau livre sera créé depuis le fichier.'
-        : 'Un nouveau livre sera créé depuis le fichier. Titre relevé : '
-              '« $titre ».';
+        : 'Par défaut, un nouveau livre sera créé depuis le fichier.';
+    final titre = analysis.titre;
+    return titre == null ? head : '$head Titre relevé : « $titre ».';
   }
 
   @override
@@ -1261,19 +1263,26 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
                   onPressed: widget.onCancel,
                   child: const Text('Annuler'),
                 ),
-                FilledButton.icon(
-                  // Pas de plafond valide, pas d'import : c'est le montant que
-                  // le serveur fera respecter.
-                  onPressed: canLaunch
-                      ? () => widget.onConfirm(limitUsd)
-                      : null,
-                  icon: const Icon(Icons.auto_awesome_outlined),
-                  label: Text(
-                    existing == null
-                        ? 'Lancer l\'import'
-                        : 'Créer un nouveau livre quand même',
+                // Pas de plafond valide, pas d'import : c'est le montant que
+                // le serveur fera respecter.
+                if (existing == null)
+                  FilledButton.icon(
+                    onPressed: canLaunch
+                        ? () => widget.onConfirm(limitUsd)
+                        : null,
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                    label: const Text('Lancer l\'import'),
+                  )
+                else
+                  // Un livre reconnu : « Importer dans ce livre » est l'action
+                  // principale, créer un second livre l'alternative.
+                  OutlinedButton.icon(
+                    onPressed: canLaunch
+                        ? () => widget.onConfirm(limitUsd)
+                        : null,
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                    label: const Text('Créer un nouveau livre quand même'),
                   ),
-                ),
               ],
             ),
           ],
@@ -1286,9 +1295,10 @@ class _BookConfirmationCardState extends State<_BookConfirmationCard> {
 /// L'avertissement d'un livre déjà en bibliothèque, sur l'écran de
 /// confirmation d'un import en mode « nouveau livre ».
 ///
-/// Il ne bloque rien : « Créer un nouveau livre quand même » reste le bouton
-/// principal de la carte. Le même livre peut venir de deux sources (un PDF
-/// scanné, un EPUB acheté), et seul l'utilisateur sait s'il en veut deux.
+/// Il ne bloque rien : « Importer dans ce livre » est le bouton principal de
+/// la carte, et « Créer un nouveau livre quand même » reste offert en bas. Le
+/// même livre peut venir de deux sources (un PDF scanné, un EPUB acheté), et
+/// seul l'utilisateur sait s'il en veut deux.
 class _ExistingBookWarning extends StatelessWidget {
   const _ExistingBookWarning({
     required this.book,
@@ -1318,7 +1328,11 @@ class _ExistingBookWarning extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.library_books_outlined, color: couleur, size: 20),
+              Icon(
+                Icons.library_books_outlined,
+                color: couleur,
+                size: AppIconSize.small,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -1350,7 +1364,7 @@ class _ExistingBookWarning extends StatelessWidget {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
-            child: FilledButton.tonalIcon(
+            child: FilledButton.icon(
               onPressed: onImportIntoExisting,
               icon: const Icon(Icons.menu_book_outlined),
               label: const Text('Importer dans ce livre'),

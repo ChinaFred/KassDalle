@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -82,6 +83,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
   final Set<String> _selected = {};
   final Set<String> _collapsedOwners = {};
   _BatchProgress? _progress;
+
+  /// Jobs « Doublon possible » dont la reprise est en cours d'écriture.
+  final Set<String> _resuming = {};
 
   bool get _busy => _progress != null;
 
@@ -301,6 +305,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     if (_busy) return;
     final staleDuplicates = await _staleDuplicates(drafts);
     if (!mounted) return;
+    setState(() => _progress = null);
     final plan = planDraftValidation(drafts, staleDuplicates: staleDuplicates);
     final reserveIncluded = confirm && plan.withFidelityReserve.isNotEmpty;
     final toValidate = reserveIncluded
@@ -364,33 +369,62 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
 
   /// Les brouillons marqués dont la référence n'existe plus. Ne lit rien
   /// quand aucun brouillon de [drafts] n'est marqué.
+  ///
+  /// L'écran passe en mode occupé dès l'entrée, barre de progression
+  /// « Vérification des doublons n/N » affichée : un second appui sur
+  /// « Valider » pendant la relecture lancerait un second lot. L'appelant
+  /// retire la barre.
   Future<Set<String>> _staleDuplicates(List<Recipe> drafts) {
     final marked = drafts.where((d) => d.duplicateOf != null).toList();
     if (marked.isEmpty) return Future.value(const <String>{});
+    const label = 'Vérification des doublons';
+    setState(() => _progress = _BatchProgress(label, 0, marked.length));
     final recipeRepo = ref.read(recipeRepositoryProvider);
     final jobRepo = ref.read(processingJobRepositoryProvider);
     return staleDuplicateMarks(
       marked,
       readRecipe: recipeRepo.getById,
       readJob: jobRepo.getJob,
-      onReadError: (error, stackTrace, draft) => reportUnexpectedError(
-        feature: 'workQueueScreen.checkDuplicateMark',
-        error: error,
-        stackTrace: stackTrace,
-        context: {
-          'recipe_id': draft.id,
-          'duplicate_recipe_id': draft.duplicateOf?.recipeId,
-          'duplicate_job_id': draft.duplicateOf?.jobId,
-        },
-      ),
+      onProgress: (done, total) {
+        if (mounted) {
+          setState(() => _progress = _BatchProgress(label, done, total));
+        }
+      },
+      onReadError: (error, stackTrace, draft) {
+        // La recette ou l'import d'un autre membre est refusé par les
+        // règles : attendu, la marque reste, rien à signaler.
+        if (error is FirebaseException && error.code == 'permission-denied') {
+          return;
+        }
+        reportUnexpectedError(
+          feature: 'workQueueScreen.checkDuplicateMark',
+          error: error,
+          stackTrace: stackTrace,
+          context: {
+            'recipe_id': draft.id,
+            'duplicate_recipe_id': draft.duplicateOf?.recipeId,
+            'duplicate_job_id': draft.duplicateOf?.jobId,
+          },
+        );
+      },
     );
   }
 
   /// « Ce n'est pas un doublon » : le job reprend au balisage, sans nouvelle
   /// détection, pour les seules recettes retenues.
+  ///
+  /// Un job en cours de reprise ne se reprend pas une seconde fois : le
+  /// bouton est désactivé tant que l'écriture n'est pas revenue.
   Future<void> _resumeDuplicate(ProcessingJob job) async {
+    if (!_resuming.add(job.id)) return;
+    setState(() {});
     try {
       await ref.read(scanUploadProvider.notifier).resumeDuplicateJob(job);
+      if (mounted) {
+        context.showSuccessSnackBar(
+          'Traitement repris : le brouillon arrivera dans la file.',
+        );
+      }
     } catch (error, stackTrace) {
       reportUnexpectedError(
         feature: 'workQueueScreen.resumeDuplicateJob',
@@ -401,6 +435,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
       if (mounted) {
         context.showErrorSnackBar('La reprise du traitement a échoué.');
       }
+    } finally {
+      _resuming.remove(job.id);
+      if (mounted) setState(() {});
     }
   }
 
@@ -602,14 +639,16 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
         .toList();
     final selecting = _selectionMode && allItems.isNotEmpty;
 
-    // Ce qui attend une décision de l'utilisateur : les traitements arrêtés
-    // en doublon possible et les brouillons marqués qu'il peut valider ou
-    // supprimer. Ceux d'un autre membre ne comptent pas.
+    // Ce qui attend une décision de l'utilisateur : ses traitements arrêtés
+    // en doublon possible — seul leur auteur peut les reprendre — et les
+    // brouillons marqués qu'il peut valider ou supprimer. Ceux d'un autre
+    // membre ne comptent pas, y compris pour un administrateur qui voit tous
+    // les traitements.
     final pendingDuplicates = allItems
         .where(canAct)
         .where(
           (i) => switch (i) {
-            _JobItem(:final job) => job.isDuplicate,
+            _JobItem(:final job) => job.isDuplicate && job.createdBy == me?.uid,
             _DraftItem(:final recipe) => recipe.duplicateOf != null,
           },
         )
@@ -696,6 +735,11 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 : planDraftValidation(
                     selectedDrafts.map((d) => d.recipe),
                   ).validatableInBatch,
+            // Les marques « Doublon possible » ne sont relues qu'à l'appui :
+            // avant, le nombre à valider n'est pas connu.
+            showValidateCount: !selectedDrafts.any(
+              (d) => d.recipe.duplicateOf != null,
+            ),
             retryCount: (retryableJobs.isEmpty || !canImport)
                 ? null
                 : retryableJobs.length,
@@ -812,6 +856,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                   onNotDuplicate: canImport && job.createdBy == me?.uid
                       ? () => _resumeDuplicate(job)
                       : null,
+                  notDuplicateBusy: _resuming.contains(job.id),
                 ),
               );
             case _DraftItem(:final recipe):
