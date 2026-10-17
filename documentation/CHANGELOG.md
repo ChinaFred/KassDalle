@@ -20,6 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
+### v0.23.100 — fonctionnel
+
+Brouillons : un doublon est maintenant visible. Chaque brouillon doublon affiche une pastille « Doublon possible » sous sa ligne, sur toute la largeur, puis le détail sur deux lignes au plus (« Doublon possible de « Rouget » (p. 3) » quand le serveur l'a marqué). Le serveur ne marquait que le brouillon écrit en second : le plus ancien de deux brouillons « Rouget » d'un même livre n'affichait rien. La file rapproche désormais deux brouillons du même livre de même titre et leur donne à chacun la pastille, avec « Même titre : « Rouget » (p. 3) ». Pas de rapprochement sans livre, ni quand les deux pages sont connues et différentes. La validation en lot ne change pas : elle écarte les seuls brouillons marqués par le serveur. Un doublon avec une recette déjà validée reste signalé par la seule marque du serveur. Ticket #132.
+
+### v0.23.100 — technique
+
+`Recipe.titreKey` lit `titre_key` (lecture seule, absent de `toFirestore`). `draftTitleTwins` (`features/recipes/domain/draft_title_twins.dart`) compare les clés déjà posées par le serveur, sans normaliser de titre : aucune logique dupliquée Dart ↔ TypeScript, aucune fixture. `QueueDraftTile` reçoit `twins` de `work_queue_screen.dart` et affiche `_DuplicateBadge`. Aucune Function, règle, donnée ni dépendance ne change. Le backfill « Clé de titre des recettes » doit être terminé pour que les recettes anciennes soient rapprochées.
+
 ### v0.23.99 — fonctionnel
 
 Menu du compte : nouvelle entrée « Nouveautés ». Elle ouvre un écran qui liste les six dernières versions de l'application, de la plus récente à la plus ancienne, avec leur numéro, leur date et ce qu'elles changent. Une pastille « Installée » repère la version de l'application. Si la liste ne se charge pas, l'écran affiche « Impossible d'afficher les nouveautés. » et un bouton « Réessayer ». Demandé par le ticket #131.

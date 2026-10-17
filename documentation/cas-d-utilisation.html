@@ -818,7 +818,9 @@ flowchart LR
         autre compte, les règles n'admettent la reprise que depuis ce statut et par le
         propriétaire éditeur (<code>isDuplicateResume</code>). Une recette d'un livre entier déjà présente devient un
         brouillon marqué : la validation en lot l'écarte, la relecture le valide et efface la
-        marque. En mode nouveau livre, l'écran de confirmation d'un import de livre signale un
+        marque. La file montre une pastille « Doublon possible » sur ce brouillon, et aussi sur deux
+        brouillons de même titre dans un même livre (rapprochés à l'affichage par la clé de titre
+        du serveur, pages non contradictoires) : l'action du menu y est « Relire ». En mode nouveau livre, l'écran de confirmation d'un import de livre signale un
         livre déjà en bibliothèque et propose « Importer dans ce livre » ou « Créer un nouveau
         livre quand même ».
         <span class="expect">

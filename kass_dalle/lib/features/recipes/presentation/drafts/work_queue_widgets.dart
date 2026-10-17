@@ -14,6 +14,7 @@ import '../../../processing/presentation/processing_trail_row.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../domain/recipe.dart';
 import '../url_import/recipe_source_link.dart' show openExternalPage;
+import '../../domain/draft_title_twins.dart';
 import '../../domain/duplicate_reference.dart';
 import 'duplicate_widgets.dart';
 import '../../../../core/theme/app_icon_size.dart';
@@ -734,8 +735,13 @@ class QueueDraftTile extends StatelessWidget {
   final VoidCallback? onValidate;
   final VoidCallback? onDelete;
 
+  /// Autre(s) brouillon(s) du même livre au même titre, calculés par la file
+  /// quand le serveur n'a pas posé `duplicate_of` sur celui-ci.
+  final DraftTitleTwins? twins;
+
   const QueueDraftTile({
     super.key,
+    this.twins,
     required this.recipe,
     required this.isSelected,
     required this.isSelecting,
@@ -754,7 +760,8 @@ class QueueDraftTile extends StatelessWidget {
     // Sans action ni document, pas de menu : un menu vide s'ouvrait sur rien.
     final hasMenu = onValidate != null || onDelete != null || hasSource;
 
-    return ListTile(
+    final detail = _duplicateDetail();
+    final tile = ListTile(
       // En mode sélection, le brouillon d'un autre est grisé et ne réagit
       // pas : il ne se sélectionne pas, et naviguer ferait perdre la
       // sélection en cours.
@@ -800,29 +807,6 @@ class QueueDraftTile extends StatelessWidget {
                     recipe.bookTitre!,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          // Brouillon d'un import de livre entier, déjà présent dans le
-          // livre : la validation en lot l'écarte, la relecture le montre.
-          if (recipe.duplicateOf != null)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.content_copy_outlined,
-                  size: AppIconSize.badge,
-                  color: theme.colorScheme.tertiary,
-                ),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    recipe.duplicateOf!.bannerLabel,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.tertiary,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -892,7 +876,7 @@ class QueueDraftTile extends StatelessWidget {
                       // bandeau montre la recette existante : « Valider »
                       // depuis la file l'aurait laissé de côté sans rien
                       // montrer.
-                      if (onValidate != null && recipe.duplicateOf != null)
+                      if (onValidate != null && detail != null)
                         const PopupMenuItem(
                           value: _DraftMenuAction.review,
                           child: ListTile(
@@ -944,6 +928,37 @@ class QueueDraftTile extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
     );
+    if (detail == null) return tile;
+    // Doublon possible : marque du serveur (import de livre entier), ou
+    // brouillon de même titre dans la file. La pastille occupe toute la
+    // largeur sous la tuile : dans le sous-titre, le statut et la date du
+    // trailing ne lui laissaient que quelques dizaines de dp.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        tile,
+        Padding(
+          padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
+          child: _DuplicateBadge(detail: detail),
+        ),
+      ],
+    );
+  }
+
+  /// Détail affiché sous la pastille « Doublon », ou `null` sans doublon.
+  /// La marque du serveur prime sur le rapprochement local.
+  String? _duplicateDetail() {
+    final ref = recipe.duplicateOf;
+    if (ref != null) return ref.bannerLabel;
+    final t = twins;
+    if (t == null) return null;
+    final page = t.first.pageNumber;
+    final head = 'Même titre : « ${t.first.titre} »';
+    final withPage = page == null ? head : '$head (p. $page)';
+    return t.others == 0
+        ? withPage
+        : '$withPage et ${t.others} autre${t.others > 1 ? 's' : ''}';
   }
 
   String _formatDate(DateTime dt) {
@@ -953,6 +968,71 @@ class QueueDraftTile extends StatelessWidget {
     if (diff.inHours < 1) return 'Il y a ${diff.inMinutes} min';
     if (diff.inDays < 1) return 'Il y a ${diff.inHours} h';
     return '${dt.day}/${dt.month}/${dt.year}';
+  }
+}
+
+/// Pastille « Doublon » et son détail, sous le titre d'un brouillon.
+class _DuplicateBadge extends StatelessWidget {
+  const _DuplicateBadge({required this.detail});
+
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Semantics(
+      container: true,
+      label: 'Doublon possible. $detail',
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.content_copy_outlined,
+                      size: AppIconSize.badge,
+                      color: scheme.onTertiaryContainer,
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        'Doublon possible',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onTertiaryContainer,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Text(
+              detail,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

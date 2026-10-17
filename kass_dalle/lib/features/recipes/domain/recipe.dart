@@ -790,6 +790,12 @@ class Recipe {
   /// dans la même écriture. [toFirestore] ne l'écrit jamais.
   final RecipeDuplicateRef? duplicateOf;
 
+  /// Clé de comparaison du titre (`titre_key`), posée par le serveur : le titre
+  /// sans majuscules, accents ni ponctuation. Le client la lit pour rapprocher
+  /// deux brouillons de même titre et ne la recalcule jamais ; [toFirestore]
+  /// ne l'écrit pas. `null` tant que la recette n'a pas été reprise.
+  final String? titreKey;
+
   /// Vrai quand la recette a été traduite à l'import.
   bool get isTranslated => (langueOrigine ?? '').isNotEmpty;
 
@@ -848,6 +854,7 @@ class Recipe {
     this.sourceSite,
     this.sourceAuthor,
     this.duplicateOf,
+    this.titreKey,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -924,6 +931,7 @@ class Recipe {
       sourceSite: data['source_site'] as String?,
       sourceAuthor: data['source_author'] as String?,
       duplicateOf: RecipeDuplicateRef.fromMap(data['duplicate_of']),
+      titreKey: data['titre_key'] as String?,
     );
   }
 
@@ -1050,6 +1058,7 @@ class Recipe {
       sourceAuthor: sourceAuthor ?? this.sourceAuthor,
       // Posée par le serveur, effacée par la validation : jamais un paramètre.
       duplicateOf: duplicateOf,
+      titreKey: titreKey,
     );
   }
 }
