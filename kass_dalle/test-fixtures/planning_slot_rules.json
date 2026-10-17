@@ -1167,6 +1167,55 @@
       "expected": [{ "slot": 0, "recipe_id": "a", "source": "code" }],
       "rejected": 1,
       "why": "réponse inexploitable : tout par le code"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }],
+      "rankings": [
+        { "slot": 0, "plats": ["pou1"] },
+        { "slot": 1, "plats": ["pou2", "poi1"] }
+      ],
+      "proteins": { "pou1": "volaille", "pou2": "volaille", "poi1": "poisson" },
+      "raw": [
+        { "slot": 0, "recipe_id": "pou1" },
+        { "slot": 1, "recipe_id": "pou2" }
+      ],
+      "expected": [
+        { "slot": 0, "recipe_id": "pou1", "source": "model" },
+        { "slot": 1, "recipe_id": "poi1", "source": "code" }
+      ],
+      "rejected": 1,
+      "why": "choix du modèle de même protéine que la veille : remplacé par un candidat d'une autre protéine"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }],
+      "rankings": [
+        { "slot": 0, "plats": ["pou2", "poi1"] },
+        { "slot": 1, "plats": ["pou1"] }
+      ],
+      "proteins": { "pou1": "volaille", "pou2": "volaille", "poi1": "poisson" },
+      "sent_slots": [0],
+      "raw": [{ "slot": 0, "recipe_id": "pou2" }],
+      "expected": [
+        { "slot": 0, "recipe_id": "poi1", "source": "code" },
+        { "slot": 1, "recipe_id": "pou1", "source": "code" }
+      ],
+      "rejected": 1,
+      "why": "créneau non envoyé traité d'abord : la protéine du voisin se lit par date, pas par ordre de traitement"
+    },
+    {
+      "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }],
+      "rankings": [
+        { "slot": 0, "plats": ["pou1"] },
+        { "slot": 1, "plats": ["pou2"] }
+      ],
+      "proteins": { "pou1": "volaille", "pou2": "volaille" },
+      "raw": [{ "slot": 1, "recipe_id": "pou2" }],
+      "expected": [
+        { "slot": 0, "recipe_id": "pou1", "source": "code" },
+        { "slot": 1, "recipe_id": "pou2", "source": "code" }
+      ],
+      "rejected": 2,
+      "why": "aucun candidat de protéine différente : le créneau reste rempli, par le code"
     }
   ],
   "_code_justification_comment": "Faits produits par le code, jamais par le modèle. Ordre : protéine, durée, note, dernier service, répétition, refus récent.",

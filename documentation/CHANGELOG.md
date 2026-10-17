@@ -28,7 +28,7 @@ candidat existe (ticket #137, deux jours de poulet d'affilée). `validateModelCh
 veille ou du lendemain, comptée par date. Avant, seule la protéine du créneau traité juste
 avant servait de repli, et l'ordre de traitement (créneaux non envoyés d'abord) n'est pas
 l'ordre des jours. Le refus s'ajoute à `rejected_choices`. Sans candidat libre d'une autre
-protéine, le créneau garde le choix du modèle. Aucune modification Dart, aucun nouveau poste d'IA.
+protéine, le créneau reste rempli par le premier candidat libre. Aucune modification Dart, aucun nouveau poste d'IA.
 Une recette sans tag `main_protein` ni indice dans les types de plat reste « inconnue » et
 n'est pas détectée.
 

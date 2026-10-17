@@ -4820,7 +4820,7 @@ d'IA de plus : le coût reste imputé à `planning` (et `planning_concept`), au 
    À la validation (`validateModelChoices`), un choix du modèle dont la protéine connue est celle
    de la veille ou du lendemain est remplacé par le premier candidat libre d'une autre protéine
    (compté dans `rejected_choices`) ; les protéines sont lues par date, pas dans l'ordre de
-   traitement des créneaux. Sans candidat différent, le choix du modèle est gardé.
+   traitement des créneaux. Sans candidat différent, le créneau reste rempli par le premier candidat libre.
 3. **Tirage pondéré sans remise** (`weightedOrder`, Efraimidis–Spirakis, graine tirée par
    `crypto`) : deux générations ne rendent pas la même liste. Les recettes déjà en tête d'un
    autre créneau passent après les autres. La tête couvre au moins trois protéines quand la
