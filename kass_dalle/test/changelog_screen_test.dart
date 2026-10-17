@@ -48,6 +48,13 @@ void main() {
     expect(entries.first.date, DateTime(2026, 10, 17));
   });
 
+  test('parseChangelog refuse une entrée tronquée', () {
+    expect(
+      () => parseChangelog('{"versions":[{"version":"0.2.3"}]}'),
+      throwsA(isA<TypeError>()),
+    );
+  });
+
   testWidgets('liste les versions et repère la version installée', (
     tester,
   ) async {

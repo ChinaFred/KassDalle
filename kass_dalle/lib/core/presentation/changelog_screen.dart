@@ -74,16 +74,22 @@ class _ChangelogCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text('v${entry.version}', style: theme.textTheme.titleLarge),
-                if (installed) ...[
-                  const SizedBox(width: 8),
+                Semantics(
+                  header: true,
+                  child: Text(
+                    'v${entry.version}',
+                    style: theme.textTheme.titleLarge,
+                  ),
+                ),
+                if (installed)
                   const Chip(
                     label: Text('Installée'),
                     visualDensity: VisualDensity.compact,
                   ),
-                ],
               ],
             ),
             Text(
@@ -97,6 +103,9 @@ class _ChangelogCard extends StatelessWidget {
               data: entry.text,
               extensionSet: md.ExtensionSet.gitHubFlavored,
               styleSheet: MarkdownStyleSheet.fromTheme(theme),
+              // Pas d'image distante : le texte vient du CHANGELOG, et une
+              // image externe transmettrait l'adresse IP du lecteur.
+              imageBuilder: (_, _, _) => const SizedBox.shrink(),
             ),
           ],
         ),
