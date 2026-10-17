@@ -75,6 +75,9 @@ void main() {
           mealSuggestionRepositoryProvider.overrideWithValue(repo),
           appUserProvider.overrideWith((ref) => Stream.value(_user)),
           memberNameProvider.overrideWith((ref, uid) => 'Marie'),
+          suggestablePrivateTitlesProvider.overrideWith(
+            (ref) async => [_recipe('p1', 'Gâteau secret', isPrivate: true)],
+          ),
           suggestableRecipesProvider.overrideWith((ref) async {
             if (recipesFail) throw StateError('lecture impossible');
             return recipes ??
@@ -165,6 +168,25 @@ void main() {
       findsOneWidget,
       reason: 'le jour manque : la phrase le dit',
     );
+  });
+
+  testWidgets('un titre privé se choisit et prévient le propriétaire', (
+    tester,
+  ) async {
+    final repo = await open(tester);
+    await tester.enterText(find.byType(TextField).first, 'secret');
+    await tester.pump();
+    await tester.tap(find.text('Gâteau secret'));
+    await tester.pump();
+    expect(
+      find.text('Recette privée : Marie ne verra que son titre.'),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Envoyer la suggestion'),
+    );
+    await tester.pumpAndSettle();
+    expect(repo.drafts.single.recipeId, 'p1');
   });
 
   testWidgets('nom trop long : message et bouton inactif', (tester) async {

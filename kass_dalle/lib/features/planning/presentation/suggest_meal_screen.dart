@@ -268,7 +268,17 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
     final day = _day;
     final ownerName = _ownerName(group);
     final recipesAsync = ref.watch(suggestableRecipesProvider);
-    final recipes = recipesAsync.value ?? const <Recipe>[];
+    // Les livres privés des membres de mes groupes : titre seul, après la
+    // liste habituelle, sans doublon.
+    final own = recipesAsync.value ?? const <Recipe>[];
+    final known = {for (final r in own) r.id};
+    final recipes = [
+      ...own,
+      ...?ref
+          .watch(suggestablePrivateTitlesProvider)
+          .value
+          ?.where((r) => !known.contains(r.id)),
+    ];
     final matches = filterPickerRecipes(recipes, query: _dishCtrl.text);
     final freeName = _dishTitle;
     final showFreeTile = freeName.isNotEmpty && !_freeNameTooLong;
@@ -490,11 +500,22 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
                                 return ListTile(
                                   contentPadding: EdgeInsets.zero,
                                   title: Text(r.titre),
-                                  subtitle: r.isPrivate
-                                      ? const Text('Recette privée')
+                                  subtitle: r.isPrivate && r.bookTitre != null
+                                      ? Text(r.bookTitre!)
                                       : null,
                                   trailing: selected
                                       ? const Icon(Icons.check_circle)
+                                      : r.isPrivate
+                                      ? Tooltip(
+                                          message: 'Seul le titre est visible',
+                                          child: Icon(
+                                            Icons.lock_outline,
+                                            size: AppIconSize.small,
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                        )
                                       : null,
                                   onTap: _sending ? null : () => _pickRecipe(r),
                                 );

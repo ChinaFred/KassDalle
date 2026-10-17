@@ -3570,6 +3570,17 @@ Le propriétaire d'un groupe cherche un compte existant à inviter par son adres
 complète. `users/{uid}` n'est pas lisible par lui (§4) : le serveur fait la recherche. Aucun
 appel de modèle : ce n'est pas un poste d'IA.
 
+**`listFamilyPrivateTitlesFn`** (`callable/privateTitlesCallable.ts`, logique pure dans
+`gemini/privateTitles.ts`, `onCall`, `requireAuth` — compte approuvé et non révoqué ; traitement
+`titres_recettes_privees`). Sans entrée. Lit `group_reach/{uid}` du demandeur (30 comptes au plus,
+lui exclu), puis les recettes de ces comptes `review_status == validated` et `is_private == true`
+(pages de type recette seulement), et rend `{titles: [{id, titre, bookTitre, createdBy}]}`, 500 au
+plus, triés par titre. Aucun autre champ de la recette ne sort ; les règles Firestore restent
+inchangées (la recette privée reste illisible côté client). Appelée par l'écran « Suggérer un
+plat » (`suggestablePrivateTitlesProvider`) ; un échec est rapporté
+(`meal_suggestions.load_private_titles`) et la section est omise. La suggestion copie déjà le titre
+(`recipe_titre`). Aucun appel de modèle : pas de poste d'IA. Testé : `tests/privateTitles.test.ts`.
+
 **`findMemberByEmailFn`** (`callable/memberSearchCallable.ts`, `onCall`, `requireEditor` —
 editor ou admin, non révoqué, App Check selon la politique (v0.23.54 : un reader
 propriétaire d'un ancien groupe n'invite plus) ; traitement
@@ -6892,7 +6903,7 @@ functions/src/
 
 ---
 
-### 13.1 Carte de navigation — les 50 routes
+### 13.1 Carte de navigation — les 51 routes
 
 `go_router`, déclaré dans `core/router/app_router.dart`. Les constantes vivent dans
 `AppRoutes`, une seule `ShellRoute` porte la coquille `AppShell` pour tout ce qui suit
@@ -6938,6 +6949,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/planning/batch` | `BatchPlanningScreen` | `editor` — un `reader` est renvoyé vers `/planning?reserve=1` (13.2). `?group=<groupId>` (`kPlanningGroupParam`) ouvre le planning d'un groupe dont l'utilisateur est le propriétaire ; sinon l'écran dit « Le planning de ce groupe ne vous est pas accessible. » |
 | `/planning/config` | `PlanningConfigScreen` | `editor` — « Préférences du planning », dont « Partager mon planning » ; un `reader` est renvoyé vers `/planning?reserve=1` |
 | `/planning/staples` | `MyStaplesScreen` | `editor` — ses garnitures, retouchées pour soi ; un `reader` est renvoyé vers `/planning?reserve=1` |
+| `/planning/suggest` | `SuggestMealScreen` | `reader` — « Suggérer un plat » en page entière ; groupes, groupe, jour et recette arrivent en `extra` (`SuggestMealArgs`) et la page rend le prénom du propriétaire à `pop` ; sans `extra` (page rechargée, lien collé), la route redirige vers `/planning`. Hors `kPlanningEditorRoutes` : un lecteur suggère |
 | `/groups` | `GroupsScreen` | `reader` |
 | `/groups/:groupId` | `GroupMembersScreen` — gestion des membres d'un groupe (`AppRoutes.groupMembers`) ; groupe absent de `myGroupsProvider` : « Groupe introuvable » | `reader` — les actions suivent `isOwner` et `canEditProvider`, les règles Firestore font foi |
 | `/account` | `AccountScreen` | `reader` |

@@ -368,6 +368,7 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
                           if (cook != null) '${cook}min cuisson',
                         ].join(' + ');
                         final subtitle = [
+                          if (r.isPrivate && r.bookTitre != null) r.bookTitre!,
                           if (times.isNotEmpty) times,
                           if (_isDismissed(r))
                             'écartée pour ce ${widget.dismissedFrom}',
@@ -375,6 +376,16 @@ class _RecipePickerSheetState extends State<RecipePickerSheet> {
                         return ListTile(
                           title: Text(r.titre),
                           subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+                          trailing: r.isPrivate
+                              ? Tooltip(
+                                  message: 'Seul le titre est visible',
+                                  child: Icon(
+                                    Icons.lock_outline,
+                                    size: AppIconSize.small,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                )
+                              : null,
                           onTap: () => Navigator.pop(ctx, r),
                         );
                       },

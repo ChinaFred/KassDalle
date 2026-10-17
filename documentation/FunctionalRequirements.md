@@ -943,23 +943,37 @@ lui-même celles qu'il retient.
   Suggérer un plat » ; un jour avec des repas porte « Suggérer un plat » sous les
   repas du groupe. Aucun bouton sur un jour passé. Depuis une fiche recette, l'icône
   ampoule « Suggérer pour un planning de groupe », à côté de « Planifier » et
-  « Ajouter aux courses », ouvre la même feuille avec la recette choisie ; elle n'est
+  « Ajouter aux courses », ouvre le même écran avec la recette choisie ; elle n'est
   proposée qu'à un membre d'au moins un groupe actif dont il n'est pas le propriétaire.
-- **La feuille « Suggérer un plat ».** Sous-titre « Famille Dupont · samedi 17
-  octobre ». Ligne « Plat » : « Choisir une recette » ouvre le sélecteur, avec les
-  recettes que le membre lit (les siennes et celles des membres de ses groupes) et la
-  saisie d'un nom libre de 60 caractères au plus ; ni génération ni conception par
-  l'IA : une suggestion ne coûte aucun appel d'IA. Champ « Un mot pour Marie
-  (facultatif) », 200 caractères au plus. « Envoyer la suggestion » s'active dès
-  qu'un plat est choisi. Depuis une fiche recette, la feuille demande aussi le
+- **L'écran « Suggérer un plat ».** Page entière (`/planning/suggest`), sur téléphone, web
+  et desktop ; contenu centré sur 640 px au plus. Barre d'application avec flèche de retour,
+  titre « Suggérer un plat » et sous-titre « Famille Dupont · samedi 17 octobre ». Le champ
+  principal est « Quel plat ? » : on y tape un nom libre de 60 caractères au plus (« des
+  frites »), ou on cherche une recette. Les recettes que le membre lit (les siennes et
+  celles des membres de ses groupes) s'affichent dessous, dans le même écran, filtrées par
+  ce qui est tapé ; une ligne « Utiliser « des frites » » (repas libre, sans recette liée)
+  précède la liste. Choisir une recette remplace le nom libre ; retoucher son titre la
+  ramène à un nom libre. Ni génération ni conception par l'IA : une suggestion ne coûte
+  aucun appel d'IA. Champ « Un mot pour Marie (facultatif) », 200 caractères au plus, sous le
+  plat. « Envoyer la suggestion » est fixé en bas de l'écran, au-dessus du clavier, et
+  s'active dès que le champ « Quel plat ? » n'est pas vide : choisir une recette n'est
+  pas nécessaire. Inactif, il est précédé d'une phrase qui dit pourquoi (« Tapez un plat ou
+  choisissez une recette. », « Choisissez un jour. », « Choisissez un groupe. », nom trop
+  long). Depuis une fiche recette, la recette est préremplie et l'écran demande aussi le
   « Groupe » (s'il y en a plusieurs) et le « Jour » (d'aujourd'hui à 59 jours après).
-  Une erreur de lecture des recettes se dit dans la feuille : « Les recettes n'ont pas
-  pu être lues. Réessayez. » ; un nom libre reste possible. Succès :
-  « Suggestion envoyée à Marie. » Échec : « Suggestion non envoyée. Réessayez. », la
-  feuille reste ouverte et la saisie est conservée. Feuille du bas sur un téléphone,
-  boîte de dialogue de 480 px sur grand écran ; Ctrl+Entrée ou Ctrl+S (Cmd sur Mac)
-  envoient, Échap ferme.
-- **Une recette privée se suggère par son titre.** La feuille le dit : « Recette
+  Une erreur de lecture des recettes se dit dans l'écran : « Les recettes n'ont pas pu être
+  lues. Un nom libre reste possible. » Les recettes validées des
+  livres privés des membres de ses groupes sont aussi proposées, **en titre seul** : ligne
+  avec le nom du livre et un cadenas (« Seul le titre est visible »), sans image ni
+  ingrédients ni accès à la fiche. L'auteur d'une recette ne peut pas refuser que son titre
+  paraisse. Un membre sans groupe en commun avec l'auteur n'en voit rien. Si cette lecture
+  échoue, la liste habituelle s'affiche sans ces recettes. Succès : retour à l'écran
+  d'origine avec « Suggestion envoyée à Marie. » Échec : « Suggestion non envoyée.
+  Réessayez. » ; quota atteint : « Vous avez déjà fait 5 suggestions pour ce jour. » ;
+  l'écran reste ouvert et la saisie est conservée. Quitter avec un plat ou un mot saisi
+  demande « Abandonner la suggestion ? » (Rester, Abandonner). Ctrl+Entrée ou Ctrl+S
+  (Cmd sur Mac) envoient.
+- **Une recette privée se suggère par son titre.** L'écran le dit : « Recette
   privée : Marie ne verra que son titre. » Le propriétaire lit ce titre, avec un
   cadenas « Recette non partagée », sans pouvoir ouvrir la fiche. Une recette qu'il
   lit s'affiche sous son titre actuel, pas sous celui copié à l'envoi.

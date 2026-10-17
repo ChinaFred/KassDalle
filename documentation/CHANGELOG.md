@@ -20,6 +20,30 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
+### v0.23.93 — fonctionnel
+
+Suggérer un plat : la suggestion s'ouvre en page entière, plus en feuille ni en boîte de dialogue. Le champ principal est « Quel plat ? » : un nom tapé (« des frites ») suffit à envoyer, sans choisir de recette. Les recettes correspondantes s'affichent dessous, dans le même écran, titres privés des livres de la famille compris. Le mot facultatif est un champ à part. Quand « Envoyer la suggestion » est inactif, une phrase dit pourquoi. Quitter avec une saisie demande confirmation. Demande du ticket #121.
+
+### v0.23.93 — technique
+
+`SuggestMealSheet` (`suggest_meal_sheet.dart`) devient `SuggestMealScreen` (`suggest_meal_screen.dart`) ; `showSuggestMealSheet` devient `openSuggestMeal`, qui pousse la route `AppRoutes.suggestMeal` (`/planning/suggest`) avec `SuggestMealArgs` en `extra` et attend le prénom du propriétaire. Sans `extra`, la route redirige vers `/planning`. La liste de recettes est intégrée à l'écran (`filterPickerRecipes`, `suggestableRecipesProvider` et `suggestablePrivateTitlesProvider`) : `RecipePickerSheet` n'est plus utilisé par la suggestion. Aucune donnée, règle ni Cloud Function ne change. Test : `test/suggest_meal_screen_test.dart`.
+
+### v0.23.92 — fonctionnel
+
+Suggérer un plat : le sélecteur propose aussi les recettes validées des livres privés des membres
+de vos groupes, en titre seul (nom du livre et cadenas, sans image ni ingrédients). Le destinataire
+d'une suggestion sans accès à la recette n'en voit que le titre. L'auteur ne peut pas refuser
+l'affichage du titre. Un membre sans groupe en commun n'en voit rien. Demande du ticket #117.
+
+### v0.23.92 — technique
+
+Nouvelle Cloud Function `listFamilyPrivateTitlesFn` (`callable/privateTitlesCallable.ts`,
+`gemini/privateTitles.ts`) : lit `group_reach` puis les recettes privées validées, et ne rend que
+`{id, titre, bookTitre, createdBy}`. Règles Firestore inchangées. Côté client,
+`PrivateTitlesRepository`, `suggestablePrivateTitlesProvider` et `PrivateRecipeTitle`
+(recette creuse). Tests : `privateTitles.test.ts`, `private_recipe_title_test.dart`. Aucune
+dépendance modifiée.
+
 ### v0.23.91 — fonctionnel
 
 Groupes : la gestion des membres d'un groupe n'est plus une feuille qui monte du bas, mais une page à part entière, à l'adresse `/groups/<groupe>`. Elle a sa barre d'application (nom du groupe, flèche « Retour aux groupes »), son lien direct et un contenu centré sur 640 px au plus sur grand écran. Recherche, invitation, annulation et retrait fonctionnent comme avant, avec les mêmes droits. Un groupe inconnu ou quitté affiche « Groupe introuvable ». Demande du ticket #116.
