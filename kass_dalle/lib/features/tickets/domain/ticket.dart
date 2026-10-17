@@ -595,6 +595,7 @@ AdminTicketDecisions adminTicketDecisions(
       now: now ?? DateTime.now(),
       statusChangedAt: t.statusChangedAt,
       deliveryBlockedAt: delivery?.lastBlockedAt,
+      analysisPublishedAt: lastAnalysisAt,
     );
   }
   final offered =
