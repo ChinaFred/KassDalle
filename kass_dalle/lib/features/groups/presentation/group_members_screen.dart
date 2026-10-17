@@ -31,6 +31,9 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
   /// suppression) ramène alors à la liste au lieu d'afficher « introuvable ».
   bool _seen = false;
 
+  /// La redirection vers `/groups` est lancée : un seul `go` par disparition.
+  bool _leaving = false;
+
   final TextEditingController _searchController = TextEditingController();
   List<UserProfile> _searchResults = [];
 
@@ -250,9 +253,13 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
         );
       }
       if (_seen) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) context.go(AppRoutes.groups);
-        });
+        if (!_leaving) {
+          _leaving = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            context.go(AppRoutes.groups);
+          });
+        }
         return const Scaffold(body: AppLoadingState());
       }
       return Scaffold(
@@ -335,7 +342,7 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
-          child: Column(
+          child: ListView(
             children: [
               if (canManage) ...[
                 Padding(
@@ -450,6 +457,7 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Membres',
+                    semanticsLabel: 'Membres',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
@@ -471,51 +479,42 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
                     ),
                   ),
                 ),
-              Expanded(
-                child: ListView(
-                  children: [
-                    for (final uid in group.memberIds)
-                      _MemberTile(
-                        uid: uid,
-                        isOwner: group.isOwner(uid),
-                        canRemove: isOwner && uid != myUid,
-                        onRemove: (name) => _removeMember(group, uid, name),
-                      ),
-                    if (isOwner && (pendingCount > 0 || emailError)) ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                        child: Text(
-                          emailError && pendingCount == 0
-                              ? 'Invitations en attente'
-                              : 'Invitations en attente ($pendingCount)',
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                      ),
-                      for (final uid in group.invitedIds)
-                        _InvitedTile(
-                          uid: uid,
-                          onCancel: (name) =>
-                              _cancelInvitation(group, uid, name),
-                        ),
-                      for (final invitation in emailPending)
-                        _EmailInvitedTile(invitation: invitation),
-                      if (emailError)
-                        ListTile(
-                          leading: const Icon(Icons.error_outline),
-                          title: const Text(
-                            'Invitations par e-mail indisponibles',
-                          ),
-                          trailing: TextButton(
-                            onPressed: () => ref.invalidate(
-                              groupEmailInvitationsProvider(group.id),
-                            ),
-                            child: const Text('Réessayer'),
-                          ),
-                        ),
-                    ],
-                  ],
+              for (final uid in group.memberIds)
+                _MemberTile(
+                  uid: uid,
+                  isOwner: group.isOwner(uid),
+                  canRemove: isOwner && uid != myUid,
+                  onRemove: (name) => _removeMember(group, uid, name),
                 ),
-              ),
+              if (isOwner && (pendingCount > 0 || emailError)) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Text(
+                    emailError && pendingCount == 0
+                        ? 'Invitations en attente'
+                        : 'Invitations en attente ($pendingCount)',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                for (final uid in group.invitedIds)
+                  _InvitedTile(
+                    uid: uid,
+                    onCancel: (name) => _cancelInvitation(group, uid, name),
+                  ),
+                for (final invitation in emailPending)
+                  _EmailInvitedTile(invitation: invitation),
+                if (emailError)
+                  ListTile(
+                    leading: const Icon(Icons.error_outline),
+                    title: const Text('Invitations par e-mail indisponibles'),
+                    trailing: TextButton(
+                      onPressed: () => ref.invalidate(
+                        groupEmailInvitationsProvider(group.id),
+                      ),
+                      child: const Text('Réessayer'),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),

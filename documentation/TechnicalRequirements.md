@@ -3621,7 +3621,7 @@ Client : `GroupRepository.findMemberByEmail(groupId, email)` appelle la callable
 réponse par `memberFromSearchResponse` (`groups/domain/member_email_search.dart`) ;
 `resource-exhausted` devient `MemberSearchLimitReached`. Toute erreur est signalée
 (`ErrorReportService`, feature `group_search_email`, contexte `group_id` et issue, sans
-l'adresse). Dans la feuille « Gérer les membres », une saisie qui contient `@` suspend la
+l'adresse). Dans la page « Gérer les membres », une saisie qui contient `@` suspend la
 recherche par nom ; une adresse complète (`looksLikeEmail`) part à la validation de la saisie
 ou au bouton « Chercher cette adresse », jamais à chaque frappe. Les recherches par nom et par
 adresse ont chacune leur indicateur (`_searching`, `_emailSearching`) : la fin de l'une ne
