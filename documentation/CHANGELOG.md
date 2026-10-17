@@ -20,6 +20,18 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
+### v0.24.1 — fonctionnel
+
+Planning par lot : un cycle qui franchit le changement d'heure du 25 octobre 2026 affiche
+les bons jours (ticket #139, « 2x dimanche, pas le jeudi »). Les dates du cycle se
+calculaient avec `Duration(days: i)`, soit `i × 24 h` : après le passage à l'heure d'hiver,
+la date tombait à 23 h la veille, le dimanche apparaissait deux fois et le dernier jour
+disparaissait. Le serveur recevait ces dates et appliquait deux fois les contraintes du
+dimanche. `cycleDatesFrom` (`planning_preferences.dart`) construit désormais chaque jour par
+`DateTime(année, mois, jour + i)`, comme `_addDay` de `batch_planning_screen.dart`
+(« ajouter un jour » et détection d'un jour manquant). Aucune donnée stockée n'est touchée.
+Test : `test/planning_cycle_dates_test.dart`.
+
 ### v0.24.0 — fonctionnel
 
 Planning : deux plats principaux de même protéine ne se suivent plus quand un autre

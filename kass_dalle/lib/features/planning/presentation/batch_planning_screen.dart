@@ -1233,7 +1233,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       int? gapIdx;
       DateTime? gapDate;
       for (int i = 1; i < _slotDates.length; i++) {
-        final expected = _slotDates[i - 1].add(const Duration(days: 1));
+        final prev = _slotDates[i - 1];
+        final expected = DateTime(prev.year, prev.month, prev.day + 1);
         if (_slotDates[i] != expected) {
           gapDate = expected;
           gapIdx = i;
@@ -1335,7 +1336,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           ..addAll(manual);
       } else {
         // Pas de trou : étendre d'un jour après le dernier
-        final newDate = _slotDates.last.add(const Duration(days: 1));
+        final last = _slotDates.last;
+        final newDate = DateTime(last.year, last.month, last.day + 1);
         _slotDates = [..._slotDates, newDate];
         _slots[_slotDates.length - 1] = null;
         _slotTimes[_slotDates.length - 1] = _timeFor(newDate);
