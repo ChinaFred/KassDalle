@@ -699,6 +699,16 @@ class GeminiService {
     return (Map<String, dynamic>.from(data as Map)['status'] as String?) ?? '';
   }
 
+  /// Clôt un ticket (administrateur) : publie `Réponse : <commentaire>` sur
+  /// l'Issue, pose `statut:clos` et la ferme. Rend le statut du ticket.
+  Future<String> closeTicket(String ticketId, String comment) async {
+    final data = await _call('closeTicket', {
+      'ticketId': ticketId,
+      'comment': comment,
+    });
+    return (Map<String, dynamic>.from(data as Map)['status'] as String?) ?? '';
+  }
+
   /// Lance la routine Claude Code d'analyse sur un ticket Reçu
   /// (administrateur). Sortie `{outcome: "launched" | "unknown",
   /// session_url}`. Aucun appel de modèle facturé au projet.

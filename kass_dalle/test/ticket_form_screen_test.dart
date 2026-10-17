@@ -41,11 +41,29 @@ void main() {
     await tester.tap(find.text('Envoyer'));
     await tester.pump();
 
-    await tester.tap(find.text('Question'));
+    await tester.ensureVisible(find.text('Évolution'));
+    await tester.tap(find.text('Évolution'));
     await tester.pump();
 
     expect(find.text('Choisissez le type de ticket.'), findsNothing);
-    expect(find.textContaining('Votre question : …'), findsWidgets);
+    expect(find.textContaining('Ce qui existe aujourd\'hui : …'), findsWidgets);
+  });
+
+  testWidgets('trois types proposés, Question absent, aucun présélectionné', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    expect(find.text('Bug'), findsOneWidget);
+    expect(find.text('Évolution'), findsOneWidget);
+    expect(find.text('Nouvelle fonctionnalité'), findsOneWidget);
+    expect(find.text('Question'), findsNothing);
+    expect(
+      tester
+          .widgetList<ChoiceChip>(find.byType(ChoiceChip))
+          .where((c) => c.selected),
+      isEmpty,
+    );
   });
 
   testWidgets('écran présélectionné depuis le modèle de route', (tester) async {

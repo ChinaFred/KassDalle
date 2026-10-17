@@ -58,7 +58,7 @@ export const GMAIL_APP_PASSWORD = defineSecret("GMAIL_APP_PASSWORD");
  * « Livrer »).
  *
  * Attaché à `submitTicket`, `retryTicketSend`, `validateTicket`, `refuseTicket`,
- * `launchTicketAnalysis`, `launchTicketDevelopment` (relecture de l'Issue avant lancement),
+ * `closeTicket`, `launchTicketAnalysis`, `launchTicketDevelopment` (relecture de l'Issue avant lancement),
  * `launchTicketDelivery` (PR, fichiers, CI et Issue relus avant lancement),
  * `backfillTicketAnalysesFn`, `backfillTicketDeliveredPrFn`, `ticketsSyncSchedule` et `githubTicketWebhook`
  * (qui relit les commentaires d'une Issue pour les analyses), et lu

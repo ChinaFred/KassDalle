@@ -28,6 +28,7 @@ IconData ticketStatusIcon(TicketStatus status) => switch (status) {
   TicketStatus.delivered => AppIcons.ticketStatusDelivered,
   TicketStatus.refused => AppIcons.ticketStatusRefused,
   TicketStatus.answered => AppIcons.ticketStatusAnswered,
+  TicketStatus.closed => AppIcons.ticketStatusClosed,
 };
 
 /// Fond et texte de la puce d'un statut.
@@ -50,6 +51,10 @@ IconData ticketStatusIcon(TicketStatus status) => switch (status) {
   TicketStatus.inProgress || TicketStatus.answered => (
     background: cs.tertiaryContainer,
     foreground: cs.onTertiaryContainer,
+  ),
+  TicketStatus.closed => (
+    background: cs.secondaryContainer,
+    foreground: cs.onSecondaryContainer,
   ),
 };
 

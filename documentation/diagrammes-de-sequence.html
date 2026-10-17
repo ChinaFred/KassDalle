@@ -188,6 +188,7 @@
       <li><a href="#ticket-lancer">Lancer une analyse ou un développement depuis l'application</a></li>
       <li><a href="#ticket-repondre">Répondre à une analyse depuis l'application</a></li>
       <li><a href="#ticket-livrer">Livrer un ticket En cours depuis l'application</a></li>
+      <li><a href="#ticket-clore">Clore un ticket depuis l'application</a></li>
     </ol>
   </nav>
 
@@ -3885,8 +3886,8 @@ sequenceDiagram
   <section>
     <h2 id="ticket-creation"><span class="n">39</span>Envoyer un ticket</h2>
     <p class="sec-note">
-      Un membre approuvé signale un bug, propose une évolution ou une fonctionnalité, ou pose
-      une question. Le ticket est enregistré dans Firestore, puis publié en Issue sur le dépôt
+      Un membre approuvé signale un bug, propose une évolution ou une fonctionnalité (le type
+      « Question » n'est plus créable). Le ticket est enregistré dans Firestore, puis publié en Issue sur le dépôt
       public. Aucun appel de modèle.
       <span class="path">menu du compte (app_shell.dart) → formulaire « Signaler ou proposer » →
       callable/ticketsCallable.ts (submitTicket, attachTicketScreenshot) → tickets/service.ts →
@@ -4540,6 +4541,75 @@ sequenceDiagram
       <figcaption>
         Le rôle est relu dans Firestore à chaque envoi : un compte qui n'est plus administrateur
         ne reçoit plus rien, même si son jeton est resté stocké.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="ticket-clore"><span class="n">48</span>Clore un ticket depuis l'application</h2>
+    <p class="sec-note">
+      L'administrateur clôt un ticket Reçu, Analysé, Validé ou En cours, de tout type, avec un
+      commentaire lu par le membre. Le ticket passe à « Clos » et l'Issue est fermée comme
+      terminée. Aucun appel d'IA.
+      <span class="path">admin_tickets_screen.dart (_closeTicket, _CloseTicketDialog) →
+      TicketRepository.close → GeminiService.closeTicket → callable/ticketsCallable.ts
+      (closeTicket, readCloseArg) → tickets/decisions.ts (closeTicketDecision) →
+      tickets/github.ts → tickets/service.ts (applyGithubUpdate, writeTicketAnalyses)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor AD as Administrateur
+  participant C as Fiche admin
+  participant F as closeTicket
+  participant T as tickets
+  participant G as GitHub
+  actor M as Membre
+
+  AD->>C: « Clore », commentaire (5 à 4 000 caractères, sans adresse e-mail)
+  C->>F: { ticketId, comment }
+  F->>F: requireAdmin ; readCloseComment (nettoyage, NFC, e-mail refusé, mentions et #N neutralisés)
+  F->>T: transaction : statut permis (closePrecondition), bail decision_lease_until (2 min)
+  alt bail déjà pris
+    F-->>C: « Une décision est déjà en cours sur ce ticket. »
+  end
+  F->>T: livraison de ce ticket en cours ? (launches, delivery, verrou delivery_running)
+  alt livraison en cours
+    F-->>C: « Une livraison est en cours sur ce ticket. Attendez sa fin. »
+  end
+  F->>G: GET /issues/N, GET /issues/N/comments
+  alt Issue déjà fermée
+    F->>T: état relu appliqué
+    F-->>C: succès si statut:clos et même commentaire, sinon « Ce ticket a déjà été clos sur GitHub. »
+  end
+  opt dernière « Réponse : » du mainteneur différente du commentaire (sameReply)
+    F->>G: POST /issues/N/comments « Réponse : commentaire »
+  end
+  F->>G: POST /issues/N/labels { statut:clos } (sauf déjà posée)
+  F->>G: PATCH /issues/N { state: closed, state_reason: completed }
+  alt étiquette ou fermeture en échec après publication
+    F-->>C: aborted « Commentaire publié, mais l'Issue n'a pas été fermée. Réessayez. »<br/>(close_published_close_failed)
+    C-->>AD: boîte ouverte, commentaire en lecture seule ; réessayer ne republie pas
+  end
+  F->>T: status = closed, reply_text = commentaire, status_changed_at
+  alt écriture du ticket en échec
+    F-->>C: internal « La clôture est faite sur GitHub, mais le ticket n'a pas été mis à jour. Réessayez. »<br/>(ticket_not_updated)
+  end
+  F->>T: admin/analysis réécrit depuis les commentaires déjà lus (au mieux)
+  F->>T: bail retiré (finally)
+  F-->>C: { status: closed }
+  C-->>AD: « Ticket clos. Le commentaire est publié sur GitHub. »
+  M->>T: « Mes tickets » : Clos, encadré « Réponse de l'administrateur », pastille sur la puce du compte
+</pre>
+      </div>
+      <figcaption>
+        Le commentaire est public : la boîte le rappelle avant l'envoi. Une pull request ouverte
+        n'est pas fermée par la clôture ; la boîte le dit pour un ticket En cours. Le webhook et la
+        relecture horaire lisent ensuite une Issue fermée portant <code>statut:clos</code> : ils
+        retrouvent « Clos » (sans cette étiquette, la fermeture donne Livré ou Refusé). Un ticket
+        Clos est final : validation, refus, réponse et lancements sont refusés.
       </figcaption>
     </figure>
   </section>

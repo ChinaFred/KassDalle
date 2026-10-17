@@ -30,6 +30,15 @@
  *   inchangées) : `aborted`, `details.reason = "answer_published_labels_failed"` ;
  *   une reprise ne republie pas la réponse.
  *
+ * - `closeTicket` — administrateur. Publie `Réponse : <commentaire>` sur l'Issue
+ *   d'un ticket Reçu, Analysé, Validé ou En cours (tout type), pose
+ *   l'étiquette `statut:clos`, la ferme `completed` et écrit `closed` et
+ *   `reply_text` (`tickets/decisions.ts`). Commentaire de 5 à 4 000 caractères,
+ *   sans adresse e-mail (`details.reason = "contains_email"`). Refusé pendant
+ *   une livraison de ce ticket (`delivery_running`). Rend `{ status }`. Échec
+ *   partiel (commentaire publié, Issue ouverte) : `aborted`,
+ *   `details.reason = "close_published_close_failed"`.
+ *
  * - `launchTicketAnalysis` — administrateur. Lance la routine Claude Code
  *   d'analyse sur un ticket Reçu (`analyse #N`). Rend `{ outcome, session_url }`.
  * - `launchTicketDevelopment` — administrateur. Lance la routine de
@@ -82,6 +91,7 @@ import {
   TicketInputError,
   globalQuotaDocId,
   readAnswerText,
+  readCloseComment,
   readRefusalReason,
   isPlausibleDocId,
   memberQuotaDocId,
@@ -98,6 +108,7 @@ import {
 import { sendTicket } from "../tickets/service";
 import {
   answerTicketDecision,
+  closeTicketDecision,
   refuseTicketDecision,
   validateTicketDecision,
 } from "../tickets/decisions";
@@ -442,6 +453,26 @@ export function readAnswerArg(data: unknown): string {
   }
 }
 
+/**
+ * Commentaire de clôture d'une requête. Lève `invalid-argument` (champ
+ * `comment`, et `reason = "contains_email"` pour une adresse e-mail). Pure.
+ */
+export function readCloseArg(data: unknown): string {
+  const raw = (data as Record<string, unknown> | undefined)?.comment;
+  requireBoundedText(raw, { field: "comment", max: SHORT_TEXT_MAX_CHARS });
+  try {
+    return readCloseComment(raw);
+  } catch (err) {
+    if (err instanceof TicketInputError) {
+      throw new HttpsError("invalid-argument", err.message, {
+        field: err.field,
+        ...(err.reason !== null ? { reason: err.reason } : {}),
+      });
+    }
+    throw err;
+  }
+}
+
 export const validateTicket = onCall(
   { ...opts, secrets: [GITHUB_TICKETS_TOKEN] },
   async (req): Promise<{ status: TicketStatus; changed: boolean }> => {
@@ -515,6 +546,32 @@ export const answerTicketAnalysis = onCall(
         feature: "tickets",
       });
       throw new HttpsError("internal", "La réponse n'a pas pu être publiée. Réessayez.");
+    }
+  },
+);
+
+export const closeTicket = onCall(
+  { ...opts, secrets: [GITHUB_TICKETS_TOKEN] },
+  async (req): Promise<{ status: TicketStatus }> => {
+    const ctx = await requireAdmin(req, "ticket_cloture");
+    const ticketId = readTicketIdArg(req.data);
+    const comment = readCloseArg(req.data);
+    try {
+      return await closeTicketDecision(ticketId, comment, {
+        correlationId: ctx.correlationId,
+        userId: ctx.userId,
+      });
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      await logError({
+        message: `closeTicket : ticket ${ticketId} non clos`,
+        errorDescription: describe(err),
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+      });
+      throw new HttpsError("internal", "Le ticket n'a pas pu être clos. Réessayez.");
     }
   },
 );

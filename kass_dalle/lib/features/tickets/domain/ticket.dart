@@ -155,7 +155,7 @@ class Ticket {
     return uri;
   }
 
-  /// Fin du parcours : Livré, Refusé ou Répondu.
+  /// Fin du parcours : Livré, Refusé, Répondu ou Clos.
   bool get isFinal => status.isFinal;
 
   /// Le statut du ticket a changé depuis la dernière ouverture par son
@@ -198,8 +198,9 @@ DateTime? parseTicketDate(Object? raw) {
   return null;
 }
 
-/// Les quatre types de ticket. [value] est la valeur stockée et envoyée à
-/// `submitTicket`.
+/// Les quatre types de ticket connus. [value] est la valeur stockée et envoyée
+/// à `submitTicket`. `question` reste connu (lecture, filtre, règles des
+/// tickets déjà créés) mais n'est plus créable : voir [creatableTicketTypes].
 enum TicketType {
   bug('bug', 'Bug'),
   evolution('evolution', 'Évolution'),
@@ -232,14 +233,21 @@ enum TicketType {
       'Ce que vous aimeriez pouvoir faire : …\n'
           'Dans quelle situation (en cuisine, en préparant la semaine…) : …\n'
           'Comment vous faites aujourd\'hui : …',
-    TicketType.question =>
-      'Votre question : …\n'
-          'Ce que vous avez déjà essayé : …',
+    // Jamais montré : le formulaire ne propose plus ce type.
+    TicketType.question => '',
   };
 }
 
-/// Les statuts d'un ticket, dans l'ordre du parcours. `refused` et `answered`
-/// sont des fins alternatives.
+/// Les types qu'un membre peut choisir à la création d'un ticket
+/// (`CREATABLE_TICKET_TYPES` côté serveur, qui refuse `question`).
+const creatableTicketTypes = [
+  TicketType.bug,
+  TicketType.evolution,
+  TicketType.feature,
+];
+
+/// Les statuts d'un ticket, dans l'ordre du parcours. `refused`, `answered`
+/// et `closed` sont des fins alternatives.
 enum TicketStatus {
   sending('sending', 'Envoi en cours'),
   received('received', 'Reçu'),
@@ -248,7 +256,8 @@ enum TicketStatus {
   inProgress('in_progress', 'En cours'),
   delivered('delivered', 'Livré'),
   refused('refused', 'Refusé'),
-  answered('answered', 'Répondu');
+  answered('answered', 'Répondu'),
+  closed('closed', 'Clos');
 
   const TicketStatus(this.value, this.label);
 
@@ -265,7 +274,8 @@ enum TicketStatus {
   bool get isFinal =>
       this == TicketStatus.delivered ||
       this == TicketStatus.refused ||
-      this == TicketStatus.answered;
+      this == TicketStatus.answered ||
+      this == TicketStatus.closed;
 
   /// Phrase du détail, côté membre. `null` pour « Répondu » : le détail
   /// montre alors l'encadré « Réponse de l'administrateur ».
@@ -280,6 +290,7 @@ enum TicketStatus {
       'C\'est fait. Mettez l\'application à jour pour en profiter.',
     TicketStatus.refused => 'Cette demande ne sera pas traitée.',
     TicketStatus.answered => null,
+    TicketStatus.closed => 'Ce ticket est clos.',
   };
 }
 
@@ -289,12 +300,14 @@ const kTicketLateSentence =
 
 /// Les étapes de la frise du détail, de la première à la dernière.
 ///
-/// Le parcours principal va de l'envoi à la livraison. Un refus ou une
-/// réponse le quitte après la réception : le document ne garde pas
+/// Le parcours principal va de l'envoi à la livraison. Un refus, une
+/// réponse ou une clôture le quitte après la réception : le document ne garde pas
 /// l'historique des étiquettes, et la frise ne montre pas d'étape que rien ne
 /// prouve.
 List<TicketStatus> ticketTimeline(TicketStatus status) {
-  if (status == TicketStatus.refused || status == TicketStatus.answered) {
+  if (status == TicketStatus.refused ||
+      status == TicketStatus.answered ||
+      status == TicketStatus.closed) {
     return [TicketStatus.sending, TicketStatus.received, status];
   }
   return const [
@@ -400,7 +413,7 @@ List<Ticket> filterAdminTickets(
 /// Le serveur refait le même contrôle (`validatePrecondition`,
 /// `refusePrecondition`, `launchPrecondition`, `launchRunState`,
 /// `deliveryLockActive`,
-/// `answerPrecondition` et `ticketAwaitingReply`,
+/// `answerPrecondition`, `ticketAwaitingReply` et `closePrecondition`,
 /// `functions/src/tickets/rules.ts`) : un bouton masqué ici n'est qu'un
 /// confort, jamais la protection. Logique dupliquée, verrouillée par
 /// `test-fixtures/ticket_decisions.json`.
@@ -450,6 +463,10 @@ class AdminTicketDecisions {
   /// « Répondre » devient l'action principale.
   final bool awaitingReply;
 
+  /// « Clore » : ticket Reçu, Analysé, Validé ou En cours, tout type, avec
+  /// Issue, aucune livraison de ce ticket en cours ([ticketCanClose]).
+  final bool canClose;
+
   /// Date de la dernière analyse relevée, pour la ligne du ticket bloqué.
   final DateTime? lastAnalysisAt;
 
@@ -470,6 +487,7 @@ class AdminTicketDecisions {
     this.runningUntil,
     this.launchAction,
     this.canReply = false,
+    this.canClose = false,
     this.awaitingReply = false,
     this.lastAnalysisAt,
     this.pendingAnswerAt,
@@ -489,7 +507,27 @@ class AdminTicketDecisions {
       canLaunchAnalysis ||
       canLaunchDevelopment ||
       canDeliver ||
+      canClose ||
       runningSince != null;
+}
+
+/// « Clore » permis par le statut : la même règle que le serveur
+/// (`closePrecondition`, `functions/src/tickets/rules.ts`), verrouillée par
+/// `test-fixtures/ticket_decisions.json` (sections `cases` et `close_cases`).
+/// Un statut inconnu de cette version n'offre rien. [deliveryRunning] : une
+/// livraison de ce ticket court (le serveur refuse alors, `delivery_running`).
+bool ticketCanClose({
+  required String rawStatus,
+  required bool hasIssue,
+  required bool deliveryRunning,
+}) {
+  final status = TicketStatus.fromValue(rawStatus);
+  return hasIssue &&
+      !deliveryRunning &&
+      (status == TicketStatus.received ||
+          status == TicketStatus.analyzed ||
+          status == TicketStatus.validated ||
+          status == TicketStatus.inProgress);
 }
 
 /// « Répondre » permis par le statut et l'analyse : la même règle que le
@@ -555,6 +593,8 @@ const kTicketUnknownStatusHint =
 /// lu (ou s'il n'existe pas) ; « Répondre » et le blocage en dépendent.
 /// [delivery] : le sous-document de livraison ; ses comptes rendus
 /// « blocage » terminent une livraison avant son échéance.
+/// [deliveryLockHere] : le verrou global des livraisons tient et porte ce
+/// ticket (`ticketDeliveryLockActive`) ; « Clore » est alors masqué.
 AdminTicketDecisions adminTicketDecisions(
   Ticket t, {
   List<TicketLaunch>? launches,
@@ -562,6 +602,7 @@ AdminTicketDecisions adminTicketDecisions(
   DateTime? now,
   TicketAnalysisDoc? analysis,
   TicketDelivery? delivery,
+  bool deliveryLockHere = false,
 }) {
   final known = t.rawStatus == t.status.value;
   final hasIssue = t.githubIssueNumber != null;
@@ -640,6 +681,30 @@ AdminTicketDecisions adminTicketDecisions(
         hasAnalysis: analysis?.hasAnalysis ?? false,
         developmentRunning: run.running,
       );
+  // Livraison de ce ticket en cours : dernier lancement de livraison, ou
+  // verrou global. Historique en lecture : « Clore » reste masqué.
+  var deliveryRunning = deliveryLockHere;
+  if (known && status == TicketStatus.inProgress && !deliveryRunning) {
+    if (launchesLoading) {
+      deliveryRunning = true;
+    } else if (launches != null) {
+      deliveryRunning = ticketLaunchRunState(
+        launches: launches,
+        action: TicketLaunchAction.delivery,
+        rawStatus: t.rawStatus,
+        now: now ?? DateTime.now(),
+        statusChangedAt: t.statusChangedAt,
+        deliveryBlockedAt: delivery?.lastBlockedAt,
+      ).running;
+    }
+  }
+  final canClose =
+      known &&
+      ticketCanClose(
+        rawStatus: t.rawStatus,
+        hasIssue: hasIssue,
+        deliveryRunning: deliveryRunning,
+      );
   return AdminTicketDecisions(
     canValidate: canValidate,
     canRefuse: canRefuse,
@@ -653,6 +718,7 @@ AdminTicketDecisions adminTicketDecisions(
     runningUntil: run.runningUntil,
     launchAction: action,
     canReply: canReply,
+    canClose: canClose,
     awaitingReply: awaiting,
     lastAnalysisAt: lastAnalysisAt,
     pendingAnswerAt: known && status == TicketStatus.received
@@ -661,13 +727,14 @@ AdminTicketDecisions adminTicketDecisions(
   );
 }
 
-/// Refus attendu de `validateTicket`, `refuseTicket` ou
-/// `answerTicketAnalysis` : le message du serveur s'affiche tel quel.
+/// Refus attendu de `validateTicket`, `refuseTicket`,
+/// `answerTicketAnalysis` ou `closeTicket` : le message du serveur s'affiche tel quel.
 class TicketDecisionError implements Exception {
   final String message;
 
-  /// Échec partiel d'un refus (motif publié, Issue non fermée) ou d'une
-  /// réponse (réponse publiée, étiquettes inchangées). Le texte ne doit plus
+  /// Échec partiel d'un refus (motif publié, Issue non fermée), d'une
+  /// réponse (réponse publiée, étiquettes inchangées) ou d'une clôture
+  /// (commentaire publié, Issue non fermée). Le texte ne doit plus
   /// changer avant de réessayer : le serveur ne le republie que s'il diffère.
   final bool partial;
 
@@ -690,6 +757,11 @@ const kTicketRefusalPartialReason = 'reply_published_close_failed';
 /// Verrouillée par `test-fixtures/ticket_decisions.json`.
 const kTicketAnswerPartialReason = 'answer_published_labels_failed';
 
+/// Raison serveur d'un échec partiel de clôture : le commentaire est publié,
+/// l'Issue n'est pas fermée (`CLOSE_PARTIAL_REASON`). Verrouillée par
+/// `test-fixtures/ticket_decisions.json`.
+const kTicketClosePartialReason = 'close_published_close_failed';
+
 /// L'erreur à montrer pour un refus de callable, ou `null` quand la réponse
 /// ne vient pas des contrôles du serveur (pas de `details.reason` ni de
 /// `details.field`) : l'écran affiche alors son message générique.
@@ -707,7 +779,8 @@ TicketDecisionError? ticketDecisionErrorFrom({
     text,
     partial:
         reason == kTicketRefusalPartialReason ||
-        reason == kTicketAnswerPartialReason,
+        reason == kTicketAnswerPartialReason ||
+        reason == kTicketClosePartialReason,
     field: field is String ? field : null,
   );
 }

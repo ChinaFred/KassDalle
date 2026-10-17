@@ -479,7 +479,7 @@ class _FormFields extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (final (i, t) in TicketType.values.indexed)
+            for (final (i, t) in creatableTicketTypes.indexed)
               ChoiceChip(
                 focusNode: i == 0 ? typeFocus : null,
                 avatar: Icon(ticketTypeIcon(t)),

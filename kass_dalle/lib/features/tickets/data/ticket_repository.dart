@@ -440,6 +440,18 @@ class TicketRepository {
     );
   }
 
+  /// Clôt [ticketId] avec [comment] (administrateur) : publie le commentaire,
+  /// pose `statut:clos` et ferme l'Issue. Lève [TicketDecisionError] pour un
+  /// refus du serveur, échec partiel compris ; toute autre erreur est
+  /// relancée telle quelle.
+  Future<String> close(String ticketId, String comment) {
+    return _decide(
+      step: 'close',
+      ticketId: ticketId,
+      call: () => _callables.closeTicket(ticketId, comment.trim()),
+    );
+  }
+
   /// Lance la routine [action] sur [ticketId] (administrateur).
   ///
   /// Lève [TicketLaunchError] pour un refus du serveur (rien n'a été lancé) ;

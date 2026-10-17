@@ -144,6 +144,7 @@ export {
   validateTicket,
   refuseTicket,
   answerTicketAnalysis,
+  closeTicket,
   launchTicketAnalysis,
   launchTicketDevelopment,
   launchTicketDelivery,

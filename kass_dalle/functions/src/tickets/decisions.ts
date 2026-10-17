@@ -1,9 +1,9 @@
 /**
- * Décisions de l'administrateur sur un ticket : « Valider », « Refuser » et
- * « Répondre » à la dernière analyse.
+ * Décisions de l'administrateur sur un ticket : « Valider », « Refuser »,
+ * « Répondre » à la dernière analyse et « Clore ».
  *
- * Appelées par `validateTicket`, `refuseTicket` et `answerTicketAnalysis`
- * (`callable/ticketsCallable.ts`),
+ * Appelées par `validateTicket`, `refuseTicket`, `answerTicketAnalysis` et
+ * `closeTicket` (`callable/ticketsCallable.ts`),
  * après `requireAdmin`. Les conditions sont pures (`tickets/rules.ts`) ; ce
  * module appelle GitHub puis écrit le ticket par `applyGithubUpdate`, sans
  * attendre le webhook.
@@ -25,6 +25,13 @@
  * et `validé`), et ramène le ticket à Reçu (`applyGithubUpdate` avec
  * `answerReset`). Rien n'est lancé.
  *
+ * Clore : même bail, relit l'Issue et ses commentaires, publie
+ * `Réponse : <commentaire>` sauf si la dernière réponse du mainteneur le
+ * porte déjà, pose l'étiquette `statut:clos`, ferme l'Issue `completed`
+ * (ordre : commentaire, étiquette, fermeture), écrit `closed` et `reply_text`.
+ * Refusé tant qu'une livraison de ce ticket court. La PR ouverte d'un ticket
+ * En cours n'est pas fermée.
+ *
  * Après chaque décision, les analyses du ticket sont réécrites (au mieux :
  * un échec est journalisé, la décision reste faite).
  *
@@ -38,16 +45,26 @@ import { HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 
 import {
+  COLL_APP_CONFIG,
   COLL_TICKETS,
   GITHUB_TICKETS_MAINTAINER_ID,
+  TICKETS_STATUS_DOC_ID,
   TICKET_ADMIN_SUBCOLLECTION,
   TICKET_LAUNCHES_DOC_ID,
 } from "../config";
-import { lastAnalysisMillis, launchEntryViews, storedValidatedAt } from "./stored";
+import {
+  deliveryBlockedAtMs,
+  deliveryLockView,
+  lastAnalysisMillis,
+  launchEntryViews,
+  storedValidatedAt,
+} from "./stored";
+import { deliveryRef } from "./delivery";
 import { logError, logInfo, logWarn } from "../logging";
 import {
   GithubError,
   addIssueLabels,
+  closeIssueCompleted,
   closeIssueNotPlanned,
   createIssueComment,
   getIssue,
@@ -58,7 +75,10 @@ import {
 } from "./github";
 import {
   ANSWER_PARTIAL_REASON,
+  CLOSE_DELIVERY_RUNNING_MESSAGE,
+  CLOSE_PARTIAL_REASON,
   LABEL_ANALYZED,
+  LABEL_CLOSED,
   LABEL_TO_ANALYZE,
   LABEL_VALIDATED,
   REFUSAL_PARTIAL_REASON,
@@ -66,6 +86,8 @@ import {
   analysisAnswerState,
   answerCommentBody,
   answerPrecondition,
+  closePrecondition,
+  deliveryLockActive,
   launchRunState,
   readAnswerCommentIds,
   ticketAwaitingReply,
@@ -701,6 +723,160 @@ export async function answerTicketDecision(
       extra: { reponse_deja_publiee: state.samePublished },
     });
     return { status: "received" };
+  } finally {
+    await releaseDecision(ticketId, scope);
+  }
+}
+
+// ── Clore ───────────────────────────────────────────────────────────────────
+
+/**
+ * Vrai si une livraison de ce ticket court : le dernier lancement de
+ * livraison est « en cours » (`launchRunState`), ou le verrou global des
+ * livraisons porte ce ticket et tient encore (`deliveryLockActive`).
+ */
+async function deliveryRunningOn(
+  ticketId: string,
+  status: TicketStatus,
+  statusChangedAtMs: number | null,
+): Promise<boolean> {
+  const [launches, delivery, statusDoc] = await Promise.all([
+    ticketRef(ticketId).collection(TICKET_ADMIN_SUBCOLLECTION).doc(TICKET_LAUNCHES_DOC_ID).get(),
+    deliveryRef(ticketId).get(),
+    getFirestore().collection(COLL_APP_CONFIG).doc(TICKETS_STATUS_DOC_ID).get(),
+  ]);
+  const run = launchRunState({
+    entries: launchEntryViews(launches.data()),
+    action: "livraison",
+    rawStatus: status,
+    nowMs: Date.now(),
+    statusChangedAtMs,
+    deliveryBlockedAtMs: deliveryBlockedAtMs(delivery.data()),
+  });
+  if (run.running) return true;
+  const lock = deliveryLockView(statusDoc.data()?.delivery_running);
+  if (lock === null || lock.ticketId !== ticketId) return false;
+  return deliveryLockActive({ lock, lockedTicketRawStatus: status, nowMs: Date.now() });
+}
+
+export async function closeTicketDecision(
+  ticketId: string,
+  comment: string,
+  scope: LogScope,
+): Promise<{ status: TicketStatus }> {
+  const seen: { status: TicketStatus; statusChangedAtMs: number | null } = {
+    status: "sending",
+    statusChangedAtMs: null,
+  };
+  const claimed = await claimDecision(ticketId, ({ status, issueNumber: n, statusChangedAtMs }) => {
+    seen.status = status;
+    seen.statusChangedAtMs = statusChangedAtMs;
+    const refusal = closePrecondition({ status, hasIssue: n !== null });
+    return refusal === null
+      ? { kind: "go" }
+      : { kind: "refused", message: refusal, reason: "not_closable" };
+  });
+  // Le contrôle de la clôture ne rend jamais « rien à faire » : sans numéro, c'est un défaut.
+  if (claimed === null) throw new Error(`clôture du ticket ${ticketId} : bail rendu sans Issue`);
+  const issueNumber = claimed;
+  try {
+    if (await deliveryRunningOn(ticketId, seen.status, seen.statusChangedAtMs)) {
+      throw new HttpsError("failed-precondition", CLOSE_DELIVERY_RUNNING_MESSAGE, {
+        reason: "delivery_running",
+      });
+    }
+    const token = githubToken();
+    if (token === null) throw await tokenMissing(ticketId, scope);
+
+    let issue: Awaited<ReturnType<typeof getIssue>>;
+    let comments: RemoteComment[];
+    try {
+      issue = await getIssue(token, issueNumber);
+      comments = await listIssueComments(token, issueNumber);
+    } catch (err) {
+      throw await githubFailure(err, ticketId, "lecture de l'Issue", scope);
+    }
+    const previous = lastReply(comments);
+    const alreadyPublished = sameReply(previous, comment);
+
+    if (issue.state === "closed") {
+      const closedWithThisComment = alreadyPublished && issue.labels.includes(LABEL_CLOSED);
+      await applyGithubUpdate(ticketId, {
+        statusFor: (t) => statusFromIssue({ ...issue, hasOpenClosingPr: false }, t),
+        reply: previous,
+      });
+      if (closedWithThisComment) {
+        // Reprise d'une clôture déjà faite sur GitHub dont l'écriture du ticket
+        // avait échoué : l'état relu vient d'être appliqué.
+        await refreshAnalysesAfterDecision(ticketId, comments, token, issueNumber, scope);
+        return { status: "closed" };
+      }
+      throw new HttpsError("failed-precondition", "Ce ticket a déjà été clos sur GitHub.", {
+        reason: "issue_closed",
+      });
+    }
+
+    if (!alreadyPublished) {
+      try {
+        await createIssueComment(token, issueNumber, refusalCommentBody(comment));
+      } catch (err) {
+        throw await githubFailure(err, ticketId, "publication du commentaire de clôture", scope);
+      }
+    }
+
+    let step = "étiquette";
+    try {
+      if (!issue.labels.includes(LABEL_CLOSED)) {
+        await addIssueLabels(token, issueNumber, [LABEL_CLOSED]);
+      }
+      step = "fermeture";
+      await closeIssueCompleted(token, issueNumber);
+    } catch (err) {
+      const kind = err instanceof GithubError ? err.kind : "other";
+      await logError({
+        message: `Tickets : commentaire de clôture publié mais Issue #${issueNumber} non fermée (ticket ${ticketId})`,
+        errorDescription: describe(err),
+        correlationId: scope.correlationId,
+        userId: scope.userId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+        extra: { kind, step },
+      });
+      if (kind === "token") await markTokenInvalid(scope, describe(err));
+      throw new HttpsError(
+        "aborted",
+        "Commentaire publié, mais l'Issue n'a pas été fermée. Réessayez.",
+        { reason: CLOSE_PARTIAL_REASON },
+      );
+    }
+
+    try {
+      await applyGithubUpdate(ticketId, { statusFor: () => "closed", reply: comment });
+    } catch (err) {
+      await logError({
+        message: `Tickets : Issue #${issueNumber} fermée mais ticket ${ticketId} non mis à jour`,
+        errorDescription: describe(err),
+        correlationId: scope.correlationId,
+        userId: scope.userId,
+        firestoreDocId: ticketId,
+        feature: "tickets",
+      });
+      throw new HttpsError(
+        "internal",
+        "La clôture est faite sur GitHub, mais le ticket n'a pas été mis à jour. Réessayez.",
+        { reason: "ticket_not_updated" },
+      );
+    }
+    await refreshAnalysesAfterDecision(ticketId, comments, token, issueNumber, scope);
+    await logInfo({
+      message: `Tickets : ticket ${ticketId} clos (Issue #${issueNumber})`,
+      correlationId: scope.correlationId,
+      userId: scope.userId,
+      firestoreDocId: ticketId,
+      feature: "tickets",
+      extra: { commentaire_deja_publie: alreadyPublished },
+    });
+    return { status: "closed" };
   } finally {
     await releaseDecision(ticketId, scope);
   }

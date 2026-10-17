@@ -730,8 +730,10 @@ Une PR qui touche `.github/`, `.claude/`, `deploy.ps1`, `firebase.json`, ou un f
 livre pas : la fonction refuse, l'administrateur la fusionne lui-même après relecture.
 
 Les étiquettes : `source:app`, `type:bug`, `type:evolution`, `type:feature`, `type:question`,
-`statut:à-analyser`, `statut:analysé`, `validé`. GitHub les crée à la première Issue qui les
-porte.
+`statut:à-analyser`, `statut:analysé`, `statut:clos`, `validé`. GitHub les crée à la première Issue
+ou au premier geste qui les porte. `statut:clos` est posée par « Clore » (Admin › Tickets) ; GitHub
+la crée à sa première pose, sans couleur : donnez-lui une couleur à la main dans Issues › Labels,
+comme aux autres.
 
 ### 12.2 Jeton GitHub de l'application
 

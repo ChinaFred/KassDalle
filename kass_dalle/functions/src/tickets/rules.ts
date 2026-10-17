@@ -35,6 +35,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export const TICKET_TYPES = ["bug", "evolution", "feature", "question"] as const;
 export type TicketType = (typeof TICKET_TYPES)[number];
 
+/**
+ * Types qu'un membre peut choisir à la création. `question` reste un type
+ * connu (lecture, filtre, règles des tickets déjà créés) mais n'est plus
+ * créable.
+ */
+export const CREATABLE_TICKET_TYPES: readonly TicketType[] = ["bug", "evolution", "feature"];
+
 export const TICKET_TYPE_LABELS: Record<TicketType, string> = {
   bug: "Bug",
   evolution: "Évolution",
@@ -61,13 +68,19 @@ export const TICKET_STATUSES = [
   "delivered",
   "refused",
   "answered",
+  "closed",
 ] as const;
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
 
 /** Statuts de fin : le suivi s'arrête, sauf réouverture de l'Issue. */
-export const FINAL_STATUSES: readonly TicketStatus[] = ["delivered", "refused", "answered"];
+export const FINAL_STATUSES: readonly TicketStatus[] = [
+  "delivered",
+  "refused",
+  "answered",
+  "closed",
+];
 
-/** Rang d'un statut dans le suivi. Les trois fins partagent le dernier rang. */
+/** Rang d'un statut dans le suivi. Les quatre fins partagent le dernier rang. */
 const STATUS_RANK: Record<TicketStatus, number> = {
   sending: 0,
   received: 1,
@@ -77,6 +90,7 @@ const STATUS_RANK: Record<TicketStatus, number> = {
   delivered: 5,
   refused: 5,
   answered: 5,
+  closed: 5,
 };
 
 export function isTicketType(value: unknown): value is TicketType {
@@ -97,6 +111,8 @@ export const LABEL_SOURCE_APP = "source:app";
 export const LABEL_TO_ANALYZE = "statut:à-analyser";
 export const LABEL_ANALYZED = "statut:analysé";
 export const LABEL_VALIDATED = "validé";
+/** Posée par « Clore » ; GitHub la crée à la première pose. */
+export const LABEL_CLOSED = "statut:clos";
 
 export function typeLabel(type: TicketType): string {
   return `type:${type}`;
@@ -193,7 +209,7 @@ const APP_VERSION_PATTERN = /^[0-9A-Za-z.+-]{1,40}$/;
  * (le membre n'y peut rien, le ticket n'est pas refusé pour autant).
  */
 export function readTicketInput(raw: Record<string, unknown>): TicketInput {
-  if (!isTicketType(raw.type)) {
+  if (!isTicketType(raw.type) || !CREATABLE_TICKET_TYPES.includes(raw.type)) {
     throw new TicketInputError("type", "Choisissez le type de ticket.");
   }
   if (typeof raw.title !== "string") {
@@ -332,13 +348,16 @@ export interface IssueState {
 /**
  * Le statut que dit l'Issue, sans tenir compte du statut actuel.
  *
- * Fermée : `not_planned` (ou `duplicate`) → `refused` ; sinon `delivered`,
- * ou `answered` pour une Question. Ouverte : PR ouverte → `in_progress`,
+ * Fermée avec l'étiquette `statut:clos` (posée par « Clore ») → `closed`,
+ * quelle que soit la raison de fermeture. Fermée sans elle : `not_planned`
+ * (ou `duplicate`) → `refused` ; sinon `delivered`, ou `answered` pour une
+ * Question. Ouverte : PR ouverte → `in_progress`,
  * étiquette `validé` → `validated`, `statut:analysé` → `analyzed`, sinon
  * `received`.
  */
 export function statusFromIssue(issue: IssueState, type: TicketType): TicketStatus {
   if (issue.state === "closed") {
+    if (issue.labels.includes(LABEL_CLOSED)) return "closed";
     if (issue.stateReason === "not_planned" || issue.stateReason === "duplicate") {
       return "refused";
     }
@@ -766,18 +785,36 @@ export function containsEmailAddress(text: string): boolean {
  * mentions `@` et renvois `#N` neutralisés après les contrôles.
  */
 export function readAnswerText(raw: unknown): string {
+  return readPublicComment(raw, "answer", "La réponse", "La réponse est requise.");
+}
+
+/**
+ * Commentaire de clôture : mêmes contrôles que `readAnswerText` (5 à 4 000
+ * caractères, aucune adresse e-mail, mentions et renvois neutralisés), champ
+ * `comment`.
+ */
+export function readCloseComment(raw: unknown): string {
+  return readPublicComment(raw, "comment", "Le commentaire", "Le commentaire est requis.");
+}
+
+function readPublicComment(
+  raw: unknown,
+  field: string,
+  subject: string,
+  requiredMessage: string,
+): string {
   if (typeof raw !== "string") {
-    throw new TicketInputError("answer", "La réponse est requise.");
+    throw new TicketInputError(field, requiredMessage);
   }
   const text = cleanMultiline(raw).normalize("NFC").trim();
   if (text.length < ANSWER_MIN_CHARS) {
-    throw new TicketInputError("answer", "La réponse doit faire au moins 5 caractères.");
+    throw new TicketInputError(field, `${subject} doit faire au moins 5 caractères.`);
   }
   if (text.length > ANSWER_MAX_CHARS) {
-    throw new TicketInputError("answer", "La réponse ne doit pas dépasser 4 000 caractères.");
+    throw new TicketInputError(field, `${subject} ne doit pas dépasser 4 000 caractères.`);
   }
   if (containsEmailAddress(text)) {
-    throw new TicketInputError("answer", ANSWER_EMAIL_MESSAGE, "contains_email");
+    throw new TicketInputError(field, ANSWER_EMAIL_MESSAGE, "contains_email");
   }
   return publicText(text);
 }
@@ -924,6 +961,34 @@ export function refusePrecondition(args: {
   return null;
 }
 
+/** Statuts depuis lesquels un ticket peut être clos. */
+export const CLOSABLE_STATUSES: readonly TicketStatus[] = [
+  "received",
+  "analyzed",
+  "validated",
+  "in_progress",
+];
+
+export const CLOSE_DELIVERY_RUNNING_MESSAGE =
+  "Une livraison est en cours sur ce ticket. Attendez sa fin.";
+
+/**
+ * Ce que décide « Clore » avant tout appel à GitHub : `null` si la clôture
+ * est permise (statut Reçu, Analysé, Validé ou En cours, tout type, avec une
+ * Issue, aucune livraison de ce ticket en cours), sinon le message du refus.
+ * Pure ; fixture `ticket_decisions.json`, sections `cases` et `close_cases`.
+ */
+export function closePrecondition(args: {
+  status: TicketStatus;
+  hasIssue: boolean;
+  deliveryRunning?: boolean;
+}): string | null {
+  if (!args.hasIssue) return "Ce ticket n'a pas encore d'Issue GitHub.";
+  if (!CLOSABLE_STATUSES.includes(args.status)) return "Ce ticket ne peut plus être clos.";
+  if (args.deliveryRunning === true) return CLOSE_DELIVERY_RUNNING_MESSAGE;
+  return null;
+}
+
 /**
  * Statut lu sur un document : une valeur inconnue de cette version se lit
  * `sending`, qui n'offre aucune décision.
@@ -950,6 +1015,7 @@ export function ticketDecisions(args: {
   canLaunchAnalysis: boolean;
   canLaunchDevelopment: boolean;
   canDeliver: boolean;
+  canClose: boolean;
 } {
   const status = storedTicketStatus(args.rawStatus);
   const launchArgs = { status, type: args.type, hasIssue: args.hasIssue };
@@ -960,6 +1026,7 @@ export function ticketDecisions(args: {
     canLaunchAnalysis: launchPrecondition(launchArgs, "analyse") === null,
     canLaunchDevelopment: launchPrecondition(launchArgs, "developpement") === null,
     canDeliver: launchPrecondition(launchArgs, "livraison") === null,
+    canClose: closePrecondition({ status, hasIssue: args.hasIssue }) === null,
   };
 }
 
@@ -1000,6 +1067,9 @@ export function shouldWriteValidated(current: TicketStatus): boolean {
 
 /** Échec partiel d'un refus : le motif est publié, l'Issue n'est pas fermée. */
 export const REFUSAL_PARTIAL_REASON = "reply_published_close_failed";
+
+/** Échec partiel d'une clôture : le commentaire est publié, l'Issue n'est pas fermée. */
+export const CLOSE_PARTIAL_REASON = "close_published_close_failed";
 
 /**
  * Code et message rendus au client pour un échec GitHub d'une décision,

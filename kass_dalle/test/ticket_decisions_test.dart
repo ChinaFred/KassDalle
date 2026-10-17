@@ -259,6 +259,104 @@ void main() {
     });
   });
 
+  group('Clore', () {
+    test('« Clos » : libellé, fin de parcours, frise et phrase du membre', () {
+      expect(TicketStatus.closed.label, 'Clos');
+      expect(TicketStatus.closed.isFinal, isTrue);
+      expect(TicketStatus.closed.memberSentence, 'Ce ticket est clos.');
+      expect(ticketTimeline(TicketStatus.closed), [
+        TicketStatus.sending,
+        TicketStatus.received,
+        TicketStatus.closed,
+      ]);
+    });
+
+    test('un ticket clos n\'est ni à traiter ni en anomalie', () {
+      final closed = _ticket(id: 'clos', status: 'closed');
+      expect(isTicketToProcess(closed), isFalse);
+      expect(closed.isInAnomaly, isFalse);
+      expect(
+        filterAdminTickets(
+          [closed],
+          status: kAdminTicketTodoFilter,
+          type: null,
+        ),
+        isEmpty,
+      );
+      expect(filterAdminTickets([closed], status: 'closed', type: null), [
+        closed,
+      ]);
+    });
+
+    test('un ticket clos n\'offre aucune décision', () {
+      final d = adminTicketDecisions(
+        _ticket(status: 'closed'),
+        launches: const [],
+        analysis: TicketAnalysisDoc.fromMap({
+          'analyses': [
+            {
+              'body': '## Analyse\n\nA',
+              'created_at': DateTime.utc(2026, 10, 14, 10),
+            },
+          ],
+        }),
+      );
+      expect(d.hasAction, isFalse);
+      expect(d.canClose, isFalse);
+      expect(d.canReply, isFalse);
+    });
+
+    test('« Clore » est masqué pendant une livraison de ce ticket', () {
+      final enCours = _ticket(status: 'in_progress');
+      expect(
+        adminTicketDecisions(enCours, launches: const []).canClose,
+        isTrue,
+      );
+      expect(
+        adminTicketDecisions(
+          enCours,
+          launches: const [],
+          deliveryLockHere: true,
+        ).canClose,
+        isFalse,
+      );
+      // Historique en lecture : masqué aussi.
+      expect(
+        adminTicketDecisions(enCours, launchesLoading: true).canClose,
+        isFalse,
+      );
+    });
+
+    test('types créables : bug, évolution, fonctionnalité', () {
+      expect(creatableTicketTypes, [
+        TicketType.bug,
+        TicketType.evolution,
+        TicketType.feature,
+      ]);
+      expect(TicketType.fromValue('question'), TicketType.question);
+    });
+
+    test('commentaire de clôture : champ vérifié avant l\'appel', () {
+      expect(
+        ticketCloseFieldError('abcd'),
+        'Le commentaire doit faire au moins 5 caractères.',
+      );
+      expect(
+        ticketCloseFieldError('Écrivez à moi@exemple.fr'),
+        'Retirez l\'adresse e-mail avant de publier.',
+      );
+      expect(ticketCloseFieldError('Doublon du ticket précédent.'), isNull);
+    });
+
+    test('échec partiel d\'une clôture reconnu', () {
+      final e = ticketDecisionErrorFrom(
+        message: 'Commentaire publié, mais l\'Issue n\'a pas été fermée.',
+        details: {'reason': kTicketClosePartialReason},
+      );
+      expect(e?.partial, isTrue);
+    });
+  });
+
   group('fixture ticket_decisions.json (partagée avec le serveur)', () {
     final fixture =
         jsonDecode(
@@ -292,6 +390,7 @@ void main() {
             'can_launch_analysis': d.canLaunchAnalysis,
             'can_launch_development': d.canLaunchDevelopment,
             'can_deliver': d.canDeliver,
+            'can_close': d.canClose,
           },
           {
             'can_validate': c['can_validate'],
@@ -299,7 +398,29 @@ void main() {
             'can_launch_analysis': c['can_launch_analysis'],
             'can_launch_development': c['can_launch_development'],
             'can_deliver': c['can_deliver'],
+            'can_close': c['can_close'],
           },
+        );
+      });
+    }
+
+    test('raison de l\'échec partiel d\'une clôture', () {
+      expect(kTicketClosePartialReason, fixture['close_partial_reason']);
+    });
+
+    for (final c
+        in (fixture['close_cases'] as List).cast<Map<String, dynamic>>()) {
+      final hasIssue = c['has_issue'] as bool;
+      final running = c['delivery_running'] as bool;
+      test('Clore : ${c['status']} · ${hasIssue ? 'avec' : 'sans'} Issue'
+          '${running ? ' · livraison en cours' : ''}', () {
+        expect(
+          ticketCanClose(
+            rawStatus: c['status'] as String,
+            hasIssue: hasIssue,
+            deliveryRunning: running,
+          ),
+          c['can_close'],
         );
       });
     }

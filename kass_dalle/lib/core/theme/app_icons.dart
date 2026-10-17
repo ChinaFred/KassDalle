@@ -39,6 +39,7 @@ abstract final class AppIcons {
   static const ticketStatusDelivered = Icons.check_circle_outline;
   static const ticketStatusRefused = Icons.block;
   static const ticketStatusAnswered = Icons.question_answer_outlined;
+  static const ticketStatusClosed = Icons.archive_outlined;
 
   /// « Lancer l'analyse » : session Claude Code d'analyse d'un ticket Reçu.
   static const ticketLaunchAnalysis = Icons.manage_search;

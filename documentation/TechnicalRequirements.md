@@ -1930,12 +1930,12 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 
 ---
 
-### 3.12 bis Collection `tickets` — bugs, idées et questions des membres
+### 3.12 bis Collection `tickets` — bugs et idées des membres
 
 Un ticket créé par un membre approuvé depuis le menu du compte (« Signaler ou proposer »),
 publié en Issue sur le dépôt **public** `ChinaFred/KassDalle`, et suivi dans « Mes tickets »
 et Admin › Tickets (§5, « Tickets »). Écrit par les Functions seules (`submitTicket`,
-`attachTicketScreenshot`, `retryTicketSend`, `validateTicket`, `refuseTicket`,
+`attachTicketScreenshot`, `retryTicketSend`, `validateTicket`, `refuseTicket`, `closeTicket`,
 `answerTicketAnalysis`, `launchTicketAnalysis`, `launchTicketDevelopment`,
 `githubTicketWebhook`, `ticketsSyncSchedule`),
 à une exception : l'auteur pose `seen_by_author_at`. Lu par l'auteur (approuvé, non révoqué)
@@ -1944,7 +1944,7 @@ ne partent jamais sur GitHub.
 
 | Champ | Type | Description |
 |---|---|---|
-| `type` | `String` | `bug` \| `evolution` \| `feature` \| `question` |
+| `type` | `String` | `bug` \| `evolution` \| `feature` à la création ; `question` reste une valeur connue (tickets existants, lecture, filtre admin) mais `submitTicket` la refuse (`CREATABLE_TICKET_TYPES`, erreur sur le champ `type` « Choisissez le type de ticket. ») |
 | `title` | `String` | 5 à 100 caractères, une ligne (espaces et retours à la ligne ramenés à une espace) |
 | `description` | `String` | 1 à 2 000 caractères, caractères de contrôle retirés sauf retour à la ligne et tabulation |
 | `screen` | `String` | Modèle de route go_router (`/recipes/:recipeId`), `autre` ou `inconnu`. Jamais d'identifiant ni de requête : un écran reçu sans la forme d'un modèle (segment autre qu'un littéral en minuscules ou un `:param`) est remplacé par `inconnu` (`routeTemplateOrNull`) |
@@ -1954,7 +1954,7 @@ ne partent jamais sur GitHub.
 | `author_uid` | `String` | Compte auteur |
 | `created_at` | `Timestamp` | Heure serveur de création |
 | `updated_at` | `Timestamp` | Heure serveur de la dernière écriture serveur |
-| `status` | `String` | `sending` → `received` → `analyzed` → `validated` → `in_progress` → `delivered` ; fins `refused`, `answered` |
+| `status` | `String` | `sending` → `received` → `analyzed` → `validated` → `in_progress` → `delivered` ; fins `refused`, `answered`, `closed` (« Clore », v0.23.96) |
 | `status_changed_at` | `Timestamp` | Dernier changement visible du suivi : changement de statut, ou réponse arrivée sur un ticket déjà clos. Allume la pastille de notification du compte quand `status` ≠ `sending` et que `seen_by_author_at` est absent ou antérieur |
 | `seen_by_author_at` | `Timestamp?` | Posé par l'auteur à l'ouverture du détail, à `request.time` (seule écriture client permise) |
 | `delivered_pr_number` | `int?` | Numéro de la PR fusionnée qui a fermé l'Issue, écrit par le serveur (`recordDeliveredPr`) quand le ticket est `delivered`. Lu par l'auteur et l'admin : la PR est publique et ne contient aucune donnée privée. Effacé (`FieldValue.delete()`) quand le ticket quitte `delivered` (`applyGithubUpdate`). Absent si l'Issue a été fermée à la main, sans PR |
@@ -1964,9 +1964,9 @@ ne partent jamais sur GitHub.
 | `github_url` | `String?` | Adresse de l'Issue, montrée à l'administrateur seulement |
 | `send_attempts` | `int` | Essais d'envoi en échec. À 10 (`TICKET_MAX_SEND_ATTEMPTS`) sans numéro d'Issue, le ticket est « en anomalie » et la tâche horaire ne le reprend plus. Un jeton GitHub absent ou refusé n'use pas les essais |
 | `last_send_error` | `String?` | Dernière erreur d'envoi (300 caractères au plus, jamais le jeton), `null` après un envoi réussi |
-| `reply_text` | `String?` | Réponse de l'administrateur : le dernier commentaire du compte `ChinaFred` (identifiant numérique 16348852) qui commence par « Réponse : », préfixe retiré. Réponse à une Question, motif d'un refus |
+| `reply_text` | `String?` | Réponse de l'administrateur : le dernier commentaire du compte `ChinaFred` (identifiant numérique 16348852) qui commence par « Réponse : », préfixe retiré. Réponse à une Question, motif d'un refus, commentaire d'une clôture |
 | `send_lease_until` | `Timestamp?` | Champ technique : bail de deux minutes posé pendant un envoi, pour qu'un « Relancer l'envoi » et la tâche horaire ne publient pas deux Issues. Retiré à la fin de l'envoi |
-| `decision_lease_until` | `Timestamp?` | Champ technique : bail de deux minutes posé en transaction par `validateTicket`, `refuseTicket`, `answerTicketAnalysis`, `launchTicketAnalysis` et `launchTicketDevelopment`, pour que deux décisions simultanées ne se croisent pas (deux motifs publiés, un refus écrasé par une validation, une session lancée pendant un refus, deux lancements simultanés). Retiré à la fin de la décision ou du lancement, réussi ou non ; s'il n'a pas pu l'être, il expire seul. Absent sur les tickets antérieurs : rien à reprendre |
+| `decision_lease_until` | `Timestamp?` | Champ technique : bail de deux minutes posé en transaction par `validateTicket`, `refuseTicket`, `closeTicket`, `answerTicketAnalysis`, `launchTicketAnalysis` et `launchTicketDevelopment`, pour que deux décisions simultanées ne se croisent pas (deux motifs publiés, un refus écrasé par une validation, une session lancée pendant un refus, deux lancements simultanés). Retiré à la fin de la décision ou du lancement, réussi ou non ; s'il n'a pas pu l'être, il expire seul. Absent sur les tickets antérieurs : rien à reprendre |
 | `answer_reset_at` | `Timestamp?` | Champ technique (v0.23.68) : heure serveur du dernier retour à `received` causé par `answerTicketAnalysis`. Un état d'Issue reçu du webhook ou de la tâche horaire dont `updated_at` (GitHub) est antérieur ou égal à cette heure est ignoré (`isStaleIssueSnapshot`) : un événement d'étiquette intermédiaire livré en retard ne refait pas avancer le ticket. Absent sur les tickets sans réponse : rien à reprendre |
 
 **Sous-document `tickets/{ticketId}/admin/analysis`** — les analyses de l'administrateur
@@ -1976,7 +1976,7 @@ réécrits à chaque relevé, en transaction avec la lecture de `answer_comment_
 fusionnée : `validated_at` et `answer_comment_ids` survivent) : webhook
 `issue_comment` (`created`, `edited`, `deleted`) d'un commentaire du mainteneur,
 `resyncTicket` (tâche horaire, avec les commentaires qu'elle lit déjà), après `validateTicket`,
-`refuseTicket` et `answerTicketAnalysis`, et le backfill `ticket_analyses`. Lu par
+`refuseTicket`, `closeTicket` et `answerTicketAnalysis`, et le backfill `ticket_analyses`. Lu par
 l'administrateur seul, jamais par l'auteur du ticket (§4).
 
 | Champ | Type | Description |
@@ -2058,8 +2058,9 @@ déjà `in_progress` ; absent, la fiche affiche « Aucune PR prête ».
 | étiquette `statut:analysé` | `analyzed` |
 | étiquette `validé` | `validated` |
 | PR ouverte dont le corps porte un mot-clé de fermeture (« Closes #N », « Fixes #N », « Resolves #N »), et dont l'auteur est le mainteneur ou un `OWNER`, `MEMBER` ou `COLLABORATOR` du dépôt (`isTrustedPrAuthor`) | `in_progress` |
-| fermée `completed` | `delivered`, ou `answered` pour une Question |
-| fermée `not_planned` (ou `duplicate`) | `refused` |
+| fermée, étiquette `statut:clos` (posée par `closeTicket`), quelle que soit la raison | `closed` |
+| fermée `completed` sans `statut:clos` | `delivered`, ou `answered` pour une Question |
+| fermée `not_planned` (ou `duplicate`) sans `statut:clos` | `refused` |
 
 Un statut ne recule jamais : une étiquette retirée ne le fait pas redescendre. Une fin suit
 l'Issue : rouverte, elle ramène au statut dérivé de ses étiquettes. Seul `in_progress` recule
@@ -3643,7 +3644,7 @@ disparaît, la validation est ignorée, et le message s'affiche en ligne, en
 qui l'a provoqué.
 
 
-### Tickets — bugs, idées et questions envoyés sur GitHub
+### Tickets — bugs et idées envoyés sur GitHub
 
 Un membre approuvé (`reader`, `editor`, `admin`) envoie un ticket depuis le menu du compte. Le
 serveur l'enregistre dans `tickets` (§3.12 bis), le publie en Issue sur le dépôt **public**
@@ -3673,11 +3674,12 @@ lancements et la réponse), `routine.ts`
 
 | Fonction | Type | Garde | Contrat |
 |---|---|---|---|
-| `submitTicket` | Callable | `requireAuth` (approuvé, non révoqué, App Check) | `{ type, title, description, screen, app_version, platform }` → `{ ticketId, status: "received" \| "sending", remaining_today: int \| null }` (`null` pour l'admin). Erreurs : `invalid-argument` (bornes, `details.field`), `permission-denied`, `resource-exhausted` avec `details: { reason: "member_daily_limit" \| "global_daily_limit", limit }`, `failed-precondition` (`app_config/tickets` illisible) |
+| `submitTicket` | Callable | `requireAuth` (approuvé, non révoqué, App Check) | `{ type, title, description, screen, app_version, platform }` → `{ ticketId, status: "received" \| "sending", remaining_today: int \| null }` (`null` pour l'admin). Erreurs : `invalid-argument` (bornes, `details.field` ; `type: "question"` refusé, champ `type`, « Choisissez le type de ticket. »), `permission-denied`, `resource-exhausted` avec `details: { reason: "member_daily_limit" \| "global_daily_limit", limit }`, `failed-precondition` (`app_config/tickets` illisible) |
 | `attachTicketScreenshot` | Callable | `requireAuth`, auteur du ticket | `{ ticketId, path }` → `{ ok: true }`. `path` vaut `tickets/{uid}/{ticketId}/screenshot.png` ou `.jpg` ; l'objet doit exister, au type annoncé par son extension, 5 Mo au plus, et ses 8 premiers octets porter la signature de ce format (`screenshotBytesMatch` : `89 50 4E 47 0D 0A 1A 0A` pour PNG, `FF D8 FF` pour JPEG), sinon `invalid-argument` |
 | `retryTicketSend` | Callable | `requireAdmin` | `{ ticketId }` → `{ status }`. Remet `send_attempts` à zéro et tente l'envoi une fois ; sans effet sur un ticket déjà publié |
 | `validateTicket` | Callable | `requireAdmin` (rôle relu côté serveur, App Check) | `{ ticketId }` → `{ status: "validated", changed }`. Ticket `analyzed`, d'un autre type que `question`, avec une Issue (`validatePrecondition`) ; déjà `validated` : succès sans rien changer. Prend le même bail `decision_lease_until` que le refus, en transaction, libéré à la fin. Relit l'Issue : fermée → l'état relu est appliqué et `failed-precondition` « Ce ticket a déjà été clos sur GitHub. » (`details.reason: "issue_closed"`). Pose l'étiquette `validé` (`POST /issues/{n}/labels`) sauf si elle y est, puis écrit `validated` sans attendre le webhook, dans une transaction qui revérifie que le ticket est encore `analyzed` (`shouldWriteValidated`) : un refus arrivé entre-temps n'est pas écrasé. Puis réécrit les analyses |
 | `refuseTicket` | Callable | `requireAdmin` | `{ ticketId, reason }` → `{ status: "refused" }`. Motif : garde de taille brute, puis `readRefusalReason` (caractères de contrôle retirés sauf retour à la ligne, NFC, 5 à 2 000 caractères, mentions et renvois `#N` neutralisés). Ticket `received`, `analyzed`, `validated` ou `in_progress` avec une Issue (`refusePrecondition`), tout type. Bail `decision_lease_until` en transaction, sinon « Une décision est déjà en cours sur ce ticket. ». Relit l'Issue et ses commentaires ; publie `Réponse : <motif>` (`POST /issues/{n}/comments`) sauf si la dernière réponse du mainteneur porte déjà ce motif (`sameReply`, réessai après échec partiel) ; ferme l'Issue `not_planned` (`PATCH /issues/{n}`) ; écrit `refused` et `reply_text`. Échec de fermeture après publication : `aborted` « Motif publié, mais l'Issue n'a pas été fermée. Réessayez. », `details.reason: "reply_published_close_failed"`. Issue déjà fermée : état relu appliqué ; succès si elle est fermée non prévue avec ce motif, sinon « Ce ticket a déjà été clos sur GitHub. ». Le bail est libéré à la fin |
+| `closeTicket` | Callable | `requireAdmin` | `{ ticketId, comment }` → `{ status: "closed" }`. Commentaire : garde de taille brute, puis `readCloseComment` (mêmes contrôles que `readAnswerText` : caractères de contrôle retirés sauf retour à la ligne, NFC, 5 à 4 000 caractères, aucune adresse e-mail — `details.field: "comment"`, `details.reason: "contains_email"` —, mentions et renvois `#N` neutralisés). Ticket `received`, `analyzed`, `validated` ou `in_progress` avec une Issue (`closePrecondition`), tout type ; un ticket `closed`, `delivered`, `refused`, `answered` ou `sending` est refusé (« Ce ticket ne peut plus être clos. »), sans Issue « Ce ticket n'a pas encore d'Issue GitHub. ». Bail `decision_lease_until` en transaction. Refusé pendant une livraison de ce ticket (dernier lancement `livraison` « en cours » d'après `launchRunState`, ou verrou `app_config/tickets_status.delivery_running` actif sur ce ticket) : « Une livraison est en cours sur ce ticket. Attendez sa fin. », `details.reason: "delivery_running"`. Relit l'Issue et ses commentaires ; publie `Réponse : <commentaire>` sauf si la dernière réponse du mainteneur porte déjà ce texte (`sameReply`) ; pose l'étiquette `statut:clos` (`POST /issues/{n}/labels`, sauf si déjà posée ; GitHub la crée à la première pose) ; ferme l'Issue `completed` (`closeIssueCompleted`, `PATCH /issues/{n}`) ; écrit `closed` et `reply_text`. Ordre : commentaire, étiquette, fermeture. Échec d'étiquette ou de fermeture après publication : `aborted` « Commentaire publié, mais l'Issue n'a pas été fermée. Réessayez. », `details.reason: "close_published_close_failed"`. Issue fermée mais ticket non mis à jour : `internal` « La clôture est faite sur GitHub, mais le ticket n'a pas été mis à jour. Réessayez. », `details.reason: "ticket_not_updated"`. Issue déjà fermée : état relu appliqué ; succès si elle porte `statut:clos` et que le dernier « Réponse : » est ce commentaire, sinon « Ce ticket a déjà été clos sur GitHub. » (`issue_closed`). Le bail est libéré à la fin. Secret `GITHUB_TICKETS_TOKEN` |
 | `answerTicketAnalysis` | Callable | `requireAdmin` | `{ ticketId, answer }` → `{ status: "received" }` (v0.23.68). Texte : garde de taille brute, puis `readAnswerText` (caractères de contrôle retirés sauf retour à la ligne, NFC, 5 à 4 000 caractères, aucune adresse e-mail — `containsEmailAddress`, « Retirez l'adresse e-mail avant de publier. », `details: { field: "answer", reason: "contains_email" }` —, mentions et renvois `#N` neutralisés). Ticket `received`, `analyzed` ou `validated`, d'un autre type que `question`, avec une Issue (`answerPrecondition`, sinon `not_answerable`) ; bail `decision_lease_until`. Un lancement en cours (analyse sur un ticket `received`, développement sur un ticket `validated` non bloqué ; `launchRunState` sur `admin/launches`, entrées antérieures à `status_changed_at` ignorées) → « Un lancement est en cours. Attendez sa fin avant de répondre. » (`launch_running`). Relit l'Issue et ses commentaires : fermée → état relu appliqué, « Ce ticket a déjà été clos sur GitHub. » (`issue_closed`) ; aucune analyse du mainteneur, sauf sur un ticket `received` → « Aucune analyse à laquelle répondre. » (`no_analysis`). Publie `## Précisions de l'administrateur` suivi du texte (`POST /issues/{n}/comments`) et enregistre l'identifiant du commentaire dans `admin/analysis.answer_comment_ids` (au mieux : un échec est journalisé). Ne republie pas seulement si un commentaire de `answer_comment_ids` suit déjà la dernière analyse et porte exactement ce corps (`analysisAnswerState.samePublished`, reprise après échec partiel) ; une autre `## Précisions…`, ou un autre texte, ne l'empêche pas. Pose `statut:à-analyser`, puis retire `statut:analysé` et `validé` (`DELETE /issues/{n}/labels/{nom}` ; un 404 est tenu pour fait et journalisé par `logInfo` avec le numéro d'Issue et l'étiquette), dans cet ordre pour qu'aucun état intermédiaire ne dépasse le statut de départ (ticket `received` : étiquettes inchangées). Échec à cette étape : `aborted` « Réponse publiée, mais le statut n'a pas changé. Réessayez. » (`answer_published_labels_failed`). Puis ramène le ticket à `received` (`applyGithubUpdate` avec `answerReset` : seul recul permis, depuis `analyzed` ou `validated`, qui écrit `answer_reset_at` ; sautée sur un ticket `received`) et réécrit les analyses. Rien n'est lancé. Le commentaire ne contient que le texte saisi |
 | `launchTicketAnalysis` | Callable (`timeoutSeconds: 120`) | `requireAdmin` | `{ ticketId }` → `{ outcome: "launched" \| "unknown", session_url: String \| null }`. Lance la routine d'analyse sur un ticket `received` avec Issue, tout type, Question comprise (`launchPrecondition`). Monte `GITHUB_TICKETS_TOKEN`, `TICKETS_ROUTINE_ANALYSIS_ID` et `TICKETS_ROUTINE_ANALYSIS_TOKEN`. Déroulé, refus et erreurs : « Lancements de sessions » ci-dessous |
 | `launchTicketDevelopment` | Callable (`timeoutSeconds: 120`) | `requireAdmin` | Même contrat. Lance la routine de développement sur un ticket `validated` avec Issue, d'un autre type que `question`, qui n'est pas bloqué (`launch_needs_answer`, ci-dessous). Monte `GITHUB_TICKETS_TOKEN`, `TICKETS_ROUTINE_DEV_ID` et `TICKETS_ROUTINE_DEV_TOKEN`. Deux callables plutôt qu'une seule avec un champ `action` : chacune ne monte que les secrets de sa routine |
@@ -3793,13 +3795,13 @@ clos ne sont pas relus : une réouverture dont le webhook est perdu n'est pas ra
 appellent `validateTicket` et `refuseTicket` par `GeminiService` ; un refus du serveur qui porte
 `details.reason` ou `details.field` devient une `TicketDecisionError` dont le message s'affiche
 tel quel (`ticketDecisionErrorFrom`), l'échec partiel d'un refus est reconnu à
-`reply_published_close_failed`, toute autre erreur est remontée (`ErrorReportService`, feature
-`tickets`) puis affichée « Ticket non validé : … » ou « Ticket non refusé : … ». Les boutons
+`reply_published_close_failed` (clôture : `close_published_close_failed`), toute autre erreur est remontée (`ErrorReportService`, feature
+`tickets`) puis affichée « Ticket non validé : … », « Ticket non refusé : … » ou « Ticket non clos : … ». `TicketRepository.close` appelle `closeTicket`. Les boutons
 suivent `adminTicketDecisions` (`features/tickets/domain/ticket.dart`), qui reprend les
-conditions de `validatePrecondition` et `refusePrecondition` pour masquer un bouton sans
+conditions de `validatePrecondition`, `refusePrecondition` et `closePrecondition` (`ticketCanClose`, avec la livraison en cours de ce ticket) pour masquer un bouton sans
 appel ; le serveur refait le contrôle. Cette logique est dupliquée et verrouillée par la
-fixture `test-fixtures/ticket_decisions.json` (statut × type × Issue présente, et la valeur
-`reply_published_close_failed`), rejouée par `test/ticket_decisions_test.dart` et
+fixture `test-fixtures/ticket_decisions.json` (statut × type × Issue présente, `can_close`, la section `close_cases`, et les valeurs
+`reply_published_close_failed` et `close_published_close_failed`), rejouée par `test/ticket_decisions_test.dart` et
 `functions/src/tests/ticketDecisions.test.ts`. Un statut stocké inconnu de cette version
 n'offre aucune décision ; la fiche dit « Statut inconnu de cette version : mettez
 l'application à jour pour décider. ». Les identifiants « à traiter »
@@ -4024,7 +4026,7 @@ lecture, Actions lecture (v0.23.75 : runs de la CI d'une PR pour « Livrer » ; 
 `GET /actions/runs` est journalisé sans déclarer le jeton invalide). Un 403 de limite
 secondaire (en-tête `retry-after`, `x-ratelimit-remaining: 0` ou message « secondary rate
 limit ») est classé limite de débit, jamais jeton refusé (`classifyGithubFailure`) ; attaché à `submitTicket`,
-`retryTicketSend`, `validateTicket`, `refuseTicket`,
+`retryTicketSend`, `validateTicket`, `refuseTicket`, `closeTicket`,
 `answerTicketAnalysis`, `backfillTicketAnalysesFn`, `backfillTicketDeliveredPrFn`, `ticketsSyncSchedule` et `githubTicketWebhook` (relecture des
 commentaires pour les analyses). Les permissions existantes suffisent : poser et retirer une
 étiquette, commenter, fermer une Issue et lire ses événements relèvent de « Issues
@@ -6987,7 +6989,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/meal-staples` | `MealStaplesScreen` | le référentiel des garnitures simples |
 | `/admin/backfills` | `AdminBackfillsScreen` | lancer, programmer et suivre les reprises |
 | `/admin/tickets` | `AdminTicketsScreen` — « Tickets des membres » (liste filtrable) | suivre les tickets de la famille, les tickets en anomalie, le compteur « Lancements de sessions », et les bandeaux du jeton GitHub et des jetons des routines (`app_config/tickets_status`). La tuile d'Administration et l'entrée « Tickets à traiter » du menu du compte posent le filtre « À traiter » avant d'y naviguer |
-| `/admin/tickets/:ticketId` | `AdminTicketsScreen`, ticket sélectionné | auteur, capture, lien vers l'Issue, analyses (`tickets/{id}/admin/analysis`), « Relancer l'envoi » d'un ticket en anomalie (`retryTicketSend`), « Valider » (`validateTicket`), « Refuser » (`refuseTicket`), « Répondre » (`answerTicketAnalysis`), « Lancer l'analyse » (`launchTicketAnalysis`) et « Lancer le développement » (`launchTicketDevelopment`), section « Lancements » (`tickets/{id}/admin/launches`) |
+| `/admin/tickets/:ticketId` | `AdminTicketsScreen`, ticket sélectionné | auteur, capture, lien vers l'Issue, analyses (`tickets/{id}/admin/analysis`), « Relancer l'envoi » d'un ticket en anomalie (`retryTicketSend`), « Valider » (`validateTicket`), « Refuser » (`refuseTicket`), « Clore » (`closeTicket`), « Répondre » (`answerTicketAnalysis`), « Lancer l'analyse » (`launchTicketAnalysis`) et « Lancer le développement » (`launchTicketDevelopment`), section « Lancements » (`tickets/{id}/admin/launches`) |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
 
