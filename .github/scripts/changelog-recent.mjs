@@ -10,7 +10,10 @@
 // chaque build ; la copie versionnée ne sert qu'aux builds locaux.
 //
 // Échoue (code 1) quand le CHANGELOG donne moins de COUNT versions : une liste
-// tronquée ne doit pas partir en ligne.
+// tronquée ne doit pas partir en ligne. Échoue aussi quand un texte extrait
+// contient un accent grave, un numéro de ticket (« #12 ») ou une image : tous
+// les rôles lisent l'écran, et l'entrée « fonctionnel » s'écrit pour la famille
+// (CLAUDE.md, « Documentation à tenir à jour »).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +22,24 @@ export const COUNT = 6;
 
 const DATE_RE = /^## (\d{4}-\d{2}-\d{2})\s*$/;
 const ENTRY_RE = /^### v(\d+\.\d+\.\d+) — (fonctionnel|technique)\s*$/;
+
+// Ce que le texte d'une entrée « fonctionnel » ne contient pas.
+const FORBIDDEN = [
+  { pattern: /`/, label: 'un accent grave (nom de code)' },
+  { pattern: /#\d/, label: 'un numéro de ticket' },
+  { pattern: /!\[/, label: 'une image' },
+];
+
+/** Les écarts à la règle de rédaction, une ligne par version et par motif. */
+export function writingProblems(versions) {
+  const problems = [];
+  for (const v of versions) {
+    for (const { pattern, label } of FORBIDDEN) {
+      if (pattern.test(v.text)) problems.push(`v${v.version} contient ${label}`);
+    }
+  }
+  return problems;
+}
 
 /**
  * Les `count` dernières versions ayant une entrée « fonctionnel », de la plus
@@ -83,6 +104,16 @@ function main() {
   if (versions.length < COUNT) {
     console.error(
       `CHANGELOG.md : ${versions.length} version(s) « fonctionnel » trouvée(s), ${COUNT} attendues.`,
+    );
+    process.exit(1);
+  }
+  const problems = writingProblems(versions);
+  if (problems.length > 0) {
+    for (const problem of problems) {
+      console.error(`CHANGELOG.md, entrée « fonctionnel » : ${problem}.`);
+    }
+    console.error(
+      "L'entrée « fonctionnel » s'écrit pour la famille : voir CLAUDE.md, « Documentation à tenir à jour ».",
     );
     process.exit(1);
   }

@@ -6435,9 +6435,11 @@ en extrait les six dernières versions qui ont une entrée `— fonctionnel` et 
 - Format : `{"versions": [{"version": "0.23.98", "date": "2026-10-17", "text": "<Markdown>"}]}`,
   de la plus récente à la plus ancienne. Deux entrées « fonctionnel » d'une même version sont
   concaténées ; une version « technique » seule est ignorée.
-- Le script échoue (code 1) s'il trouve moins de six versions. Son test,
-  `changelog-recent.test.mjs`, tourne dans le job Flutter de la CI.
-- La CI (job Flutter) et `deploy.yml` régénèrent le fichier avant le build. La copie versionnée
+- Le script échoue (code 1) s'il trouve moins de six versions, ou si un texte extrait contient
+  un accent grave, un numéro de ticket (`#12`) ou une image (`writingProblems`) : l'entrée
+  « fonctionnel » s'écrit pour la famille (`CLAUDE.md`, « Documentation à tenir à jour »).
+  Son test, `changelog-recent.test.mjs`, tourne dans le job Flutter de la CI.
+- La CI (job Flutter), `deploy.yml` et `deploy.ps1` régénèrent le fichier avant le build. La copie versionnée
   ne sert qu'aux builds locaux et à `flutter test` ; elle peut retarder sur le `CHANGELOG.md`
   sans effet sur ce qui est mis en ligne. En local : `node .github/scripts/changelog-recent.mjs`
   depuis la racine du dépôt.
