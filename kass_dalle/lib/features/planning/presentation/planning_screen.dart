@@ -45,7 +45,7 @@ import 'planning_widgets.dart';
 import 'recipe_picker_sheet.dart';
 import 'side_picker_sheet.dart';
 import 'storage_advice_sheet.dart';
-import 'suggest_meal_sheet.dart';
+import 'suggest_meal_screen.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_service.dart'
     show GeminiCallableException;
@@ -2485,7 +2485,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     final groups = ref.read(suggestableGroupsProvider);
     final group = groups.where((g) => g.id == groupId).firstOrNull;
     if (group == null) return;
-    showSuggestMealSheet(context, groups: groups, group: group, day: day);
+    openSuggestMeal(context, groups: groups, group: group, day: day);
   }
 
   /// Les lignes de suggestion d'un groupe dont l'utilisateur est membre, un

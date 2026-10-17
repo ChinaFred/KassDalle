@@ -20,6 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-17
 
+### v0.23.94 — fonctionnel
+
+Suggérer un plat : la suggestion s'ouvre en page entière, plus en feuille ni en boîte de dialogue. Le champ principal est « Quel plat ? » : un nom tapé (« des frites ») suffit à envoyer, sans choisir de recette. Les recettes correspondantes s'affichent dessous, dans le même écran, titres privés des livres de la famille compris. Le mot facultatif est un champ à part. Quand « Envoyer la suggestion » est inactif, une phrase dit pourquoi. Quitter avec une saisie demande confirmation. Demande du ticket #121.
+
+### v0.23.94 — technique
+
+`SuggestMealSheet` (`suggest_meal_sheet.dart`) devient `SuggestMealScreen` (`suggest_meal_screen.dart`) ; `showSuggestMealSheet` devient `openSuggestMeal`, qui pousse la route `AppRoutes.suggestMeal` (`/planning/suggest`) avec `SuggestMealArgs` en `extra` et attend le prénom du propriétaire. Sans `extra`, la route redirige vers `/planning`. La liste de recettes est intégrée à l'écran (`filterPickerRecipes`, `suggestableRecipesProvider` et `suggestablePrivateTitlesProvider`) : `RecipePickerSheet` n'est plus utilisé par la suggestion. L'écran pose un `LeaveGuard` (`leaveGuardProvider`) pour que la navigation du bas et le menu latéral demandent la même confirmation que le retour ; `/planning/suggest` reçoit son libellé dans `ticket_screens.dart`. Aucune donnée, règle ni Cloud Function ne change. Tests : `test/widgets/meal_suggestions_test.dart` passe par un `GoRouter`, et `test/suggest_meal_screen_test.dart`.
+
 ### v0.23.93 — fonctionnel
 
 Tickets : une analyse qui pose une question n'empêche plus de répondre. Quand la session d'analyse

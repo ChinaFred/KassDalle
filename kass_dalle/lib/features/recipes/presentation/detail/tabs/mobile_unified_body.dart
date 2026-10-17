@@ -17,7 +17,7 @@ import 'prepare_tab.dart' show recipeTopContent;
 import '../../../../planning/domain/meal_prep_context.dart';
 import '../../../../planning/presentation/meal_prep_banner.dart';
 import '../../../../planning/presentation/schedule_recipe_sheet.dart';
-import '../../../../planning/presentation/suggest_meal_sheet.dart';
+import '../../../../planning/presentation/suggest_meal_screen.dart';
 import '../recipe_allergens_block.dart';
 
 /// Corps unifié de l'écran de détail sur mobile : illustrations, méta,
