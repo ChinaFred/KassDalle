@@ -156,6 +156,11 @@ jobs:
           flutter pub get
           npm ci --prefix functions
 
+      - name: Extrait du CHANGELOG
+        # Asset de l'écran « Nouveautés », pour le web et l'APK construits
+        # plus bas. Le fichier versionné peut dater de quelques versions.
+        run: node ../.github/scripts/changelog-recent.mjs ../documentation/CHANGELOG.md assets/changelog_recent.json
+
       - name: Build web
         # Mêmes options que deploy.ps1.
         run: flutter build web --release --no-tree-shake-icons --no-wasm-dry-run

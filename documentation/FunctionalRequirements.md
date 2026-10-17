@@ -69,6 +69,8 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 
 > Tickets (5.13) : Reader, Editor et Admin envoient un bug, une évolution ou une nouvelle fonctionnalité depuis le menu du compte, et suivent **leurs** tickets dans « Mes tickets ». Cinq tickets par membre et par jour, trente pour toute la famille ; l'Admin n'a pas de plafond. Seul l'Admin lit les tickets des autres, leurs captures, l'auteur de chacun et les analyses (Admin › Tickets des membres), relance un envoi en anomalie, valide un ticket analysé, refuse un ticket avec un motif publié sur GitHub, le clôt avec un commentaire, répond aux questions d'une analyse, et lance une session Claude Code d'analyse ou de développement (10 lancements par jour pour la famille, 50 pour le fondateur). Un compte en attente ou révoqué n'envoie rien.
 
+> Nouveautés (5.14) : Reader, Editor et Admin lisent les six dernières versions depuis le menu du compte. Lecture seule.
+
 > Règle de sécurité clé : être connecté ne donne aucun accès. Tout ce qui est partagé — livres, recettes, annotations, référentiels, grille tarifaire — exige un compte **nommé et non révoqué** (`isApproved()` dans `firestore.rules`). La révocation vaut pour tous les rôles, Admin compris, côté règles comme côté Cloud Functions.
 
 ### 3.3 Gestion des utilisateurs (Admin)
@@ -1645,6 +1647,23 @@ Question depuis l'application ; créer un ticket de type Question ; livrer depui
 fichier sensible ; déployer sans fusionner ; filtrer la liste sur « PR prête » ; montant facturé d'une session dans le suivi des coûts ;
 détection des doublons ; plusieurs captures ; purge des captures ; analyse ou traitement
 automatiques.
+
+### 5.14 Nouveautés (tous les clients)
+
+- **Point d'entrée.** Le menu du compte porte « Nouveautés », juste avant « Se déconnecter ».
+  Les rôles Reader, Editor et Admin le voient. L'écran est en lecture seule.
+- **Contenu.** Les six dernières versions qui ont changé quelque chose pour l'utilisateur, de
+  la plus récente à la plus ancienne. Chaque carte affiche le numéro (« v0.23.99 »), la date
+  et le texte « fonctionnel » de l'historique des versions. Une version qui n'a changé que
+  l'architecture ou le déploiement n'apparaît pas.
+- **Version installée.** La carte de la version installée porte la pastille « Installée ».
+- **Source.** La liste est embarquée dans l'application au moment de sa construction : elle
+  s'affiche hors ligne et décrit l'historique connu de la version installée. Une version plus
+  récente, publiée mais pas encore installée, n'apparaît pas.
+- **Erreur.** Si la liste est illisible, l'écran affiche « Impossible d'afficher les
+  nouveautés. » et le bouton « Réessayer ».
+- **Disposition.** Une colonne de cartes pleine largeur sur mobile, centrée et limitée à 720 px
+  sur le web et le desktop.
 
 ---
 

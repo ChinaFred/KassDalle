@@ -6337,7 +6337,7 @@ celles de `deploy.yml`. Six jobs, sur `ubuntu-latest` :
 |---|---|
 | Version — numéro libre (racine, historique complet) | `.github/scripts/check-version.sh <base> <tête>` : sur une PR, la base est la `master` du moment (`git fetch origin master`) et la tête le dernier commit de la PR ; sur un push, la base est le commit d'avant le push. Sauté sur un lancement manuel |
 | Déjà testé en PR (push seulement, API GitHub) | Sur un push, sort `skip=true` quand le commit poussé a le même arbre que la tête d'une PR associée qui vise `master`, que cette tête contient la `master` d'avant le push (`compare` : `ahead` ou `identical`) et que toutes les exécutions de `ci.yml` sur cette tête, en `pull_request`, ont réussi (au moins une, aucune en cours ni en échec). La CI de la PR a alors testé ce même arbre. Une réponse d'API manquante laisse `skip=false` |
-| Flutter (`kass_dalle/`, Flutter 3.44.6 stable) | `flutter pub get` · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
+| Flutter (`kass_dalle/`, Flutter 3.44.6 stable, Node 22) | `flutter pub get` · extrait du CHANGELOG (`node --test .github/scripts/changelog-recent.test.mjs`, puis `changelog-recent.mjs` qui réécrit `assets/changelog_recent.json`, voir « Déploiement automatique ») · `flutter analyze` (erreurs, warnings et infos bloquants) · `dart format --output=none --set-exit-if-changed lib test` · `git diff --exit-code pubspec.lock` · `flutter test` · `flutter build web --release` |
 | Functions (`kass_dalle/functions/`, Node 22) | `npm ci` · `npm run lint` (ESLint) · `npm run format:check` (Prettier) · `npm run build` (tsc) · `npm test` |
 | Règles — émulateur (`kass_dalle/rules-tests/`, Node 22, Java 21 Temurin) | `npm ci` · `npm test` : émulateurs Firestore et Storage sur le projet fictif `demo-kassdalle`, tests des règles (voir §4, « Tests des règles ») |
 | Android — compilation (`kass_dalle/`, historique complet, Flutter 3.44.6, Java 17 Temurin) | Liste les fichiers du diff : contre la `master` du moment sur une PR, contre la `master` d'avant le push sur un push. Si un fichier sous `kass_dalle/pubspec.yaml`, `kass_dalle/pubspec.lock` ou `kass_dalle/android/` change, ou sur un lancement manuel, ou si le diff est illisible : libération du disque (même liste que `deploy.yml`) · `flutter pub get` · génération d'une clé jetable (`keytool`, mot de passe aléatoire, validité d'un jour) et de `android/key.properties`, supprimés à la sortie · `flutter build apk --release`. Sinon, les étapes suivantes sont sautées. La clé de production n'est jamais lue. Plafond de 45 minutes (v0.23.86) |
@@ -6437,6 +6437,7 @@ cloud. Une session cloud fusionne sa PR sur `master` ; le PC commite sur `master
 | Commit déployé | celui que la CI a validé, et seulement s'il est encore la tête de `master`, vérifié au début des deux jobs. Relancer une ancienne CI ou un ancien déploiement ne remet donc pas en ligne une version périmée |
 | Ignoré | un commit signé `Deploy-Source: deploy.ps1` : `deploy.ps1`, l'outil de secours, vient de tout déployer depuis le PC. Un message qui commence par `deploy:` sans cette ligne est déployé |
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
+| Extrait du CHANGELOG | avant le build web et l'APK, `.github/scripts/changelog-recent.mjs` réécrit `kass_dalle/assets/changelog_recent.json` : les six dernières versions qui ont une entrée « fonctionnel » du `CHANGELOG.md` (numéro, date du titre `## AAAA-MM-JJ`, texte ; deux entrées se concatènent, une version seulement « technique » est ignorée). Il échoue s'il en trouve moins de six. L'écran « Nouveautés » lit cet asset. Le fichier est aussi versionné, pour que `flutter run`, les tests et `deploy.ps1` le trouvent : il peut y dater de quelques versions, et la CI comme `deploy.ps1` le régénèrent avant de construire |
 | APK | construit et signé seulement si `version:` de `pubspec.yaml` dépasse celle de l'APK en ligne (`.github/scripts/build-apk.sh`), avant le déploiement des Functions ; sinon l'APK en ligne est conservé |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
 | Droits et actions | jeton GitHub limité à `contents: read`, plus `id-token: write` sur le job `deploy` pour le jeton OIDC échangé auprès de Google Cloud (voir « Accès à Google Cloud, sans clé ») ; actions tierces épinglées par SHA de commit, version en commentaire (`actions/checkout@11d5960… # v4.4.0`, etc.) : ce job reçoit la clé de signature Android et l'accès au compte de service Firebase, et une étiquette `@v4` peut être déplacée vers un autre code. `actions/checkout` avec `persist-credentials: false` : le jeton ne reste pas dans `.git/config` pendant les builds. Monter une action : remplacer le SHA par celui de la nouvelle étiquette (`git ls-remote --tags`) |
@@ -7066,7 +7067,7 @@ functions/src/
 
 ---
 
-### 13.1 Carte de navigation — les 51 routes
+### 13.1 Carte de navigation — les 52 routes
 
 `go_router`, déclaré dans `core/router/app_router.dart`. Les constantes vivent dans
 `AppRoutes`, une seule `ShellRoute` porte la coquille `AppShell` pour tout ce qui suit
@@ -7117,6 +7118,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/groups/:groupId` | `GroupMembersScreen` — gestion des membres d'un groupe (`AppRoutes.groupMembers`) ; groupe absent de `myGroupsProvider` : « Groupe introuvable » | `reader` — les actions suivent `isOwner` et `canEditProvider`, les règles Firestore font foi |
 | `/account` | `AccountScreen` | `reader` |
 | `/preferences` | `PreferencesScreen` | `reader` |
+| `/changelog` | `ReleaseNotesScreen` — « Nouveautés » (`core/presentation/release_notes_screen.dart`), six cartes lues dans l'asset `assets/changelog_recent.json` (`core/services/release_notes.dart`) ; asset illisible : `AppErrorState` avec « Réessayer » | `reader` — entrée « Nouveautés » du menu du compte (`AppRoutes.releaseNotes`) |
 | `/tickets` | `MyTicketsScreen` — « Mes tickets » (liste, et détail côte à côte au-delà du seuil large) | `reader` — ses propres tickets (`firestore.rules`, `author_uid`) ; entrée « Mes tickets » du menu du compte |
 | `/tickets/new` | `TicketFormScreen` — « Signaler ou proposer » | `reader` — paramètre `?ecran=` : le modèle de route de l'écran d'où vient le membre, jamais l'adresse réelle ; envoi par `submitTicket` (§5, « Tickets ») |
 | `/tickets/:ticketId` | `MyTicketsScreen`, ticket sélectionné | `reader` — l'auteur seul ; ouvrir le détail pose `seen_by_author_at` |

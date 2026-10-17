@@ -130,6 +130,18 @@ jobs:
       - name: Dépendances
         run: flutter pub get
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+        # L'écran « Nouveautés » lit un extrait du CHANGELOG embarqué comme
+        # asset. Il est régénéré ici, avant les tests et le build web, comme
+        # dans deploy.yml : le script échoue s'il ne trouve pas six versions.
+      - name: Extrait du CHANGELOG
+        run: |
+          node --test ../.github/scripts/changelog-recent.test.mjs
+          node ../.github/scripts/changelog-recent.mjs ../documentation/CHANGELOG.md assets/changelog_recent.json
+
       - name: Analyse statique
         # Strict : erreurs, warnings ET infos sont bloquants. Le code part de
         # zéro diagnostic — le laisser dériver coûte plus cher que de corriger

@@ -54,6 +54,7 @@ import '../../features/tickets/presentation/my_tickets_screen.dart';
 import '../../features/tickets/presentation/ticket_launcher.dart';
 import '../../features/tickets/presentation/ticket_form_screen.dart';
 import '../presentation/app_shell.dart';
+import '../presentation/release_notes_screen.dart';
 
 /// Notifie GoRouter sans exposer notifyListeners() comme protected.
 class _RouterNotifier extends ChangeNotifier {
@@ -97,6 +98,7 @@ class AppRoutes {
   static const adminSandbox = '/admin/sandbox';
   static const account = '/account';
   static const preferences = '/preferences';
+  static const releaseNotes = '/changelog';
   static const groups = '/groups';
   static const groupMembers = '/groups/:groupId';
   static String groupMembersPath(String groupId) =>
@@ -497,6 +499,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.preferences,
             builder: (context, state) => const PreferencesScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.releaseNotes,
+            builder: (context, state) => const ReleaseNotesScreen(),
           ),
           GoRoute(
             path: AppRoutes.groups,

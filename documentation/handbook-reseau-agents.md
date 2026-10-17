@@ -464,6 +464,7 @@ Les agents travaillent en parallèle quand leurs tâches sont indépendantes : `
 | `.github/workflows/deploy.yml` | déploiement après une CI verte sur `master` |
 | `.github/scripts/check-version.sh` | refuse un numéro de version déjà pris ou sans entrée au CHANGELOG |
 | `.github/scripts/firebase-deploy.sh` | déploiement vérifié et relance ciblée (section 11) |
+| `.github/scripts/changelog-recent.mjs` | extrait les six dernières versions « fonctionnel » du CHANGELOG pour l'écran « Nouveautés » ; testé par `changelog-recent.test.mjs` |
 | `.gitattributes` | `*.sh text eol=lf` |
 | `.gitignore` | `build/`, `Release/`, `.dart_tool/`, `node_modules/` |
 
@@ -473,7 +474,7 @@ Les agents travaillent en parallèle quand leurs tâches sont indépendantes : `
 |---|---|
 | Version | `check-version.sh` contre la `master` du moment (PR) ou celle d'avant le push |
 | Déjà testé en PR | sur un push de fusion : saute les jobs lourds si l'arbre est celui d'une tête de PR à jour de `master` et verte |
-| Application | dépendances, analyse statique stricte, formatage vérifié, lockfile à jour, tests, build |
+| Application | dépendances, extrait du CHANGELOG (test du script, puis génération de l'asset), analyse statique stricte, formatage vérifié, lockfile à jour, tests, build |
 | Fonctions serveur | `npm ci`, lint, `format:check`, build, tests |
 | Règles d'accès | tests des règles contre les émulateurs |
 | Android | quand le diff touche `pubspec.yaml`, `pubspec.lock` ou `android/` : APK release compilé avec une clé jetable |

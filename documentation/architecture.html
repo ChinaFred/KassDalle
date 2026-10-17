@@ -650,7 +650,7 @@ flowchart TB
   CI["ci.yml&lt;br/&gt;version + Flutter + Functions + règles (émulateur)&lt;br/&gt;+ APK si pubspec ou android/ change"]
   GATE["gate&lt;br/&gt;le commit est la tête de master&lt;br/&gt;et n'est pas signé deploy.ps1"]
   DISK["libération du disque"]
-  WEB["build web"]
+  WEB["extrait du CHANGELOG&lt;br/&gt;puis build web"]
   APKQ{"version de pubspec.yaml&lt;br/&gt;supérieure à l'APK en ligne ?"}
   APK["construction et signature&lt;br/&gt;du nouvel APK"]
   KEEP["APK en ligne conservé"]
@@ -688,6 +688,9 @@ flowchart TB
         et les exécutions Actions), et leurs actions sont épinglées par SHA de commit, version en
         commentaire. Sur le push d'une PR fusionnée à jour de <code>master</code>, la CI ne
         rejoue que le contrôle de version : la CI de la PR a déjà testé le même arbre.
+        Avant le build, <code>changelog-recent.mjs</code> extrait du <code>CHANGELOG.md</code>
+        les six dernières versions « fonctionnel » dans <code>assets/changelog_recent.json</code>,
+        que l'écran « Nouveautés » lit ; la CI et <code>deploy.ps1</code> le régénèrent aussi.
         La base Firestore reçoit deux sauvegardes planifiées, quotidienne (7 jours) et
         hebdomadaire (14 semaines), et le bucket Storage garde 30 jours les versions remplacées
         ou supprimées. La base refuse d'être supprimée (protection activée). Ces réglages se font dans Google Cloud, et non par ce workflow :
