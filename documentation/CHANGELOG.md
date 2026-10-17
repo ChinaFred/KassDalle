@@ -11,7 +11,7 @@ l'architecture, au schéma de données ou au déploiement.
 
 **Rien n'a été réécrit**, sauf une fois. Les sections ont été déplacées telles quelles, y compris
 les entrées anciennes sans accents. En v0.24.0, les entrées « fonctionnel » de la v0.23.95 à la
-v0.23.99 ont été réécrites pour l'écran « Nouveautés » : leurs détails techniques sont passés
+v0.23.99 ont été réécrites pour l'écran « Nouveautés », et le numéro de ticket de la v0.23.100 en a été retiré : leurs détails techniques sont passés
 dans l'entrée « technique » de la même version, ou dans celle de la v0.24.0 pour la v0.23.96.
 
 Depuis la v0.23.3, chaque version incrémentée reçoit son entrée dans le commit qui change
@@ -28,7 +28,14 @@ Nouveautés : les textes des dernières versions sont réécrits pour être lus 
 
 ### v0.24.0 — technique
 
-Nouvelle règle de `CLAUDE.md` (« Documentation à tenir à jour ») : l'entrée « fonctionnel » s'écrit pour la famille, sans route, fichier, fonction, champ, numéro de ticket, « PR » ni « Issue » ; un changement réservé à l'administrateur commence par « Pour l'administrateur : » ; une consigne d'après déploiement et le numéro du ticket vont dans l'entrée « technique ». `.github/scripts/changelog-recent.mjs` la vérifie (`writingProblems`) : il échoue si un texte extrait contient un accent grave, un numéro de ticket ou une image, et la CI échoue avec lui ; deux tests s'ajoutent à `changelog-recent.test.mjs`. Les entrées « fonctionnel » de la v0.23.95 à la v0.23.99 sont réécrites selon la règle ; leurs détails passent dans les entrées « technique » de la même version. La v0.23.96 n'en a pas : ses détails sont ici (ticket #127 ; dans le formulaire `/tickets/new`, `validateTicketForm` garde le contrôle « Choisissez le type de ticket. »). `deploy.ps1` régénère l'asset avant son build, comme `deploy.yml`. Reprise de la PR #133, fermée sans fusion après la livraison de l'écran par la #134. Ni `ci.yml` ni `deploy.yml` ne changent.
+Nouvelle règle de `CLAUDE.md` (« Documentation à tenir à jour ») : l'entrée « fonctionnel » s'écrit pour la famille, sans route, fichier, fonction, champ, numéro de ticket, « PR » ni « Issue » ; un changement réservé à l'administrateur commence par « Pour l'administrateur : » ; une consigne d'après déploiement et le numéro du ticket vont dans l'entrée « technique ». `.github/scripts/changelog-recent.mjs` la vérifie (`writingProblems`) : il échoue si un texte extrait contient un accent grave, un numéro de ticket ou une image, et la CI échoue avec lui ; deux tests s'ajoutent à `changelog-recent.test.mjs`. Les entrées « fonctionnel » de la v0.23.95 à la v0.23.100 sont réécrites selon la règle (pour la v0.23.100, livrée en parallèle, seul le numéro de ticket passe dans l'entrée « technique ») ; leurs détails passent dans les entrées « technique » de la même version. La v0.23.96 n'en a pas : ses détails sont ici (ticket #127 ; dans le formulaire `/tickets/new`, `validateTicketForm` garde le contrôle « Choisissez le type de ticket. »). `deploy.ps1` régénère l'asset avant son build, comme `deploy.yml`. Reprise de la PR #133, fermée sans fusion après la livraison de l'écran par la #134. Ni `ci.yml` ni `deploy.yml` ne changent.
+### v0.23.100 — fonctionnel
+
+Brouillons : un doublon est maintenant visible. Chaque brouillon doublon affiche une pastille « Doublon possible » sous sa ligne, sur toute la largeur, puis le détail sur deux lignes au plus (« Doublon possible de « Rouget » (p. 3) » quand le serveur l'a marqué). Le serveur ne marquait que le brouillon écrit en second : le plus ancien de deux brouillons « Rouget » d'un même livre n'affichait rien. La file rapproche désormais deux brouillons du même livre de même titre et leur donne à chacun la pastille, avec « Même titre : « Rouget » (p. 3) ». Pas de rapprochement sans livre, ni quand les deux pages sont connues et différentes. La validation en lot ne change pas : elle écarte les seuls brouillons marqués par le serveur. Un doublon avec une recette déjà validée reste signalé par la seule marque du serveur.
+
+### v0.23.100 — technique
+
+Ticket #132. `Recipe.titreKey` lit `titre_key` (lecture seule, absent de `toFirestore`). `draftTitleTwins` (`features/recipes/domain/draft_title_twins.dart`) compare les clés déjà posées par le serveur, sans normaliser de titre : aucune logique dupliquée Dart ↔ TypeScript, aucune fixture. `QueueDraftTile` reçoit `twins` de `work_queue_screen.dart` et affiche `_DuplicateBadge`. Aucune Function, règle, donnée ni dépendance ne change. Le backfill « Clé de titre des recettes » doit être terminé pour que les recettes anciennes soient rapprochées.
 
 ### v0.23.99 — fonctionnel
 

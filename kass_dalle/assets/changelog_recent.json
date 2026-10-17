@@ -6,6 +6,11 @@
       "text": "Nouveautés : les textes des dernières versions sont réécrits pour être lus par toute la famille, sans termes techniques. Les changements qui ne concernent que l'administrateur sont signalés comme tels."
     },
     {
+      "version": "0.23.100",
+      "date": "2026-10-17",
+      "text": "Brouillons : un doublon est maintenant visible. Chaque brouillon doublon affiche une pastille « Doublon possible » sous sa ligne, sur toute la largeur, puis le détail sur deux lignes au plus (« Doublon possible de « Rouget » (p. 3) » quand le serveur l'a marqué). Le serveur ne marquait que le brouillon écrit en second : le plus ancien de deux brouillons « Rouget » d'un même livre n'affichait rien. La file rapproche désormais deux brouillons du même livre de même titre et leur donne à chacun la pastille, avec « Même titre : « Rouget » (p. 3) ». Pas de rapprochement sans livre, ni quand les deux pages sont connues et différentes. La validation en lot ne change pas : elle écarte les seuls brouillons marqués par le serveur. Un doublon avec une recette déjà validée reste signalé par la seule marque du serveur."
+    },
+    {
       "version": "0.23.99",
       "date": "2026-10-17",
       "text": "Menu du compte : nouvelle entrée « Nouveautés ». Elle ouvre un écran qui liste les six dernières versions de l'application, de la plus récente à la plus ancienne, avec leur numéro, leur date et ce qu'elles changent. Une pastille « Installée » repère la version de l'application. Si la liste ne se charge pas, l'écran affiche « Impossible d'afficher les nouveautés. » et un bouton « Réessayer »."
@@ -24,11 +29,6 @@
       "version": "0.23.96",
       "date": "2026-10-17",
       "text": "Signaler ou proposer : le type « Bug » est choisi d'avance à l'ouverture du formulaire, avec son aide. On peut en choisir un autre avant l'envoi. La plupart des tickets sont des bugs : le choix du type était une étape de plus. Le message « Choisissez le type de ticket. » n'apparaît donc plus en temps normal."
-    },
-    {
-      "version": "0.23.95",
-      "date": "2026-10-17",
-      "text": "Pour l'administrateur : dans Tickets des membres, le filtre « À traiter » et son compteur comptent aussi les tickets En cours prêts à livrer, quand « Livrer » est proposé. Ils n'apparaissaient que sous « Tous ». Un ticket En cours qui n'est pas prêt, ou dont la livraison a commencé, reste hors du filtre."
     }
   ]
 }
