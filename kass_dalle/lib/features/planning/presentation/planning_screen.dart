@@ -2450,16 +2450,17 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   ) async {
     final (group, _) = _suggestionGroupAndRepo(suggestion);
     final dayLabel = DateFormat('EEEE d MMMM', 'fr').format(suggestion.day);
-    final choice = await Navigator.of(context).push<ExploreChoice>(
-      MaterialPageRoute(
-        builder: (_) => SearchScreen(
-          pick: ExplorePick(
-            initialQuery: suggestion.title,
-            banner: 'Recette pour $dayLabel, ${group.name}',
+    final choice = await Navigator.of(context, rootNavigator: true)
+        .push<ExploreChoice>(
+          MaterialPageRoute(
+            builder: (_) => SearchScreen(
+              pick: ExplorePick(
+                initialQuery: suggestion.title,
+                banner: 'Recette pour $dayLabel, ${group.name}',
+              ),
+            ),
           ),
-        ),
-      ),
-    );
+        );
     if (choice == null || !mounted) return null;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);

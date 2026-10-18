@@ -713,7 +713,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         _leaveAfterConfirmation();
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Explorer')),
+        appBar: AppBar(
+          title: Text(_picking ? 'Choisir une recette' : 'Explorer'),
+        ),
         body: prefsAsync.when(
           loading: () =>
               const AppLoadingState(label: 'Chargement des filtres…'),
@@ -996,10 +998,12 @@ class _PickBanner extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
-            Icon(
-              Icons.event_available_outlined,
-              size: AppIconSize.small,
-              color: theme.colorScheme.onSecondaryContainer,
+            ExcludeSemantics(
+              child: Icon(
+                Icons.event_available_outlined,
+                size: AppIconSize.small,
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(
