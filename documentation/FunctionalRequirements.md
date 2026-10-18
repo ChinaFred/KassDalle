@@ -1011,7 +1011,16 @@ lui-même celles qu'il retient.
   celles des membres de ses groupes) s'affichent dessous, dans le même écran, filtrées par
   ce qui est tapé ; une ligne « Utiliser « des frites » » (repas libre, sans recette liée)
   précède la liste. Choisir une recette remplace le nom libre ; retoucher son titre la
-  ramène à un nom libre. Ni génération ni conception par l'IA : une suggestion ne coûte
+  ramène à un nom libre. À droite du champ, un bouton « Recherche avancée » (icône seule
+  sur téléphone, icône et texte sur web et desktop) ouvre `/planning/suggest/search` : texte
+  repris de « Quel plat ? », recherche sans accents ni casse dans le titre, les étiquettes
+  (cuisine, type, thème) et les ingrédients principaux, en trois sections, et les filtres de
+  l'Explorer (hors sources, tri et note) en feuille « Filtres » sur téléphone, en panneau
+  latéral sur web et desktop. Une ligne « contient : tomate » nomme l'ingrédient trouvé.
+  Toucher un résultat revient à l'écran avec la recette choisie ; sans résultat, « Garder
+  « … » comme nom libre » reprend le texte. Les titres de recettes privées d'autres membres
+  ne sont cherchés que par titre, et les filtres les écartent. Les filtres ne sont pas
+  mémorisés et ne touchent pas les préférences de l'Explorer. Ni génération ni conception par l'IA : une suggestion ne coûte
   aucun appel d'IA. Champ « Un mot pour Marie (facultatif) », 200 caractères au plus, sous le
   plat. « Envoyer la suggestion » est fixé en bas de l'écran, au-dessus du clavier, et
   s'active dès que le champ « Quel plat ? » n'est pas vide : choisir une recette n'est
