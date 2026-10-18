@@ -20,6 +20,17 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-18
 
+### v0.24.6 — technique
+
+Admin › Tickets, sur le web : la fiche d'un ticket qui peut être validé restait grise.
+Depuis la v0.24.4, la ligne d'information au-dessus des boutons est choisie par une
+chaîne de `? :` qui mêle un tuple constant (plafond de lancements atteint) et `null`.
+dart2js (Dart 3.12.2) supprime alors le test `if (info != null)` qui suit, et le build
+de la fiche lève « Null check operator used on a null value » quand aucune ligne n'est à
+afficher. Android, compilé en natif, n'était pas touché. Le test est remplacé par un
+motif (`if (info case (final infoIcon, final infoText))`), que dart2js conserve : le
+`main.dart.js` produit vérifie le type de la valeur avant de la lire.
+
 ### v0.24.5 — fonctionnel
 
 Suggestions des membres : un bouton « Chercher » à côté de « Planifier ce jour-là » (ticket

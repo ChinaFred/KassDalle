@@ -1504,13 +1504,16 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (info != null) ...[
+            // Un motif, pas `info != null` : dart2js 3.12 supprime ce test
+            // quand la chaîne ci-dessus mêle un tuple constant et `null`, et la
+            // fiche plante sur le web seul (v0.24.5, ticket #149).
+            if (info case (final infoIcon, final infoText)) ...[
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   ExcludeSemantics(
                     child: Icon(
-                      info.$1,
+                      infoIcon,
                       size: 20,
                       color:
                           deliveryBar?.kind == TicketDeliveryLineKind.ready ||
@@ -1525,7 +1528,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
                     child: Semantics(
                       container: true,
                       liveRegion: deliveryBar != null,
-                      child: TicketInfoLine(info.$2),
+                      child: TicketInfoLine(infoText),
                     ),
                   ),
                   if (deliveryBar?.kind == TicketDeliveryLineKind.unreadable)
