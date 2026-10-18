@@ -493,6 +493,15 @@ un lien » (4.6). Aucune ne part toute seule : ni à la frappe, ni sur Entrée.
 | **Voir sur Google** (dans « Sur le web ») | tous les rôles | aucun |
 | **Importer depuis un lien**, « Importer » d'une page web, bandeau au retour du navigateur | Editor, Admin | voir 4.6 |
 
+**Mode choix.** Le bouton « Chercher » d'une suggestion de membre (5.8) ouvre Explorer en
+plein écran, sans menu latéral, sous le titre « Choisir une recette » et un bandeau « Recette
+pour <jour>, <groupe> ». Le champ est pré-rempli du titre de la suggestion. Un appui sur une
+recette la rend au planning au lieu d'ouvrir sa fiche ; un brouillon est rendu en texte libre.
+Les filtres changés dans ce mode restent en mémoire pour l'ouverture : ils ne sont ni lus ni
+enregistrés sous les filtres habituels. Les actions du tableau gardent leurs droits ; une idée
+de l'IA enregistrée en brouillon ferme l'écran et est posée en texte libre. Pas de garde de
+sortie, de Ctrl+K ni de bandeau d'import.
+
 **À l'ouverture**, l'écran montre la liste des recettes du périmètre : « Mes recettes »,
 « Ma famille », « Mes brouillons ». Rien n'est envoyé à l'IA.
 
