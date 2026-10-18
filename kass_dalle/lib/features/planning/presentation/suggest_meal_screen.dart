@@ -8,6 +8,7 @@ import '../../../core/presentation/leave_guard.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_shortcuts.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -16,6 +17,7 @@ import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_filter.dart';
 import '../data/meal_suggestion_repository.dart';
 import '../domain/meal_suggestion.dart';
+import 'advanced_dish_search_screen.dart';
 import 'meal_suggestion_providers.dart';
 
 /// « Suggérer pour… » sur une fiche recette : l'action, ou `null` si
@@ -186,6 +188,29 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
     });
   }
 
+  /// Ouvre la recherche avancée, avec le texte déjà saisi. Elle rend une
+  /// recette choisie ou un nom libre ; la flèche de retour ne change rien.
+  Future<void> _openAdvancedSearch() async {
+    final pick = await context.push<AdvancedDishPick>(
+      AppRoutes.suggestMealSearch,
+      extra: AdvancedDishSearchArgs(
+        initialQuery: _dishTitle,
+        pickedId: _picked?.id,
+      ),
+    );
+    if (pick == null || !mounted) return;
+    final recipe = pick.recipe;
+    if (recipe != null) {
+      _pickRecipe(recipe);
+      return;
+    }
+    setState(() {
+      _picked = null;
+      _dishCtrl.text = pick.freeName!;
+      _error = null;
+    });
+  }
+
   void _useFreeName() {
     FocusScope.of(context).unfocus();
     setState(() => _picked = null);
@@ -280,6 +305,28 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
       ),
     );
     return leave ?? false;
+  }
+
+  /// Icône seule sur téléphone, icône et texte sur grand écran. Alignée sur le
+  /// champ (56 de haut).
+  Widget _advancedSearchButton() {
+    final wide =
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+    final onPressed = _sending ? null : _openAdvancedSearch;
+    return SizedBox(
+      height: 56,
+      child: wide
+          ? FilledButton.tonalIcon(
+              onPressed: onPressed,
+              icon: const Icon(Icons.tune),
+              label: const Text('Recherche avancée'),
+            )
+          : IconButton.filledTonal(
+              tooltip: 'Recherche avancée',
+              onPressed: onPressed,
+              icon: const Icon(Icons.tune),
+            ),
+    );
   }
 
   @override
@@ -402,34 +449,43 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
                                     trailing: const Icon(Icons.chevron_right),
                                     onTap: _sending ? null : _pickDay,
                                   ),
-                                TextField(
-                                  controller: _dishCtrl,
-                                  enabled: !_sending,
-                                  autofocus: widget.args.recipe == null,
-                                  textCapitalization:
-                                      TextCapitalization.sentences,
-                                  textInputAction: TextInputAction.search,
-                                  decoration: InputDecoration(
-                                    labelText: 'Quel plat ?',
-                                    hintText:
-                                        'Une recette, ou un nom libre : des '
-                                        'frites…',
-                                    prefixIcon: const Icon(Icons.search),
-                                    border: const OutlineInputBorder(),
-                                    suffixIcon: _dishCtrl.text.isEmpty
-                                        ? null
-                                        : IconButton(
-                                            tooltip: 'Effacer',
-                                            icon: const Icon(Icons.clear),
-                                            onPressed: _sending
-                                                ? null
-                                                : () {
-                                                    _dishCtrl.clear();
-                                                    _onDishChanged('');
-                                                  },
-                                          ),
-                                  ),
-                                  onChanged: _onDishChanged,
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _dishCtrl,
+                                        enabled: !_sending,
+                                        autofocus: widget.args.recipe == null,
+                                        textCapitalization:
+                                            TextCapitalization.sentences,
+                                        textInputAction: TextInputAction.search,
+                                        decoration: InputDecoration(
+                                          labelText: 'Quel plat ?',
+                                          hintText:
+                                              'Une recette, ou un nom libre : des '
+                                              'frites…',
+                                          prefixIcon: const Icon(Icons.search),
+                                          border: const OutlineInputBorder(),
+                                          suffixIcon: _dishCtrl.text.isEmpty
+                                              ? null
+                                              : IconButton(
+                                                  tooltip: 'Effacer',
+                                                  icon: const Icon(Icons.clear),
+                                                  onPressed: _sending
+                                                      ? null
+                                                      : () {
+                                                          _dishCtrl.clear();
+                                                          _onDishChanged('');
+                                                        },
+                                                ),
+                                        ),
+                                        onChanged: _onDishChanged,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _advancedSearchButton(),
+                                  ],
                                 ),
                                 if (_freeNameTooLong)
                                   Padding(

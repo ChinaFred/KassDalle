@@ -19,6 +19,14 @@ class ExploreFilterPanel extends ConsumerStatefulWidget {
 
   /// Faux pour un lecteur : la puce « Mes brouillons » n'apparaît pas.
   final bool showDrafts;
+
+  /// Faux hors de l'Explorer : les puces « Recettes » et « Trier par » ne
+  /// s'affichent pas (la liste est imposée par l'écran appelant).
+  final bool showSourcesAndSort;
+
+  /// Dimensions que l'écran appelant ne sait pas alimenter (la note du
+  /// lecteur, par exemple) : leur groupe n'apparaît pas.
+  final Set<RecipeFilterDimension> hiddenDimensions;
   final ValueChanged<ExplorePreferences> onChanged;
 
   /// Contrôleur de défilement fourni par une feuille ; absent, le panneau
@@ -31,6 +39,8 @@ class ExploreFilterPanel extends ConsumerStatefulWidget {
     required this.facets,
     required this.myUid,
     this.showDrafts = true,
+    this.showSourcesAndSort = true,
+    this.hiddenDimensions = const {},
     required this.onChanged,
     this.scrollController,
   });
@@ -66,13 +76,15 @@ class _ExploreFilterPanelState extends ConsumerState<ExploreFilterPanel> {
     RecipeFilterDimension d, {
     String? help,
     List<RecipeFacet>? facets,
-  }) => RecipeFacetChipGroup(
-    title: title,
-    help: help,
-    facets: facets ?? widget.facets.of(d),
-    selected: _filter.keysOf(d),
-    onToggle: (key) => _toggle(d, key),
-  );
+  }) => widget.hiddenDimensions.contains(d)
+      ? const SizedBox.shrink()
+      : RecipeFacetChipGroup(
+          title: title,
+          help: help,
+          facets: facets ?? widget.facets.of(d),
+          selected: _filter.keysOf(d),
+          onToggle: (key) => _toggle(d, key),
+        );
 
   @override
   Widget build(BuildContext context) {
@@ -96,57 +108,59 @@ class _ExploreFilterPanelState extends ConsumerState<ExploreFilterPanel> {
       controller: widget.scrollController,
       padding: const EdgeInsets.only(bottom: 16),
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Text('Recettes', style: theme.textTheme.titleSmall),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              FilterChip(
-                label: const Text('Mes recettes'),
-                selected: sources.myRecipes,
-                onSelected: (v) => setSources(sources.copyWith(myRecipes: v)),
-              ),
-              FilterChip(
-                label: const Text('Ma famille'),
-                selected: sources.familyRecipes,
-                onSelected: (v) =>
-                    setSources(sources.copyWith(familyRecipes: v)),
-              ),
-              if (widget.showDrafts)
+        if (widget.showSourcesAndSort) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text('Recettes', style: theme.textTheme.titleSmall),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
                 FilterChip(
-                  label: const Text('Mes brouillons'),
-                  selected: sources.includeDrafts,
+                  label: const Text('Mes recettes'),
+                  selected: sources.myRecipes,
+                  onSelected: (v) => setSources(sources.copyWith(myRecipes: v)),
+                ),
+                FilterChip(
+                  label: const Text('Ma famille'),
+                  selected: sources.familyRecipes,
                   onSelected: (v) =>
-                      setSources(sources.copyWith(includeDrafts: v)),
+                      setSources(sources.copyWith(familyRecipes: v)),
                 ),
-            ],
+                if (widget.showDrafts)
+                  FilterChip(
+                    label: const Text('Mes brouillons'),
+                    selected: sources.includeDrafts,
+                    onSelected: (v) =>
+                        setSources(sources.copyWith(includeDrafts: v)),
+                  ),
+              ],
+            ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Text('Trier par', style: theme.textTheme.titleSmall),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final sort in RecipeSort.values)
-                ChoiceChip(
-                  label: Text(sort.label),
-                  selected: widget.prefs.sort == sort,
-                  onSelected: (_) =>
-                      widget.onChanged(widget.prefs.copyWith(sort: sort)),
-                ),
-            ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text('Trier par', style: theme.textTheme.titleSmall),
           ),
-        ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final sort in RecipeSort.values)
+                  ChoiceChip(
+                    label: Text(sort.label),
+                    selected: widget.prefs.sort == sort,
+                    onSelected: (_) =>
+                        widget.onChanged(widget.prefs.copyWith(sort: sort)),
+                  ),
+              ],
+            ),
+          ),
+        ],
         _group('Type de plat', RecipeFilterDimension.dishType),
         _group(
           'Temps total',

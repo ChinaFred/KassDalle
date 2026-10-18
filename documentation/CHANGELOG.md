@@ -18,6 +18,28 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-18
+
+### v0.24.2 — fonctionnel
+
+Suggérer un plat : un bouton « Recherche avancée » à côté du champ « Quel plat ? » ouvre un
+écran dédié (ticket #141). Il cherche sans accents ni casse dans le titre, les étiquettes et
+les ingrédients principaux (« pates » trouve « Pâtes carbonara », « tomate » trouve les
+recettes qui en contiennent), affiche « contient : … » pour un ingrédient trouvé, et reprend
+les filtres de l'Explorer (type de plat, cuisine, temps, difficulté, thème, allergènes…).
+Toucher un résultat revient à l'écran avec la recette choisie ; sans résultat, le texte se
+garde comme nom libre. Le champ principal garde son filtre par titre et le nom libre. Aucun
+appel d'IA. Le sélecteur de recettes du planning n'est pas modifié.
+
+### v0.24.2 — technique
+
+Nouvel écran `AdvancedDishSearchScreen` (`planning/presentation/`), route fille
+`/planning/suggest/search`. Il réutilise `applyRecipeFilter` et `ExploreFilterPanel` sans
+toucher à `SearchScreen`. `ExploreFilterPanel` reçoit deux paramètres optionnels,
+`showSourcesAndSort` et `hiddenDimensions`, par défaut sans effet sur l'Explorer. Les filtres
+vivent dans l'état de l'écran, hors de `explorePreferencesProvider`. Test :
+`test/advanced_dish_search_screen_test.dart`. Aucun paquet ne change.
+
 ## 2026-10-17
 
 ### v0.24.1 — fonctionnel
