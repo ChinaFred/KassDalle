@@ -5201,6 +5201,17 @@ le modèle) est retiré : la callable et son export sont supprimés, le poste qu
 comptabilisés. `getAiRoutingPolicyFn` le retire de la politique enregistrée à l'affichage
 (`withoutRetiredFeatures`).
 
+**Prompt du classement** (`functions/src/gemini/search.ts`). Le résumé de chaque recette
+(`buildRecipeSummary`) porte, en plus du titre, du livre, de 20 ingrédients, des thèmes, des
+cuisines, de la difficulté, du statut et de la note, trois champs du repas : `role`
+(`tags.meal_role`), `proteine` (`tags.main_protein`) et `feculent` (`tags.main_starch`), vides
+tant que la recette n'est pas classée. Le modèle exclut une recette qui contredit un élément
+explicite de la demande : une autre protéine principale, ou un autre féculent déjà intégré
+(« avec des frites » exclut un plat servi sur du riz). Un plat sans féculent (`aucun`) à la
+bonne protéine reste pertinent. Un champ vide n'exclut rien. Un simple rapprochement de thème
+ou de cuisine ne suffit pas. Le classement suit la pertinence ; la note ne fait que départager
+deux recettes de même pertinence, une recette non notée comptant 7/10.
+
 Une réponse du classement arrivée après une nouvelle demande est ignorée
 (`AiRankingNotifier`). « Chercher avec l'IA » est inactif pendant un classement en cours et quand
 les filtres ne retiennent aucune recette ; `rank` ne relance pas une demande identique déjà en

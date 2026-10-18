@@ -20,6 +20,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-18
 
+### v0.24.7 — fonctionnel
+
+« Chercher avec l'IA » suit mieux la demande. Une recherche « des frites et du poulet »
+remontait un poulet servi sur du riz et, plus bas, du porc et du bœuf, parce que le prompt
+demandait d'être généreux et de tenir compte des notes dans la sélection. Le modèle reçoit
+maintenant le rôle de chaque recette dans un repas, sa protéine et son féculent principaux,
+et il écarte une recette qui contredit la demande (autre protéine, autre féculent déjà
+intégré). La note ne sert plus qu'à départager deux recettes aussi pertinentes ; une recette
+non notée compte 7/10. La raison affichée dit ce que la recette réunit et ce qui manque.
+
 ### v0.24.6 — technique
 
 Admin › Tickets, sur le web : la fiche d'un ticket qui peut être validé restait grise.

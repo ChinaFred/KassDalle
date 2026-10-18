@@ -167,6 +167,12 @@ Map<String, String> buildRecipeSummary(Recipe recipe, {int? myRating}) {
     'themes': recipe.tags.themes.join(', '),
     'cuisines': recipe.tags.cuisines.join(', '),
     'difficulte': recipe.tags.difficulty ?? '',
+    // Ce que la recette est dans un repas : le modèle écarte un plat dont le
+    // féculent intégré contredit la demande (« avec des frites » exclut un
+    // poulet servi sur du riz). Vide tant que la recette n'est pas classée.
+    'role': recipe.tags.mealRole ?? '',
+    'proteine': recipe.tags.mainProtein ?? '',
+    'feculent': recipe.tags.mainStarch ?? '',
     'statut': statusLabel,
     // Inchangé depuis la version précédente : le prompt lit « non notee ».
     'note': myRating != null ? '$myRating/10' : 'non notee',

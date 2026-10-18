@@ -32,27 +32,39 @@ export async function searchRecipes(
 
   const recipesJson = JSON.stringify(input.recipes);
   const rated = input.ratedRecipes ?? [];
+  // Les notes départagent, elles ne sélectionnent pas : une recette bien notée
+  // qui ne répond pas à la demande remontait devant celle qui y répond.
   const preferencesSection =
     rated.length === 0
       ? ""
       : `
-Préférences connues de l'utilisateur — recettes notées (note sur 10) :
+Recettes notées par l'utilisateur (note sur 10) :
 ${JSON.stringify(rated)}
-(Interprétation : ≥8 = aime beaucoup, 5–7 = apprécie, ≤4 = n'aime pas)
-
-Déduis ses goûts depuis ces notes et tiens-en compte dans la sélection.
 `;
 
-  const prompt = `Tu es un assistant culinaire expert qui connaît les goûts de l'utilisateur.
+  const prompt = `Tu es un assistant culinaire qui cherche dans la collection de l'utilisateur.
 
 Requête de l'utilisateur : "${input.query}"
 ${preferencesSection}
-Collection de recettes disponibles (JSON, "note" = note /10 ou "non notée") :
+Collection de recettes disponibles (JSON) :
 ${recipesJson}
 
-Analyse chaque recette et détermine si elle correspond à la requête.
-Sois généreux : si une recette contient les ingrédients ou correspond au thème, inclus-la.
-Classe les résultats par pertinence décroissante : la recette dont le titre ou les ingrédients correspondent le mieux à la requête doit apparaître en premier.
+Champs d'une recette :
+- "role" : place dans un repas (plat, accompagnement, entree, dessert, snack) ; vide si inconnue.
+- "proteine" : protéine principale (boeuf, porc, volaille, agneau, poisson, fruits_de_mer, oeuf, vegetarien, legumineuses) ; vide si inconnue.
+- "feculent" : féculent principal déjà intégré à la recette (pates, riz, pommes_de_terre, semoule, pain, aucun) ; vide si inconnu.
+- "note" : note de l'utilisateur sur 10, ou "non notee".
+
+Règles de sélection :
+1. Repère les éléments explicites de la requête : ingrédient, protéine, féculent, type de plat, cuisine.
+2. Exclus une recette qui contredit un élément explicite : une autre protéine principale que celle demandée, ou un autre féculent déjà intégré que celui demandé (une requête « avec des frites » exclut un plat servi sur du riz ou des pâtes).
+3. Une recette sans féculent ("aucun") qui a la bonne protéine reste pertinente : le féculent demandé peut l'accompagner.
+4. Un champ vide ne permet pas d'exclure : juge alors sur le titre et les ingrédients.
+5. N'inclus pas une recette sur un simple rapprochement de thème ou de cuisine si elle ne partage aucun élément explicite de la requête.
+
+Classement :
+- D'abord la pertinence : une recette qui réunit tous les éléments de la requête passe devant une recette qui n'en réunit qu'une partie.
+- La note ne sert qu'à départager deux recettes de même pertinence, jamais à en inclure une. Une recette "non notee" compte comme 7/10 : note ≥ 8 devant, note ≤ 6 derrière.
 
 Retourne UNIQUEMENT un JSON valide, sans markdown :
 {
@@ -61,8 +73,9 @@ Retourne UNIQUEMENT un JSON valide, sans markdown :
   "preference_insight": null
 }
 
+"raison" dit quels éléments de la requête la recette réunit, et ce qui manque (par exemple : le féculent à servir à côté).
 Si AUCUNE recette ne correspond, "results" = [] et "suggestion" = "reformulation".
-Si pattern de goût clair, remplis "preference_insight". Sinon null.
+"preference_insight" : une phrase sur les goûts tirée des notes, seulement si elle aide à choisir parmi les résultats. Sinon null.
 `;
 
   const result = await callModel({

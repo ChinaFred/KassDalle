@@ -595,18 +595,21 @@ texte du champ n'est pas retenu. Rien n'est écrit dans les recettes.
 **Chercher avec l'IA** (Editor, Admin). Le bouton envoie la demande écrite dans le champ, avec
 les recettes que retiennent les filtres. Le filtre du texte ne s'applique pas à cet envoi :
 le texte sert de demande. Chaque recette est résumée — identifiant, titre, livre, vingt
-premiers ingrédients de l'index, thèmes, cuisines, difficulté, statut — et le lot part dans
-un seul appel.
+premiers ingrédients de l'index, thèmes, cuisines, difficulté, rôle dans un repas, protéine
+et féculent principaux, statut, note du lecteur — et le lot part dans un seul appel.
 
 - Le moteur rend les identifiants retenus, classés par pertinence, chacun avec sa **raison**
   en une phrase. Ils s'affichent en tête de la liste, sous « Choisies par l'IA », la raison
   sous le titre, marquée du robot (§6, « Deux icônes, deux sens »). Le reste de la liste suit,
   sous « Vos recettes » sans texte, en sections avec du texte.
 - Quand rien ne correspond, le moteur rend une **reformulation** plutôt qu'une liste vide.
-- **Les notes du lecteur entrent dans la demande.** Les recettes qu'il a notées partent avec
-  leur note sur 10, et le prompt donne la clé de lecture : 8 ou plus, il aime beaucoup ; 5 à
-  7, il apprécie ; 4 ou moins, il n'aime pas. Quand un goût se dégage, le moteur le formule à
-  part.
+- **Une recette qui contredit la demande est écartée** : une autre protéine principale que
+  celle demandée, ou un autre féculent déjà intégré (« avec des frites » écarte un poulet servi
+  sur du riz). Un plat sans féculent à la bonne protéine reste proposé. Un simple rapprochement
+  de thème ou de cuisine ne suffit pas.
+- **La note du lecteur ne fait que départager** deux recettes aussi pertinentes ; une recette
+  non notée compte 7/10. Elle ne fait jamais entrer une recette dans la liste. Quand un goût
+  aide à choisir parmi les résultats, le moteur le formule à part.
 - **Un texte ou un filtre modifié après la réponse** affiche au-dessus des recettes choisies
   le bandeau « Recherche ou filtres modifiés depuis la demande. », avec l'action « Relancer ».
   Rien ne repart sans appui.
