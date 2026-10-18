@@ -20,6 +20,10 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-18
 
+### v0.24.8 — fonctionnel
+
+Le choix d'un accompagnement se filtre. La feuille listait toutes les garnitures et recettes d'accompagnement les unes sous les autres, et il fallait faire défiler pour trouver la bonne. Elle porte maintenant un champ de recherche par nom, insensible aux accents, et une rangée de pastilles par famille (Féculent, Légume, Salade et crudités, Recettes…), limitée aux familles présentes. Les deux filtres se combinent. La hauteur de la feuille ne change plus pendant la saisie. Valable dans « Nouveau planning » et pour « Ajouter un accompagnement ».
+
 ### v0.24.7 — fonctionnel
 
 « Chercher avec l'IA » suit mieux la demande. Une recherche « des frites et du poulet »
