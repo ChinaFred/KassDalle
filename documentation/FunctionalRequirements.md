@@ -1409,7 +1409,10 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   description et capture en grand ; la section « Livraison (N) » ; la section
   « Lancements (N) » ; enfin la section « Analyses (N) ». Une relance qui échoue
   encore affiche « L'envoi a encore échoué. Voir la dernière erreur ci-dessous. » ; une
-  relance réussie, « Envoi relancé : <statut>. ».
+  relance réussie n'affiche aucun message : la puce de statut de la fiche clignote trois fois.
+  Il en va de même pour « Valider », « Refuser » et « Clore » : aucun message de succès ne
+  masque la barre de décision, la puce clignote au changement de statut (sauf animations
+  réduites, où un lecteur d'écran annonce le nouveau statut). « Lien copié. » reste affiché.
 - **Analyses.** Chaque commentaire de l'administrateur sur l'Issue qui commence par
   « ## Analyse » (« ## Analyse — compléments » compris) s'affiche dans l'ordre chronologique,
   sous « Analyse du jj/mm/aa à hh:mm », en Markdown, texte sélectionnable. Les réponses de
@@ -1462,7 +1465,7 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   en fin de défilement au lieu de rester fixée.
   - « Valider » : seulement pour un ticket Analysé qui n'est pas une Question. Confirmation
     « Valider ce ticket ? » — « Vous pourrez ensuite lancer le développement. », « Annuler » ou
-    « Valider ». Succès : « Ticket validé. » et le statut passe à Validé. Une Issue déjà fermée
+    « Valider ». Succès : le statut passe à Validé. Une Issue déjà fermée
     sur GitHub : « Ce ticket a déjà été clos sur GitHub. », et la fiche reprend l'état de
     GitHub. Pour un ticket Reçu, la fiche dit « Valider sera possible une fois le ticket
     analysé. » ; pour une Question, « Une question reçoit une réponse sur GitHub, pas une
@@ -1474,8 +1477,7 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
     dépôt public, et lu par le membre. N'y mettez ni nom ni donnée privée. » Pour un ticket En
     cours, elle ajoute « Une pull request est ouverte. Elle ne sera pas fermée. » Le champ
     « Motif du refus » prend 5 à 2 000 caractères (« Le motif doit faire au moins 5
-    caractères. ») ; le texte saisi est gardé si l'on ferme puis rouvre la boîte. Succès :
-    « Ticket refusé. Le motif est publié sur GitHub. » ; le membre voit le statut Refusé et
+    caractères. ») ; le texte saisi est gardé si l'on ferme puis rouvre la boîte. Succès : le membre voit le statut Refusé et
     l'encadré « Motif du refus ». Un échec laisse la boîte ouverte avec le message. Si le motif
     est publié mais l'Issue pas fermée : « Motif publié, mais l'Issue n'a pas été fermée.
     Réessayez. », et le motif ne se modifie plus ; rouverte, la boîte dit « Ce motif est déjà

@@ -745,10 +745,6 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
         context.showErrorSnackBar(
           'L\'envoi a encore échoué. Voir la dernière erreur ci-dessous.',
         );
-      } else {
-        context.showSuccessSnackBar(
-          next == null ? 'Envoi relancé.' : 'Envoi relancé : ${next.label}.',
-        );
       }
     } catch (e) {
       // Déjà remontée par `TicketRepository` (feature `tickets`).
@@ -786,7 +782,6 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     _setBusy(ticketId);
     try {
       await ref.read(ticketRepositoryProvider).validate(ticketId);
-      if (mounted) context.showSuccessSnackBar('Ticket validé.');
     } on TicketDecisionError catch (e) {
       // Déjà remontée par `TicketRepository` (feature `tickets`).
       if (mounted) context.showErrorSnackBar(e.message);
@@ -822,9 +817,6 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     if (refused != true || !mounted) return;
     _reasonController.clear();
     setState(() => _reasonLocked = false);
-    context.showSuccessSnackBar(
-      'Ticket refusé. Le motif est publié sur GitHub.',
-    );
   }
 
   /// « Clore » : publie le commentaire de clôture, pose `statut:clos` et
@@ -850,9 +842,6 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     if (closed != true || !mounted) return;
     _closeController.clear();
     setState(() => _closeLocked = false);
-    context.showSuccessSnackBar(
-      'Ticket clos. Le commentaire est publié sur GitHub.',
-    );
   }
 
   /// « Répondre » : publie les précisions de l'administrateur sous la
@@ -1212,7 +1201,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           runSpacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            TicketStatusChip(status: ticket.status),
+            TicketStatusChip(status: ticket.status, blinkOnChange: true),
             if (ticket.isInAnomaly) const TicketAnomalyChip(),
             if (issue != null)
               SelectableText(

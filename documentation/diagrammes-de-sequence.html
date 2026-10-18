@@ -4194,7 +4194,7 @@ sequenceDiagram
   F->>T: admin/analysis réécrit (au mieux, journalisé)
   F->>T: finally : releaseDecision (bail retiré ; à défaut il expire en 2 min)
   F-->>C: { status: validated, changed: true }
-  C-->>AD: « Ticket validé. »
+  C-->>AD: puce de statut qui clignote (aucun message)
   G--)F: webhook issues labeled (plus tard) : même statut, rien ne change
 </pre>
       </div>
@@ -4254,7 +4254,7 @@ sequenceDiagram
   F->>T: admin/analysis réécrit depuis les commentaires déjà lus (au mieux)
   F->>T: bail retiré (finally)
   F-->>C: { status: refused }
-  C-->>AD: « Ticket refusé. Le motif est publié sur GitHub. »
+  C-->>AD: puce de statut qui clignote (aucun message)
   M->>T: « Mes tickets » : Refusé, encadré « Motif du refus », pastille sur la puce du compte
 </pre>
       </div>
@@ -4724,7 +4724,7 @@ sequenceDiagram
   F->>T: admin/analysis réécrit depuis les commentaires déjà lus (au mieux)
   F->>T: bail retiré (finally)
   F-->>C: { status: closed }
-  C-->>AD: « Ticket clos. Le commentaire est publié sur GitHub. »
+  C-->>AD: puce de statut qui clignote (aucun message)
   M->>T: « Mes tickets » : Clos, encadré « Réponse de l'administrateur », pastille sur la puce du compte
 </pre>
       </div>

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -59,21 +60,82 @@ IconData ticketStatusIcon(TicketStatus status) => switch (status) {
 };
 
 /// Puce d'un statut : icône et texte, jamais la couleur seule.
-class TicketStatusChip extends StatelessWidget {
+///
+/// Avec [blinkOnChange], la puce clignote trois fois quand le statut change
+/// (jamais au premier affichage, jamais avec les animations réduites) et
+/// annonce le nouveau statut aux lecteurs d'écran.
+class TicketStatusChip extends StatefulWidget {
   final TicketStatus status;
-  const TicketStatusChip({super.key, required this.status});
+  final bool blinkOnChange;
+  const TicketStatusChip({
+    super.key,
+    required this.status,
+    this.blinkOnChange = false,
+  });
+
+  @override
+  State<TicketStatusChip> createState() => _TicketStatusChipState();
+}
+
+class _TicketStatusChipState extends State<TicketStatusChip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+  }
+
+  @override
+  void didUpdateWidget(TicketStatusChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.blinkOnChange || oldWidget.status == widget.status) return;
+    SemanticsService.sendAnnouncement(
+      View.of(context),
+      'Statut : ${widget.status.label}',
+      Directionality.of(context),
+    );
+    if (MediaQuery.disableAnimationsOf(context)) return;
+    _controller.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final colors = ticketStatusColors(status, Theme.of(context).colorScheme);
-    return _Pill(
-      icon: ticketStatusIcon(status),
-      label: status.label,
+    final colors = ticketStatusColors(
+      widget.status,
+      Theme.of(context).colorScheme,
+    );
+    final pill = _Pill(
+      icon: ticketStatusIcon(widget.status),
+      label: widget.status.label,
       background: colors.background,
       foreground: colors.foreground,
     );
+    if (!widget.blinkOnChange) return pill;
+    return FadeTransition(
+      opacity: _controller.drive(_blinkOpacity),
+      child: pill,
+    );
   }
 }
+
+/// Trois pulsations d'opacité (1 → 0,35 → 1), puis fixe.
+final Animatable<double> _blinkOpacity = TweenSequence<double>([
+  for (var i = 0; i < 3; i++) ...[
+    TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.35), weight: 1),
+    TweenSequenceItem(tween: Tween(begin: 0.35, end: 1.0), weight: 1),
+  ],
+]);
 
 /// Puce « En anomalie » des écrans d'administration.
 class TicketAnomalyChip extends StatelessWidget {
