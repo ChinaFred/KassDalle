@@ -20,6 +20,15 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-18
 
+### v0.24.3 — fonctionnel
+
+Fiche d'un ticket (Admin › Tickets des membres) : sur un ticket Analysé, un bouton « Valider et
+lancer le développement » s'ajoute à « Valider » (ticket #144). Il devient le bouton principal ;
+« Valider » passe en bouton tonal. Une seule confirmation annonce la validation puis le
+lancement et rappelle les lancements restants du jour. Si la validation est refusée, rien n'est
+lancé. Si le lancement échoue, le ticket reste Validé et le message le dit : « Ticket validé,
+développement non lancé : … ». Le bouton est désactivé quand le plafond du jour est atteint.
+
 ### v0.24.2 — fonctionnel
 
 Fiche d'un ticket (Admin › Tickets des membres) : les messages de succès ne masquent plus
