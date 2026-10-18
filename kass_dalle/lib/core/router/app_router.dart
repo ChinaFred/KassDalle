@@ -48,6 +48,7 @@ import '../../features/planning/presentation/planning_screen.dart';
 import '../../features/planning/presentation/batch_planning_screen.dart';
 import '../../features/planning/presentation/planning_config_screen.dart';
 import '../../features/planning/presentation/my_staples_screen.dart';
+import '../../features/planning/presentation/advanced_dish_search_screen.dart';
 import '../../features/planning/presentation/suggest_meal_screen.dart';
 import '../presentation/changelog_screen.dart';
 import '../../features/tickets/presentation/admin_tickets_screen.dart';
@@ -112,6 +113,7 @@ class AppRoutes {
   static const planningConfig = '/planning/config';
   static const myStaples = '/planning/staples';
   static const suggestMeal = '/planning/suggest';
+  static const suggestMealSearch = '/planning/suggest/search';
   static const tickets = '/tickets';
   static const ticketNew = '/tickets/new';
   static const adminTickets = '/admin/tickets';
@@ -578,6 +580,20 @@ final routerProvider = Provider<GoRouter>((ref) {
                     state.extra is SuggestMealArgs ? null : AppRoutes.planning,
                 builder: (context, state) =>
                     SuggestMealScreen(args: state.extra! as SuggestMealArgs),
+                routes: [
+                  GoRoute(
+                    path: 'search',
+                    // Le texte de départ arrive en `extra` : sans lui (page
+                    // rechargée), retour au planning.
+                    redirect: (context, state) =>
+                        state.extra is AdvancedDishSearchArgs
+                        ? null
+                        : AppRoutes.planning,
+                    builder: (context, state) => AdvancedDishSearchScreen(
+                      args: state.extra! as AdvancedDishSearchArgs,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
