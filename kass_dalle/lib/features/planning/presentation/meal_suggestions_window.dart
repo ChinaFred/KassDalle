@@ -26,11 +26,16 @@ class PlannedSuggestion {
   final DateTime day;
   final String groupName;
 
+  /// Vrai quand le repas est posé en texte libre à la place d'une idée de
+  /// l'IA enregistrée en brouillon : le message le dit.
+  final bool draft;
+
   const PlannedSuggestion({
     required this.title,
     required this.mealId,
     required this.day,
     required this.groupName,
+    this.draft = false,
   });
 }
 
@@ -111,7 +116,11 @@ Future<void> removeSuggestionWithUndo(
 class MealSuggestionsButton extends ConsumerWidget {
   final PlanSuggestion onPlan;
 
-  const MealSuggestionsButton({super.key, required this.onPlan});
+  /// « Chercher » : l'Explorer en mode choix, puis le jour. Absent : le
+  /// bouton n'est pas proposé.
+  final PlanSuggestion? onSearch;
+
+  const MealSuggestionsButton({super.key, required this.onPlan, this.onSearch});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -121,7 +130,11 @@ class MealSuggestionsButton extends ConsumerWidget {
     final count = owner ? ref.watch(upcomingReceivedCountProvider) : 0;
     return IconButton(
       tooltip: owner ? 'Suggestions des membres' : 'Mes suggestions',
-      onPressed: () => showMealSuggestionsWindow(context, onPlan: onPlan),
+      onPressed: () => showMealSuggestionsWindow(
+        context,
+        onPlan: onPlan,
+        onSearch: onSearch,
+      ),
       icon: Semantics(
         label: owner ? suggestionCountLabel(count) : null,
         child: Badge.count(
@@ -141,6 +154,7 @@ class MealSuggestionsButton extends ConsumerWidget {
 Future<void> showMealSuggestionsWindow(
   BuildContext context, {
   required PlanSuggestion onPlan,
+  PlanSuggestion? onSearch,
   DateTime? focusDay,
   String? groupId,
 }) {
@@ -154,6 +168,7 @@ Future<void> showMealSuggestionsWindow(
           height: size.height * 0.8,
           child: MealSuggestionsView(
             onPlan: onPlan,
+            onSearch: onSearch,
             focusDay: focusDay,
             groupId: groupId,
             showClose: true,
@@ -176,6 +191,7 @@ Future<void> showMealSuggestionsWindow(
       expand: false,
       builder: (_, controller) => MealSuggestionsView(
         onPlan: onPlan,
+        onSearch: onSearch,
         focusDay: focusDay,
         groupId: groupId,
         scrollController: controller,
@@ -218,6 +234,7 @@ class _OlderRow extends _Row {
 /// Le contenu de la fenêtre des suggestions.
 class MealSuggestionsView extends ConsumerStatefulWidget {
   final PlanSuggestion onPlan;
+  final PlanSuggestion? onSearch;
   final DateTime? focusDay;
   final String? groupId;
   final ScrollController? scrollController;
@@ -226,6 +243,7 @@ class MealSuggestionsView extends ConsumerStatefulWidget {
   const MealSuggestionsView({
     super.key,
     required this.onPlan,
+    this.onSearch,
     this.focusDay,
     this.groupId,
     this.scrollController,
@@ -355,12 +373,12 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
 
   /// « Planifier ce jour-là » ; le message, et son « Annuler », s'affichent
   /// dans la fenêtre.
-  Future<void> _plan(MealSuggestion s) async {
+  Future<void> _plan(MealSuggestion s, {bool search = false}) async {
     if (_planning.contains(s.id)) return;
     setState(() => _planning.add(s.id));
     PlannedSuggestion? planned;
     try {
-      planned = await widget.onPlan(s);
+      planned = await (search ? widget.onSearch! : widget.onPlan)(s);
     } on PlanSuggestionFailure catch (failure) {
       if (mounted) _snackContext.showErrorSnackBar(failure.message);
       return;
@@ -387,7 +405,8 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
     if (!snack.mounted) return;
     snack.showSuccessSnackBar(
       'Repas planifié le ${_dayFormat.format(done.day)} pour '
-      '${done.groupName} : ${done.title}.',
+      '${done.groupName} : ${done.title}.'
+      '${done.draft ? ' Cette idée est enregistrée dans vos brouillons.' : ''}',
       action: repo == null
           ? null
           : SnackBarAction(
@@ -844,10 +863,27 @@ class _MealSuggestionsViewState extends ConsumerState<MealSuggestionsView> {
           else if (received && !past)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: FilledButton.tonalIcon(
-                onPressed: _planning.contains(s.id) ? null : () => _plan(s),
-                icon: const Icon(Icons.event_available_outlined),
-                label: const Text('Planifier ce jour-là'),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed: _planning.contains(s.id) ? null : () => _plan(s),
+                    icon: const Icon(Icons.event_available_outlined),
+                    label: const Text('Planifier ce jour-là'),
+                  ),
+                  if (widget.onSearch != null)
+                    Tooltip(
+                      message: 'Chercher une recette pour cette suggestion',
+                      child: OutlinedButton.icon(
+                        onPressed: _planning.contains(s.id)
+                            ? null
+                            : () => _plan(s, search: true),
+                        icon: const Icon(Icons.search),
+                        label: const Text('Chercher'),
+                      ),
+                    ),
+                ],
               ),
             ),
         ],

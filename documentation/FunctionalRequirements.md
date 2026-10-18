@@ -1065,7 +1065,18 @@ lui-même celles qu'il retient.
   planning du groupe, aux parts du groupe, avec « Annuler » ; un nom libre ou une
   recette privée ouvre le sélecteur, pré-rempli du titre. Le message « Repas planifié
   le samedi 17 octobre pour Famille Dupont : Lasagnes. », avec « Annuler », s'affiche
-  dans la fenêtre, comme « Suggestion retirée. ». Les jours passés se replient sous
+  dans la fenêtre, comme « Suggestion retirée. ». À côté, « Chercher » ouvre
+  **Explorer en mode choix** (5.5), plein écran, champ pré-rempli du titre de la
+  suggestion et recherche lancée, sous un bandeau « Recette pour samedi 17 octobre,
+  Famille Dupont ». Un appui sur une recette de la bibliothèque (un brouillon est posé
+  en texte libre) rend le choix ; le calendrier s'ouvre alors sur le jour de la
+  suggestion, du jour même à 60 jours, et « Planifier » pose le repas dans le planning
+  du groupe, aux parts du groupe, avec le même message et « Annuler ». Les filtres
+  changés dans ce mode restent en mémoire pour cette ouverture : les filtres habituels
+  ne changent pas. « Sur le web » et « Imaginer 3 recettes » y restent disponibles ;
+  une idée de l'IA enregistrée en brouillon est posée en texte libre, et le message
+  ajoute « Cette idée est enregistrée dans vos brouillons. ». Un plat différent de la
+  suggestion ne la marque pas « Au planning ». Les jours passés se replient sous
   « Jours passés (n) », sans bouton ; la fenêtre lit 90 jours, puis « Voir les plus
   anciennes » — directement, sans section repliée, quand aucun jour passé n'a de
   suggestion. Sans suggestion plus ancienne : « Aucune suggestion plus ancienne. ».

@@ -54,6 +54,23 @@ final explorePreferencesProvider =
       ExplorePreferencesNotifier.new,
     );
 
+/// Les filtres de l'Explorer ouvert en mode choix (depuis une suggestion du
+/// planning) : tenus en mémoire pour cette ouverture. Ni lus ni écrits sous
+/// `users/{uid}/preferences/explore_filters` : les filtres habituels du
+/// propriétaire ne changent pas.
+class ExplorePickPreferencesNotifier extends ExplorePreferencesNotifier {
+  @override
+  Future<ExplorePreferences> build() async => ExplorePreferences.defaults;
+
+  @override
+  void apply(ExplorePreferences next) => state = AsyncData(next);
+}
+
+final explorePickPreferencesProvider =
+    AsyncNotifierProvider<ExplorePreferencesNotifier, ExplorePreferences>(
+      ExplorePickPreferencesNotifier.new,
+    );
+
 // ── Corpus : les recettes des sources choisies ───────────────────────────────
 
 /// Les recettes des sources choisies, et les notes du lecteur.

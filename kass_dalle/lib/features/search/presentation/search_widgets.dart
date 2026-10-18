@@ -24,10 +24,15 @@ class SearchResultTile extends StatelessWidget {
   /// fait retenir la recette, cités sur une ligne « Avec : … ».
   final List<String> matchedIngredients;
 
+  /// Mode choix : un appui rend la recette à l'écran appelant au lieu
+  /// d'ouvrir la fiche.
+  final ValueChanged<Recipe>? onPick;
+
   const SearchResultTile({
     super.key,
     required this.result,
     this.matchedIngredients = const [],
+    this.onPick,
   });
 
   @override
@@ -46,7 +51,10 @@ class SearchResultTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () {
-          if (isDraft) {
+          final pick = onPick;
+          if (pick != null) {
+            pick(recipe);
+          } else if (isDraft) {
             context.push('${AppRoutes.drafts}/${recipe.id}');
           } else {
             context.push('${AppRoutes.recipes}/${recipe.id}');

@@ -1536,8 +1536,11 @@ attendant une décision.
 
 Un membre d'un groupe actif, autre que son propriétaire, lecteur compris, suggère au
 propriétaire un plat pour un jour du planning du groupe. Pas de statut : le propriétaire
-lit, et planifie lui-même ce qu'il retient (« Planifier ce jour-là », qui écrit un
-`planned_meals` ordinaire). La suggestion n'est jamais modifiée ; « Au planning » se calcule
+lit, et planifie lui-même ce qu'il retient (« Planifier ce jour-là » ou « Chercher », qui
+écrivent un `planned_meals` ordinaire ; « Chercher » ouvre `SearchScreen` en mode choix
+par `Navigator.push`, avec `explorePickPreferencesProvider` : filtres en mémoire, jamais
+lus ni écrits sous `users/{uid}/preferences/explore_filters` ; une idée de l'IA enregistrée
+est posée en texte libre, sans `recipe_id`). La suggestion n'est jamais modifiée ; « Au planning » se calcule
 à l'affichage (`plannedMatchFor`, `meal_suggestion.dart` : même groupe, même jour, même
 recette ou même titre sans casse). Aucun appel d'IA, aucun poste de coût.
 
