@@ -18,6 +18,20 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-18
+
+### v0.24.2 — fonctionnel
+
+Fiche d'un ticket (Admin › Tickets des membres) : les messages de succès ne masquent plus
+la barre de décision (ticket #143). « Valider », « Refuser », « Clore » et « Relancer
+l'envoi » n'affichent plus de SnackBar de succès. La puce de statut de la fiche clignote
+trois fois (opacité 1 → 0,35, environ 1,2 s) quand le statut change, puis reste fixe. Elle
+ne clignote ni à l'ouverture, ni quand on passe d'un ticket à un autre, ni avec les
+animations réduites ; un lecteur d'écran annonce le nouveau statut. « Lien copié. » et les
+messages d'erreur restent inchangés. `TicketStatusChip` (`ticket_widgets.dart`) reçoit le
+paramètre `blinkOnChange`, actif sur la fiche seulement. Aucun paquet ne change. Test :
+`test/features/tickets/ticket_status_chip_test.dart`.
+
 ## 2026-10-17
 
 ### v0.24.1 — fonctionnel
