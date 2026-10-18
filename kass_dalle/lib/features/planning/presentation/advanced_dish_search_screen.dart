@@ -181,6 +181,12 @@ class _AdvancedDishSearchScreenState
     } else {
       body = _results(isWide);
     }
+    final withField = Column(
+      children: [
+        _searchField(),
+        Expanded(child: body),
+      ],
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Recherche avancée')),
@@ -192,16 +198,42 @@ class _AdvancedDishSearchScreenState
                   child: _panel(_corpus, onChanged: _setPrefs),
                 ),
                 const VerticalDivider(width: 1),
-                Expanded(child: body),
+                Expanded(child: withField),
               ],
             )
           : Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 640),
-                child: body,
+                child: withField,
               ),
             ),
+    );
+  }
+
+  Widget _searchField() {
+    final query = _queryCtrl.text;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: TextField(
+        controller: _queryCtrl,
+        autofocus: widget.args.initialQuery.isEmpty,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          labelText: 'Recherche',
+          hintText: 'Un plat, un ingrédient, une cuisine',
+          prefixIcon: const Icon(Icons.search),
+          border: const OutlineInputBorder(),
+          suffixIcon: query.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Effacer',
+                  icon: const Icon(Icons.clear),
+                  onPressed: () => setState(_queryCtrl.clear),
+                ),
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
     );
   }
 
@@ -232,50 +264,38 @@ class _AdvancedDishSearchScreenState
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: TextField(
-            controller: _queryCtrl,
-            autofocus: widget.args.initialQuery.isEmpty,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              labelText: 'Recherche',
-              hintText: 'Un plat, un ingrédient, une cuisine',
-              prefixIcon: const Icon(Icons.search),
-              border: const OutlineInputBorder(),
-              suffixIcon: query.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'Effacer',
-                      icon: const Icon(Icons.clear),
-                      onPressed: () => setState(_queryCtrl.clear),
-                    ),
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-        ),
-        Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
-          child: Row(
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
             children: [
-              Expanded(
-                child: Text(
-                  recipeCountLabel(outcome.recipes.length),
-                  style: theme.textTheme.titleSmall,
-                ),
+              Text(
+                recipeCountLabel(outcome.recipes.length),
+                style: theme.textTheme.titleSmall,
               ),
-              if (!_filter.isEmpty)
-                TextButton(
-                  onPressed: _clearFilters,
-                  child: const Text('Effacer les filtres'),
-                ),
-              if (!isWide)
-                ActionChip(
-                  avatar: const Icon(Icons.tune, size: AppIconSize.inline),
-                  label: Text(
-                    _filter.isEmpty ? 'Filtres' : 'Filtres · ${_filter.count}',
-                  ),
-                  onPressed: _openFilters,
-                ),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                children: [
+                  if (!_filter.isEmpty)
+                    TextButton(
+                      onPressed: _clearFilters,
+                      child: const Text('Effacer les filtres'),
+                    ),
+                  if (!isWide)
+                    ActionChip(
+                      materialTapTargetSize: MaterialTapTargetSize.padded,
+                      avatar: const Icon(Icons.tune, size: AppIconSize.inline),
+                      label: Text(
+                        _filter.isEmpty
+                            ? 'Filtres'
+                            : 'Filtres · ${_filter.count}',
+                      ),
+                      onPressed: _openFilters,
+                    ),
+                ],
+              ),
             ],
           ),
         ),
@@ -341,7 +361,11 @@ class _AdvancedDishSearchScreenState
     return AppEmptyState(
       icon: Icons.search_off_rounded,
       title: 'Aucune recette trouvée.',
-      message: text.isEmpty ? 'Modifiez les filtres.' : null,
+      message: text.isNotEmpty
+          ? null
+          : _filter.isEmpty
+          ? 'Aucune recette à suggérer pour l\'instant.'
+          : 'Modifiez les filtres.',
       action: Wrap(
         alignment: WrapAlignment.center,
         spacing: 8,

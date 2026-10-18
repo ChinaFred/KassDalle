@@ -313,20 +313,23 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
     final wide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
     final onPressed = _sending ? null : _openAdvancedSearch;
-    return SizedBox(
-      height: 56,
-      child: wide
-          ? FilledButton.tonalIcon(
+    return wide
+        ? ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 56),
+            child: FilledButton.tonalIcon(
               onPressed: onPressed,
-              icon: const Icon(Icons.tune),
+              icon: const Icon(Icons.manage_search),
               label: const Text('Recherche avancée'),
-            )
-          : IconButton.filledTonal(
+            ),
+          )
+        : SizedBox.square(
+            dimension: 56,
+            child: IconButton.filledTonal(
               tooltip: 'Recherche avancée',
               onPressed: onPressed,
-              icon: const Icon(Icons.tune),
+              icon: const Icon(Icons.manage_search),
             ),
-    );
+          );
   }
 
   @override
