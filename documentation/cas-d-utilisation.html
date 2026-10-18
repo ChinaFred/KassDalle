@@ -1082,7 +1082,7 @@ flowchart LR
     t6(["Ouvrir l'Issue sur GitHub"])
     t7(["Relancer l'envoi&lt;br/&gt;d'un ticket en anomalie"])
     t8(["Lire l'analyse&lt;br/&gt;commentaires « ## Analyse » de l'administrateur"])
-    t9(["Valider un ticket&lt;br/&gt;Analysé, hors Question"])
+    t9(["Valider un ticket&lt;br/&gt;Analysé, hors Question,&lt;br/&gt;seul ou avec lancement du développement"])
     t10(["Refuser un ticket&lt;br/&gt;motif publié, Issue fermée non prévue"])
     t11(["Voir le motif du refus"])
     t16(["Clore un ticket&lt;br/&gt;Reçu, Analysé, Validé ou En cours, tout type,&lt;br/&gt;commentaire publié, Issue fermée, statut Clos"])
@@ -1177,7 +1177,7 @@ flowchart LR
         vérification horaire rattrape un avis perdu.
         <b>L'administrateur décide aussi depuis l'application</b> (Admin › Tickets des membres,
         barre fixée en bas de la fiche). « Valider » n'existe que pour un ticket Analysé qui n'est
-        pas une Question : l'application pose l'étiquette <code>validé</code>. « Refuser » vaut
+        pas une Question : l'application pose l'étiquette <code>validé</code>. À côté, « Valider et lancer le développement » (bouton principal) valide puis lance le développement après une seule confirmation ; si le lancement échoue, le ticket reste Validé. « Refuser » vaut
         pour un ticket Reçu, Analysé, Validé ou En cours, Question comprise : le motif, 5 à
         2 000 caractères, est publié sur GitHub en « Réponse : … », puis l'Issue est fermée comme
         non prévue ; le membre voit Refusé et le motif. « Clore » vaut pour les mêmes statuts, tout type : le

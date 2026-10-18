@@ -1383,6 +1383,11 @@ Le statut d'un ticket suit son Issue, sans geste dans l'application (diagramme e
   n'est relayé.
 - GitHub prévient l'application à chaque changement. Une vérification horaire rattrape un
   avis perdu et renvoie les tickets restés en « Envoi en cours ».
+- Sur un ticket Analysé, hors Question, la barre de la fiche propose « Valider et lancer le
+  développement » (bouton principal) à côté de « Valider ». Une seule confirmation, qui rappelle les
+  lancements restants ; le ticket est validé, puis le développement est lancé. Si le lancement
+  échoue, le ticket reste Validé et « Lancer le développement » permet de réessayer. Le bouton est
+  désactivé quand le plafond du jour est atteint.
 - Valider, refuser et clore se font depuis Admin › Tickets des membres, ou sur GitHub par les
   mêmes gestes : l'application pose l'étiquette `validé`, ou publie le motif et ferme l'Issue
   comme non prévue, ou publie le commentaire, pose `statut:clos` et ferme l'Issue comme

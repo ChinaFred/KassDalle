@@ -922,23 +922,35 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     }
   }
 
+  /// Lancements restants aujourd'hui, ou `null` s'ils ne se lisent pas.
+  int? _launchesRemaining() {
+    final status = ref.read(ticketsStatusProvider);
+    final limit = ref.read(ticketLaunchesPerDayProvider).value;
+    final todayStatus = status.hasError ? null : status.value;
+    return limit == null || todayStatus == null
+        ? null
+        : (limit - todayStatus.launchesTodayAt(DateTime.now()))
+              .clamp(0, limit)
+              .toInt();
+  }
+
+  /// [validateFirst] : « Valider et lancer le développement ». La boîte
+  /// valide le ticket, puis lance sans seconde confirmation. Une validation
+  /// refusée n'appelle pas le lancement ; un lancement raté laisse le ticket
+  /// validé, et le message le dit.
   Future<void> _launch(
     TicketLaunchAction action,
     DateTime? relaunchOf, {
     int? prNumber,
     bool relaunchAfterBlock = false,
+    bool validateFirst = false,
   }) async {
     final ticket = widget.ticket;
     final issue = ticket.githubIssueNumber;
     if (issue == null) return;
-    final status = ref.read(ticketsStatusProvider);
     final limit = ref.read(ticketLaunchesPerDayProvider).value;
-    final todayStatus = status.hasError ? null : status.value;
-    final remaining = limit == null || todayStatus == null
-        ? null
-        : (limit - todayStatus.launchesTodayAt(DateTime.now()))
-              .clamp(0, limit)
-              .toInt();
+    final remaining = _launchesRemaining();
+    var validated = false;
     // Capturés avant l'appel : la boîte peut être fermée pendant l'envoi, et
     // la fiche quittée, avant que le résultat n'arrive.
     final messenger = ScaffoldMessenger.of(context);
@@ -958,9 +970,15 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
           ticketType: ticket.type,
           remaining: remaining,
           limit: limit,
-          submit: () => pending = ref
-              .read(ticketRepositoryProvider)
-              .launch(ticket.id, action),
+          validateFirst: validateFirst,
+          submit: () => pending = validateFirst
+              ? _validateThenLaunch(
+                  ticket.id,
+                  action,
+                  validated: () => validated,
+                  onValidated: () => validated = true,
+                )
+              : ref.read(ticketRepositoryProvider).launch(ticket.id, action),
         ),
       );
       if (outcome?.kind == _LaunchDialogResult.detached) {
@@ -973,19 +991,22 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       if (outcome == null) return;
       final (String text, bool isError) = switch (outcome.kind) {
         _LaunchDialogResult.launched => (
-          'Session lancée. Le lien est dans la section Lancements.',
+          validateFirst
+              ? 'Ticket validé. Session lancée. Le lien est dans la section '
+                    'Lancements.'
+              : 'Session lancée. Le lien est dans la section Lancements.',
           false,
         ),
         // Un 5xx de Claude a son message ; sans réponse, le message
         // générique du résultat inconnu.
         _LaunchDialogResult.unknown => (
-          outcome.message ??
-              'Résultat inconnu : vérifiez sur claude.ai/code avant de '
-                  'relancer.',
+          '${validateFirst ? 'Ticket validé. ' : ''}'
+              '${outcome.message ?? 'Résultat inconnu : vérifiez sur claude.ai/code avant de relancer.'}',
           true,
         ),
         _LaunchDialogResult.lost => (
-          'Réponse perdue. Regardez la section Lancements avant de '
+          '${validateFirst ? 'Ticket validé. ' : ''}'
+              'Réponse perdue. Regardez la section Lancements avant de '
               'relancer.',
           true,
         ),
@@ -1010,6 +1031,39 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
       }
     } finally {
       _clearBusy(ticket.id);
+    }
+  }
+
+  /// Valide [ticketId] (sauf si c'est déjà fait), puis lance le
+  /// développement. Un échec de validation sort en [TicketLaunchError] :
+  /// la boîte reste ouverte avec le message, et rien n'est lancé. Les
+  /// erreurs sont déjà remontées par `TicketRepository` (feature `tickets`).
+  Future<TicketLaunchResult> _validateThenLaunch(
+    String ticketId,
+    TicketLaunchAction action, {
+    required bool Function() validated,
+    required void Function() onValidated,
+  }) async {
+    final repository = ref.read(ticketRepositoryProvider);
+    if (!validated()) {
+      try {
+        await repository.validate(ticketId);
+      } on TicketDecisionError catch (e) {
+        throw TicketLaunchError(e.message);
+      } catch (e) {
+        throw TicketLaunchError('Ticket non validé : ${shortErrorMessage(e)}');
+      }
+      onValidated();
+    }
+    try {
+      return await repository.launch(ticketId, action);
+    } on TicketLaunchError catch (e) {
+      // Le ticket reste validé : « Lancer le développement » permet de
+      // réessayer.
+      throw TicketLaunchError(
+        'Ticket validé, développement non lancé : ${e.message}',
+        reason: e.reason,
+      );
     }
   }
 
@@ -1315,6 +1369,8 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
     // un lancement en cours, ou une réponse que la prochaine analyse lira.
     final lastAnalysisAt = decisions.lastAnalysisAt;
     final pendingAnswerAt = decisions.pendingAnswerAt;
+    final launchesLeft = _launchesRemaining();
+    final launchesExhausted = launchesLeft != null && launchesLeft <= 0;
     final (IconData, String)? info = deliveryBar != null
         ? (_deliveryLineIcon(deliveryBar.kind), deliveryBar.text)
         : decisions.awaitingReply
@@ -1336,6 +1392,12 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
             Icons.mark_chat_unread_outlined,
             'Vos précisions du ${formatTicketDateTime(pendingAnswerAt)} '
                 'seront lues par la prochaine analyse.',
+          )
+        : decisions.canValidate && launchesExhausted
+        ? (
+            Icons.info_outline,
+            'Plafond de lancements atteint aujourd\'hui : validez, puis '
+                'lancez demain.',
           )
         : null;
 
@@ -1371,16 +1433,42 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
         label: const Text('Répondre'),
       );
     } else if (decisions.canValidate) {
-      primary = FilledButton.icon(
-        onPressed: _busy ? null : _validate,
-        icon: _busy && _validating
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(AppIcons.ticketStatusValidated),
-        label: const Text('Valider'),
+      final exhausted = launchesExhausted;
+      // « Valider » seul devient tonal : le bouton combiné est l'action
+      // principale.
+      primary = Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
+        children: [
+          FilledButton.tonalIcon(
+            onPressed: _busy ? null : _validate,
+            icon: _busy && _validating
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(AppIcons.ticketStatusValidated),
+            label: const Text('Valider'),
+          ),
+          Tooltip(
+            message: exhausted
+                ? 'Plafond de lancements atteint aujourd\'hui'
+                : '',
+            child: FilledButton.icon(
+              onPressed: _busy || exhausted
+                  ? null
+                  : () => _launch(
+                      TicketLaunchAction.development,
+                      null,
+                      validateFirst: true,
+                    ),
+              icon: const Icon(AppIcons.ticketLaunchDevelopment),
+              label: const Text('Valider et lancer le développement'),
+            ),
+          ),
+        ],
       );
     } else if (launchAction != null) {
       primary = _LaunchButton(
@@ -1655,6 +1743,10 @@ class _LaunchTicketDialog extends StatefulWidget {
   final int? limit;
   final Future<TicketLaunchResult> Function() submit;
 
+  /// « Valider et lancer le développement » : la boîte annonce la
+  /// validation, qui précède le lancement.
+  final bool validateFirst;
+
   const _LaunchTicketDialog({
     required this.action,
     required this.issueNumber,
@@ -1665,6 +1757,7 @@ class _LaunchTicketDialog extends StatefulWidget {
     required this.remaining,
     required this.limit,
     required this.submit,
+    this.validateFirst = false,
   });
 
   @override
@@ -1759,6 +1852,8 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
         scrollable: true,
         title: Text(switch (widget.action) {
           TicketLaunchAction.analysis => 'Lancer l\'analyse de ce ticket ?',
+          TicketLaunchAction.development when widget.validateFirst =>
+            'Valider ce ticket et lancer le développement ?',
           TicketLaunchAction.development =>
             'Lancer le développement de ce ticket ?',
           TicketLaunchAction.delivery => 'Livrer ce ticket ?',
@@ -1772,6 +1867,9 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
                 'Une session Claude Code va lire l\'Issue '
                     '#${widget.issueNumber} et publier son analyse sur '
                     'GitHub.',
+              TicketLaunchAction.development when widget.validateFirst =>
+                'Le ticket de l\'Issue #${widget.issueNumber} sera validé, '
+                    'puis une session de développement sera lancée.',
               TicketLaunchAction.development =>
                 'Une session Claude Code va écrire le code de l\'Issue '
                     '#${widget.issueNumber} et ouvrir une pull request. '
@@ -1853,7 +1951,9 @@ class _LaunchTicketDialogState extends State<_LaunchTicketDialog> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(
-                    relaunchOf != null
+                    widget.validateFirst
+                        ? 'Valider et lancer'
+                        : relaunchOf != null
                         ? 'Relancer'
                         : isDelivery
                         ? 'Livrer'

@@ -28,12 +28,25 @@ class _FakeTicketRepository extends TicketRepository {
   final Future<TicketLaunchResult> Function() onLaunch;
   int launches = 0;
 
+  /// Appels de `validate` et de `launch`, dans l'ordre.
+  final calls = <String>[];
+  Object? validateError;
+
+  @override
+  Future<String> validate(String ticketId) async {
+    calls.add('validate');
+    final error = validateError;
+    if (error != null) throw error;
+    return 'ok';
+  }
+
   @override
   Future<TicketLaunchResult> launch(
     String ticketId,
     TicketLaunchAction action,
   ) {
     launches += 1;
+    calls.add('launch');
     return onLaunch();
   }
 }
@@ -517,5 +530,95 @@ void main() {
     await tester.pumpAndSettle();
     expect(button('Lancer l\'analyse').enabled, isTrue);
     expect(tester.takeException(), isNull);
+  });
+
+  group('Valider et lancer le développement', () {
+    const combined = 'Valider et lancer le développement';
+
+    Future<_FakeTicketRepository> openCombined(
+      WidgetTester tester, {
+      Object? validateError,
+      Future<TicketLaunchResult> Function()? onLaunch,
+      String status = 'analyzed',
+    }) async {
+      final repo = await pump(tester, status: status, onLaunch: onLaunch);
+      repo.validateError = validateError;
+      await tester.ensureVisible(find.text(combined));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(combined));
+      await tester.pumpAndSettle();
+      return repo;
+    }
+
+    Future<void> confirm(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Valider et lancer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Valider et lancer'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('proposé sur un ticket analysé, pas ailleurs', (tester) async {
+      await pump(tester, status: 'analyzed');
+      expect(find.text(combined), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Valider'), findsOneWidget);
+    });
+
+    testWidgets('absent hors « analysé »', (tester) async {
+      await pump(tester, status: 'validated');
+      expect(find.text(combined), findsNothing);
+    });
+
+    testWidgets('absent sans Issue', (tester) async {
+      await pump(tester, status: 'analyzed', withIssue: false);
+      expect(find.text(combined), findsNothing);
+    });
+
+    testWidgets('une confirmation, puis validation avant lancement', (
+      tester,
+    ) async {
+      final repo = await openCombined(tester);
+      expect(
+        find.text('Valider ce ticket et lancer le développement ?'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Issue #73 sera validé'), findsOneWidget);
+      expect(repo.calls, isEmpty);
+      await confirm(tester);
+      expect(repo.calls, ['validate', 'launch']);
+      expect(
+        find.text(
+          'Ticket validé. Session lancée. Le lien est dans la section '
+          'Lancements.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('validation refusée : aucun lancement, message du serveur', (
+      tester,
+    ) async {
+      final repo = await openCombined(
+        tester,
+        validateError: const TicketDecisionError('Ticket déjà refusé.'),
+      );
+      await confirm(tester);
+      expect(repo.calls, ['validate']);
+      expect(find.text('Ticket déjà refusé.'), findsOneWidget);
+    });
+
+    testWidgets('lancement refusé : le ticket reste validé, message dit', (
+      tester,
+    ) async {
+      final repo = await openCombined(
+        tester,
+        onLaunch: () async => throw const TicketLaunchError('Plafond atteint.'),
+      );
+      await confirm(tester);
+      expect(repo.calls, ['validate', 'launch']);
+      expect(
+        find.text('Ticket validé, développement non lancé : Plafond atteint.'),
+        findsOneWidget,
+      );
+    });
   });
 }
