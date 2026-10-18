@@ -168,7 +168,7 @@
           <tr><td>Planifier pour un groupe dont on est le propriétaire (« Nouveau planning » › « Planifier pour… », jour libre, feuille « Planifier ») — le planning du groupe</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le planning d'un groupe dont on est membre, en lecture seule — un invité ne le lit pas ; un groupe dont le propriétaire n'est plus éditeur est en pause : son planning est masqué à tous, sans rien effacer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Suggérer un plat (recette ou nom libre, un mot facultatif) pour un jour à venir du planning d'un groupe actif dont on est membre sans en être le propriétaire ; retirer sa suggestion — une recette privée suggérée se lit chez le propriétaire par son seul titre ; les titres des recettes validées des livres privés des membres de ses groupes sont proposés dans le sélecteur ; recherche avancée dans un écran dédié (titre, étiquettes, ingrédients principaux, filtres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Lire les suggestions reçues pour un groupe actif dont on est le propriétaire, et planifier soi-même celle qu'on retient (« Planifier ce jour-là ») — un autre membre ne lit pas les suggestions des autres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire les suggestions reçues pour un groupe actif dont on est le propriétaire, et planifier soi-même celle qu'on retient (« Planifier ce jour-là », ou « Chercher » : Explorer en mode choix, puis le jour au calendrier) — un autre membre ne lit pas les suggestions des autres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer l'annotation d'autrui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur le web : jusqu'à 8 pages de recettes trouvées par Google, pages en français d'abord, à ouvrir dans le navigateur intégré sur téléphone ou dans le navigateur (50 recherches par jour)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -598,7 +598,7 @@ flowchart LR
         <b>Lire les suggestions des membres</b> : le propriétaire lit le nombre de suggestions
         des jours à venir sur le bouton « Suggestions des membres », un repère « 2 suggestions »
         sur le jour, et la fenêtre des suggestions. Pas de statut : il planifie lui-même ce
-        qu'il retient (« Planifier ce jour-là »), et « Au planning » se calcule à l'affichage.
+        qu'il retient (« Planifier ce jour-là », ou « Chercher » dans Explorer puis le jour de son choix), et « Au planning » se calcule à l'affichage.
         Un groupe supprimé emporte ses suggestions ; un membre qui sort emporte les siennes
         (<code>syncGroupReach</code>).
         <b>Entrer dans un groupe se fait en acceptant une invitation</b> (v0.23.19). Seuls

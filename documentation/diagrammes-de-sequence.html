@@ -4121,6 +4121,9 @@ sequenceDiagram
   else nom libre ou recette privée
     W->>S: sélecteur pré-rempli du titre, puis le même repas
   end
+  O->>W: « Chercher »
+  W->>S: Explorer en mode choix pré-rempli du titre, puis calendrier (jour de la suggestion par défaut)
+  S->>PM: add { uid: marie, group_id: gd, parts du groupe } — texte libre pour une idée de l'IA enregistrée en brouillon
   Note over MS: la suggestion n'est pas modifiée : « Au planning » se calcule
 
   opt Léo quitte le groupe, ou Marie l'en retire

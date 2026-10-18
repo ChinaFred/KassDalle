@@ -218,6 +218,7 @@ void main() {
     expect(find.text('« Pour l\'anniversaire de Léo »'), findsOneWidget);
     expect(find.text('Rien de prévu ce jour-là'), findsOneWidget);
     expect(find.text('Planifier ce jour-là'), findsOneWidget);
+    expect(find.text('Chercher'), findsOneWidget);
     // Aucun jour passé : « Voir les plus anciennes » vient directement.
     expect(find.textContaining('Jours passés'), findsNothing);
     expect(find.text('Voir les plus anciennes'), findsOneWidget);

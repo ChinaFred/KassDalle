@@ -20,6 +20,19 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-18
 
+### v0.24.5 — fonctionnel
+
+Suggestions des membres : un bouton « Chercher » à côté de « Planifier ce jour-là » (ticket
+#142). Il ouvre l'Explorer en mode choix, champ pré-rempli du titre de la suggestion et
+recherche lancée, sous un bandeau « Recette pour <jour>, <groupe> ». Un appui sur une recette
+la rend à la fenêtre ; un calendrier propose le jour de la suggestion ou un autre (d'aujourd'hui
+à 60 jours) et le repas est posé dans le planning du groupe, aux parts du groupe, avec
+« Annuler ». Les filtres changés dans ce mode restent en mémoire et ne touchent pas les filtres
+habituels (`explorePickPreferencesProvider`). Un brouillon, ou une idée de l'IA enregistrée
+depuis « Imaginer 3 recettes », est posé en texte libre, avec la mention « Cette idée est
+enregistrée dans vos brouillons. ». La suggestion n'est pas modifiée. Aucun paquet ne change.
+Tests : `test/search_pick_mode_test.dart`, `test/widgets/meal_suggestions_test.dart`.
+
 ### v0.24.4 — fonctionnel
 
 Fiche d'un ticket (Admin › Tickets des membres) : sur un ticket Analysé, un bouton « Valider et

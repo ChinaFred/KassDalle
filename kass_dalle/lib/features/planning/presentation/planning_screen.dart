@@ -10,6 +10,7 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../groups/domain/family_group.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/shopping_cart.dart';
@@ -43,6 +44,8 @@ import 'planning_providers.dart';
 import 'planning_target_sheet.dart';
 import 'planning_widgets.dart';
 import 'recipe_picker_sheet.dart';
+import '../../search/presentation/search_screen.dart'
+    show ExploreChoice, ExplorePick, SearchScreen;
 import 'side_picker_sheet.dart';
 import 'storage_advice_sheet.dart';
 import 'suggest_meal_screen.dart';
@@ -1314,7 +1317,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                   label: const Text('Nouveau planning'),
                 ),
               ),
-            MealSuggestionsButton(onPlan: _planSuggestion),
+            MealSuggestionsButton(
+              onPlan: _planSuggestion,
+              onSearch: _searchSuggestion,
+            ),
             // Le « tirer pour rafraîchir » du corps n'existe pas à la souris.
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -1355,7 +1361,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                 onPressed: () => context.push('/planning/config'),
               ),
           ] else ...[
-            MealSuggestionsButton(onPlan: _planSuggestion),
+            MealSuggestionsButton(
+              onPlan: _planSuggestion,
+              onSearch: _searchSuggestion,
+            ),
             const ShoppingCartButton(),
             PopupMenuButton<int>(
               tooltip: 'Actions',
@@ -2110,6 +2119,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
             onTap: () => showMealSuggestionsWindow(
               context,
               onPlan: _planSuggestion,
+              onSearch: _searchSuggestion,
               focusDay: day,
               groupId: entry.key,
             ),
@@ -2403,12 +2413,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
   // ── Suggestions des membres ───────────────────────────────────────────────
 
-  /// « Planifier ce jour-là » : le propriétaire pose dans le planning du
-  /// groupe le plat qu'un membre a suggéré. Une recette qu'il lit est posée
-  /// telle quelle, aux parts du groupe ; un nom libre ou une recette qu'il
-  /// ne lit pas ouvre le sélecteur, pré-rempli du titre. La suggestion n'est
-  /// pas modifiée : « Au planning » se calcule à l'affichage.
-  Future<PlannedSuggestion?> _planSuggestion(MealSuggestion suggestion) async {
+  /// Le groupe de la suggestion et le dépôt du planning, ou
+  /// [PlanSuggestionFailure] quand l'un des deux manque.
+  (FamilyGroup, PlanningRepository) _suggestionGroupAndRepo(
+    MealSuggestion suggestion,
+  ) {
     final group = ref
         .read(suggestionOwnerGroupsProvider)
         .where((g) => g.id == suggestion.groupId)
@@ -2429,6 +2438,83 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         'Ce groupe n\'est plus accessible. Réessayez.',
       );
     }
+    return (group, repo);
+  }
+
+  /// « Chercher » : l'Explorer en mode choix, pré-rempli du titre de la
+  /// suggestion, puis un calendrier posé sur son jour. Le repas est posé dans
+  /// le planning du groupe, aux parts du groupe. Une idée de l'IA enregistrée
+  /// en brouillon est posée en texte libre. La suggestion n'est pas modifiée.
+  Future<PlannedSuggestion?> _searchSuggestion(
+    MealSuggestion suggestion,
+  ) async {
+    final (group, _) = _suggestionGroupAndRepo(suggestion);
+    final dayLabel = DateFormat('EEEE d MMMM', 'fr').format(suggestion.day);
+    final choice = await Navigator.of(context, rootNavigator: true)
+        .push<ExploreChoice>(
+          MaterialPageRoute(
+            builder: (_) => SearchScreen(
+              pick: ExplorePick(
+                initialQuery: suggestion.title,
+                banner: 'Recette pour $dayLabel, ${group.name}',
+              ),
+            ),
+          ),
+        );
+    if (choice == null || !mounted) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: suggestion.day.isBefore(today) ? today : suggestion.day,
+      firstDate: today,
+      lastDate: lastSuggestionDay(today),
+      helpText: 'Planifier quel jour ?',
+      confirmText: 'Planifier',
+    );
+    if (picked == null || !mounted) return null;
+    final day = DateTime(picked.year, picked.month, picked.day);
+    final recipe = choice.recipe ?? _freeTextRecipe(choice.title);
+    final mealId = await _placeRecipeOnDay(
+      day,
+      recipe,
+      target: PlanningTarget.ofGroup(group),
+      showError: false,
+    );
+    if (mealId == null) {
+      throw const PlanSuggestionFailure('Repas non enregistré. Réessayez.');
+    }
+    return PlannedSuggestion(
+      title: choice.title,
+      mealId: mealId,
+      day: day,
+      groupName: group.name,
+      draft: choice.recipe == null,
+    );
+  }
+
+  /// Un repas sans recette : le titre seul, comme un nom libre du sélecteur.
+  Recipe _freeTextRecipe(String title) => Recipe(
+    id: '',
+    titre: title,
+    langue: 'fr',
+    rawCooklang: '',
+    imageUrls: const [],
+    reviewStatus: ReviewStatus.validated,
+    tags: const RecipeTags(),
+    ingredientsIndex: const [],
+    createdBy: '',
+    createdAt: DateTime.now(),
+    updatedAt: DateTime.now(),
+  );
+
+  /// « Planifier ce jour-là » : le propriétaire pose dans le planning du
+  /// groupe le plat qu'un membre a suggéré. Une recette qu'il lit est posée
+  /// telle quelle, aux parts du groupe ; un nom libre ou une recette qu'il
+  /// ne lit pas ouvre le sélecteur, pré-rempli du titre. La suggestion n'est
+  /// pas modifiée : « Au planning » se calcule à l'affichage.
+  Future<PlannedSuggestion?> _planSuggestion(MealSuggestion suggestion) async {
+    final (group, repo) = _suggestionGroupAndRepo(suggestion);
     final target = PlanningTarget.ofGroup(group);
     Recipe? recipe;
     final recipeId = suggestion.recipeId;

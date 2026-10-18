@@ -32,6 +32,23 @@ import 'search_providers.dart';
 import 'search_widgets.dart';
 import 'web_page_opener.dart';
 
+/// Ce que l'Explorer en mode choix demande : le texte déjà dans le champ et
+/// le rappel du contexte, en bandeau.
+class ExplorePick {
+  final String initialQuery;
+  final String banner;
+  const ExplorePick({required this.initialQuery, required this.banner});
+}
+
+/// Le choix rendu par l'Explorer en mode choix. [recipe] est nul pour une
+/// idée de l'IA enregistrée en brouillon : le planning la pose en texte libre
+/// sous [title].
+class ExploreChoice {
+  final String title;
+  final Recipe? recipe;
+  const ExploreChoice({required this.title, this.recipe});
+}
+
 /// L'écran Explorer (`/search`).
 ///
 /// À l'ouverture, la liste des recettes des sources choisies. Le champ filtre
@@ -43,8 +60,16 @@ import 'web_page_opener.dart';
 /// jusqu'à huit pages de recettes trouvées par Google, à ouvrir ou à
 /// importer ; « Voir sur Google » ouvre le texte tel quel. Au retour du
 /// navigateur, un éditeur voit un bandeau qui propose d'importer la recette.
+///
+/// Avec [SearchScreen.pick], l'écran s'ouvre par `Navigator.push` et rend un
+/// [ExploreChoice] : une carte de recette rend la recette au lieu d'ouvrir la
+/// fiche, les filtres vivent en mémoire, et le garde de sortie, Ctrl+K et le
+/// bandeau d'import sont désactivés.
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  /// Non nul : l'écran sert de sélecteur de recette (voir [ExplorePick]).
+  final ExplorePick? pick;
+
+  const SearchScreen({super.key, this.pick});
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -58,6 +83,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   /// Aide posée sous le champ quand un bouton d'IA est pressé sans texte.
   String? _fieldHelp;
+
+  bool get _picking => widget.pick != null;
+  bool _pickPrefsReset = false;
+
+  /// Les filtres enregistrés de l'Explorer, ou ceux, en mémoire, du mode choix.
+  AsyncNotifierProvider<ExplorePreferencesNotifier, ExplorePreferences>
+  get _prefsProvider =>
+      _picking ? explorePickPreferencesProvider : explorePreferencesProvider;
 
   /// Sections de la recherche ouvertes ou fermées à la main, pour le texte
   /// [_sectionsQuery]. Remises à leur état par défaut quand le texte change.
@@ -113,6 +146,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   @override
   void initState() {
     super.initState();
+    final pick = widget.pick;
+    if (pick != null) {
+      _controller.text = pick.initialQuery;
+      _sectionsQuery = pick.initialQuery.trim();
+    }
     _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
     _lifecycle = AppLifecycleListener(onResume: _onResume);
     WidgetsBinding.instance.addObserver(this);
@@ -124,6 +162,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_picking && !_pickPrefsReset) {
+      _pickPrefsReset = true;
+      // Chaque ouverture repart de filtres vides.
+      ref.invalidate(explorePickPreferencesProvider);
+    }
     _keyboardOpen = _viewKeyboardOpen();
   }
 
@@ -185,6 +228,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   Future<void> _leaveAfterConfirmation() async {
     if (!await _confirmLeave() || !mounted) return;
     ref.read(aiIdeasProvider.notifier).close();
+    if (_picking) {
+      Navigator.of(context).pop();
+      return;
+    }
     final router = GoRouter.of(context);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (router.canPop()) {
@@ -199,7 +246,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   /// Pose ou retire le garde selon qu'il reste des idées non enregistrées.
   /// Après le rendu : un provider ne se modifie pas pendant `build`.
   void _syncLeaveGuard(bool dirty) {
-    if (dirty == _leaveGuardSet) return;
+    if (_picking || dirty == _leaveGuardSet) return;
     _leaveGuardSet = dirty;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -213,7 +260,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   /// Ctrl/Cmd+K : le shell demande le focus du champ.
   void _consumeFocusRequest() {
-    if (!mounted) return;
+    if (!mounted || _picking) return;
     if (!ref.read(exploreSearchFocusRequestProvider)) return;
     ref.read(exploreSearchFocusRequestProvider.notifier).consume();
     _focusNode.requestFocus();
@@ -222,7 +269,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   String get _query => _controller.text.trim();
 
   void _updatePrefs(ExplorePreferences next) =>
-      ref.read(explorePreferencesProvider.notifier).apply(next);
+      ref.read(_prefsProvider.notifier).apply(next);
 
   /// Un bouton d'IA sans texte : rien ne part, le champ prend le focus et
   /// dit quoi faire.
@@ -532,20 +579,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  Future<void> _openGeneratedSuggestion(GeneratedRecipeSuggestion suggestion) {
+  Future<void> _openGeneratedSuggestion(
+    GeneratedRecipeSuggestion suggestion,
+  ) async {
     final notifier = ref.read(aiIdeasProvider.notifier);
-    return Navigator.of(context).push<void>(
+    String? savedTitle;
+    await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => GeneratedRecipeScreen(
           recipe: suggestion.recipe,
           onSave: (recipe) async {
             final id = await notifier.saveGeneratedRecipe(recipe);
             notifier.markSaved(suggestion, id);
+            savedTitle = recipe.titre;
             return id;
           },
         ),
       ),
     );
+    // Mode choix : une idée enregistrée en brouillon est rendue comme choix
+    // en texte libre ; le brouillon n'est pas une recette validée.
+    final title = savedTitle;
+    if (_picking && title != null && mounted) {
+      Navigator.of(context).pop(ExploreChoice(title: title));
+    }
+  }
+
+  void _pickRecipe(Recipe recipe) {
+    final isDraft = recipe.reviewStatus != ReviewStatus.validated;
+    Navigator.of(
+      context,
+    ).pop(ExploreChoice(title: recipe.titre, recipe: isDraft ? null : recipe));
   }
 
   RecipeFilterContext _filterContext(
@@ -625,6 +689,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           corpus: corpus,
           query: _query,
           showDrafts: ref.read(canEditProvider),
+          prefsProvider: _prefsProvider,
           onChanged: _updatePrefs,
         ),
       ),
@@ -636,7 +701,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     ref.listen<bool>(exploreSearchFocusRequestProvider, (_, next) {
       if (next) _consumeFocusRequest();
     });
-    final prefsAsync = ref.watch(explorePreferencesProvider);
+    final prefsAsync = ref.watch(_prefsProvider);
     final ideas = ref.watch(aiIdeasProvider);
     final dirty = ideas is AiIdeasSuccess && ideas.hasUnsaved;
     _syncLeaveGuard(dirty);
@@ -648,7 +713,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         _leaveAfterConfirmation();
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Explorer')),
+        appBar: AppBar(
+          title: Text(_picking ? 'Choisir une recette' : 'Explorer'),
+        ),
         body: prefsAsync.when(
           loading: () =>
               const AppLoadingState(label: 'Chargement des filtres…'),
@@ -656,9 +723,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           // cette branche ne sert qu'à une erreur inattendue.
           error: (error, _) => AppErrorState(
             error: error,
-            onRetry: () => ref.invalidate(explorePreferencesProvider),
+            onRetry: () => ref.invalidate(_prefsProvider),
           ),
-          data: (prefs) => _buildForPrefs(prefs),
+          data: (prefs) {
+            final body = _buildForPrefs(prefs);
+            final pick = widget.pick;
+            if (pick == null) return body;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _PickBanner(text: pick.banner),
+                Expanded(child: body),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -742,7 +820,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       onImport: () => unawaited(_importFromBanner()),
       onClose: _closeImportBanner,
     );
-    final banners = canEdit && _importBannerVisible && !_keyboardOpen
+    final banners =
+        !_picking && canEdit && _importBannerVisible && !_keyboardOpen
         ? [
             if (isWide) bannerVariant(compact: false),
             bannerVariant(compact: true),
@@ -762,6 +841,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       onRelaunch: askAi,
       onImagine: imagine,
       onOpenIdea: _openGeneratedSuggestion,
+      onPick: _picking ? _pickRecipe : null,
       webSectionKey: _webSectionKey,
       onSearchWeb: searchWeb,
       onOpenWebResult: (r) => unawaited(_openWebResult(r)),
@@ -900,6 +980,43 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           webExhaustedLine: webExhaustedLine,
         ),
       ],
+    );
+  }
+}
+
+/// Le rappel du contexte, en haut de l'Explorer en mode choix.
+class _PickBanner extends StatelessWidget {
+  final String text;
+  const _PickBanner({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            ExcludeSemantics(
+              child: Icon(
+                Icons.event_available_outlined,
+                size: AppIconSize.small,
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1109,20 +1226,21 @@ class _FilterSheet extends ConsumerWidget {
   final ExploreCorpus corpus;
   final String query;
   final bool showDrafts;
+  final AsyncNotifierProvider<ExplorePreferencesNotifier, ExplorePreferences>
+  prefsProvider;
   final ValueChanged<ExplorePreferences> onChanged;
 
   const _FilterSheet({
     required this.corpus,
     required this.query,
     required this.showDrafts,
+    required this.prefsProvider,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final saved =
-        ref.watch(explorePreferencesProvider).value ??
-        ExplorePreferences.defaults;
+    final saved = ref.watch(prefsProvider).value ?? ExplorePreferences.defaults;
     // Même règle que l'écran : pas de brouillons pour un lecteur.
     final prefs = showDrafts
         ? saved
@@ -1336,6 +1454,9 @@ class _ResultList extends ConsumerWidget {
   final VoidCallback? onImagine;
   final ValueChanged<GeneratedRecipeSuggestion> onOpenIdea;
 
+  /// Mode choix : rend la recette d'une carte au lieu d'ouvrir la fiche.
+  final ValueChanged<Recipe>? onPick;
+
   /// Section « Sur le web » : son en-tête, la relance (nulle pendant une
   /// recherche en cours), et les gestes d'une carte.
   final GlobalKey webSectionKey;
@@ -1372,6 +1493,7 @@ class _ResultList extends ConsumerWidget {
     required this.onRelaunch,
     required this.onImagine,
     required this.onOpenIdea,
+    this.onPick,
     required this.webSectionKey,
     required this.onSearchWeb,
     required this.onOpenWebResult,
@@ -1488,6 +1610,7 @@ class _ResultList extends ConsumerWidget {
         return SearchResultTile(
           result: RecipeSearchResult(recipe: recipe),
           matchedIngredients: outcome.matchedIngredients[recipe.id] ?? const [],
+          onPick: onPick,
         );
       },
     );
@@ -1740,7 +1863,8 @@ class _ResultList extends ConsumerWidget {
               if (preferenceInsight != null)
                 _InsightCard(text: preferenceInsight),
               if (results.isNotEmpty)
-                for (final r in results) SearchResultTile(result: r)
+                for (final r in results)
+                  SearchResultTile(result: r, onPick: onPick)
               else ...[
                 _SuggestionCard(
                   text:
