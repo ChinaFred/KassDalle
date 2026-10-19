@@ -40,11 +40,16 @@ Puis relancer les contrôles de la CI touchés par la fusion, et
 
 | Job rouge | Geste |
 |---|---|
-| Version — numéro libre | une autre livraison a pris le numéro : étape 2 |
+| Version — numéro libre | lire le message du script. Numéro déjà pris par une autre livraison : étape 2. Titre de `CHANGELOG.md` absent, en double, d'un autre type que « fonctionnel » ou « technique », ou ajouté par deux commits : corriger l'entrée de cette version |
 | Flutter — analyse et tests | reproduire en local (`flutter analyze`, `dart format --set-exit-if-changed lib test`, `flutter test`), corriger, pousser |
 | Cloud Functions — lint et build | `npm run lint`, `format:check`, `build`, `test` dans `kass_dalle/functions/` |
 | Règles — émulateur | `npm test` dans `kass_dalle/rules-tests/` (Java 21) ; un test `todo` qui passe se transforme en test bloquant |
 | Android — compilation | lire le journal du job ; cause habituelle, une version FlutterFire qui monte seule (voir la section Android de `CLAUDE.md`) ; corriger le jour même |
+
+Une session lancée par « developpement #N » ne corrige rien sous `.github/`, `.claude/`,
+`deploy.ps1`, `firebase.json`, ni aucun fichier nommé `CLAUDE.md`, `CLAUDE.local.md` ou
+`.mcp.json` : une correction qui en a besoin se signale en « ## Analyse — compléments », et la
+session s'arrête.
 
 Un job rouge à cause d'un service que le diff ne touche pas : vérifier s'il est rouge aussi
 sur `master`. Si oui, le dire une fois à l'utilisateur, avec le nom du job et le lien du run.
@@ -74,8 +79,12 @@ Qui fusionne :
   fusionne elle-même ;
 - **une évolution, une fonctionnalité**, ou une PR qui touche `check-version.sh`, `ci.yml` ou
   `deploy.yml` : attendre un « fusionne » explicite de l'utilisateur ;
-- **une session lancée par « developpement #N »** : ne fusionne jamais ; « livraison #N » suit
-  sa propre procédure (section « Tickets » de `CLAUDE.md`).
+- **une session lancée par « developpement #N »** : ne fusionne jamais, ne déploie jamais, et
+  ne modifie aucun des fichiers interdits cités à l'étape 3 ; « livraison #N » suit sa propre
+  procédure (section « Tickets » de `CLAUDE.md`) ;
+- **une PR qui modifie ce skill** (`.claude/skills/steward/`) : la session le dit à
+  l'utilisateur avant la fusion et attend un « fusionne » explicite. Le skill est lu sur la
+  branche de la PR : sans cette réserve, une PR fixerait elle-même les règles de sa fusion.
 
 Avant de fusionner, toutes conditions réunies : CI verte sur la tête, relectures sans
 anomalie restante, aucun fil ouvert qui attend une réponse. Puis :
@@ -87,7 +96,12 @@ anomalie restante, aucun fil ouvert qui attend une réponse. Puis :
 
 ## 6. Après la fusion
 
-Suivre le workflow « Déploiement » de `.github/workflows/deploy.yml` sur le commit de fusion
+Attendre la CI du commit de fusion sur `master` : seul le job Version y tourne quand la tête
+de PR était à jour et verte. Le workflow « Déploiement » ne part qu'après elle. Un job Version
+rouge sur `master` se corrige par un commit, dans une nouvelle PR, qui passe à la version
+suivante avec son entrée de `CHANGELOG.md` décrivant les deux livraisons.
+
+Puis suivre le workflow « Déploiement » de `.github/workflows/deploy.yml` sur le commit de fusion
 jusqu'au bout. Annoncer la version en ligne (« Déployé en v0.x.y »), et le backfill à lancer
 s'il y en a un, avec son nom exact dans Admin › Backfills.
 
