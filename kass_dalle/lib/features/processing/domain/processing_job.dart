@@ -1,3 +1,36 @@
+/// Pages supplémentaires admises par job d'import (`additional_file_urls`) :
+/// 20, soit 21 pages avec la première (ticket #156).
+///
+/// La règle `processing_jobs` de `firestore.rules` refuse un job au-delà, et
+/// `MAX_ADDITIONAL_FILE_URLS` (`functions/src/pipeline/jobPages.ts`) le refuse
+/// au traitement. Le client contrôle avant l'envoi pour ne pas monter des
+/// pages qu'un refus rendrait inutiles. `processing_job_pages_test.dart`
+/// vérifie la concordance avec la règle.
+const int kMaxAdditionalFileUrls = 20;
+
+/// Pages d'un import, la première comprise : 21 au plus.
+const int kMaxImportPages = kMaxAdditionalFileUrls + 1;
+
+/// Nombre de pages à retirer pour lancer l'analyse, 0 si la file passe.
+int pagesOverLimit(int totalPages) =>
+    totalPages > kMaxImportPages ? totalPages - kMaxImportPages : 0;
+
+/// « Retirez N pages pour lancer l'analyse. », au singulier pour une page.
+String removePagesInstruction(int excess) => excess == 1
+    ? "Retirez 1 page pour lancer l'analyse."
+    : "Retirez $excess pages pour lancer l'analyse.";
+
+/// Message d'un import qui compte trop de pages, `null` sinon.
+///
+/// Une recette part en un seul import : le message ne propose pas de la
+/// découper.
+String? tooManyPagesMessage(int totalPages) {
+  final excess = pagesOverLimit(totalPages);
+  if (excess == 0) return null;
+  return 'Un import compte $kMaxImportPages pages au plus. '
+      '${removePagesInstruction(excess)}';
+}
+
 enum ProcessingJobType {
   recipeScan,
   bookCoverScan,

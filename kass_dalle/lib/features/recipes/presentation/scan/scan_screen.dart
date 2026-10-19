@@ -15,6 +15,7 @@ import '../../../books/presentation/book_providers.dart';
 import '../../data/scan_upload_service.dart';
 import '../../../auth/data/user_preferences_repository.dart';
 import '../../../processing/presentation/processing_providers.dart';
+import '../../../processing/domain/processing_job.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../admin/presentation/costs_format.dart';
@@ -489,9 +490,25 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
                 if (scanState.status == ScanStatus.pendingFiles) ...[
                   const SizedBox(height: 16),
                   Text(
-                    'Pages à analyser (${scanState.pendingPageNames.length})',
+                    _pagesExcess(scanState) > 0
+                        ? 'Pages à analyser '
+                              '(${scanState.pendingPageNames.length} sur '
+                              '$kMaxImportPages au plus)'
+                        : 'Pages à analyser '
+                              '(${scanState.pendingPageNames.length})',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
+                  // Ticket #156 : 21 pages au plus par import. La file reste
+                  // intacte ; retirer des pages réactive « Analyser ».
+                  if (_pagesExcess(scanState) > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      removePagesInstruction(_pagesExcess(scanState)),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   ...scanState.pendingPageNames.asMap().entries.map(
                     (e) => Card(
@@ -528,6 +545,17 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  // Rappel au-dessus de « Analyser » : sur une longue file, la
+                  // ligne sous le titre est hors de vue.
+                  if (_pagesExcess(scanState) > 0) ...[
+                    Text(
+                      removePagesInstruction(_pagesExcess(scanState)),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
                   // Barre d'actions compacte : tout visible d'un coup
                   Row(
                     children: [
@@ -556,13 +584,15 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
                       Expanded(
                         flex: 2,
                         child: FilledButton.icon(
-                          onPressed: () => ref
-                              .read(scanUploadProvider.notifier)
-                              .processPages(
-                                bookId: _selectedBookId,
-                                bookTitre: _selectedBookTitre,
-                                importIllustrations: _importIllustrations,
-                              ),
+                          onPressed: _pagesExcess(scanState) > 0
+                              ? null
+                              : () => ref
+                                    .read(scanUploadProvider.notifier)
+                                    .processPages(
+                                      bookId: _selectedBookId,
+                                      bookTitre: _selectedBookTitre,
+                                      importIllustrations: _importIllustrations,
+                                    ),
                           icon: const Icon(Icons.auto_awesome_outlined),
                           label: Text(
                             'Analyser (${scanState.pendingPageNames.length})',
@@ -838,6 +868,10 @@ class _ScanFormState extends ConsumerState<_ScanForm> {
         '?bookId=${Uri.encodeQueryComponent(bookId)}'
         '&bookTitre=${Uri.encodeQueryComponent(_selectedBookTitre ?? '')}';
   }
+
+  /// Pages à retirer de la file avant de lancer l'analyse, 0 si elle passe.
+  int _pagesExcess(ScanState state) =>
+      pagesOverLimit(state.pendingPageNames.length);
 
   String _buttonLabel(ScanStatus status, ScanIntent intent) {
     if (status == ScanStatus.error || status == ScanStatus.done) {

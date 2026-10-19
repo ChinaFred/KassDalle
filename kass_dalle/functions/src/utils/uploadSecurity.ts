@@ -83,7 +83,28 @@ function checkDeclared(
 /** Le contenu concorde-t-il avec ce qui est déclaré ? `head` porte au moins l'en-tête. */
 function checkSignature(head: Buffer, ext: string, normalizedMime: string | undefined): ScanResult {
   const signatureMime = detectMimeFromSignature(head);
-  if (ext !== "txt" && !signatureMime) {
+  if (ext === "txt") {
+    // Un texte n'a pas de signature : le type déclaré était repris tel quel,
+    // et `scanAndPromoteUploadFn` promouvait un `.txt` sous `image/jpeg` ou
+    // `application/pdf`. Un `.txt` se déclare texte, ou rien, et sort en
+    // type texte (audit #151).
+    if (signatureMime) {
+      return {
+        clean: false,
+        reason: `Incoherence entre contenu (${signatureMime}) et extension .txt.`,
+      };
+    }
+    if (normalizedMime && !normalizedMime.startsWith("text/plain")) {
+      return {
+        clean: false,
+        reason: `Incoherence entre extension .txt et type declare (${normalizedMime}).`,
+      };
+    }
+    // `normalizedMime` est ici `text/plain` ou `text/plain; charset=utf-8`,
+    // les deux seules formes de `ALLOWED_MIME_TYPES`.
+    return { clean: true, normalizedMimeType: normalizedMime ?? "text/plain" };
+  }
+  if (!signatureMime) {
     return { clean: false, reason: "Signature binaire invalide ou format de fichier non reconnu." };
   }
 
@@ -122,6 +143,40 @@ export function scanUpload(input: ScanInput, maxBytes: number = MAX_UPLOAD_SIZE_
   }
 
   return checkSignature(bytes, declared.ext, declared.normalizedMime);
+}
+
+/**
+ * Formats admis par la modération d'images : JPEG et PNG, rien d'autre.
+ *
+ * `scanUpload` admet aussi PDF, DOCX, EPUB et texte, qui sont des formats
+ * d'import. Une image publiée par la modération est servie depuis un dossier
+ * public avec le type posé à la promotion : ce type doit être celui des octets,
+ * jamais une valeur fournie par le client (audit #151, ticket #157).
+ */
+export const MODERATION_IMAGE_MIME_TYPES: ReadonlySet<string> = new Set([
+  "image/jpeg",
+  "image/png",
+]);
+
+/**
+ * Type d'une image à modérer, lu sur sa signature binaire : `image/jpeg`,
+ * `image/png`, ou `null` pour tout autre contenu (PDF, archive, texte, WebP,
+ * HEIC…). Le nom et le type déclarés n'entrent pas en compte.
+ */
+export function moderationImageMime(bytes: Buffer): "image/jpeg" | "image/png" | null {
+  const detected = detectMimeFromSignature(bytes);
+  return detected === "image/jpeg" || detected === "image/png" ? detected : null;
+}
+
+/**
+ * Type stocké sur une ligne de modération (`mime_type`), relu à la promotion
+ * manuelle : la valeur si c'est JPEG ou PNG, `null` sinon. Une ligne écrite
+ * avant le ticket #157 pouvait porter le type déclaré par le client.
+ */
+export function storedModerationMime(value: unknown): "image/jpeg" | "image/png" | null {
+  if (typeof value !== "string") return null;
+  const mime = value.trim().toLowerCase();
+  return mime === "image/jpeg" || mime === "image/png" ? mime : null;
 }
 
 /**

@@ -510,6 +510,8 @@ class _FormFields extends StatelessWidget {
             labelText: 'Titre',
             border: const OutlineInputBorder(),
             errorText: errors.title,
+            // « Retirez l'adresse e-mail : … » tient sur deux lignes.
+            errorMaxLines: 3,
           ),
         ),
         const SizedBox(height: 8),
@@ -528,6 +530,8 @@ class _FormFields extends StatelessWidget {
             hintText: type?.descriptionHint,
             hintMaxLines: 4,
             errorText: errors.description,
+            // « Retirez l'adresse e-mail : … » tient sur deux lignes.
+            errorMaxLines: 3,
           ),
         ),
         const SizedBox(height: 8),

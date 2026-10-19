@@ -513,7 +513,6 @@ export async function attachWebPhoto(args: {
           quarantinePath,
           targetKind: "recipe_illustration",
           ownerId: recipeId,
-          contentType: "image/jpeg",
           origin: "user",
           attachOnApproval: true,
         },

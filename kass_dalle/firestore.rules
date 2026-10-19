@@ -1000,6 +1000,19 @@ service cloud.firestore {
           && before + 1 <= 2;
       }
 
+      // Pages supplémentaires d'un import : 20 au plus (21 pages avec la
+      // première). Le pipeline télécharge chacune et l'envoie au modèle ; sans
+      // borne, un job écrit hors de l'application pouvait en lister des
+      // centaines (audit #151, ticket #156). La même borne vit dans
+      // `MAX_ADDITIONAL_FILE_URLS` (pipeline/jobPages.ts) et
+      // `kMaxAdditionalFileUrls` (processing_job.dart) ; un test de chaque côté
+      // relit ce fichier pour vérifier que les trois valeurs concordent.
+      function additionalFileUrlsBounded() {
+        return !request.resource.data.keys().hasAny(['additional_file_urls'])
+          || (request.resource.data.additional_file_urls is list
+              && request.resource.data.additional_file_urls.size() <= 20);
+      }
+
       // Un job se lit par son créateur et par un administrateur. L'éditeur
       // lisait ceux de tous les comptes (fichier envoyé, messages d'erreur) ;
       // aucun écran ne s'en servait : la file de travail d'un éditeur ne
@@ -1021,6 +1034,7 @@ service cloud.firestore {
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
         && request.resource.data.get('type', 'recipeScan') != 'recipeUrlImport'
         && request.resource.data.get('status', 'queued') == 'queued'
+        && additionalFileUrlsBounded()
         && !request.resource.data.keys().hasAny([
              'titre_keys', 'titre_key_pages', 'titre_key_titres', 'duplicate_checked',
              'duplicates', 'pending_items', 'duplicate_override'
@@ -1052,13 +1066,15 @@ service cloud.firestore {
              ]);
       }
 
-      allow update: if isAdmin() || (isJobOwner() && touchesOnlyRetryOrCancelFields()
-                                     && ((isExactCancel() && retryCountUnchanged()
-                                          && (!isUrlImport() || urlJobInFlight()))
-                                         || (isEditor() && request.resource.data.status in ['queued', 'error']
-                                             && resource.data.get('status', '') != 'duplicate'
-                                             && (!isUrlImport() || urlRelaunchAllowed()))))
-                    || (isJobOwner() && isEditor() && isDuplicateResume());
+      allow update: if additionalFileUrlsBounded()
+                    && (isAdmin()
+                        || (isJobOwner() && touchesOnlyRetryOrCancelFields()
+                            && ((isExactCancel() && retryCountUnchanged()
+                                 && (!isUrlImport() || urlJobInFlight()))
+                                || (isEditor() && request.resource.data.status in ['queued', 'error']
+                                    && resource.data.get('status', '') != 'duplicate'
+                                    && (!isUrlImport() || urlRelaunchAllowed()))))
+                        || (isJobOwner() && isEditor() && isDuplicateResume()));
       // Un import en attente de doublon se supprime par son propriétaire : rien
       // n'y tourne, et la ligne n'a pas d'autre sortie que la reprise. Un
       // statut 'duplicate' n'est posé que par le pipeline : la relance

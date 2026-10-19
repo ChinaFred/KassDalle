@@ -16,6 +16,7 @@ import { MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { isAdminAccount, requireAdmin, requireAuth } from "./_auth";
 import { logError, logInfo, logWarn } from "../logging";
 import { isWellFormedObjectPath } from "../utils/storagePath";
+import { moderationImageMime, storedModerationMime } from "../utils/uploadSecurity";
 import { BudgetExceededError } from "../ai/budget";
 import { recordUsage } from "../ai/usage";
 import {
@@ -105,7 +106,8 @@ function parseItems(data: unknown, uid: string): ModerationItem[] {
       quarantinePath,
       targetKind: item.targetKind,
       ownerId: parseOwnerId(item.ownerId),
-      contentType: typeof item.contentType === "string" ? item.contentType : "image/jpeg",
+      // `contentType` envoyé par le client n'est plus lu (ticket #157) : le
+      // type publié est celui des octets, détecté par `moderateAndPromote`.
       // Jamais `ai` depuis un client, et `asset` seulement à vérifier sur
       // l'empreinte du fichier (`moderation/origin.ts`).
       origin: clientDeclaredOrigin(item.origin),
@@ -201,6 +203,25 @@ export const reviewModeratedImageFn = onCall(callableOpts, async (req) => {
     throw new HttpsError("failed-precondition", "Cette image n'attend pas de décision.");
   }
 
+  // JPEG ou PNG seulement (ticket #157). Une ligne écrite avant ce contrôle
+  // portait le type déclaré par le client : un autre type ne se publie pas,
+  // l'image se refuse.
+  const approvedMime = storedModerationMime(doc.mime_type);
+  if (decision === "approve" && approvedMime == null) {
+    await logWarn({
+      message: "Approbation refusée : type d'image ni JPEG ni PNG",
+      moduleType: "MODERATION",
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      feature: "image_moderation_review",
+      extra: { moderationId, storedType: String(doc.mime_type ?? "").slice(0, 100) },
+    });
+    throw new HttpsError(
+      "failed-precondition",
+      "Format non admis : seules les images JPEG et PNG se publient. Refusez cette image.",
+    );
+  }
+
   // Document antérieur à l'épinglage de la génération : on ne publie pas un
   // fichier qui a pu être réécrit après l'analyse. L'image repasse en attente,
   // et « Relancer l'analyse » (`retryPendingModerationFn`) la juge à nouveau.
@@ -241,7 +262,7 @@ export const reviewModeratedImageFn = onCall(callableOpts, async (req) => {
     const promoted = await promoteImage({
       quarantinePath: String(doc.quarantine_path ?? ""),
       targetPath: String(doc.target_path ?? ""),
-      contentType: String(doc.mime_type ?? "image/jpeg"),
+      contentType: approvedMime ?? "image/jpeg",
       moderationId,
       correlationId: ctx.correlationId,
       sourceGeneration,
@@ -335,6 +356,21 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
     const [bytes] = await bucket
       .file(quarantinePath, generation != null ? { generation } : undefined)
       .download();
+    // Le type publié est celui des octets (ticket #157), pas `mime_type` de
+    // la ligne. Ni JPEG ni PNG : aucune analyse facturée, l'image reste en
+    // attente et se refuse à la main.
+    const imageMime = moderationImageMime(bytes);
+    if (imageMime == null) {
+      stillDown += 1;
+      await logError({
+        message: "Relance de modération : fichier ni JPEG ni PNG, image laissée en attente",
+        moduleType: "MODERATION",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        extra: { moderationId: doc.id },
+      });
+      continue;
+    }
     try {
       const analysis = await analyseImage(bytes, config);
       engineModel = analysis.model;
@@ -347,7 +383,7 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
         const promoted = await promoteImage({
           quarantinePath,
           targetPath: String(data.target_path ?? ""),
-          contentType: String(data.mime_type ?? "image/jpeg"),
+          contentType: imageMime,
           moderationId: doc.id,
           correlationId: ctx.correlationId,
           sourceGeneration: generation,
@@ -363,6 +399,7 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
       }
       await doc.ref.update({
         quarantine_generation: generation != null ? String(generation) : null,
+        mime_type: imageMime,
         status: decision.status,
         decision_reason: decision.reason,
         culinary_matches: decision.culinaryMatches,

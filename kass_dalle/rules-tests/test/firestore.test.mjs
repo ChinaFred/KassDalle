@@ -3447,6 +3447,50 @@ describe("processing_jobs", () => {
     );
   });
 
+  // Ticket #156 : 20 pages supplémentaires au plus par job d'import.
+  const pageUrls = (n) =>
+    Array.from({ length: n }, (_, i) => `https://example.com/page-${i + 1}.jpg`);
+
+  it("un éditeur crée un job à 20 pages supplémentaires", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("processing_jobs/new")
+        .set({ created_by: EDITOR, status: "queued", additional_file_urls: pageUrls(20) }),
+    );
+  });
+
+  it("un éditeur ne crée pas de job à 21 pages supplémentaires", async () => {
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/new")
+        .set({ created_by: EDITOR, status: "queued", additional_file_urls: pageUrls(21) }),
+    );
+  });
+
+  it("un éditeur ne crée pas de job dont les pages ne sont pas une liste", async () => {
+    await assertFails(
+      db("editor")
+        .doc("processing_jobs/new")
+        .set({ created_by: EDITOR, status: "queued", additional_file_urls: "page.jpg" }),
+    );
+  });
+
+  it("un administrateur ne porte pas un job à 21 pages supplémentaires", async () => {
+    await assertFails(
+      db("admin")
+        .doc("processing_jobs/job-editor")
+        .update({ additional_file_urls: pageUrls(21) }),
+    );
+  });
+
+  it("un administrateur met à jour un job à 20 pages supplémentaires", async () => {
+    await assertSucceeds(
+      db("admin")
+        .doc("processing_jobs/job-editor")
+        .update({ additional_file_urls: pageUrls(20) }),
+    );
+  });
+
   it("un éditeur ne crée pas de job au nom d'un autre", async () => {
     await assertFails(
       db("editor")

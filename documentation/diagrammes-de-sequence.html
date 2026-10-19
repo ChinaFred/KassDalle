@@ -275,13 +275,24 @@ sequenceDiagram
       Note over P,DL: aucune nouvelle tentative : le livre resterait celui d'un autre
     end
   end
+  P->>P: readAdditionalFileUrls — 20 pages supplémentaires au plus ?
+  alt plus de 20
+    P->>DL: failure_reason = too_many_pages, dès la 1re tentative
+    P->>J: status error, error_message lisible
+    Note over P,DL: aucun téléchargement, aucun appel de modèle
+  end
   P->>P: resolveJobSourcePath — file_url et pages sous scans/{created_by}/ ?
   alt rejected/, quarantaine, scans d'un autre, URL externe ou segment ..
     P->>DL: failure_reason = forbidden_source_path, dès la 1re tentative
     P->>J: status error, error_message
     Note over P,DL: aucun téléchargement, aucun appel de modèle
   end
-  P->>ST: download du fichier et des pages
+  P->>ST: getMetadata — taille du fichier et des pages
+  alt plus de 200 Mo au total (300 Mo pour un livre entier), ou taille illisible
+    P->>DL: failure_reason = too_large, dès la 1re tentative
+    P->>J: status error, error_message avec le poids
+  end
+  P->>ST: download du fichier, puis des pages une à une
 
   P->>G: PASSE 1 — transcribePage
   Note over P,G: un seul appel rend le TYPE de la page ET son contenu recopié<br/>classifier, extraire une recette, extraire un document : trois appels avant
@@ -1352,6 +1363,10 @@ sequenceDiagram
     end
   end
   CF->>ST: lit la génération du fichier, télécharge cette version, empreinte SHA-256
+  CF->>CF: scanUpload, puis moderationImageMime — JPEG ou PNG lu sur les octets
+  alt ni JPEG ni PNG
+    CF-->>SV: failed-precondition, aucune analyse, aucun document
+  end
   alt origine « asset » et empreinte d'une couverture livrée
     Note over CF: approuvée sans analyse, motif bundled_asset
   else toute autre image, « ai » déclaré par le client compris
@@ -1372,8 +1387,8 @@ sequenceDiagram
     CF-->>SV: l'image attend, l'écran le dit
   end
   alt approuvée
-    CF->>ST: promotion de la génération analysée vers le dossier publié
-    CF->>FS: verdict, URL publiée, moteur et version
+    CF->>ST: promotion de la génération analysée, avec le type détecté
+    CF->>FS: verdict, URL publiée, type détecté, moteur et version
     CF-->>SV: URL de téléchargement
     SV-->>U: l'image apparaît, quelques secondes plus tard
   else refusée

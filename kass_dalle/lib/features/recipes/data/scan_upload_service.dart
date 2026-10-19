@@ -259,6 +259,20 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     bool importIllustrations = false,
   }) async {
     if (_pendingPages.isEmpty) return;
+    // Au-delà de 21 pages, la règle `processing_jobs` refuserait le job après
+    // l'envoi de toutes les pages (ticket #156). L'écran désactive déjà
+    // « Analyser » et dit combien de pages retirer ; cette garde couvre un
+    // appel qui passerait outre. La file reste intacte : retirer des pages
+    // suffit à relancer.
+    final tooMany = tooManyPagesMessage(_pendingPages.length);
+    if (tooMany != null) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.tooManyPages',
+        error: StateError(tooMany),
+        context: {'pages': _pendingPages.length, 'max_pages': kMaxImportPages},
+      );
+      return;
+    }
     final consumed = List<_PendingPage>.from(_pendingPages);
     _pendingPages.clear();
     final first = consumed.first;

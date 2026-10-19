@@ -347,7 +347,7 @@ Un import par lien se relance **deux fois au plus** : chaque relance refait des 
   automatique qui a l'air d'un résultat, alors qu'il n'a rien trouvé, fait perdre plus de temps
   qu'un point de départ annoncé.
 - Recadrage et correction de perspective avant envoi.
-- **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages partent dans un **seul** appel multi-part, chez le moteur routé pour le poste.
+- **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages partent dans un **seul** appel multi-part, chez le moteur routé pour le poste. Un import compte **21 pages au plus** (la première et 20 pages supplémentaires) ; une recette part toujours en un seul import. Au-delà, la file reste telle quelle : le titre devient « Pages à analyser (25 sur 21 au plus) », une ligne en rouge dit « Retirez 4 pages pour lancer l'analyse. » (« Retirez 1 page… » au singulier), et « Analyser » est désactivé jusqu'à ce que la file revienne à 21 pages. Le serveur refuse aussi un import de plus de 200 Mo au total ; le job passe en erreur avec le message « Import refusé : … Mo au total, 200 Mo au plus par import. Réduisez la taille ou le nombre des pages. ».
 - **Extraction automatique d'illustrations** : l'IA identifie les photographies culinaires **sur chaque page** du scan, les découpe, et les propose comme illustrations de la recette.
   - **Six étapes par page**, détaillées dans les diagrammes de séquence : pré-contrôle (la page porte-t-elle des images ?), cadrage, mise à plat par homographie, remise à l'endroit, repérage des zones, découpe. Le pré-contrôle arrête la chaîne sur une page sans photo — une page de recette sur deux — et les quatre appels suivants n'ont pas lieu.
   - **Une découpe est écrite directement sous `illustrations/{uid}/`, sans quarantaine ni Cloud Vision.** Le fichier source est déjà passé par le scan de sécurité à l'envoi, et la découpe est un JPEG produit par Sharp trois lignes plus haut. La modération garde son rôle sur les images qu'une personne **envoie** depuis l'application ; une découpe d'un scan déjà accepté n'en est pas une.
@@ -1258,6 +1258,8 @@ l'application. Le ticket part en Issue sur le dépôt GitHub **public**
 - Le formulaire demande :
   - le **type**, Bug présélectionné à l'ouverture, modifiable avant l'envoi ;
   - le **titre**, de 5 à 100 caractères (« Le titre doit faire au moins 5 caractères. ») ;
+    sans adresse e-mail (« Retirez l'adresse e-mail : le ticket est publié sur un site
+    public. », sous le champ ; la description suit la même règle) ;
   - la **description**, de 1 à 2000 caractères, avec une aide propre au type. Bug : « Ce que
     vous faisiez : … / Ce qui s'est passé : … / Ce que vous attendiez : … ». Évolution : « Ce
     qui existe aujourd'hui : … / Ce que vous aimeriez changer : … / Pourquoi ce serait
