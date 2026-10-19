@@ -15,6 +15,10 @@ import '../../recipes/domain/recipe.dart';
 import 'meal_component.dart';
 import 'meal_staple.dart';
 
+/// Accompagnements au plus pour un plat : au-delà, l'éditeur ne propose plus
+/// d'en ajouter (« 6 accompagnements au plus »).
+const int kMaxSidesPerDish = 6;
+
 /// Ce qu'un plat n'apporte pas, et qu'un accompagnement doit apporter.
 enum SideNeed {
   feculent,
@@ -23,6 +27,12 @@ enum SideNeed {
   String get label => switch (this) {
     SideNeed.feculent => 'féculent',
     SideNeed.legume => 'légume',
+  };
+
+  /// Libellé d'une pastille : « Féculent », « Légume ».
+  String get chipLabel => switch (this) {
+    SideNeed.feculent => 'Féculent',
+    SideNeed.legume => 'Légume',
   };
 }
 
@@ -54,16 +64,7 @@ class SideCandidate {
   /// Vrai si ce candidat apporte ce qui manque.
   bool provides(SideNeed need) {
     final s = staple;
-    if (s != null) {
-      return switch (need) {
-        SideNeed.feculent =>
-          s.category == StapleCategory.feculent ||
-              s.category == StapleCategory.pain,
-        SideNeed.legume =>
-          s.category == StapleCategory.legume ||
-              s.category == StapleCategory.salade,
-      };
-    }
+    if (s != null) return stapleCategoryProvides(s.category, need);
     final contains = recipe!.tags.contains;
     return switch (need) {
       SideNeed.feculent => contains.contains('feculent'),
@@ -156,92 +157,37 @@ class SideChoice {
   });
 }
 
-/// Choisit UN accompagnement pour [main], ou rien.
-///
-/// Rien quand la recette n'est pas un plat, n'est pas classée, ou n'a besoin
-/// de rien. Sinon : d'abord les accompagnements classiques du plat, dans
-/// l'ordre ; à défaut, une garniture de la famille qui manque, par rang.
-/// [avoidIds] écarte ce qui a été servi la veille ou le lendemain ;
-/// [usedInCycleIds] ce qui a déjà été posé ailleurs dans le cycle. On s'en
-/// écarte tant qu'il reste un autre candidat, sans jamais laisser le plat
-/// seul pour autant.
-SideChoice? chooseSide({
-  required Recipe main,
-  required List<SideCandidate> candidates,
-  Set<String> avoidIds = const {},
-  Set<String> usedInCycleIds = const {},
-}) {
-  final needs = sideNeedsFor(main.tags);
-  if (needs.isEmpty || candidates.isEmpty) return null;
-  final primary = needs.first;
-
-  final ordered = <SideCandidate>[];
-  final seen = <String>{};
-  for (final c in suggestedCandidatesFor(main, candidates)) {
-    if (seen.add(c.id)) ordered.add(c);
-  }
-  final suggestedCount = ordered.length;
-  final fallback = candidates.where((c) => c.provides(primary)).toList()
-    ..sort((x, y) {
-      final byOrder = x.sortOrder.compareTo(y.sortOrder);
-      return byOrder != 0
-          ? byOrder
-          : x.name.toLowerCase().compareTo(y.name.toLowerCase());
-    });
-  for (final c in fallback) {
-    if (seen.add(c.id)) ordered.add(c);
-  }
-  if (ordered.isEmpty) return null;
-
-  SideCandidate? pick;
-  for (final c in ordered) {
-    if (!avoidIds.contains(c.id) && !usedInCycleIds.contains(c.id)) {
-      pick = c;
-      break;
-    }
-  }
-  pick ??= ordered.cast<SideCandidate?>().firstWhere(
-    (c) => !avoidIds.contains(c!.id),
-    orElse: () => null,
-  );
-  pick ??= ordered.first;
-
-  final fromSuggestion = ordered.indexOf(pick) < suggestedCount;
-  final need = needs.firstWhere(pick.provides, orElse: () => primary);
-  final justification = fromSuggestion
-      ? 'Le plat n\'apporte pas de ${need.label} : ${pick.name}, '
-            'accompagnement classique.'
-      : 'Le plat n\'apporte pas de ${need.label} : ${pick.name}, faute '
-            'd\'accompagnement classique disponible.';
-  return SideChoice(
-    component: pick.toComponent(justification: justification),
-    need: need,
-    fromSuggestion: fromSuggestion,
-  );
-}
-
 /// Choisit un accompagnement par besoin non couvert par [main] — féculent et
 /// légume, quand le plat n'apporte ni l'un ni l'autre — sans jamais poser
 /// deux fois le même candidat pour deux besoins différents.
 ///
-/// Même logique que [chooseSide], rejouée par besoin : d'abord les
-/// accompagnements classiques du plat qui apportent ce besoin précis, à
-/// défaut une garniture de la famille qui manque, par rang. Un besoin sans
-/// candidat restant se saute — mieux vaut un repas à deux accompagnements
-/// qu'un même plat posé deux fois pour faire nombre.
+/// Pour chaque besoin : d'abord les accompagnements classiques du plat qui
+/// l'apportent, à défaut une garniture de la famille qui manque, par rang.
+/// [avoidIds] écarte ce qui a été servi la veille ou le lendemain ;
+/// [usedInCycleIds] ce qui a déjà été posé ailleurs dans le cycle. On s'en
+/// écarte tant qu'il reste un autre candidat, sans jamais laisser le besoin
+/// sans réponse pour autant. [takenIds] — les accompagnements déjà posés —
+/// ne sont jamais reproposés. Un besoin sans candidat restant se saute :
+/// mieux vaut un repas à deux accompagnements qu'un même plat posé deux fois
+/// pour faire nombre.
+///
+/// [needs] remplace ce qui manque au plat seul : l'éditeur du repas ne
+/// propose que pour ce que ses accompagnements ne couvrent pas encore.
 List<SideChoice> chooseSides({
   required Recipe main,
   required List<SideCandidate> candidates,
   Set<String> avoidIds = const {},
   Set<String> usedInCycleIds = const {},
+  Set<String> takenIds = const {},
+  List<SideNeed>? needs,
 }) {
-  final needs = sideNeedsFor(main.tags);
-  if (needs.isEmpty || candidates.isEmpty) return const [];
+  final wanted = needs ?? sideNeedsFor(main.tags);
+  if (wanted.isEmpty || candidates.isEmpty) return const [];
   final suggested = suggestedCandidatesFor(main, candidates);
-  final taken = <String>{};
+  final taken = {...takenIds};
   final out = <SideChoice>[];
 
-  for (final need in needs) {
+  for (final need in wanted) {
     final ordered = <SideCandidate>[];
     final seen = <String>{};
     for (final c in suggested) {
@@ -258,22 +204,24 @@ List<SideChoice> chooseSides({
     for (final c in fallback) {
       if (seen.add(c.id)) ordered.add(c);
     }
-    if (ordered.isEmpty) continue;
+    final free = [
+      for (final c in ordered)
+        if (!taken.contains(c.id)) c,
+    ];
+    if (free.isEmpty) continue;
 
     SideCandidate? pick;
-    for (final c in ordered) {
-      if (!taken.contains(c.id) &&
-          !avoidIds.contains(c.id) &&
-          !usedInCycleIds.contains(c.id)) {
+    for (final c in free) {
+      if (!avoidIds.contains(c.id) && !usedInCycleIds.contains(c.id)) {
         pick = c;
         break;
       }
     }
-    pick ??= ordered.cast<SideCandidate?>().firstWhere(
-      (c) => !taken.contains(c!.id) && !avoidIds.contains(c.id),
+    pick ??= free.cast<SideCandidate?>().firstWhere(
+      (c) => !avoidIds.contains(c!.id),
       orElse: () => null,
     );
-    if (pick == null) continue;
+    pick ??= free.first;
 
     taken.add(pick.id);
     final fromSuggestion = ordered.indexOf(pick) < suggestedCount;
@@ -291,4 +239,104 @@ List<SideChoice> chooseSides({
     );
   }
   return out;
+}
+
+/// Ce qu'on sait de ce que le plat et ses accompagnements apportent.
+enum DishSideState {
+  /// Féculent et légume couverts : « Plat complet » dans l'éditeur.
+  complete,
+
+  /// Il manque au moins un féculent ou un légume : « Il manque : légume ».
+  missing,
+
+  /// Le plat n'est pas classé : « Apports du plat inconnus ».
+  unknown,
+
+  /// Pas un plat (accompagnement, entrée, dessert, snack) : rien à dire.
+  notApplicable,
+}
+
+/// Le bilan d'un plat et de ses accompagnements.
+class DishSideStatus {
+  final DishSideState state;
+
+  /// Ce qui manque encore, le féculent d'abord. Vide hors [DishSideState.missing].
+  final List<SideNeed> missing;
+
+  const DishSideStatus(this.state, {this.missing = const []});
+
+  bool get isComplete => state == DishSideState.complete;
+
+  /// « Il manque : légume », « Il manque : féculent, légume ».
+  String get missingLabel =>
+      'Il manque : ${missing.map((n) => n.label).join(', ')}';
+}
+
+/// La famille de garniture qui apporte [need] : féculent ou pain pour le
+/// féculent, légume ou salade pour le légume.
+bool stapleCategoryProvides(StapleCategory category, SideNeed need) =>
+    switch (need) {
+      SideNeed.feculent =>
+        category == StapleCategory.feculent || category == StapleCategory.pain,
+      SideNeed.legume =>
+        category == StapleCategory.legume || category == StapleCategory.salade,
+    };
+
+/// Ce qu'apporte un accompagnement posé : une garniture par sa famille
+/// ([stapleCategories], par identifiant), une recette par son `contains`
+/// ([recipesById]), un texte libre par son `provides`. Vide quand on ne sait
+/// pas : garniture ou recette introuvables, texte libre sans apport coché.
+Set<SideNeed> sideComponentProvides(
+  MealComponent component, {
+  Map<String, StapleCategory> stapleCategories = const {},
+  Map<String, Recipe> recipesById = const {},
+}) {
+  if (component.isStaple) {
+    final category = stapleCategories[component.stapleId];
+    if (category == null) return const {};
+    return {
+      for (final n in SideNeed.values)
+        if (stapleCategoryProvides(category, n)) n,
+    };
+  }
+  final keys = component.isRecipe
+      ? (recipesById[component.recipeId]?.tags.contains ?? const <String>[])
+      : component.provides;
+  return {
+    for (final n in SideNeed.values)
+      if (keys.contains(n.name)) n,
+  };
+}
+
+/// Ce qui manque à un plat, en comptant ses accompagnements déjà posés.
+///
+/// Plat non classé ([RecipeTags.mealRole] absent) : apports inconnus. Autre
+/// rôle qu'un plat : rien à dire. Sinon, chaque besoin que le plat n'apporte
+/// pas ([sideNeedsFor]) doit être couvert par au moins un accompagnement
+/// ([sideComponentProvides]).
+DishSideStatus dishSideStatus({
+  required RecipeTags mainTags,
+  required Iterable<MealComponent> sides,
+  Map<String, StapleCategory> stapleCategories = const {},
+  Map<String, Recipe> recipesById = const {},
+}) {
+  if (!mainTags.hasMealRole) return const DishSideStatus(DishSideState.unknown);
+  if (mainTags.mealRole != 'plat') {
+    return const DishSideStatus(DishSideState.notApplicable);
+  }
+  final covered = <SideNeed>{
+    for (final c in sides)
+      ...sideComponentProvides(
+        c,
+        stapleCategories: stapleCategories,
+        recipesById: recipesById,
+      ),
+  };
+  final missing = [
+    for (final n in sideNeedsFor(mainTags))
+      if (!covered.contains(n)) n,
+  ];
+  return missing.isEmpty
+      ? const DishSideStatus(DishSideState.complete)
+      : DishSideStatus(DishSideState.missing, missing: missing);
 }

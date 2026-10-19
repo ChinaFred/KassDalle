@@ -7,6 +7,8 @@
 /// sortie du corpus.
 library;
 
+import 'relaxed_criteria.dart';
+
 /// Un candidat d'un créneau, avec les faits qui le justifient.
 class RankedCandidate {
   final String recipeId;
@@ -52,11 +54,16 @@ class SlotRanking {
   /// Jour de préparation d'un créneau de réchauffage, calculé par le serveur.
   final DateTime? prepDate;
 
+  /// Filtres relâchés pour les plats de ce créneau, dans l'ordre du serveur
+  /// (`rating`, `in_cycle`, `variety_window`) : voir [RelaxedCriterion].
+  final List<String> relaxed;
+
   const SlotRanking({
     this.plats = const [],
     this.entrees = const [],
     this.desserts = const [],
     this.prepDate,
+    this.relaxed = const [],
   });
 
   static List<RankedCandidate> _list(Object? raw) => [
@@ -71,6 +78,7 @@ class SlotRanking {
       entrees: _list(raw['entrees']),
       desserts: _list(raw['desserts']),
       prepDate: prep is String ? DateTime.tryParse(prep) : null,
+      relaxed: relaxedKeysFrom(raw['relaxed']),
     );
   }
 }

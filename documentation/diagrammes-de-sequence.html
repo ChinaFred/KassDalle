@@ -171,7 +171,7 @@
       <li><a href="#connexion-next">Connexion depuis un lien</a></li>
       <li><a href="#qualite">Qualité des données</a></li>
       <li><a href="#livre-prive">Confidentialité d'un livre</a></li>
-      <li><a href="#planning-repas">Un repas du planning : idées IA, Google Calendar, replanifier</a></li>
+      <li><a href="#planning-repas">Un repas du planning : idées IA, composer le repas, Google Calendar, replanifier</a></li>
       <li><a href="#deploiement">Déploiement par GitHub Actions</a></li>
       <li><a href="#lien-web">Import d'une recette depuis un lien</a></li>
       <li><a href="#backfills-programmes">Backfills programmés, verrou et « terminé »</a></li>
@@ -3098,12 +3098,14 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="planning-repas"><span class="n">29</span>Un repas du planning : idées IA, Google Calendar, replanifier</h2>
+    <h2 id="planning-repas"><span class="n">29</span>Un repas du planning : idées IA, composer le repas, Google Calendar, replanifier</h2>
     <p class="sec-note">
-      Trois actions sur un repas déjà planifié. Les idées passent par deux callables. L'export
-      vers Google Calendar et le report de date se font sur l'appareil, sans Functions.
+      Quatre actions sur un repas déjà planifié. Les idées passent par deux callables.
+      « Composer le repas », l'export vers Google Calendar et le report de date se font sur
+      l'appareil, sans Functions ni appel de modèle.
       <span class="path">planning_screen.dart → recipe_picker_sheet.dart → meal_ideas_sheet.dart →
       planning_ai_service.dart → suggestMealIdeasFn, generateRecipeConceptFn ·
+      meal_composer.dart → side_chooser.dart (dishSideStatus, chooseSides) → side_picker_sheet.dart ·
       calendar_service.dart · PlanningRepository.rescheduleMeal</span>
     </p>
     <figure class="fig">
@@ -3166,6 +3168,32 @@ sequenceDiagram
     end
   end
   CAL-->>U: événements dans l'agenda
+  end
+
+  rect rgba(127,127,127,0.08)
+  Note over U,FS: composer le repas, sans IA
+  P->>PR: getRecipesByIds — recettes de mes repas de la période, par lots
+  PR->>FS: recipes
+  FS-->>P: contains du plat et des accompagnements-recettes
+  P-->>U: tuile « Il manque : légume » — Compléter, ou « Apports du plat inconnus »
+  alt Compléter
+    U->>P: Compléter
+    P-->>U: SidePickerSheet filtrée « Pour le légume »
+    U-->>P: garniture, recette, ou texte libre avec ses pastilles
+    P->>PR: updateMealComponents — insertMainSide
+  else Composer le repas (menu ⋮ ou appui sur la ligne)
+    U->>P: Composer le repas
+    P-->>U: éditeur — copie locale, dishSideStatus, une suggestion par besoin (chooseSides)
+    U->>P: Changer, Ajouter, Retirer, Modifier l'apport — rien n'est écrit
+    U->>P: Enregistrer
+    alt même plat
+      P->>PR: updateMealComponents — replaceMainSides
+    else autre plat
+      P->>PR: updateMealRecipe — origine manual, recette écartée
+    end
+    PR->>FS: planned_meals, une écriture
+    FS-->>U: « Repas enregistré. » ou « Repas non enregistré. Réessayez. », éditeur ouvert
+  end
   end
 
   rect rgba(127,127,127,0.08)

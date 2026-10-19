@@ -1106,7 +1106,7 @@ service cloud.firestore {
     // courant : un groupe supprimé puis recréé sous le même identifiant par
     // un autre compte lui ouvrait les invitations restées en base, adresses
     // comprises (ticket #152). Une invitation sans ce champ — antérieure à
-    // v0.24.13 et pas encore reprise par le backfill « Propriétaire du groupe
+    // v0.24.14 et pas encore reprise par le backfill « Propriétaire du groupe
     // des invitations » — n'est lisible que par un administrateur. La lecture
     // exige une requête filtrée sur `group_owner_id`.
     match /invitations/{invitationId} {

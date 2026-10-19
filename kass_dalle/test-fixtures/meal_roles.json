@@ -15,6 +15,76 @@
   ],
   "main_starches": ["pates", "riz", "pommes_de_terre", "semoule", "pain", "aucun"],
   "roles_with_main_ingredients": ["plat", "accompagnement"],
+  "_contains_comment": "Ce que la recette apporte déjà (tags.contains). Décidé par functions/src/gemini/mealRole.ts (MEAL_COMPONENTS), qui lit la réponse du modèle ; repris par meal_role.dart (kMealContains) pour les pastilles « Ce que la recette apporte » et la ligne « Apporte » de la fiche. Même ordre des deux côtés.",
+  "contains": ["proteine", "feculent", "legume"],
+  "_contains_manual_comment": "Correction à la main de tags.contains : le client pose tags.contains_manual = true (booléen strict). Le modèle ne réécrit alors jamais contains : ni le déclencheur, ni le backfill « Rôle des recettes » (même en reprise forcée), ni « Suggérer les tags » côté client. Chaque cas : les tags en base, ce que rend le modèle, si la correction est reconnue (manual) et ce que contains vaut après (result).",
+  "contains_manual_cases": [
+    {
+      "name": "corrigé à la main : le modèle ne réécrit pas",
+      "tags": {
+        "meal_role": "plat",
+        "contains": ["proteine", "legume"],
+        "contains_manual": true
+      },
+      "model_contains": ["proteine"],
+      "manual": true,
+      "result": ["proteine", "legume"]
+    },
+    {
+      "name": "corrigé à la main, vide : reste vide",
+      "tags": {
+        "meal_role": "plat",
+        "contains": [],
+        "contains_manual": true
+      },
+      "model_contains": ["proteine", "feculent"],
+      "manual": true,
+      "result": []
+    },
+    {
+      "name": "jamais corrigé : le modèle écrit",
+      "tags": {
+        "meal_role": "plat",
+        "contains": ["proteine"]
+      },
+      "model_contains": ["proteine", "feculent"],
+      "manual": false,
+      "result": ["proteine", "feculent"]
+    },
+    {
+      "name": "marqueur à false : le modèle écrit",
+      "tags": {
+        "contains": ["legume"],
+        "contains_manual": false
+      },
+      "model_contains": ["feculent"],
+      "manual": false,
+      "result": ["feculent"]
+    },
+    {
+      "name": "marqueur en chaîne : pas un booléen, le modèle écrit",
+      "tags": {
+        "contains": ["legume"],
+        "contains_manual": "true"
+      },
+      "model_contains": ["feculent"],
+      "manual": false,
+      "result": ["feculent"]
+    },
+    {
+      "name": "recette sans tags : le modèle écrit",
+      "tags": {},
+      "model_contains": ["proteine"],
+      "manual": false,
+      "result": ["proteine"]
+    }
+  ],
   "_unsafe_keys_comment": "Réponses du modèle qui portent le nom d'une propriété héritée d'un objet JavaScript. Lues comme hors liste (null, ou rien pour contains) par parseMealRole, parseMealContains, parseMainProtein et parseMainStarch. Serveur seul : le client ne lit jamais une réponse du modèle.",
-  "unsafe_keys": ["__proto__", "constructor", "toString", "hasOwnProperty", "valueOf"]
+  "unsafe_keys": [
+    "__proto__",
+    "constructor",
+    "toString",
+    "hasOwnProperty",
+    "valueOf"
+  ]
 }

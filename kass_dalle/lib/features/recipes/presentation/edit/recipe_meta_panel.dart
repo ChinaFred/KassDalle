@@ -20,6 +20,10 @@ const _kNotFilled = '';
 const kMainIngredientHelper =
     'Laissé à Non renseigné, « Suggérer les tags » peut le proposer.';
 
+/// Aide sous les pastilles « Ce que la recette apporte ».
+const kMealContainsHelper =
+    'Le planning propose un accompagnement pour ce qui manque.';
+
 /// Shared metadata form panel used by draft review, recipe edit, and recipe
 /// create screens.
 ///
@@ -57,6 +61,12 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
   final void Function(String?)? onMainProteinChanged;
   final String? mainStarch;
   final void Function(String?)? onMainStarchChanged;
+
+  /// Ce que la recette apporte (`tags.contains`). Les pastilles Protéine,
+  /// Féculent, Légume n'apparaissent que si [onMealContainsChanged] est donné,
+  /// et seulement pour un plat ou un accompagnement.
+  final List<String> mealContains;
+  final void Function(List<String>)? onMealContainsChanged;
   final bool suggestingTags;
   final VoidCallback? onSuggestTags;
 
@@ -89,6 +99,8 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
     this.onMainProteinChanged,
     this.mainStarch,
     this.onMainStarchChanged,
+    this.mealContains = const [],
+    this.onMealContainsChanged,
     this.suggestingTags = false,
     this.onSuggestTags,
     this.pageType,
@@ -407,6 +419,10 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             ),
             const SizedBox(height: 12),
           ],
+          if (showMainIngredients && widget.onMealContainsChanged != null) ...[
+            _buildMealContains(theme),
+            const SizedBox(height: 12),
+          ],
 
           Text(
             'Cuisine',
@@ -586,6 +602,54 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
       onChanged: widget.saving
           ? null
           : (v) => onChanged((v == null || v == _kNotFilled) ? null : v),
+    );
+  }
+
+  /// « Ce que la recette apporte » : trois pastilles, une aide dessous. Une
+  /// valeur inconnue lue en base reste en place sans pastille.
+  Widget _buildMealContains(ThemeData theme) {
+    final current = widget.mealContains;
+    void toggle(String value, bool selected) {
+      final next = {...current};
+      if (selected) {
+        next.add(value);
+      } else {
+        next.remove(value);
+      }
+      widget.onMealContainsChanged!(orderedMealContains(next));
+    }
+
+    return Column(
+      key: const ValueKey('mealContainsChips'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ce que la recette apporte',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final value in kMealContains)
+              FilterChip(
+                label: Text(mealContainsLabel(value)),
+                selected: current.contains(value),
+                onSelected: widget.saving ? null : (v) => toggle(value, v),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          kMealContainsHelper,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 

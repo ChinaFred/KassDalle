@@ -28,7 +28,7 @@ import {
   MAX_CALLABLE_INSTANCES,
   REGION,
 } from "../config";
-import { mainIngredientsPatch } from "../gemini/mealRole";
+import { containsPatch, mainIngredientsPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 import { resolvePageType } from "../triggers/recipeWritten";
@@ -383,11 +383,14 @@ export async function runRecipeRolesPass(
             extra: { recipeId: doc.id, titre },
           });
         } else {
-          // Une protéine ou un féculent déjà posés ne sont pas remplacés.
+          // Une protéine ou un féculent déjà posés ne sont pas remplacés, ni
+          // ce que la recette apporte quand il a été corrigé à la main
+          // (`contains_manual`), même en reprise forcée.
           const patch = mainIngredientsPatch(tags, fields);
+          const contains = containsPatch(tags, fields.contains);
           await doc.ref.update({
             "tags.meal_role": fields.mealRole,
-            "tags.contains": fields.contains,
+            ...("contains" in contains ? { "tags.contains": contains.contains } : {}),
             "tags.suggested_sides": fields.suggestedSides,
             ...(patch.main_protein ? { "tags.main_protein": patch.main_protein } : {}),
             ...(patch.main_starch ? { "tags.main_starch": patch.main_starch } : {}),

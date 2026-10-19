@@ -874,6 +874,7 @@ class RecipeRepository {
       if (clearMealRole && tags.mealRole == null) ...{
         'tags.meal_role': FieldValue.delete(),
         'tags.contains': FieldValue.delete(),
+        'tags.contains_manual': FieldValue.delete(),
         'tags.suggested_sides': FieldValue.delete(),
         'tags.main_protein': FieldValue.delete(),
         'tags.main_starch': FieldValue.delete(),

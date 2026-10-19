@@ -339,7 +339,7 @@ export function groupInviteFor(
  * être recréé sous le même identifiant par un autre éditeur. Le groupe relu
  * n'est celui de l'invitation que si son `owner_id` (figé par les règles) vaut
  * `group_owner_id`, écrit par le serveur à la création (ticket #152). Sinon,
- * ou si l'invitation n'a pas le champ (antérieure à v0.24.13, pas encore
+ * ou si l'invitation n'a pas le champ (antérieure à v0.24.14, pas encore
  * reprise par le backfill), le groupe est traité comme absent : le rôle
  * s'applique, l'invité n'entre dans aucun groupe, `group_missing: true`.
  */

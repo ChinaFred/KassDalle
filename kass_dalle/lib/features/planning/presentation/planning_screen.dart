@@ -27,7 +27,9 @@ import '../domain/meal_component.dart';
 import '../domain/meal_idea.dart';
 import '../domain/meal_recipe_location.dart';
 import '../domain/meal_suggestion.dart';
+import '../domain/meal_staple.dart';
 import '../domain/side_chooser.dart';
+import 'meal_composer.dart';
 import 'meal_staples_providers.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
@@ -85,9 +87,21 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   List<Recipe> _availableRecipes = [];
   bool _recipesLoaded = false;
 
-  /// Recettes de la famille pour « Ajouter un accompagnement », lues au
-  /// premier usage ; `null` tant qu'elles ne l'ont pas été.
+  /// Recettes de la famille pour « Composer le repas » et « Compléter »,
+  /// lues au premier usage ; `null` tant qu'elles ne l'ont pas été.
   List<Recipe>? _familySideRecipes;
+
+  /// Recettes de mes repas de la période lue — plats et accompagnements qui
+  /// sont des recettes —, lues par lots : la tuile en tire ce qui manque au
+  /// plat. Rien n'est figé sur le repas : la recette corrigée se relit au
+  /// rafraîchissement.
+  final Map<String, Recipe> _mealRecipes = {};
+  final Set<String> _mealRecipesPending = {};
+  final Set<String> _mealRecipesFailed = {};
+
+  /// Famille de chaque garniture du compte, masquées comprises, lue au
+  /// dernier affichage.
+  Map<String, StapleCategory> _stapleCategories = const {};
   final Set<String> _aiLoadingIds = {};
   final Set<String> _storageLoadingIds = {};
 
@@ -270,15 +284,109 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     return null;
   }
 
-  /// Ajoute un accompagnement de plus à la main, en plus de ceux déjà posés.
-  Future<void> _addComponent(PlannedMeal meal) async {
-    await _loadRecipesIfNeeded();
-    if (!mounted) return;
-    final main = _validatedRecipeById(meal.recipeId);
-    if (main == null) {
-      context.showSnackBar('Recette introuvable pour ce repas.');
+  /// « Composer le repas » : le plat, ce qu'il apporte, ses accompagnements
+  /// (0 à six), ce qui manque et ce que le programme propose pour le
+  /// combler. Une seule écriture, à « Enregistrer ».
+  Future<void> _composeMeal(PlannedMeal meal) => showMealComposer(
+    context,
+    load: () => _composerData(meal),
+    sides: [
+      for (final c in meal.components)
+        if (c.isMainSide) c,
+    ],
+    fallbackTitle: meal.recipeTitre,
+    dismissedRecipeIds: meal.dismissedRecipeIds.toSet(),
+    onSave: (composition) => _saveComposition(meal, composition),
+  );
+
+  /// Ce que l'éditeur lit : le plat du repas, et les recettes proposées —
+  /// les miennes validées et celles, non privées, de la famille. Une erreur
+  /// remonte à l'éditeur, qui l'affiche avec « Réessayer ».
+  Future<MealComposerData> _composerData(PlannedMeal meal) async {
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) throw StateError('Utilisateur non connecté.');
+    if (!_recipesLoaded) {
+      final recipes = await repo.getValidatedRecipes();
+      if (mounted) {
+        setState(() {
+          _availableRecipes = recipes;
+          _recipesLoaded = true;
+        });
+      }
+    }
+    final familyRecipes = await _loadFamilySideRecipesIfNeeded();
+    final main = await _mainRecipeFor(meal);
+    final seen = <String>{};
+    return MealComposerData(
+      main: main,
+      recipes: [
+        for (final r in [..._availableRecipes, ...familyRecipes])
+          if (seen.add(r.id)) r,
+      ],
+    );
+  }
+
+  /// La recette du plat de [meal] : déjà lue pour la tuile, chargée avec mes
+  /// recettes validées, ou relue par identifiant (brouillon, recette de la
+  /// famille). `null` pour un repas libre ou une recette introuvable.
+  Future<Recipe?> _mainRecipeFor(PlannedMeal meal) async {
+    final id = meal.recipeId;
+    if (id == null || id.isEmpty) return null;
+    final known = _mealRecipes[id] ?? _validatedRecipeById(id);
+    if (known != null) return known;
+    final repo = ref.read(planningRepositoryProvider);
+    final fetched = (await repo?.getRecipesByIds([id]))?.firstOrNull;
+    if (fetched != null && mounted) {
+      setState(() => _mealRecipes[fetched.id] = fetched);
+    }
+    return fetched;
+  }
+
+  /// Écrit ce que l'éditeur rend : les accompagnements seuls, ou le plat et
+  /// ses accompagnements quand « Changer » a posé un autre plat. Une erreur
+  /// remonte à l'éditeur, qui reste ouvert.
+  Future<void> _saveComposition(
+    PlannedMeal meal,
+    MealComposition composition,
+  ) async {
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) throw StateError('Utilisateur non connecté.');
+    final components = replaceMainSides(meal.components, composition.sides);
+    final recipe = composition.main;
+    if (!composition.mainChanged || recipe == null) {
+      await repo.updateMealComponents(meal.id, components);
       return;
     }
+    final recipeId = recipe.id.isEmpty ? null : recipe.id;
+    await repo.updateMealRecipe(
+      meal.id,
+      recipeId: recipeId,
+      recipeTitre: recipe.titre,
+      durationMinutes:
+          (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0),
+      prepMinutes: recipe.tags.prepTime,
+      cookMinutes: recipe.tags.cookTime,
+      basePortions: recipe.portions,
+      targetPortions: meal.targetPortions ?? recipe.portions,
+      dismissRecipeId: _oustedBy(meal, recipeId),
+      components: components,
+      choiceSource: MealChoiceSource.manual,
+    );
+    if (recipeId != null && mounted) {
+      setState(() => _mealRecipes[recipeId] = recipe);
+    }
+    _recordRefusal(meal, recipeId);
+  }
+
+  /// « Compléter » : un accompagnement de plus, choisi dans la feuille
+  /// filtrée sur ce qui manque, suggestions du plat en tête.
+  Future<void> _completeMeal(PlannedMeal meal, SideNeed need) async {
+    final main = _mealRecipes[meal.recipeId];
+    if (main == null) return;
+    // La tuile masque « Compléter » au sixième accompagnement.
+    final sideCount = meal.components.where((c) => c.isMainSide).length;
+    if (sideCount >= kMaxSidesPerDish) return;
+    await _loadRecipesIfNeeded();
     final familyRecipes = await _loadFamilySideRecipesIfNeeded();
     if (!mounted) return;
     final staples = ref.read(myStaplesProvider).value ?? const [];
@@ -296,15 +404,29 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               if (seen.add(r.id)) r,
           ],
         ),
+        initialNeed: need,
       ),
     );
     final component = result?.toComponent(justification: 'Choisi à la main.');
     if (component == null || !mounted) return;
-    final repo = ref.read(planningRepositoryProvider);
-    await repo?.updateMealComponents(
-      meal.id,
-      insertMainSide(meal.components, component),
-    );
+    try {
+      await ref
+          .read(planningRepositoryProvider)
+          ?.updateMealComponents(
+            meal.id,
+            insertMainSide(meal.components, component),
+          );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.completeMeal',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'meal_id': meal.id, 'need': need.name},
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Repas non enregistré. Réessayez.');
+      }
+    }
   }
 
   /// Recettes validées et non privées des autres membres de la famille, lues
@@ -334,13 +456,58 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   /// Retire un accompagnement déjà posé sur ce repas, auto ou choisi à la
-  /// main.
-  Future<void> _removeComponent(PlannedMeal meal, MealComponent component) {
+  /// main. « Annuler » remet la liste d'avant.
+  Future<void> _removeComponent(
+    PlannedMeal meal,
+    MealComponent component,
+  ) async {
     final repo = ref.read(planningRepositoryProvider);
-    final updated = meal.components
-        .where((c) => !identical(c, component))
-        .toList();
-    return repo?.updateMealComponents(meal.id, updated) ?? Future.value();
+    if (repo == null) return;
+    final before = meal.components;
+    final updated = before.where((c) => !identical(c, component)).toList();
+    try {
+      await repo.updateMealComponents(meal.id, updated);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.removeComponent',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'meal_id': meal.id},
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Accompagnement non retiré. Réessayez.');
+      }
+      return;
+    }
+    if (!mounted) return;
+    context.showSuccessSnackBar(
+      'Accompagnement retiré.',
+      action: SnackBarAction(
+        label: 'Annuler',
+        onPressed: () => _restoreComponents(meal.id, before),
+      ),
+    );
+  }
+
+  Future<void> _restoreComponents(
+    String mealId,
+    List<MealComponent> components,
+  ) async {
+    try {
+      await ref
+          .read(planningRepositoryProvider)
+          ?.updateMealComponents(mealId, components);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.restoreComponents',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'meal_id': mealId},
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Accompagnement non remis. Réessayez.');
+      }
+    }
   }
 
   /// Trois idées de repas sur une consigne, pour « Générer avec l'IA » du
@@ -946,6 +1113,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         ),
         choiceSource: suggestion.source,
         justification: suggestion.justification,
+        // Un écart de la présélection (déjà servi, note relâchée) reste
+        // lisible sur le repas.
+        relaxedCriteria: result.rankings[0]?.relaxed ?? const [],
       );
       _recordRefusal(meal, recipe.id.isEmpty ? null : recipe.id);
       if (mounted) {
@@ -1980,6 +2150,13 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
     _dayKeys.removeWhere((day, _) => !period.contains(day));
     _resolveSharedRecipes(meals, period, view);
+    if (view.canPlan) {
+      _resolveMyMealRecipes(meals, period, view);
+      _stapleCategories = {
+        for (final u in ref.watch(myStaplesProvider).value ?? const [])
+          u.staple.id: u.staple.category,
+      };
+    }
 
     final locked = {
       for (final e in _readableRecipes.entries)
@@ -2260,7 +2437,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       onDelete: () => _deleteMeal(meal),
       onChangeRecipe: () => _changeRecipe(meal),
       onReschedule: () => _rescheduleMeal(meal),
-      onAddComponent: () => _addComponent(meal),
+      onCompose: () => _composeMeal(meal),
+      onComplete: (need) => _completeMeal(meal, need),
+      sideStatus: _sideStatusFor(meal),
       onRemoveComponent: (c) => _removeComponent(meal, c),
       onClearRecipe: () => _clearRecipe(meal),
       onOtherSuggestion: () => _otherSuggestion(meal),
@@ -2341,6 +2520,77 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         });
       }
     });
+  }
+
+  /// Lit, par lots, les recettes de mes repas de la période — le plat et les
+  /// accompagnements qui sont des recettes — pour dire ce qui manque au
+  /// plat. Même lecture groupée que pour les repas d'autrui ; une recette
+  /// refusée ou supprimée n'est pas rendue, et la tuile ne dit rien.
+  void _resolveMyMealRecipes(
+    List<PlannedMeal> meals,
+    PlanningPeriod period,
+    _PlanningView view,
+  ) {
+    final ids =
+        <String>{
+          for (final m in meals)
+            if (view.ownsMeal(m) &&
+                period.contains(PlanningPeriodCalendar.dayOf(m.plannedAt))) ...[
+              if ((m.recipeId ?? '').isNotEmpty) m.recipeId!,
+              for (final c in m.components)
+                if (c.isMainSide && c.isRecipe) c.recipeId!,
+            ],
+        }..removeWhere(
+          (id) =>
+              _mealRecipes.containsKey(id) ||
+              _mealRecipesPending.contains(id) ||
+              _mealRecipesFailed.contains(id),
+        );
+    if (ids.isEmpty) return;
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+    _mealRecipesPending.addAll(ids);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final recipes = await repo.getRecipesByIds(ids.toList());
+        if (!mounted) return;
+        setState(() {
+          for (final r in recipes) {
+            _mealRecipes[r.id] = r;
+          }
+          _mealRecipesPending.removeAll(ids);
+          // Lue sans résultat : refusée ou supprimée, pas de nouvel essai.
+          _mealRecipesFailed.addAll(
+            ids.where((id) => !_mealRecipes.containsKey(id)),
+          );
+        });
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'planningScreen.resolveMyMealRecipes',
+          error: e,
+          stackTrace: stackTrace,
+          context: {'recipe_count': ids.length},
+        );
+        if (!mounted) return;
+        setState(() {
+          _mealRecipesPending.removeAll(ids);
+          _mealRecipesFailed.addAll(ids);
+        });
+      }
+    });
+  }
+
+  /// Ce qui manque au plat de [meal], en comptant ses accompagnements ; `null`
+  /// tant que sa recette n'est pas lue, ou pour un repas libre.
+  DishSideStatus? _sideStatusFor(PlannedMeal meal) {
+    final main = _mealRecipes[meal.recipeId];
+    if (main == null) return null;
+    return dishSideStatus(
+      mainTags: main.tags,
+      sides: meal.components.where((c) => c.isMainSide),
+      stapleCategories: _stapleCategories,
+      recipesById: _mealRecipes,
+    );
   }
 
   /// Pose une recette sur un jour libre de la période lue, dans le planning
@@ -2718,6 +2968,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   Future<void> _refreshMeals() async {
     setState(() {
       _readableRecipes.clear();
+      _mealRecipes.clear();
+      _mealRecipesFailed.clear();
       _readableFailed.clear();
     });
     ref.invalidate(plannedMealsProvider);

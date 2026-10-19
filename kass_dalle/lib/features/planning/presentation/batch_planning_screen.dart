@@ -144,11 +144,16 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // identique à la validation, le repas n'a pas été touché.
   final Map<String, String> _registeredBaseline = {};
   bool _prefillStarted = false;
-  // L'accompagnement de chaque créneau, choisi par le programme depuis ce que
-  // le plat n'apporte pas. Un accompagnement posé à la main n'est plus
-  // recalculé tant que le plat ne change pas.
-  Map<int, MealComponent?> _slotSides = {};
+  // Les accompagnements de chaque créneau (0 à six), choisis par le
+  // programme depuis ce que le plat n'apporte pas. Des accompagnements
+  // touchés à la main ne sont plus recalculés tant que le plat ne change pas.
+  Map<int, List<MealComponent>> _slotSides = {};
   final Set<int> _slotSideManual = {};
+  // Critères que le serveur a relâchés pour le plat de chaque créneau
+  // (`relaxed` de sa liste classée) : affichés sur la carte, puis stockés
+  // sur le repas (`relaxed_criteria`). Retirés quand le plat est choisi à
+  // la main.
+  Map<int, List<String>> _slotRelaxed = {};
   // L'entrée et le dessert d'un créneau dont le format en demande : posés par
   // la suggestion, changés ou retirés à la main.
   Map<int, MealComponent?> _slotStarters = {};
@@ -443,7 +448,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (meal.dismissedRecipeIds.isNotEmpty) {
       _slotDismissed[i] = meal.dismissedRecipeIds.toSet();
     }
-    _slotSides[i] = meal.components.where((c) => c.isMainSide).firstOrNull;
+    _slotSides[i] = [
+      for (final c in meal.components)
+        if (c.isMainSide) c,
+    ];
+    if (meal.relaxedCriteria.isNotEmpty) {
+      _slotRelaxed[i] = meal.relaxedCriteria;
+    }
     _slotStarters[i] = starter;
     _slotDesserts[i] = dessert;
     // Sa composition est décidée : le programme ne la recalcule pas.
@@ -667,6 +678,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   void _clearSlot(int i) {
     _slots[i] = null;
     _slotSides.remove(i);
+    _slotRelaxed.remove(i);
     _slotSideManual.remove(i);
     _slotStarters.remove(i);
     _slotDesserts.remove(i);
@@ -716,6 +728,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotIsGenerated.clear();
         _slotSides.clear();
         _slotSideManual.clear();
+        _slotRelaxed.clear();
         _slotStarters.clear();
         _slotDesserts.clear();
         _slotSources.clear();
@@ -780,6 +793,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           if (_slots[i] != null || s.recipe == null) continue;
           _slots[i] = s.recipe;
           _setSlotFacts(i, s);
+          _setSlotRelaxed(i, suggestion.rankings[i]?.relaxed);
           // L'entrée et le dessert du même appel, quand le format du
           // créneau en demandait : le serveur ne les rend que dans ce cas.
           _slotStarters[i] = s.starter == null
@@ -909,6 +923,16 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     _slotPrepDates[i] = s.prepDate;
   }
 
+  /// Les critères relâchés pour le plat du créneau [i], tels que la liste
+  /// classée les donne ; aucun quand elle n'en porte pas.
+  void _setSlotRelaxed(int i, List<String>? relaxed) {
+    if (relaxed == null || relaxed.isEmpty) {
+      _slotRelaxed.remove(i);
+    } else {
+      _slotRelaxed[i] = relaxed;
+    }
+  }
+
   Future<void> _pickRecipeForSlot(int slotIndex) async {
     final recipe = await showModalBottomSheet<Recipe>(
       context: context,
@@ -928,6 +952,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         // L'origine dit le choix à la main : pas de phrase à sa place.
         _slotJustifications.remove(slotIndex);
         _slotSources[slotIndex] = MealChoiceSource.manual;
+        _slotRelaxed.remove(slotIndex);
         _slotWasResized[slotIndex] = false;
         _slotResizeReasons.remove(slotIndex);
         _slotPrepDates.remove(slotIndex);
@@ -1025,21 +1050,21 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       // ensuite, celui du planning, n'en gardait rien.
       justification: _slotJustifications[i],
       choiceSource: _slotSources[i],
+      relaxedCriteria: _slotRelaxed[i] ?? const [],
       // Ce qui accompagne le plat suit le repas, dans l'ordre du repas :
       // l'entrée et le dessert seulement si le format du créneau en
-      // demande, l'accompagnement — garniture figée ou recette — toujours.
-      // Un repas déjà enregistré garde ce que l'écran ne montre pas :
-      // deuxième entrée, fromage, sorbet, accompagnements de plus.
+      // demande, les accompagnements — garnitures figées, recettes, textes
+      // libres — toujours, tous. Un repas déjà enregistré garde ce que
+      // l'écran ne montre pas : deuxième entrée, fromage, sorbet.
       components: mergeSlotComponents(
         saved?.components ?? const [],
         starter: slotConstraint.effectiveFormat.wantsStarter
             ? _slotStarters[i]
             : null,
-        side: _slotSides[i],
+        sides: _slotSides[i] ?? const [],
         dessert: slotConstraint.effectiveFormat.wantsDessert
             ? _slotDesserts[i]
             : null,
-        mainChanged: saved != null && saved.recipeId != recipeId,
       ),
       // Un repas déjà au planning garde sa date de création.
       createdAt: saved?.createdAt ?? DateTime.now(),
@@ -1336,6 +1361,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotSources = _shiftAfterInsert(_slotSources, gapIdx);
         _slotRankings = _shiftAfterInsert(_slotRankings, gapIdx);
         _slotSides = _shiftAfterInsert(_slotSides, gapIdx);
+        _slotRelaxed = _shiftAfterInsert(_slotRelaxed, gapIdx);
         _slotStarters = _shiftAfterInsert(_slotStarters, gapIdx);
         _slotDesserts = _shiftAfterInsert(_slotDesserts, gapIdx);
         final manual = _shiftAfterInsert({
@@ -1449,6 +1475,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _slotSources = _shiftAfterRemove(_slotSources, index);
       _slotRankings = _shiftAfterRemove(_slotRankings, index);
       _slotSides = _shiftAfterRemove(_slotSides, index);
+      _slotRelaxed = _shiftAfterRemove(_slotRelaxed, index);
       _slotStarters = _shiftAfterRemove(_slotStarters, index);
       _slotDesserts = _shiftAfterRemove(_slotDesserts, index);
       final manual = _shiftAfterRemove({
@@ -1596,6 +1623,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _constraintsLocked = true;
       _slots[slotIndex] = suggestion.recipe;
       _setSlotFacts(slotIndex, suggestion);
+      _setSlotRelaxed(slotIndex, _slotRankings[slotIndex]?.relaxed);
       _slotSideManual.remove(slotIndex);
       _recomputeSides(only: {slotIndex});
     });
@@ -1783,6 +1811,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _constraintsLocked = true;
       _slots[slotIndex] = finalRecipe;
       _setSlotFacts(slotIndex, suggestion);
+      // Une recette conçue n'a pas été choisie dans une liste classée.
+      _slotRelaxed.remove(slotIndex);
       _slotSideManual.remove(slotIndex);
       _recomputeSides(only: {slotIndex});
       // L'entrée et le dessert rendus avec le plat, quand le format en
@@ -2005,6 +2035,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slots[e.key] = e.value;
         _slotJustifications[e.key] = 'Repris de la semaine du $weekLabel.';
         _slotSources[e.key] = MealChoiceSource.manual;
+        _slotRelaxed.remove(e.key);
         _slotWasResized[e.key] = false;
         _slotResizeReasons.remove(e.key);
         _slotPrepDates.remove(e.key);
@@ -2035,49 +2066,51 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
   /// Recompose les accompagnements des créneaux, dans l'ordre des jours.
   ///
-  /// Le programme choisit ; un créneau dont l'accompagnement a été posé à la
-  /// main garde son choix tant que le plat ne change pas. Un accompagnement
-  /// ne revient pas deux jours de suite quand un autre est possible, ni deux
-  /// fois dans le cycle tant qu'il en reste. [only] limite le recalcul à
-  /// quelques créneaux, les autres gardant ce qu'ils ont.
+  /// Le programme choisit, un par besoin du plat (`chooseSides`) ; un créneau
+  /// dont les accompagnements ont été touchés à la main les garde tant que le
+  /// plat ne change pas. Un accompagnement ne revient pas deux jours de suite
+  /// quand un autre est possible, ni deux fois dans le cycle tant qu'il en
+  /// reste. [only] limite le recalcul à quelques créneaux, les autres gardant
+  /// ce qu'ils ont.
   void _recomputeSides({Set<int>? only}) {
     final candidates = _sideCandidates;
-    final next = <int, MealComponent?>{};
+    final next = <int, List<MealComponent>>{};
     final used = <String>{};
     for (var i = 0; i < _slotDates.length; i++) {
       final recipe = _slots[i];
-      if (recipe == null) {
-        next[i] = null;
-        continue;
-      }
+      if (recipe == null) continue;
       final keep =
           _slotSideManual.contains(i) || (only != null && !only.contains(i));
       if (keep) {
-        next[i] = _slotSides[i];
-        final id = _slotSides[i]?.sourceId;
-        if (id != null) used.add(id);
+        final kept = _slotSides[i] ?? const <MealComponent>[];
+        next[i] = kept;
+        used.addAll(kept.map((c) => c.sourceId));
         continue;
       }
       final avoid = <String>{
-        ?next[i - 1]?.sourceId,
-        ?_slotSides[i + 1]?.sourceId,
+        for (final c in next[i - 1] ?? const <MealComponent>[]) c.sourceId,
+        for (final c in _slotSides[i + 1] ?? const <MealComponent>[])
+          c.sourceId,
       };
-      final choice = chooseSide(
+      final choices = chooseSides(
         main: recipe,
         candidates: candidates,
         avoidIds: avoid,
         usedInCycleIds: used,
       );
-      next[i] = choice?.component;
-      if (choice != null) used.add(choice.component.sourceId);
+      next[i] = [for (final c in choices) c.component];
+      used.addAll(next[i]!.map((c) => c.sourceId));
     }
     _slotSides = next;
   }
 
-  /// Choisir l'accompagnement d'un créneau à la main.
-  Future<void> _changeSide(int index) async {
+  /// Un accompagnement de plus sur un créneau, choisi à la main ; filtré sur
+  /// [need] quand on vient d'une ligne « Il manque ».
+  Future<void> _addSide(int index, SideNeed? need) async {
     final recipe = _slots[index];
     if (recipe == null) return;
+    final current = _slotSides[index] ?? const <MealComponent>[];
+    if (current.length >= kMaxSidesPerDish) return;
     final result = await showModalBottomSheet<SidePickerResult>(
       context: context,
       isScrollControlled: true,
@@ -2085,22 +2118,54 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       builder: (_) => SidePickerSheet(
         main: recipe,
         candidates: _sideCandidates,
-        current: _slotSides[index],
+        initialNeed: need,
       ),
     );
-    if (result == null || !mounted) return;
+    final component = result?.toComponent(justification: 'Choisi à la main.');
+    if (component == null || !mounted) return;
     setState(() {
       _slotSideManual.add(index);
-      _slotSides[index] = result.toComponent(
-        justification: 'Choisi à la main.',
-      );
+      _slotSides[index] = [...?_slotSides[index], component];
     });
   }
 
-  void _removeSide(int index) => setState(() {
+  void _removeSide(int index, MealComponent side) => setState(() {
     _slotSideManual.add(index);
-    _slotSides[index] = null;
+    _slotSides[index] = [
+      for (final c in _slotSides[index] ?? const <MealComponent>[])
+        if (!identical(c, side)) c,
+    ];
   });
+
+  /// Ce que le plat du créneau et ses accompagnements apportent.
+  DishSideStatus? _sideStatusFor(int index) {
+    final recipe = _slots[index];
+    if (recipe == null) return null;
+    return dishSideStatus(
+      mainTags: recipe.tags,
+      sides: _slotSides[index] ?? const [],
+      stapleCategories: {
+        for (final u in _staples) u.staple.id: u.staple.category,
+      },
+      recipesById: {
+        for (final r in _allRecipes)
+          if (r.id.isNotEmpty) r.id: r,
+      },
+    );
+  }
+
+  /// Les besoins qu'aucun candidat ne peut apporter.
+  Set<SideNeed> get _needsWithoutCandidate {
+    final candidates = _sideCandidates;
+    return {
+      for (final n in SideNeed.values)
+        if (!candidates.any((c) => c.provides(n))) n,
+    };
+  }
+
+  /// Aucune recette du corpus n'a ce rôle (`entree`, `dessert`).
+  bool _noRecipeWithRole(String role) =>
+      !_allRecipes.any((r) => r.id.isNotEmpty && r.tags.mealRole == role);
 
   /// Décale les clés à partir de [insertedAt] d'un cran vers le haut, pour
   /// un jour inséré au milieu du cycle.
@@ -2822,6 +2887,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           _slots[index] = null;
           _slotSides.remove(index);
           _slotSideManual.remove(index);
+          _slotRelaxed.remove(index);
           _slotStarters.remove(index);
           _slotDesserts.remove(index);
           _slotJustifications.remove(index);
@@ -2870,9 +2936,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       onRecipeTap: _slots[index] != null
           ? () => _onRecipeTap(_slots[index]!, index)
           : null,
-      side: _slotSides[index],
-      onChangeSide: _slots[index] != null ? () => _changeSide(index) : null,
-      onRemoveSide: _slotSides[index] != null ? () => _removeSide(index) : null,
+      sides: _slotSides[index] ?? const [],
+      onAddSide: _slots[index] != null ? (need) => _addSide(index, need) : null,
+      onRemoveSide: (side) => _removeSide(index, side),
+      sideStatus: _sideStatusFor(index),
+      needsWithoutCandidate: _needsWithoutCandidate,
+      relaxed: _slotRelaxed[index] ?? const [],
+      noStarterCandidate: _noRecipeWithRole('entree'),
+      noDessertCandidate: _noRecipeWithRole('dessert'),
       starter: _slotStarters[index],
       dessert: _slotDesserts[index],
       onChangeStarter: _slots[index] != null

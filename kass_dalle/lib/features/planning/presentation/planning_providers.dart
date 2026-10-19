@@ -357,6 +357,11 @@ class PlanningRepository {
     List<MealComponent>? components,
     MealChoiceSource? choiceSource,
     String? justification,
+
+    /// Critères relâchés par le serveur pour ce plat (`relaxed_criteria`).
+    /// Écrits avec l'origine : un autre plat choisi sans relâchement les
+    /// retire.
+    List<String> relaxedCriteria = const [],
     bool clearChoice = false,
   }) async {
     final why = justification?.trim() ?? '';
@@ -377,6 +382,10 @@ class PlanningRepository {
       if (choiceSource != null) 'choice_source': choiceSource.value,
       if (choiceSource != null)
         'justification': why.isEmpty ? FieldValue.delete() : why,
+      if (choiceSource != null)
+        'relaxed_criteria': relaxedCriteria.isEmpty
+            ? FieldValue.delete()
+            : relaxedCriteria,
     };
     // La recette remplacée reste écartée de ce repas : le prochain
     // « Suggérer » ne la verra pas dans ses candidats.
@@ -389,6 +398,7 @@ class PlanningRepository {
     if (clearChoice) {
       payload['choice_source'] = FieldValue.delete();
       payload['justification'] = FieldValue.delete();
+      payload['relaxed_criteria'] = FieldValue.delete();
     }
     if (clearPortions) {
       payload['base_portions'] = FieldValue.delete();

@@ -211,6 +211,7 @@ classDiagram
     +int? restTime
     +String? mealRole
     +List~String~ contains
+    +bool containsManual
     +List~String~ suggestedSides
     +String? mainProtein
     +String? mainStarch
@@ -850,6 +851,7 @@ classDiagram
     +List~String~ dismissedRecipeIds
     +List~MealComponent~ components
     +MealChoiceSource? choiceSource
+    +List~String~ relaxedCriteria
     +DateTime createdAt
     +Map extra
   }
@@ -961,7 +963,7 @@ classDiagram
         <b>EmailInvitation</b> (<code>invitations/{id}</code>) est l'invitation par e-mail d'une
         personne qui n'a pas encore de compte, ou dont le compte est révoqué : écrite par le
         serveur seul, lue par l'administrateur et par le propriétaire du groupe dont l'uid est
-        dans le champ Firestore <code>group_owner_id</code> (v0.24.13), posé par le serveur à la
+        dans le champ Firestore <code>group_owner_id</code> (v0.24.14), posé par le serveur à la
         création. Le modèle client ne le lit pas : il sert de filtre à la requête de la feuille
         du groupe, et c'est lui que compare la règle de lecture. <code>target</code> dit lequel (<code>new</code>
         ou <code>revoked</code>, avec <code>targetUid</code>). À la première connexion sous
@@ -1384,9 +1386,11 @@ classDiagram
     +String? unit
     +String? shoppingProduct
     +String? justification
+    +List~String~ provides
     +String? roleKey
     +String? sideOf
     +Map extra
+    +withProvides(provides) MealComponent
   }
 
   class SideChoice {
@@ -1475,6 +1479,35 @@ classDiagram
     legume
   }
 
+  class DishSideStatus {
+    +DishSideState state
+    +List~SideNeed~ missing
+    +String missingLabel
+  }
+
+  class DishSideState {
+    &lt;&lt;enumeration&gt;&gt;
+    complete
+    missing
+    unknown
+    notApplicable
+  }
+
+  class RelaxedCriterion {
+    &lt;&lt;enumeration&gt;&gt;
+    inCycle
+    varietyWindow
+    rating
+    +String key
+    +String phrase
+  }
+
+  class MealComposition {
+    +Recipe? main
+    +bool mainChanged
+    +List~MealComponent~ sides
+  }
+
   class PlannedMeal
   class RecipeDetailScreen
 
@@ -1500,6 +1533,7 @@ classDiagram
     +List~RankedCandidate~ entrees
     +List~RankedCandidate~ desserts
     +DateTime? prepDate
+    +List~String~ relaxed
     +fromMap(raw) SlotRanking$
   }
 
@@ -1572,8 +1606,13 @@ classDiagram
   PlanningRefusals ..> SlotRanking : poids x0,5 sur 21 jours, x0,25 dès 3 refus
   MealComponent ..> MealStaple : garniture figée au choix
   MealComponent ..> Recipe : recette d'accompagnement
-  SideChoice ..> MealComponent : chooseSide, par le programme, jamais par le modèle
-  SideCandidate ..> SideChoice : chooseSide retient un candidat
+  SideChoice ..> MealComponent : chooseSides, un par besoin, par le programme, jamais par le modèle
+  SideCandidate ..> SideChoice : chooseSides retient un candidat par besoin
+  DishSideStatus --> DishSideState : dishSideStatus, plat + accompagnements posés
+  DishSideStatus --> SideNeed : ce qui manque
+  SlotRanking ..> RelaxedCriterion : relaxed, filtres relâchés par le serveur
+  PlannedMeal ..> RelaxedCriterion : relaxedCriteria, ligne d'origine
+  MealComposition "1" *-- "0..6" MealComponent : « Composer le repas », une écriture à Enregistrer
   SideCandidate ..> MealStaple : garniture
   SideCandidate ..> Recipe : recette d'accompagnement
   SideCandidate ..> SideNeed : provides

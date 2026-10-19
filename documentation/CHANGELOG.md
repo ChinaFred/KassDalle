@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-19
 
-### v0.24.13 — technique
+### v0.24.14 — technique
 
 Trois corrections de sécurité (tickets #152, #153 et #154).
 
@@ -59,6 +59,37 @@ non modérée : la modération et les captures de ticket les lisent par leur che
 Après le déploiement : lancer *Admin › Backfills › Propriétaire du groupe des invitations*
 une fois, au plus tôt. Une invitation antérieure acceptée avant ce passage donne le rôle sans le
 groupe.
+
+### v0.24.13 — fonctionnel
+
+Deuxième palier de la refonte plat / menu du planning : un repas dit ce qui manque à son
+plat. Sous les accompagnements d'un repas s'affiche « Il manque : légume » avec
+« Compléter », ou « Apports du plat inconnus » pour une recette non classée. Le menu ⋮
+d'un plat ouvre « Composer le repas », qui remplace « Ajouter un accompagnement ».
+L'éditeur montre la recette, ce qu'elle apporte, ce qui manque ou « Plat complet », jusqu'à
+six accompagnements, et une suggestion par besoin choisie sans IA. Il n'écrit qu'à
+« Enregistrer ». Un accompagnement en texte libre peut indiquer qu'il apporte un féculent ou
+un légume. Retirer un accompagnement depuis la tuile se défait par « Annuler ». Ce qu'une
+recette apporte se corrige dans son panneau par trois pastilles, et l'IA ne revient plus sur
+une correction. Nouveau planning garde tous les accompagnements d'un plat, dit ce qui
+manque, et signale quand Kass'Dalle a relâché un critère (« Déjà servi dans ce cycle, faute
+d'autre choix ») ; ce constat reste ensuite sur le repas. La feuille « Planifier » d'un
+plat propose son accompagnement.
+
+### v0.24.13 — technique
+
+Nouveaux champs `tags.contains_manual` (recettes), `components[].provides` et
+`relaxed_criteria` (`planned_meals`), sans backfill : un champ absent vaut sa valeur par
+défaut. `containsPatch` (`gemini/mealRole.ts`) empêche `syncRecipeMealRole` et
+`backfillRecipeRolesFn`, même en mode `force`, de réécrire un `contains` corrigé à la main ;
+le client applique la même règle à « Suggérer les tags » (`mealContainsAfterSuggestion`).
+La fixture `meal_roles.json` reçoit les sections `contains` et `contains_manual_cases`.
+`chooseSide` est retiré au profit de `chooseSides` partout ; nouveau `dishSideStatus` (ce qui
+manque au plat, accompagnements compris) ; `mergeSlotComponents` prend une liste
+d'accompagnements ; `replaceMainSides` range les nouveaux accompagnements avant le dessert
+sur les repas anciens. Le client lit `relaxed` des listes classées, que le serveur envoyait
+déjà. Nouveau widget partagé `meal_composer.dart`. Le planning lit par lots de 30 les
+recettes de ses propres repas de la période pour connaître leur `contains`.
 
 ### v0.24.12 — technique
 

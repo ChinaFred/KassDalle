@@ -168,6 +168,7 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
               cookTimeMin: recipe.tags.cookTime,
               portions: recipe.portions,
               ingredients: recipe.ingredients,
+              recipe: recipe,
             )
           : null,
       onSuggest: suggestRecipeAction(context, ref, recipe),

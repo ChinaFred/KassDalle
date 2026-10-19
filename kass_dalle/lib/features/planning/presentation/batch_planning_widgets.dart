@@ -6,6 +6,8 @@ import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_advice_access.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../domain/meal_choice_source.dart';
+import '../domain/relaxed_criteria.dart';
+import '../domain/side_chooser.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planning_preferences.dart';
@@ -266,14 +268,32 @@ class BatchSlotTile extends StatefulWidget {
   /// Callback appelé quand l'utilisateur tape sur le titre de la recette.
   final VoidCallback? onRecipeTap;
 
-  /// L'accompagnement posé sur le créneau, choisi par le programme ou par
-  /// l'utilisateur ; null quand le plat se suffit, ou qu'on n'a rien trouvé.
-  final MealComponent? side;
+  /// Les accompagnements du plat, 0 à [kMaxSidesPerDish], choisis par le
+  /// programme ou par l'utilisateur ; vide quand le plat se suffit, ou
+  /// qu'on n'a rien trouvé.
+  final List<MealComponent> sides;
 
-  /// Ouvre le choix d'un accompagnement — null tant qu'aucune recette n'est
-  /// posée.
-  final VoidCallback? onChangeSide;
-  final VoidCallback? onRemoveSide;
+  /// Ouvre le choix d'un accompagnement de plus, filtré sur un besoin s'il
+  /// est donné — null tant qu'aucune recette n'est posée.
+  final ValueChanged<SideNeed?>? onAddSide;
+  final ValueChanged<MealComponent>? onRemoveSide;
+
+  /// Ce que le plat et ses accompagnements apportent ; `null` sans recette.
+  final DishSideStatus? sideStatus;
+
+  /// Besoins pour lesquels aucune garniture ni recette d'accompagnement
+  /// n'existe : « Il manque un légume. Aucune garniture de légume
+  /// disponible. »
+  final Set<SideNeed> needsWithoutCandidate;
+
+  /// Critères relâchés par le serveur pour le plat de ce créneau
+  /// (`in_cycle`, `variety_window`, `rating`) : une ligne par écart.
+  final List<String> relaxed;
+
+  /// Aucune recette classée en entrée ou en dessert : la ligne « à choisir »
+  /// le dit.
+  final bool noStarterCandidate;
+  final bool noDessertCandidate;
 
   /// L'entrée et le dessert du créneau, quand son format en demande.
   final MealComponent? starter;
@@ -319,9 +339,14 @@ class BatchSlotTile extends StatefulWidget {
     this.onGenerateWithAI,
     this.onExportToCalendar,
     this.onRecipeTap,
-    this.side,
-    this.onChangeSide,
+    this.sides = const [],
+    this.onAddSide,
     this.onRemoveSide,
+    this.sideStatus,
+    this.needsWithoutCandidate = const {},
+    this.relaxed = const [],
+    this.noStarterCandidate = false,
+    this.noDessertCandidate = false,
     this.starter,
     this.dessert,
     this.onChangeStarter,
@@ -343,9 +368,19 @@ class BatchSlotTile extends StatefulWidget {
       dayConstraint.effectiveFormat.wantsDessert &&
       dessert == null;
 
+  /// Ce qui manque encore au plat, en comptant ses accompagnements.
+  List<SideNeed> get missingSides =>
+      recipe != null && sideStatus?.state == DishSideState.missing
+      ? sideStatus!.missing
+      : const [];
+
   /// Le créneau porte un avertissement : un composant à choisir, ou un plat
   /// à préparer un autre jour que celui où on le mange.
-  bool get hasWarning => missingStarter || missingDessert || prepDate != null;
+  bool get hasWarning =>
+      missingStarter ||
+      missingDessert ||
+      missingSides.isNotEmpty ||
+      prepDate != null;
 
   @override
   State<BatchSlotTile> createState() => _BatchSlotTileState();
@@ -488,8 +523,14 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
     VoidCallback? onRemove,
   ) {
     final missing = course == null;
+    final noCandidate = role == MealComponentRole.entree
+        ? widget.noStarterCandidate
+        : widget.noDessertCandidate;
     final text = missing
-        ? '${role.label} : à choisir'
+        ? noCandidate
+              ? '${role.label} : à choisir. Aucune recette classée en '
+                    '${role.label.toLowerCase()}.'
+              : '${role.label} : à choisir'
         : '${role.label} : ${course.label}';
     final color = missing
         ? theme.colorScheme.error
@@ -513,7 +554,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
               color: color,
               fontWeight: missing ? FontWeight.w600 : null,
             ),
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -534,52 +575,131 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
     );
   }
 
-  /// L'accompagnement du créneau : ce qu'on sert à côté, et pourquoi.
+  /// Un accompagnement du créneau : ce qu'on sert à côté, et pourquoi.
   ///
   /// Le pourquoi est celui du programme — « le plat n'apporte pas de
   /// féculent » — en infobulle : la ligne reste courte, la raison reste
   /// accessible.
-  Widget _buildSideLine(ThemeData theme) {
-    final s = widget.side;
-    final text = s == null
-        ? 'Sans accompagnement'
-        : 'Accompagnement : ${s.label}'
-              '${s.quantityLabel != null ? ' · ${s.quantityLabel}' : ''}';
+  Widget _buildSideLine(ThemeData theme, MealComponent s) {
+    final text =
+        'Accompagnement : ${s.label}'
+        '${s.quantityLabel != null ? ' · ${s.quantityLabel}' : ''}';
     return Row(
       children: [
         Icon(
-          Icons.rice_bowl_outlined,
+          s.isRecipe ? Icons.menu_book_outlined : Icons.rice_bowl_outlined,
           size: AppIconSize.inline,
           color: theme.colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 6),
         Expanded(
           child: Tooltip(
-            message: s?.justification ?? '',
+            message: s.justification ?? '',
             child: Text(
               text,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
-                fontStyle: s == null ? FontStyle.italic : null,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
         ),
-        if (widget.onChangeSide != null)
-          TextButton(
-            onPressed: widget.onChangeSide,
-            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            child: Text(s == null ? 'Ajouter' : 'Changer'),
-          ),
-        if (s != null && widget.onRemoveSide != null)
+        if (widget.onRemoveSide != null)
           IconButton(
             icon: const Icon(Icons.close, size: AppIconSize.inline),
-            tooltip: 'Retirer l\'accompagnement',
-            visualDensity: VisualDensity.compact,
-            onPressed: widget.onRemoveSide,
+            tooltip: 'Retirer « ${s.label} »',
+            onPressed: () => widget.onRemoveSide!(s),
           ),
+      ],
+    );
+  }
+
+  /// Les accompagnements du créneau, puis « Ajouter un accompagnement »
+  /// jusqu'à [kMaxSidesPerDish].
+  List<Widget> _buildSideLines(ThemeData theme) {
+    final w = widget;
+    final full = w.sides.length >= kMaxSidesPerDish;
+    return [
+      if (w.sides.isEmpty)
+        Text(
+          'Sans accompagnement',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      for (final s in w.sides) _buildSideLine(theme, s),
+      if (w.onAddSide != null)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: full
+              ? Text(
+                  '$kMaxSidesPerDish accompagnements au plus',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              : TextButton.icon(
+                  onPressed: () => w.onAddSide!(null),
+                  icon: const Icon(Icons.add, size: AppIconSize.inline),
+                  label: const Text('Ajouter un accompagnement'),
+                ),
+        ),
+    ];
+  }
+
+  /// « Il manque un légume. » avec « Choisir » ; « Aucune garniture de
+  /// légume disponible. » quand rien ne peut l'apporter. Hors du pli.
+  Widget _buildMissingSideLine(ThemeData theme, SideNeed need) {
+    final none = widget.needsWithoutCandidate.contains(need);
+    final color = theme.colorScheme.error;
+    return Row(
+      children: [
+        Icon(
+          Icons.warning_amber_outlined,
+          size: AppIconSize.inline,
+          color: color,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            none
+                ? 'Il manque un ${need.label}. Aucune garniture de '
+                      '${need.label} disponible.'
+                : 'Il manque un ${need.label}.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (widget.onAddSide != null && widget.sides.length < kMaxSidesPerDish)
+          TextButton(
+            onPressed: () => widget.onAddSide!(need),
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            child: const Text('Choisir'),
+          ),
+      ],
+    );
+  }
+
+  /// Une ligne par critère relâché par le serveur, sans action.
+  Widget _buildRelaxedLine(ThemeData theme, RelaxedCriterion c) {
+    final color = theme.colorScheme.onSurfaceVariant;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.info_outline, size: AppIconSize.inline, color: color),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            c.sentence,
+            style: theme.textTheme.bodySmall?.copyWith(color: color),
+          ),
+        ),
       ],
     );
   }
@@ -677,8 +797,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
       }
     }
     if (c.maxPrepMinutes > 0) parts.add('${c.maxPrepMinutes} min max');
-    final side = w.side;
-    if (r != null && side != null) parts.add(side.label);
+    if (r != null) parts.addAll(w.sides.map((s) => s.label));
     final format = c.mealFormat;
     if (format != null && format != MealFormat.defaultFormat) {
       parts.add(format.label);
@@ -884,6 +1003,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
     final format = w.dayConstraint.effectiveFormat;
     final storage = _buildStorageAdvice(theme);
     final origin = w.recipe != null
+        // Sans `relaxed` : les écarts ont déjà leur ligne hors du pli.
         ? MealOriginLine.maybe(source: w.choiceSource, facts: w.justification)
         : null;
     // Les contraintes du jour, puis le repas dans son ordre (l'entrée, le
@@ -913,7 +1033,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
             w.onChangeStarter,
             w.onRemoveStarter,
           ),
-        _buildSideLine(theme),
+        ..._buildSideLines(theme),
         if (format.wantsDessert && w.dessert != null)
           _buildCourseLine(
             theme,
@@ -984,6 +1104,10 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
           w.onChangeDessert,
           null,
         ),
+      for (final need in w.missingSides) _buildMissingSideLine(theme, need),
+      if (w.recipe != null)
+        for (final c in RelaxedCriterion.listFrom(w.relaxed))
+          _buildRelaxedLine(theme, c),
       if (prep != null) _buildComputedStorage(theme, prep),
     ];
 
@@ -1392,13 +1516,31 @@ class MealOriginLine extends StatelessWidget {
   final MealChoiceSource? source;
   final String? facts;
 
-  const MealOriginLine({super.key, this.source, this.facts});
+  /// Critères relâchés par le serveur pour ce choix (`relaxed_criteria`) :
+  /// « Choisie par Kass'Dalle · déjà servi dans ce cycle, faute d'autre
+  /// choix ». Une clé inconnue ne s'affiche pas.
+  final List<String> relaxed;
+
+  const MealOriginLine({
+    super.key,
+    this.source,
+    this.facts,
+    this.relaxed = const [],
+  });
 
   /// La ligne, ou `null` quand il n'y a rien à dire.
-  static MealOriginLine? maybe({MealChoiceSource? source, String? facts}) {
+  static MealOriginLine? maybe({
+    MealChoiceSource? source,
+    String? facts,
+    List<String> relaxed = const [],
+  }) {
     final text = facts?.trim() ?? '';
-    if (source == null && text.isEmpty) return null;
-    return MealOriginLine(source: source, facts: text);
+    if (source == null &&
+        text.isEmpty &&
+        RelaxedCriterion.listFrom(relaxed).isEmpty) {
+      return null;
+    }
+    return MealOriginLine(source: source, facts: text, relaxed: relaxed);
   }
 
   static IconData iconFor(MealChoiceSource? source) => switch (source) {
@@ -1411,7 +1553,10 @@ class MealOriginLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final text = facts?.trim() ?? '';
+    final text = [
+      for (final c in RelaxedCriterion.listFrom(relaxed)) c.phrase,
+      if ((facts?.trim() ?? '').isNotEmpty) facts!.trim(),
+    ].join(' · ');
     final label = source?.label;
     final color = theme.colorScheme.onSurfaceVariant;
     return Row(

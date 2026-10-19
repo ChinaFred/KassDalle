@@ -154,7 +154,7 @@ void main() {
   test('un texte libre devient un composant sans garniture ni recette', () {
     final component = const SidePickerResult.free(
       'Frites maison',
-    ).toComponent(justification: 'Choisi à la main.')!;
+    ).toComponent(justification: 'Choisi à la main.');
     expect(component.isFree, isTrue);
     expect(component.toMap(), {
       'role': 'accompagnement',
@@ -165,7 +165,6 @@ void main() {
     expect(back.isFree, isTrue);
     expect(back.label, 'Frites maison');
     expect(back.totalQuantityFor(4), isNull);
-    expect(const SidePickerResult.none().toComponent(), isNull);
   });
 
   test('les filtres proposés suivent les familles présentes', () {
@@ -188,7 +187,6 @@ void main() {
     expect(find.text('Salade verte'), findsOneWidget);
     expect(find.text('Semoule'), findsNothing);
     expect(find.text('Riz'), findsNothing);
-    expect(find.text('Aucun accompagnement'), findsOneWidget);
   });
 
   testWidgets('une pastille de famille ne garde que cette famille', (
@@ -222,9 +220,64 @@ void main() {
     await tester.tap(find.text('Ajouter « Frites maison »'));
     await tester.pumpAndSettle();
 
+    // L'étape de l'apport : deux pastilles facultatives, puis « Ajouter ».
+    expect(find.text('« Frites maison »'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilterChip, 'Féculent'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Ajouter'));
+    await tester.pumpAndSettle();
+
     expect(result?.freeLabel, 'Frites maison');
+    expect(result?.provides, ['feculent']);
     expect(result?.candidate, isNull);
   });
+
+  testWidgets(
+    'ouverte par « Compléter » : filtrée, pastille cochée d\'office',
+    (tester) async {
+      SidePickerResult? result;
+      await tester.binding.setSurfaceSize(const Size(800, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async =>
+                    result = await showModalBottomSheet<SidePickerResult>(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (_) => SidePickerSheet(
+                        main: _main,
+                        candidates: _candidates,
+                        initialNeed: SideNeed.legume,
+                      ),
+                    ),
+                child: const Text('Ouvrir'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Ouvrir'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Haricots verts'), findsOneWidget);
+      expect(find.text('Salade verte'), findsOneWidget);
+      expect(find.text('Semoule'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), 'poêlée');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      final legume = tester.widget<FilterChip>(
+        find.widgetWithText(FilterChip, 'Légume'),
+      );
+      expect(legume.selected, isTrue);
+      await tester.tap(find.widgetWithText(FilledButton, 'Ajouter'));
+      await tester.pumpAndSettle();
+      expect(result?.provides, ['legume']);
+    },
+  );
 
   testWidgets('un nom déjà connu ne propose pas de texte libre', (
     tester,
@@ -255,7 +308,10 @@ void main() {
     await tester.enterText(find.byType(TextField), 'poêlée forestière');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Ajouter'));
+    await tester.pumpAndSettle();
 
     expect(result?.freeLabel, 'Poêlée forestière');
+    expect(result?.provides, isEmpty);
   });
 }

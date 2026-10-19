@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'meal_choice_source.dart';
 import 'meal_component.dart';
+import 'relaxed_criteria.dart';
 
 /// Repas planifié, stocké dans Firestore sous `planned_meals/{id}`.
 class PlannedMeal {
@@ -74,6 +75,13 @@ class PlannedMeal {
   /// champ : l'écran n'affiche alors pas de ligne d'origine.
   final MealChoiceSource? choiceSource;
 
+  /// Critères que le serveur a relâchés pour choisir ce plat
+  /// (`relaxed_criteria` : `in_cycle`, `variety_window`, `rating`), posés par
+  /// Nouveau planning et « Autre suggestion ». Affichés dans la ligne
+  /// d'origine : « déjà servi dans ce cycle, faute d'autre choix ». Retirés
+  /// quand le plat change à la main. Une clé inconnue est gardée telle quelle.
+  final List<String> relaxedCriteria;
+
   final DateTime createdAt;
 
   /// Champs lus en base que cette version ne connaît pas (`meal_kind`
@@ -99,6 +107,7 @@ class PlannedMeal {
     this.dismissedRecipeIds = const [],
     this.components = const [],
     this.choiceSource,
+    this.relaxedCriteria = const [],
     required this.createdAt,
     this.extra = const {},
   });
@@ -119,6 +128,7 @@ class PlannedMeal {
     'dismissed_recipe_ids',
     'components',
     'choice_source',
+    'relaxed_criteria',
     'created_at',
   };
 
@@ -150,6 +160,7 @@ class PlannedMeal {
       ),
       components: MealComponent.listFromFirestore(data['components']),
       choiceSource: MealChoiceSource.fromValue(data['choice_source']),
+      relaxedCriteria: relaxedKeysFrom(data['relaxed_criteria']),
       createdAt: (data['created_at'] as Timestamp).toDate(),
       extra: {
         for (final e in data.entries)
@@ -187,6 +198,7 @@ class PlannedMeal {
     if (components.isNotEmpty)
       'components': [for (final c in components) c.toMap()],
     if (choiceSource != null) 'choice_source': choiceSource!.value,
+    if (relaxedCriteria.isNotEmpty) 'relaxed_criteria': relaxedCriteria,
     'created_at': Timestamp.fromDate(createdAt),
   };
 }
