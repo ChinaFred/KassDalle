@@ -1,5 +1,6 @@
 import '../../../core/app_links.dart';
 import 'meal_component.dart';
+import 'meal_composition.dart';
 import 'meal_recipe_location.dart';
 import 'planned_meal.dart';
 
@@ -37,14 +38,17 @@ String buildCalendarDescription({
 }
 
 /// Une ligne par composant : « Accompagnement : Riz · 280 g pour 4 parts »,
-/// et le lien de la fiche quand c'est une recette.
+/// et le lien de la fiche quand c'est une recette. Un service de menu prend
+/// son type (« Trou normand » pour un service « Autre » nommé) ; un service
+/// vide se lit « Fromage : à choisir ».
 List<String> componentCalendarLines(
   Iterable<MealComponent> components, {
   int? portions,
 }) {
   final lines = <String>[];
   for (final c in components) {
-    final buffer = StringBuffer('${c.role.label} : ${c.label}');
+    final label = c.isEmptyCourse ? 'à choisir' : c.label;
+    final buffer = StringBuffer('${c.courseTypeLabel} : $label');
     final total = c.totalQuantityFor(portions);
     if (total != null) {
       final n = (portions ?? 0) > 0 ? portions! : 1;
@@ -76,9 +80,12 @@ String formatComponentQuantity(double quantity, String unit) {
 }
 
 /// Description d'un repas planifié : le lien vers sa recette, ouvert pour ses
-/// parts et son jour de préparation, et ses accompagnements.
+/// parts et son jour de préparation, et ses accompagnements — pour un menu,
+/// ses services dans l'ordre, chaque plat suivi des siens.
 String mealCalendarDescription(PlannedMeal meal) => buildCalendarDescription(
   recipeLocation: mealRecipeLocation(meal),
-  components: meal.components,
+  components: MealComposition.ofMeal(
+    meal,
+  ).toComponents(mainTitle: meal.recipeTitre),
   portions: meal.portionsForComponents,
 );

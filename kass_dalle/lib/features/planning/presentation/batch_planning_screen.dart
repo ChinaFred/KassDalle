@@ -24,11 +24,14 @@ import '../domain/ranked_candidates.dart';
 import '../domain/registered_meals.dart';
 import '../domain/week_replay.dart';
 import '../domain/meal_component.dart';
+import '../domain/meal_composition.dart';
+import '../domain/meal_kind.dart';
 import '../domain/meal_staple.dart';
 import '../domain/side_chooser.dart';
 import '../services/calendar_service.dart';
 import '../services/planning_ai_service.dart';
 import 'batch_planning_widgets.dart';
+import 'meal_composer.dart';
 import 'planning_providers.dart';
 import 'recipe_picker_sheet.dart';
 import 'replay_week_sheet.dart';
@@ -158,6 +161,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // la suggestion, changés ou retirés à la main.
   Map<int, MealComponent?> _slotStarters = {};
   Map<int, MealComponent?> _slotDesserts = {};
+  // La composition d'un créneau passée par l'éditeur (« Composer le
+  // menu ») : elle prime sur le repas enregistré, et l'entrée, le dessert et
+  // les accompagnements du créneau s'y reposent à leur place. Rien n'est
+  // écrit avant « Valider ».
+  Map<int, MealComposition> _slotComposed = {};
   // Les garnitures de l'utilisateur, lues une fois à l'ouverture.
   List<UserStaple> _staples = const [];
   PlanningPreferences? _prefs;
@@ -682,6 +690,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     _slotSideManual.remove(i);
     _slotStarters.remove(i);
     _slotDesserts.remove(i);
+    _slotComposed.remove(i);
     _slotJustifications.remove(i);
     _slotPrepDates.remove(i);
     _slotWasResized.remove(i);
@@ -731,6 +740,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotRelaxed.clear();
         _slotStarters.clear();
         _slotDesserts.clear();
+        _slotComposed.clear();
         _slotSources.clear();
         _slotRankings.clear();
       });
@@ -1029,6 +1039,28 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     final duration = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
     final saved = _registeredMeals[_slotSavedMealIds[i]];
     final recipeId = recipe.id.isEmpty ? null : recipe.id;
+    final composed = _slotComposed[i];
+    // Ce qui accompagne le plat suit le repas, dans l'ordre du repas :
+    // l'entrée et le dessert seulement si le format du créneau en demande,
+    // les accompagnements — garnitures figées, recettes, textes libres —
+    // toujours, tous. La composition passée par l'éditeur, sinon le repas
+    // déjà enregistré, garde ce que la carte ne montre pas en premier :
+    // deuxième entrée, fromage, sorbet, plat secondaire.
+    final components = withMainMarkerTitle(
+      mergeSlotComponents(
+        composed?.toComponents(mainTitle: recipe.titre) ??
+            saved?.components ??
+            const [],
+        starter: slotConstraint.effectiveFormat.wantsStarter
+            ? _slotStarters[i]
+            : null,
+        sides: _slotSides[i] ?? const [],
+        dessert: slotConstraint.effectiveFormat.wantsDessert
+            ? _slotDesserts[i]
+            : null,
+      ),
+      recipe.titre,
+    );
     return PlannedMeal(
       id: _slotSavedMealIds[i] ?? '',
       uid: uid,
@@ -1051,20 +1083,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       justification: _slotJustifications[i],
       choiceSource: _slotSources[i],
       relaxedCriteria: _slotRelaxed[i] ?? const [],
-      // Ce qui accompagne le plat suit le repas, dans l'ordre du repas :
-      // l'entrée et le dessert seulement si le format du créneau en
-      // demande, les accompagnements — garnitures figées, recettes, textes
-      // libres — toujours, tous. Un repas déjà enregistré garde ce que
-      // l'écran ne montre pas : deuxième entrée, fromage, sorbet.
-      components: mergeSlotComponents(
-        saved?.components ?? const [],
-        starter: slotConstraint.effectiveFormat.wantsStarter
-            ? _slotStarters[i]
-            : null,
-        sides: _slotSides[i] ?? const [],
-        dessert: slotConstraint.effectiveFormat.wantsDessert
-            ? _slotDesserts[i]
-            : null,
+      components: components,
+      // Plat ou menu, écrit à la validation.
+      mealKind: effectiveMealKind(
+        components,
+        stored: composed?.kind ?? saved?.mealKind,
       ),
       // Un repas déjà au planning garde sa date de création.
       createdAt: saved?.createdAt ?? DateTime.now(),
@@ -1364,6 +1387,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotRelaxed = _shiftAfterInsert(_slotRelaxed, gapIdx);
         _slotStarters = _shiftAfterInsert(_slotStarters, gapIdx);
         _slotDesserts = _shiftAfterInsert(_slotDesserts, gapIdx);
+        _slotComposed = _shiftAfterInsert(_slotComposed, gapIdx);
         final manual = _shiftAfterInsert({
           for (final i in _slotSideManual) i: true,
         }, gapIdx).keys.toSet();
@@ -1478,6 +1502,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _slotRelaxed = _shiftAfterRemove(_slotRelaxed, index);
       _slotStarters = _shiftAfterRemove(_slotStarters, index);
       _slotDesserts = _shiftAfterRemove(_slotDesserts, index);
+      _slotComposed = _shiftAfterRemove(_slotComposed, index);
       final manual = _shiftAfterRemove({
         for (final i in _slotSideManual) i: true,
       }, index).keys.toSet();
@@ -2228,6 +2253,102 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
   });
 
+  /// La composition que le créneau [index] enregistrerait, ou `null` s'il
+  /// est vide.
+  MealComposition? _slotComposition(int index) {
+    final meal = _plannedMealForSlot(
+      index,
+      uid: ref.read(planningRepositoryProvider)?.uid ?? '',
+    );
+    return meal == null ? null : MealComposition.ofMeal(meal);
+  }
+
+  /// Les services d'un menu que la carte ne montre pas déjà : tout sauf le
+  /// plat principal, la première entrée et le premier dessert quand le
+  /// format du créneau les montre.
+  List<MealCourse> _extraCourses(int index) {
+    final composition = _slotComposition(index);
+    if (composition == null || !composition.isMenu) return const [];
+    final format =
+        (_slotConstraints[index] ?? const DayConstraint()).effectiveFormat;
+    var starterShown = !format.wantsStarter || _slotStarters[index] == null;
+    var dessertShown = !format.wantsDessert || _slotDesserts[index] == null;
+    final out = <MealCourse>[];
+    for (final c in composition.courses) {
+      if (c.isMain) continue;
+      if (!starterShown && c.role == MealComponentRole.entree) {
+        starterShown = true;
+        continue;
+      }
+      if (!dessertShown && c.role == MealComponentRole.dessert) {
+        dessertShown = true;
+        continue;
+      }
+      out.add(c);
+    }
+    return out;
+  }
+
+  /// « Composer le menu » sur un créneau : l'éditeur partagé, en mémoire.
+  /// Le plat ne change pas ici (« Changer de recette » le fait) ; rien n'est
+  /// écrit avant « Valider ».
+  Future<void> _composeSlot(int index) async {
+    final recipe = _slots[index];
+    final composition = _slotComposition(index);
+    if (recipe == null || composition == null) return;
+    await showMealComposer(
+      context,
+      load: () async => MealComposerData(
+        main: recipe.id.isEmpty ? null : recipe,
+        recipes: _allRecipes,
+      ),
+      initial: composition,
+      initialKind: MealKind.menu,
+      mealDate: _slotDates[index],
+      fallbackTitle: recipe.titre,
+      canChangeRecipe: false,
+      successMessage: null,
+      onSave: (result) async {
+        if (mounted) {
+          setState(() => _adoptSlotComposition(index, result.composition));
+        }
+      },
+    );
+  }
+
+  /// Pose sur le créneau [index] la composition rendue par l'éditeur : ses
+  /// accompagnements, sa première entrée et son premier dessert là où la
+  /// carte les montre, et le format qui les fait apparaître.
+  void _adoptSlotComposition(int index, MealComposition composition) {
+    _slotComposed[index] = composition;
+    _slotSides[index] = composition.mainSides;
+    _slotSideManual.add(index);
+    MealComponent? first(MealComponentRole role) {
+      if (!composition.isMenu) return null;
+      for (final c in composition.courses) {
+        if (c.role == role) return c.component;
+      }
+      return null;
+    }
+
+    final starter = first(MealComponentRole.entree);
+    final dessert = first(MealComponentRole.dessert);
+    _slotStarters[index] = starter;
+    _slotDesserts[index] = dessert;
+    final current = _slotConstraints[index] ?? const DayConstraint();
+    final format = mealFormatForComposition(
+      composition,
+      current: current.effectiveFormat,
+    );
+    final next = format == MealFormat.defaultFormat
+        ? current.copyWith(clearMealFormat: true)
+        : current.copyWith(mealFormat: format);
+    if (next.effectiveFormat != current.effectiveFormat) {
+      _slotRankings.remove(index);
+    }
+    _slotConstraints[index] = next;
+  }
+
   void _showError(String msg) {
     if (!mounted) return;
     context.showErrorSnackBar(msg);
@@ -2890,6 +3011,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           _slotRelaxed.remove(index);
           _slotStarters.remove(index);
           _slotDesserts.remove(index);
+          _slotComposed.remove(index);
           _slotJustifications.remove(index);
           _slotPrepDates.remove(index);
           _slotWasResized.remove(index);
@@ -2946,6 +3068,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       noDessertCandidate: _noRecipeWithRole('dessert'),
       starter: _slotStarters[index],
       dessert: _slotDesserts[index],
+      extraCourses: _extraCourses(index),
+      onCompose: _slots[index] != null ? () => _composeSlot(index) : null,
       onChangeStarter: _slots[index] != null
           ? () => _changeCourse(index, MealComponentRole.entree)
           : null,

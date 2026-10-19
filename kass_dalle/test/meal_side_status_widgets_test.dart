@@ -622,15 +622,15 @@ void main() {
   });
 
   group('Composer le repas', () {
-    Future<List<MealComposition>> pumpComposer(
+    Future<List<MealComposerResult>> pumpComposer(
       WidgetTester tester, {
       List<MealComponent> sides = const [],
       Future<MealComposerData> Function()? load,
-      Future<void> Function(MealComposition)? onSave,
+      Future<void> Function(MealComposerResult)? onSave,
       AsyncValue<List<UserStaple>>? staples,
       ErrorReportService? reporter,
     }) async {
-      final saved = <MealComposition>[];
+      final saved = <MealComposerResult>[];
       await tester.binding.setSurfaceSize(const Size(500, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'meal_choice_source.dart';
 import 'meal_component.dart';
+import 'meal_kind.dart';
 import 'relaxed_criteria.dart';
 
 /// Repas planifié, stocké dans Firestore sous `planned_meals/{id}`.
@@ -61,14 +62,20 @@ class PlannedMeal {
   /// ne dit rien du samedi suivant.
   final List<String> dismissedRecipeIds;
 
-  /// Ce qui accompagne le plat : une garniture ou une recette
-  /// d'accompagnement, plus tard une entrée ou un dessert.
+  /// Ce qui accompagne le plat — garnitures, recettes d'accompagnement,
+  /// textes libres —, et pour un menu la suite ordonnée de ses services,
+  /// accompagnements compris (voir `MealComposition`).
   ///
-  /// Le plat lui-même n'y figure pas : il reste dans [recipeId], et les
-  /// écrans qui ne connaissent pas les composants continuent de le voir.
-  /// Choisis par le programme depuis ce que le plat n'apporte pas — jamais
-  /// par le modèle au moment du planning.
+  /// Le plat lui-même reste dans [recipeId], et les écrans qui ne
+  /// connaissent pas les composants continuent de le voir. Dans un menu, sa
+  /// place est marquée par un composant `{role: plat, id: 'main'}` sans
+  /// recette. Les accompagnements sont choisis par le programme depuis ce que
+  /// le plat n'apporte pas — jamais par le modèle au moment du planning.
   final List<MealComponent> components;
+
+  /// Plat ou menu (`meal_kind`, v0.24.14). `null` sur un repas antérieur :
+  /// la nature se déduit alors des composants ([kind]).
+  final MealKind? mealKind;
 
   /// Qui a choisi la recette : l'IA, les règles de Kass'Dalle, une
   /// conception IA, ou l'utilisateur. `null` sur un repas antérieur à ce
@@ -84,8 +91,9 @@ class PlannedMeal {
 
   final DateTime createdAt;
 
-  /// Champs lus en base que cette version ne connaît pas (`meal_kind`
-  /// d'une version plus récente, par exemple). Nouveau planning réécrit le
+  /// Champs lus en base que cette version ne connaît pas. Une valeur de
+  /// `meal_kind` inconnue y reste aussi, réécrite telle quelle. Nouveau
+  /// planning réécrit le
   /// document entier : sans eux, un téléphone pas encore à jour effacerait
   /// ce qu'une version récente a posé.
   final Map<String, dynamic> extra;
@@ -106,6 +114,7 @@ class PlannedMeal {
     this.justification,
     this.dismissedRecipeIds = const [],
     this.components = const [],
+    this.mealKind,
     this.choiceSource,
     this.relaxedCriteria = const [],
     required this.createdAt,
@@ -127,6 +136,7 @@ class PlannedMeal {
     'justification',
     'dismissed_recipe_ids',
     'components',
+    'meal_kind',
     'choice_source',
     'relaxed_criteria',
     'created_at',
@@ -134,6 +144,10 @@ class PlannedMeal {
 
   /// Un repas du planning d'un groupe, et non du planning personnel.
   bool get isGroupMeal => groupId != null;
+
+  /// Plat ou menu : [mealKind], ou déduit des composants
+  /// ([effectiveMealKind]).
+  MealKind get kind => effectiveMealKind(components, stored: mealKind);
 
   /// Nombre de parts qui compte pour les garnitures : celles visées, sinon
   /// celles de la recette.
@@ -159,12 +173,15 @@ class PlannedMeal {
         data['dismissed_recipe_ids'] as List? ?? const [],
       ),
       components: MealComponent.listFromFirestore(data['components']),
+      mealKind: MealKind.fromKey(data['meal_kind']),
       choiceSource: MealChoiceSource.fromValue(data['choice_source']),
       relaxedCriteria: relaxedKeysFrom(data['relaxed_criteria']),
       createdAt: (data['created_at'] as Timestamp).toDate(),
       extra: {
         for (final e in data.entries)
-          if (!_knownKeys.contains(e.key)) e.key: e.value,
+          if (!_knownKeys.contains(e.key) ||
+              (e.key == 'meal_kind' && MealKind.fromKey(e.value) == null))
+            e.key: e.value,
       },
     );
   }
@@ -197,6 +214,7 @@ class PlannedMeal {
       'dismissed_recipe_ids': dismissedRecipeIds,
     if (components.isNotEmpty)
       'components': [for (final c in components) c.toMap()],
+    if (mealKind != null) 'meal_kind': mealKind!.key,
     if (choiceSource != null) 'choice_source': choiceSource!.value,
     if (relaxedCriteria.isNotEmpty) 'relaxed_criteria': relaxedCriteria,
     'created_at': Timestamp.fromDate(createdAt),

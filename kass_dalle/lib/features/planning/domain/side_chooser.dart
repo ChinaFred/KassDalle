@@ -72,9 +72,14 @@ class SideCandidate {
     };
   }
 
-  MealComponent toComponent({String? justification}) => staple != null
-      ? MealComponent.staple(staple!, justification: justification)
-      : MealComponent.recipe(recipe!, justification: justification);
+  /// Le composant à poser, accompagnement par défaut, ou service d'un menu
+  /// ([role]).
+  MealComponent toComponent({
+    String? justification,
+    MealComponentRole role = MealComponentRole.accompagnement,
+  }) => staple != null
+      ? MealComponent.staple(staple!, role: role, justification: justification)
+      : MealComponent.recipe(recipe!, role: role, justification: justification);
 }
 
 /// Les candidats depuis ce que l'utilisateur voit : ses garnitures non
@@ -89,6 +94,64 @@ List<SideCandidate> sideCandidatesFrom({
     if (r.id.isNotEmpty && r.tags.mealRole == 'accompagnement')
       SideCandidate.recipe(r),
 ];
+
+/// Les candidats d'un service de menu, par type :
+///
+/// - entrée : recettes de rôle entrée, garnitures « Salade et crudités » ;
+/// - sorbet : recettes de rôle dessert, garnitures « Fruit » ;
+/// - fromage : garnitures « Fromage » ;
+/// - dessert : recettes de rôle dessert, garnitures « Fruit » et « Laitage » ;
+/// - autre : toutes les garnitures et toutes les recettes ;
+/// - accompagnement : [sideCandidatesFrom].
+///
+/// Un plat se choisit dans la feuille des recettes, pas ici : rien pour
+/// [MealComponentRole.plat]. Les garnitures masquées ne sont jamais
+/// proposées.
+List<SideCandidate> courseCandidatesFor(
+  MealComponentRole role, {
+  required Iterable<UserStaple> staples,
+  required Iterable<Recipe> recipes,
+}) {
+  if (role == MealComponentRole.accompagnement) {
+    return sideCandidatesFrom(staples: staples, recipes: recipes);
+  }
+  final (
+    Set<String> recipeRoles,
+    Set<StapleCategory>? categories,
+  ) = switch (role) {
+    MealComponentRole.entree => (
+      const {'entree'},
+      const {StapleCategory.salade},
+    ),
+    MealComponentRole.sorbet => (
+      const {'dessert'},
+      const {StapleCategory.fruit},
+    ),
+    MealComponentRole.fromage => (
+      const <String>{},
+      const {StapleCategory.fromage},
+    ),
+    MealComponentRole.dessert => (
+      const {'dessert'},
+      const {StapleCategory.fruit, StapleCategory.laitage},
+    ),
+    MealComponentRole.autre => (const <String>{}, null),
+    MealComponentRole.plat ||
+    MealComponentRole.accompagnement => (const <String>{}, const {}),
+  };
+  if (role == MealComponentRole.plat) return const [];
+  final anyRecipe = role == MealComponentRole.autre;
+  return [
+    for (final u in staples)
+      if (!u.hidden &&
+          (categories == null || categories.contains(u.staple.category)))
+        SideCandidate.staple(u.staple),
+    for (final r in recipes)
+      if (r.id.isNotEmpty &&
+          (anyRecipe || recipeRoles.contains(r.tags.mealRole)))
+        SideCandidate.recipe(r),
+  ];
+}
 
 /// Clé de comparaison d'un nom de garniture : minuscules, sans accent, au
 /// singulier mot à mot. « Haricots verts » et « haricot vert » se valent.

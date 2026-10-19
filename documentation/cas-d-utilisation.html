@@ -304,6 +304,7 @@ flowchart LR
     a20(["Choisir les accompagnements, l'entrée et le dessert d'un créneau"])
     a44(["Composer le repas&lt;br/&gt;plat et accompagnements, sans IA"])
     a45(["Compléter un plat&lt;br/&gt;« Il manque : légume »"])
+    a46(["Composer un menu&lt;br/&gt;services ordonnés, plat ↔ menu"])
     a21(["Reprendre une semaine passée"])
     a22(["Replanifier un repas à une autre date"])
     a23(["Exporter vers Google Calendar"])
@@ -404,6 +405,9 @@ flowchart LR
   a9 --- a45
   a45 -.->|"appui sur la ligne"| a44
   a9 -.->|"« Changer » sur la ligne Accompagnement"| a44
+  a9 --- a46
+  a44 -.->|"bascule « Menu »"| a46
+  a12 -.->|"« Composer le menu » d'un créneau"| a46
   a12 --- a21
   a12 --- a23
   a9 --- a27
@@ -552,7 +556,17 @@ flowchart LR
         feuille de choix s'ouvre filtrée sur le légume. Un repas d'autrui ou un repas passé ne
         porte ni l'une ni l'autre. <b>Planifier un repas</b> depuis la fiche d'un plat montre,
         sous l'heure, une ligne « Accompagnement » remplie par le programme ; « Changer »
-        ouvre « Composer le repas » sans changer la recette. <b>Le texte d'origine d'une recette traduite</b> se lit sans appel d'IA
+        ouvre « Composer le repas » sans changer la recette.
+        <b>Composer un menu</b> : le même éditeur bascule de « Plat » à « Menu » ; le plat
+        devient le service « Plat », un modèle « Entrée, plat, dessert » s'applique d'office,
+        et l'on ajoute, déplace, retype ou retire des services — dix au plus, entrée, plat,
+        sorbet, fromage, dessert ou « Autre… » nommé —, plusieurs plats compris, chacun avec
+        ses accompagnements. Un service vide reste « à choisir » : le programme ne remplit ni
+        le fromage ni le sorbet. Sur la tuile, « Menu · N services » puis une ligne par
+        service ; « Repasser en plat » demande confirmation quand un service est rempli, et
+        « Annuler » rend le menu. Dans Nouveau planning, « Composer le menu » sur un créneau
+        travaille en mémoire jusqu'à « Valider ». Un lecteur et le repas d'autrui restent en
+        lecture seule. <b>Le texte d'origine d'une recette traduite</b> se lit sans appel d'IA
         non plus : il a été enregistré à l'import, et tout lecteur de la recette l'ouvre depuis
         la mention « Traduit de l'… ».
         <b>Consulter les allergènes n'appelle aucun modèle</b> : la fiche lit la liste que le
