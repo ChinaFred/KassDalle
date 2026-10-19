@@ -53,6 +53,7 @@ import { logError, logInfo } from "../logging";
 import { FOUNDER_EMAIL, isFounderEmail } from "../triggers/founderRole";
 import {
   ADDRESS_REJECTED_PREFIX,
+  GROUP_CHANGED_MESSAGE,
   INVITATION_DAILY_LIMIT,
   accountDecision,
   buildInvitationEmail,
@@ -66,6 +67,7 @@ import {
   normalizeEmailKey,
   invitationTargetOf,
   readableSendError,
+  resendGroupOwnerDecision,
   resendRefusal,
   type ExistingAccount,
   type InvitationTarget,
@@ -139,7 +141,7 @@ async function groupOfInviter(
   uid: string,
   groupId: string,
   field: Refusal["field"],
-): Promise<{ name: string } | Refusal> {
+): Promise<{ name: string; ownerId: string } | Refusal> {
   if (groupId.length === 0 || groupId.includes("/")) {
     return refused("group_required", "Choisissez un groupe.", field);
   }
@@ -153,8 +155,14 @@ async function groupOfInviter(
   if (!isMember) {
     return refused("group_not_member", "Vous n'appartenez pas à ce groupe.", field);
   }
+  // Un groupe sans propriétaire lisible ne peut pas recevoir d'invitation :
+  // `group_owner_id` est ce que la règle Firestore compare pour en ouvrir la
+  // lecture à un non-administrateur.
+  if (typeof ownerId !== "string" || ownerId.length === 0) {
+    return refused("group_missing", "Ce groupe n'existe plus.", field);
+  }
   const name = groupSnap.get("name");
-  return { name: typeof name === "string" ? name : "" };
+  return { name: typeof name === "string" ? name : "", ownerId };
 }
 
 /** Nom et adresse de l'administrateur qui envoie. */
@@ -324,6 +332,7 @@ async function createInvitation(
   const group = await groupOfInviter(ctx.userId, groupId, "group");
   if ("status" in group) return group;
   const groupName = group.name;
+  const groupOwnerId = group.ownerId;
 
   const existing = await existingAccountFor(key);
   const decision = accountDecision(existing?.account ?? null);
@@ -374,6 +383,12 @@ async function createInvitation(
       email_key: key,
       role,
       group_id: groupId,
+      // Propriétaire du groupe à la création : `owner_id` est figé par les
+      // règles, la valeur reste juste tant que le groupe vit. La règle de
+      // lecture compare ce champ, et non le groupe courant : un groupe
+      // supprimé puis recréé sous le même identifiant par un autre compte ne
+      // lui ouvre pas les invitations restées en base (ticket #152).
+      group_owner_id: groupOwnerId,
       group_name: groupName,
       message,
       invited_by: ctx.userId,
@@ -442,6 +457,11 @@ async function resendInvitation(
   const groupId = typeof current.group_id === "string" ? current.group_id.trim() : "";
   const group = await groupOfInviter(ctx.userId, groupId, null);
   if ("status" in group) return group;
+  // Un groupe recréé sous le même identifiant par un autre compte n'est plus
+  // celui de l'invitation : le renvoi ne la fait pas changer de groupe.
+  if (resendGroupOwnerDecision(current, group.ownerId) === "refuse") {
+    return refused("group_changed", GROUP_CHANGED_MESSAGE, null);
+  }
 
   // Un compte a pu naître entre-temps sous une autre adresse Google, ou sous
   // celle-ci avant que l'invitation n'ait été lue ; un compte révoqué a pu
@@ -481,6 +501,10 @@ async function resendInvitation(
         invitationId: other.id,
       });
     }
+    const ownerDecision = resendGroupOwnerDecision(data, group.ownerId);
+    if (ownerDecision === "refuse") {
+      return refused("group_changed", GROUP_CHANGED_MESSAGE, null);
+    }
     const used = readCount((await tx.get(counter)).data());
     if (used >= INVITATION_DAILY_LIMIT) {
       return refused("daily_limit", DAILY_LIMIT_MESSAGE, null);
@@ -499,6 +523,10 @@ async function resendInvitation(
       expires_at: Timestamp.fromDate(expiresAt),
       send_count: FieldValue.increment(1),
       group_name: group.name,
+      // Le renvoi pose le propriétaire sur une invitation antérieure au champ
+      // (le groupe vient d'être relu, l'appelant en est membre) ; un champ
+      // déjà posé n'est jamais réécrit.
+      ...(ownerDecision === "write" ? { group_owner_id: group.ownerId } : {}),
     });
     return null;
   });

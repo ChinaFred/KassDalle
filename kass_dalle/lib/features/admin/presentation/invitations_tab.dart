@@ -108,10 +108,13 @@ String invitationSubtitle(
       final by = acceptedByName == null ? '' : 'par $acceptedByName';
       final when = at == null ? '' : 'le ${formatDayMonth(at)}';
       final detail = [by, when].where((s) => s.isNotEmpty).join(', ');
-      // `group_invite: missing` sans groupe supprimé : l'invitant avait
+      // `group_missing` : groupe supprimé, recréé par un autre compte, ou
+      // invitation sans `group_owner_id` (`invitationGroupOf`).
+      // `group_invite: missing` sans `group_missing` : l'invitant avait
       // quitté le groupe au retour du compte, rien n'a été écrit.
       final missing = invitation.groupMissing
-          ? ' · groupe supprimé'
+          ? ' · groupe non rejoint (supprimé ou changé) : '
+                'invitez-le depuis Groupes familiaux'
           : invitation.groupInvite == 'missing'
           ? ' · pas invité au groupe (l\'invitant n\'en fait plus partie) : '
                 'invitez-le depuis Groupes familiaux'

@@ -118,7 +118,7 @@ void main() {
       expect(isAppImageUrl(emulator, allowEmulator: true), isTrue);
       expect(
         isAppImageUrl(
-          'http://10.0.2.2:9199/v0/b/$bucket/o/a.jpg',
+          'http://10.0.2.2:9199/v0/b/$bucket/o/recipes%2Fa.jpg',
           allowEmulator: true,
         ),
         isTrue,
@@ -131,6 +131,144 @@ void main() {
           allowEmulator: true,
         ),
         isFalse,
+      );
+    });
+
+    test('accepte chacun des dossiers publiés, sous les deux formes', () {
+      for (final prefix in kPublishedImagePrefixes) {
+        final encoded = Uri.encodeComponent('${prefix}u1/photo.jpg');
+        expect(
+          isAppImageUrl(
+            'https://firebasestorage.googleapis.com/v0/b/$bucket/o/$encoded'
+            '?alt=media&token=t',
+            allowEmulator: false,
+          ),
+          isTrue,
+          reason: prefix,
+        );
+        expect(
+          isAppImageUrl(
+            'https://storage.googleapis.com/$bucket/${prefix}u1/photo.jpg',
+            allowEmulator: false,
+          ),
+          isTrue,
+          reason: prefix,
+        );
+      }
+      expect(kPublishedImagePrefixes, [
+        'covers/',
+        'scans/',
+        'illustrations/',
+        'recipes/',
+        'users/',
+      ]);
+    });
+
+    test('refuse une image non modérée du bon bucket (ticket #154)', () {
+      for (final path in [
+        'quarantine/u1/photo.jpg',
+        'quarantine/u1/livres/livre.pdf',
+        'rejected/u1/photo.jpg',
+        'tickets/u1/t1/screenshot.png',
+        'photo.jpg',
+        'autre/u1/photo.jpg',
+        // Préfixe nu, ou un dossier qui n'en a que le début.
+        'recipes/',
+        'recipesx/a.jpg',
+        'Recipes/a.jpg',
+      ]) {
+        final encoded = Uri.encodeComponent(path);
+        expect(
+          isAppImageUrl(
+            'https://firebasestorage.googleapis.com/v0/b/$bucket/o/$encoded'
+            '?alt=media&token=t',
+            allowEmulator: false,
+          ),
+          isFalse,
+          reason: path,
+        );
+        expect(
+          isAppImageUrl(
+            'https://storage.googleapis.com/$bucket/$path',
+            allowEmulator: false,
+          ),
+          isFalse,
+          reason: path,
+        );
+        expect(
+          isAppImageUrl(
+            'http://127.0.0.1:9199/v0/b/$bucket/o/$encoded',
+            allowEmulator: true,
+          ),
+          isFalse,
+          reason: path,
+        );
+      }
+    });
+
+    test('refuse un chemin encodé avec `..`, `.`, un segment vide ou vide', () {
+      for (final encoded in [
+        'recipes%2F..%2Fquarantine%2Fu1%2Fa.jpg',
+        'recipes%2F%2E%2E%2Fquarantine%2Fu1%2Fa.jpg',
+        'recipes%2F.%2Fa.jpg',
+        'recipes%2F%2Fa.jpg',
+        'recipes%2Fa%2F',
+        'recipes%2Fa%5Cb.jpg',
+        'recipes%2Fa%00.jpg',
+        '%2Frecipes%2Fa.jpg',
+        '..',
+      ]) {
+        expect(
+          isAppImageUrl(
+            'https://firebasestorage.googleapis.com/v0/b/$bucket/o/$encoded',
+            allowEmulator: false,
+          ),
+          isFalse,
+          reason: encoded,
+        );
+      }
+      for (final path in [
+        'recipes/a%2F..%2F..%2Fquarantine%2Fu1%2Fa.jpg',
+        'recipes//a.jpg',
+        'recipes/a/',
+        'recipes/.%2Fa.jpg',
+      ]) {
+        expect(
+          isAppImageUrl(
+            'https://storage.googleapis.com/$bucket/$path',
+            allowEmulator: false,
+          ),
+          isFalse,
+          reason: path,
+        );
+      }
+    });
+
+    test('refuse un encodage illisible sans lever d\'exception', () {
+      for (final encoded in [
+        'recipes%2F%E0%A4%A',
+        'recipes%2F%C3',
+        'recipes%2F%FF.jpg',
+      ]) {
+        expect(
+          isAppImageUrl(
+            'https://firebasestorage.googleapis.com/v0/b/$bucket/o/$encoded',
+            allowEmulator: false,
+          ),
+          isFalse,
+          reason: encoded,
+        );
+      }
+    });
+
+    test('accepte un nom de fichier encodé hors ASCII', () {
+      final encoded = Uri.encodeComponent('recipes/r1/crème brûlée.jpg');
+      expect(
+        isAppImageUrl(
+          'https://firebasestorage.googleapis.com/v0/b/$bucket/o/$encoded',
+          allowEmulator: false,
+        ),
+        isTrue,
       );
     });
 
@@ -153,7 +291,7 @@ void main() {
       );
       expect(
         isAppImageUrl(
-          'https://storage.googleapis.com/kassdale-6d948.appspot.com/a.png',
+          'https://storage.googleapis.com/kassdale-6d948.appspot.com/covers/u/a.png',
           allowEmulator: false,
         ),
         isTrue,

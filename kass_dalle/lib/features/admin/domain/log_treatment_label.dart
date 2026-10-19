@@ -48,6 +48,8 @@ const Map<String, String> kLogTreatmentLabels = {
   'ticket_analyses_backfill': 'Reprise des analyses des tickets',
   'ticket_delivered_pr_backfill': 'Reprise des PR des tickets livrés',
   'recipe_title_keys_backfill': 'Reprise des clés de titre des recettes',
+  'invitation_group_owner_backfill':
+      'Reprise du propriétaire du groupe des invitations',
   'portee_groupes': 'Portée des groupes après écriture d\'un groupe',
   'portee_plannings':
       'Portée des plannings après un changement de groupes ou de rôle',

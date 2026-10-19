@@ -163,9 +163,11 @@ final visibleUserIdsProvider = Provider<AsyncValue<List<String>>>((ref) {
 /// L'appelant ne l'observe que si l'utilisateur possède le groupe.
 final groupEmailInvitationsProvider = StreamProvider.autoDispose
     .family<List<EmailInvitation>, String>((ref, groupId) {
+      final uid = ref.watch(appUserProvider).value?.uid;
+      if (uid == null) return Stream.value(const []);
       return ref
           .watch(invitationsRepositoryProvider)
-          .watchGroupInvitations(groupId);
+          .watchGroupInvitations(groupId: groupId, ownerUid: uid);
     });
 
 /// Les invitations par e-mail encore en attente (envoyée, ou envoi échoué

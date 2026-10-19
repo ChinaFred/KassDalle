@@ -30,9 +30,11 @@ const ERROR_MESSAGE_MAX_LENGTH = 120;
 /**
  * Nature de l'élément : le client ouvre un ingrédient ou une unité dans son
  * référentiel, une recette dans sa fiche, un ticket dans Admin › Tickets. Une
- * nature qu'il ne connaît pas s'affiche sans lien.
+ * invitation par e-mail s'affiche sans lien, comme une nature qu'il ne
+ * connaît pas.
  */
-export type BackfillReviewKind = "ingredient" | "unit" | "recipe" | "account" | "meal" | "ticket";
+export type BackfillReviewKind =
+  "ingredient" | "unit" | "recipe" | "account" | "meal" | "ticket" | "invitation";
 
 export interface BackfillReviewItem {
   kind: BackfillReviewKind;

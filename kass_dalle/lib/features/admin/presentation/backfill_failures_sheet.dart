@@ -35,6 +35,7 @@ const _kindOrder = [
   BackfillFailureKind.account,
   BackfillFailureKind.meal,
   BackfillFailureKind.ticket,
+  BackfillFailureKind.invitation,
 ];
 
 String _groupLabel(String kind, int count) => switch (kind) {
@@ -44,6 +45,7 @@ String _groupLabel(String kind, int count) => switch (kind) {
   BackfillFailureKind.account => 'Comptes ($count)',
   BackfillFailureKind.meal => 'Repas planifiés ($count)',
   BackfillFailureKind.ticket => 'Tickets ($count)',
+  BackfillFailureKind.invitation => 'Invitations ($count)',
   _ => 'Autres ($count)',
 };
 
