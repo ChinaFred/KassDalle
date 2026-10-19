@@ -250,6 +250,10 @@ Règles de construction :
 - **Une description qui contient « : » se met entre guillemets doubles.** Un deux-points
   suivi d'une espace, fréquent en français (« Lecture seule : il… »), rend l'en-tête YAML
   invalide. Claude Code ne charge alors pas l'agent, et n'affiche aucun message d'erreur.
+  `.github/scripts/check-agents.mjs` le vérifie : dans la CI (job Functions), où il
+  échoue, et au démarrage de chaque session (`session-start.sh`), où il avertit sans
+  bloquer. `CLAUDE.md` demande à la session de signaler un agent absent et de s'arrêter,
+  sans le remplacer par un autre ni sauter la relecture (v0.24.12).
 - **L'agent lit `CLAUDE.md`** et ne recopie pas ses règles. Il peut en lister les contrôles,
   avec un renvoi à la section.
 - **Le livrable a un format fixe** : une ligne par anomalie, `[règle] fichier:ligne — ce qui est
@@ -375,8 +379,10 @@ dans `.claude/settings.json`, partagé par le poste et les sessions cloud.
 
 ### 7.1 `session-start.sh` — préparer une session cloud
 
-Il ne fait rien sur le poste (`CLAUDE_CODE_REMOTE` n'y vaut pas `true`). Dans une session
-cloud, il installe la chaîne d'outils à la **même version que la CI**, puis les dépendances,
+Sur le poste (`CLAUDE_CODE_REMOTE` n'y vaut pas `true`), il ne fait qu'une chose : lancer
+`check-agents.mjs --warn`, qui écrit sur stdout un avertissement « ATTENTION — … » pour chaque
+agent ou skill que Claude Code ne pourra pas charger. Le hook n'échoue jamais pour autant ; la
+session lit cette sortie et la signale. Dans une session cloud, il installe la chaîne d'outils à la **même version que la CI**, puis les dépendances,
 pour que les agents puissent rejouer les contrôles. Une variable exportée pour la suite de la
 session s'écrit dans `$CLAUDE_ENV_FILE`.
 
@@ -385,13 +391,14 @@ Structure à reprendre :
 ```bash
 #!/bin/bash
 set -euo pipefail
-[ "${CLAUDE_CODE_REMOTE:-}" != "true" ] && exit 0
+[ "${CLAUDE_CODE_REMOTE:-}" != "true" ] && { check_agents; exit 0; }
 
 TOOL_VERSION="<même version que ci.yml>"
 # 1. installer l'outil s'il manque ou n'a pas la bonne version
 # 2. echo "export PATH=\"<chemin>/bin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
 # 3. installer les dépendances (npm ci, pas npm install : le lockfile reste intact)
 # 4. avertir sans échouer pour un outil facultatif (Java des émulateurs)
+# 5. vérifier les en-têtes des agents et skills (check-agents.mjs --warn), aussi sur le poste
 ```
 
 Le fichier doit être exécutable (`git update-index --chmod=+x`) et en fins de ligne LF
@@ -467,6 +474,7 @@ Les agents travaillent en parallèle quand leurs tâches sont indépendantes : `
 | `.github/workflows/deploy.yml` | déploiement après une CI verte sur `master` |
 | `.github/scripts/check-version.sh` | refuse un numéro de version déjà pris ou sans entrée au CHANGELOG |
 | `.github/scripts/changelog-recent.mjs` | extrait les six dernières versions « fonctionnel » du CHANGELOG vers l'asset de l'écran « Nouveautés » ; son test tourne dans le job Application |
+| `.github/scripts/check-agents.mjs` | vérifie que chaque agent et skill de `.claude/` a un en-tête YAML lisible, `name` et `description`, et que chaque nom cité dans `CLAUDE.md` existe ; il tourne avec son test dans le job Fonctions serveur, et en `--warn` dans `session-start.sh` |
 | `.github/scripts/firebase-deploy.sh` | déploiement vérifié et relance ciblée (section 11) |
 | `.gitattributes` | `*.sh text eol=lf` |
 | `.gitignore` | `build/`, `Release/`, `.dart_tool/`, `node_modules/` |
@@ -478,7 +486,7 @@ Les agents travaillent en parallèle quand leurs tâches sont indépendantes : `
 | Version | `check-version.sh` contre la `master` du moment (PR) ou celle d'avant le push |
 | Déjà testé en PR | sur un push de fusion : saute les jobs lourds si l'arbre est celui d'une tête de PR à jour de `master` et verte |
 | Application | dépendances, analyse statique stricte, formatage vérifié, lockfile à jour, test et génération de l'asset des nouveautés, tests, build |
-| Fonctions serveur | `npm ci`, lint, `format:check`, build, tests |
+| Fonctions serveur | `npm ci`, `check-agents.mjs` et son test, lint, `format:check`, build, tests |
 | Règles d'accès | tests des règles contre les émulateurs |
 | Android | quand le diff touche `pubspec.yaml`, `pubspec.lock` ou `android/` : APK release compilé avec une clé jetable |
 

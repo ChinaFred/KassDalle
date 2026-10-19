@@ -491,6 +491,17 @@ Six agents spécialisés vivent dans `.claude/agents/` :
 C'est la session principale qui déploie. Les agents ne lancent jamais `deploy.ps1` et ne
 poussent ni ne fusionnent jamais sur `master`.
 
+**Un agent absent se signale, il ne se remplace pas.** Claude Code écarte sans message un
+agent ou un skill dont l'en-tête YAML est invalide : `ux-designer` et `securite` ont manqué
+à toutes les sessions du 14 au 19 octobre 2026 (v0.24.10). Quand la « Chaîne de travail »
+demande un agent qui n'est pas dans la liste de la session, ou que `session-start.sh`
+affiche « ATTENTION — … agent(s) ou skill(s) absent(s) », la session le dit à
+l'utilisateur et s'arrête avant l'étape concernée. Elle ne lance pas un autre agent à sa
+place, ne fait pas la relecture elle-même et ne la saute pas. Causes habituelles : en-tête
+YAML invalide, copie locale en retard sur `origin/master` (`git pull`, puis nouvelle
+session), fichier renommé. `.github/scripts/check-agents.mjs` vérifie les en-têtes dans la
+CI et au démarrage de chaque session.
+
 Les procédures répétées vivent en **skills**, dans `.claude/skills/` : un skill se charge
 quand la tâche le demande, sans contexte séparé.
 
@@ -506,7 +517,9 @@ Deux hooks, déclarés dans `.claude/settings.json` :
 - `session-start.sh` : dans une session cloud, installe Flutter (même version que la CI),
   les dépendances Functions et celles de `kass_dalle/rules-tests/`, pour rejouer
   `flutter analyze`, `flutter test`, `npm run lint` et `npm test`. Les tests des règles
-  exigent en plus Java 21 : le hook avertit s'il manque ou s'il est plus ancien, sans échouer ;
+  exigent en plus Java 21 : le hook avertit s'il manque ou s'il est plus ancien, sans échouer.
+  Sur le poste comme dans le cloud, il lance `check-agents.mjs --warn` et avertit si un
+  agent ou un skill ne peut pas se charger ;
 - `format-on-edit.mjs` : après chaque écriture d'un fichier, lance `dart format` sur un
   `.dart` de `kass_dalle/`, ou Prettier sur un `.ts` de `functions/src/`. Un échec du
   formateur ne bloque pas l'édition ; la CI reste le contrôle qui fait foi.
@@ -572,7 +585,7 @@ déjà testée, seul le job Version tourne :
 | Version | `check-version.sh` : une version changée doit dépasser celle de `master` ; dans tous les cas, la version de la tête n'a qu'une origine dans l'historique et une entrée au `CHANGELOG.md` (au plus une « fonctionnel » et une « technique », ajoutées dans le même commit) |
 | Déjà testé en PR | sur un push seulement : saute Flutter, Functions, Règles et Android quand le commit a l'arbre d'une tête de PR à jour de `master` dont la CI est verte |
 | Flutter | `pub get`, `flutter analyze` (strict), `dart format` vérifié, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
-| Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run format:check` (Prettier), `npm run build` (tsc), `npm test` |
+| Functions | `npm ci`, `check-agents.mjs` (en-têtes YAML des agents et skills, noms cités dans ce fichier), `npm run lint` (ESLint 9 flat config), `npm run format:check` (Prettier), `npm run build` (tsc), `npm test` |
 | Règles — émulateur | `npm ci`, `npm test` dans `kass_dalle/rules-tests/` : `firestore.rules` et `storage.rules` rejouées rôle par rôle contre les émulateurs (projet `demo-kassdalle`, Java 21) |
 | Android — compilation | quand le diff touche `kass_dalle/pubspec.yaml`, `pubspec.lock` ou `android/` (toujours sur un lancement manuel) : `flutter build apk --release`, signé par une clé jetable générée dans le job |
 

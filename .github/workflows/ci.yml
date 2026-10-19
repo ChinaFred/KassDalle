@@ -285,6 +285,13 @@ jobs:
       - name: Dépendances
         run: npm ci
 
+        # Claude Code écarte sans message un agent ou un skill dont l'en-tête
+        # YAML est invalide (v0.24.10). js-yaml vient de ce dossier.
+      - name: Agents et skills chargeables
+        run: |
+          node --test ../../.github/scripts/check-agents.test.mjs
+          node ../../.github/scripts/check-agents.mjs
+
       - name: Lint
         run: npm run lint
 
