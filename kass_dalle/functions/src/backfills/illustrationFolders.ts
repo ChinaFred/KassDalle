@@ -105,9 +105,11 @@ function publicUrlPath(reference: string): { bucket: string; path: string } | nu
       path: decodeURIComponent(raw.substring(slash + 1)),
     };
   } catch (err) {
-    console.warn(
+    // `console.error` plutôt que `logError` : module pur, testable sans Cloud
+    // Logging. Le message seul : jamais la référence, qui porte un uid.
+    console.error(
       JSON.stringify({
-        severity: "WARNING",
+        severity: "ERROR",
         message: "illustrationFolders : URL publique mal encodée",
         errorDescription: err instanceof Error ? err.message : String(err),
       }),

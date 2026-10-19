@@ -135,11 +135,16 @@ describe("summarizeIllustrationFolders", () => {
 });
 
 describe("journal des refus", () => {
-  test("URL illisible et chemin mal encodé : rien de la référence dans console.warn", () => {
+  test("URL illisible et chemin mal encodé : rien de la référence dans console.warn ni console.error", () => {
     const warned: string[] = [];
-    const original = console.warn;
+    const errored: string[] = [];
+    const originalWarn = console.warn;
+    const originalError = console.error;
     console.warn = (...args: unknown[]) => {
       warned.push(args.map((a) => String(a)).join(" "));
+    };
+    console.error = (...args: unknown[]) => {
+      errored.push(args.map((a) => String(a)).join(" "));
     };
     try {
       const unreadable =
@@ -150,11 +155,15 @@ describe("journal des refus", () => {
       assert.equal(illustrationFolderIssue(badEncoding, opts), "hors du stockage de l'application");
       assert.equal(illustrationFolderIssue(badPublic, opts), "hors du stockage de l'application");
     } finally {
-      console.warn = original;
+      console.warn = originalWarn;
+      console.error = originalError;
     }
-    const all = warned.join("\n");
+    // L'URL publique mal encodée est tracée une fois, en erreur, message seul.
+    assert.equal(errored.length, 1);
+    assert.ok(errored[0].includes("URL publique mal encodée"));
+    const all = [...warned, ...errored].join("\n");
     for (const fragment of ["secret1", "secret2", "uid42", "token=", "scans"]) {
-      assert.ok(!all.includes(fragment), `console.warn contient « ${fragment} »`);
+      assert.ok(!all.includes(fragment), `la console contient « ${fragment} »`);
     }
   });
 });
