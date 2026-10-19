@@ -51,7 +51,7 @@ void main() {
   ) async {
     await _pump(tester, size: const Size(400, 4200), runs: runs);
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (7)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (8)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(
       find.text('Programmation : Tous les jours à 5 h'),
@@ -94,7 +94,7 @@ void main() {
       },
     );
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (7)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (8)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(find.text('Durées estimées'), findsNothing);
     expect(find.text('Protéine et féculent des plats'), findsNothing);

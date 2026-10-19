@@ -626,6 +626,16 @@ service cloud.firestore {
         return ['nutrition_catch_up_attempts', 'meal_role_failure_count', 'meal_role_attempt_at'];
       }
 
+      // Allergènes de la recette, déduits par le serveur seul des ingrédients
+      // du référentiel (`onRecipeWritten`, backfill « Allergènes ») ; leur date
+      // de calcul vit dans le champ (`allergens.computed_at`). Le client ne les
+      // pose pas à la création et ne les change ni ne les efface ensuite,
+      // administrateur compris : une liste inventée afficherait sur la fiche
+      // une absence d'allergène que personne n'a vérifiée.
+      function serverOnlyComputedFields() {
+        return ['allergens'];
+      }
+
       // Marque « doublon possible » d'un brouillon issu d'un livre entier :
       // posée par le serveur seul (`recipeProcessor`). Le client ne peut que
       // l'effacer, en validant — jamais la poser ni la changer, ce qui ferait
@@ -653,6 +663,7 @@ service cloud.firestore {
         && !('duplicate_of' in request.resource.data)
         && !request.resource.data.keys().hasAny(serverOnlySourceFields())
         && !request.resource.data.keys().hasAny(serverOnlyRetryFields())
+        && !request.resource.data.keys().hasAny(serverOnlyComputedFields())
         && bookCheck(true) && sourceUrlAccepted();
 
       // Mise à jour et suppression : le créateur ou un administrateur.
@@ -660,6 +671,7 @@ service cloud.firestore {
         && !changes('source_url') && !changes('source_site') && !changes('source_author')
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyRetryFields())
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyComputedFields())
         && !changes('estimated_times')
         && duplicateMarkKeptOrRemoved()
         && ((changes('book_id') && bookCheck(true))

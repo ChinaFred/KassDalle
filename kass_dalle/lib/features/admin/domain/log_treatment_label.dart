@@ -50,6 +50,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'recipe_title_keys_backfill': 'Reprise des clés de titre des recettes',
   'invitation_group_owner_backfill':
       'Reprise du propriétaire du groupe des invitations',
+  'illustration_folders_backfill': 'Contrôle des dossiers des illustrations',
   'portee_groupes': 'Portée des groupes après écriture d\'un groupe',
   'portee_plannings':
       'Portée des plannings après un changement de groupes ou de rôle',

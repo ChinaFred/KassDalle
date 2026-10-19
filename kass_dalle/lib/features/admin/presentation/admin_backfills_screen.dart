@@ -197,6 +197,12 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'modifiée : elle est listée dans « À revoir ». Une invitation déjà à jour n\'est '
             'pas réécrite ; on peut relancer.\n\n'
             'Aucun appel d\'IA. Deux mille invitations au plus par passage.';
+      case BackfillKeys.illustrationFolders:
+        return 'Contrôle chaque recette, sans rien y modifier : une illustration '
+            'ou une vignette rangée ailleurs que dans les dossiers des images '
+            'modérées (« illustrations » et « recipes ») place la recette dans '
+            '« À revoir », avec le dossier trouvé. On peut relancer.\n\n'
+            'Aucun appel d\'IA. Deux mille recettes au plus par passage.';
       default:
         return '';
     }
@@ -396,6 +402,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreurs d\'écriture : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.illustrationFolders:
+        final r = await _repo.backfillIllustrationFolders();
+        return _fromCounts(
+          r,
+          'Recettes : examinées=${r['examinees']}, conformes=${r['conformes']}, '
+          'à revoir=${r['horsDossiers']}, illisibles=${r['echouees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — parcours terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois recettes illisibles de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
       default:
@@ -1058,6 +1075,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.ticketDeliveredPr: Icons.merge_type,
     BackfillKeys.recipeTitleKeys: Icons.content_copy_outlined,
     BackfillKeys.invitationGroupOwner: Icons.forward_to_inbox_outlined,
+    BackfillKeys.illustrationFolders: Icons.folder_open_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;
