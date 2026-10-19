@@ -3113,14 +3113,16 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="planning-repas"><span class="n">29</span>Un repas du planning : idées IA, composer le repas, Google Calendar, replanifier</h2>
+    <h2 id="planning-repas"><span class="n">29</span>Un repas du planning : idées IA, composer le repas ou le menu, Google Calendar, replanifier</h2>
     <p class="sec-note">
-      Quatre actions sur un repas déjà planifié. Les idées passent par deux callables.
-      « Composer le repas », l'export vers Google Calendar et le report de date se font sur
-      l'appareil, sans Functions ni appel de modèle.
+      Cinq actions sur un repas déjà planifié. Les idées passent par deux callables.
+      « Composer le repas », « Composer le menu », « Repasser en plat », l'export vers Google
+      Calendar et le report de date se font sur l'appareil, sans Functions ni appel de
+      modèle.
       <span class="path">planning_screen.dart → recipe_picker_sheet.dart → meal_ideas_sheet.dart →
       planning_ai_service.dart → suggestMealIdeasFn, generateRecipeConceptFn ·
-      meal_composer.dart → side_chooser.dart (dishSideStatus, chooseSides) → side_picker_sheet.dart ·
+      meal_composer.dart → side_chooser.dart (dishSideStatus, chooseSides, courseCandidatesFor) →
+      side_picker_sheet.dart · meal_composition.dart (MealComposition) ·
       calendar_service.dart · PlanningRepository.rescheduleMeal</span>
     </p>
     <figure class="fig">
@@ -3202,12 +3204,34 @@ sequenceDiagram
     U->>P: Changer, Ajouter, Retirer, Modifier l'apport — rien n'est écrit
     U->>P: Enregistrer
     alt même plat
-      P->>PR: updateMealComponents — replaceMainSides
+      P->>PR: updateMealComponents — toComponents, meal_kind
     else autre plat
-      P->>PR: updateMealRecipe — origine manual, recette écartée
+      P->>PR: updateMealRecipe — origine manual, recette écartée, marqueur au nouveau titre
     end
     PR->>FS: planned_meals, une écriture
     FS-->>U: « Repas enregistré. » ou « Repas non enregistré. Réessayez. », éditeur ouvert
+  end
+  end
+
+  rect rgba(127,127,127,0.08)
+  Note over U,FS: composer un menu, sans IA
+  U->>P: Passer en menu (menu ⋮ d'un plat), ou « Menu » dans l'éditeur
+  P-->>U: éditeur en mode menu — le plat devient le service « Plat »,<br/>modèle « Entrée, plat, dessert », services « à choisir »
+  U->>P: modèle, ajouter, déplacer, changer le type ou le contenu, retirer — rien n'est écrit
+  opt Choisir le contenu d'un service
+    P-->>U: SidePickerSheet titrée du type — courseCandidatesFor, texte libre sans pastilles
+    U-->>P: garniture figée, recette ou texte libre
+  end
+  U->>P: Enregistrer
+  P->>PR: updateMealComponents — services dans l'ordre, marqueur id main, meal_kind menu
+  PR->>FS: planned_meals, une écriture
+  FS-->>U: tuile « Menu · N services », une ligne par service
+  opt Repasser en plat (menu ⋮ d'un menu)
+    P-->>U: « Repasser en plat ? Seront retirés : … », si un service est rempli
+    U->>P: Repasser en plat
+    P->>PR: updateMealComponents — accompagnements du plat seuls, meal_kind plat
+    PR->>FS: planned_meals
+    P-->>U: « Repassé en plat. » — Annuler réécrit le menu d'avant
   end
   end
 

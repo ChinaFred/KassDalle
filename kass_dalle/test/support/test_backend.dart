@@ -15,9 +15,11 @@ import 'package:kass_dalle/features/books/data/book_repository.dart';
 import 'package:kass_dalle/features/books/presentation/book_providers.dart';
 import 'package:kass_dalle/features/groups/domain/family_group.dart';
 import 'package:kass_dalle/features/groups/presentation/group_providers.dart';
+import 'package:kass_dalle/features/planning/data/meal_staples_repository.dart';
 import 'package:kass_dalle/features/planning/data/meal_suggestion_repository.dart';
 import 'package:kass_dalle/features/planning/data/planning_visibility_store.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
+import 'package:kass_dalle/features/planning/presentation/meal_staples_providers.dart';
 import 'package:kass_dalle/features/planning/presentation/meal_suggestion_providers.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_providers.dart';
 import 'package:kass_dalle/features/processing/domain/processing_job.dart';
@@ -59,6 +61,16 @@ class TestBackend {
   /// Mes groupes familiaux, rendus par `myGroupsProvider`.
   final List<FamilyGroup> groups;
 
+  /// Vrai : le planning lit et écrit le Firestore en mémoire, par son vrai
+  /// repository (`planned_meals`, garnitures). Faux : pas de repository,
+  /// le cas « pas de compte » de l'écran, et [plannedMeals] rendus tels quels.
+  final bool planningWrites;
+
+  late final PlanningRepository planning = PlanningRepository(
+    firestore,
+    user.uid,
+  );
+
   /// Mes groupes en pause (propriétaire qui n'est plus éditeur) : rendus par
   /// `myGroupsProvider` avec les autres, et nommés par
   /// `maskedGroupIdsProvider`.
@@ -78,7 +90,13 @@ class TestBackend {
     // Le planning construit son repository avec `FirebaseFirestore.instance`
     // en dur, sans passer par un provider injectable : un écran de planning
     // testé le prend donc null, ce qui est son cas « pas de compte ».
-    planningRepositoryProvider.overrideWithValue(null),
+    planningRepositoryProvider.overrideWithValue(
+      planningWrites ? planning : null,
+    ),
+    if (planningWrites)
+      mealStaplesRepositoryProvider.overrideWithValue(
+        MealStaplesRepository(firestore: firestore),
+      ),
     // Les suggestions de repas lisent le Firestore en mémoire.
     mealSuggestionRepositoryProvider.overrideWithValue(mealSuggestions),
     // Les groupes ne sont pas le sujet des parcours testés : un ensemble vide
@@ -91,7 +109,10 @@ class TestBackend {
     ),
     // Le planning et la file de traitement lisent Firestore par des chemins qui
     // leur sont propres ; on les neutralise pour isoler l'écran testé.
-    plannedMealsProvider.overrideWith((ref) => Stream.value(plannedMeals)),
+    plannedMealsProvider.overrideWith(
+      (ref) =>
+          planningWrites ? planning.watchMeals() : Stream.value(plannedMeals),
+    ),
     // Les plannings affichés se mémorisent sur l'appareil : une mémoire
     // remplace les préférences, absentes des tests.
     planningVisibilityStoreProvider.overrideWithValue(
@@ -114,6 +135,7 @@ class TestBackend {
     this.plannedMeals = const [],
     this.groups = const [],
     this.pausedGroups = const [],
+    this.planningWrites = false,
   }) : recipes = RecipeRepository(firestore: firestore),
        books = BookRepository(firestore: firestore),
        annotations = AnnotationRepository(firestore: firestore),
@@ -127,12 +149,14 @@ class TestBackend {
     List<PlannedMeal> plannedMeals = const [],
     List<FamilyGroup> groups = const [],
     List<FamilyGroup> pausedGroups = const [],
+    bool planningWrites = false,
   }) => TestBackend._(
     FakeFirebaseFirestore(),
     user ?? testUser(),
     plannedMeals: plannedMeals,
     groups: groups,
     pausedGroups: pausedGroups,
+    planningWrites: planningWrites,
   );
 
   // ── Semis ──────────────────────────────────────────────────────────────────

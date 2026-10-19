@@ -19,6 +19,8 @@ import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_filter.dart';
 import '../domain/meal_choice_source.dart';
 import '../domain/meal_component.dart';
+import '../domain/meal_composition.dart';
+import '../domain/meal_kind.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_reach.dart';
@@ -363,6 +365,9 @@ class PlanningRepository {
     /// retire.
     List<String> relaxedCriteria = const [],
     bool clearChoice = false,
+
+    /// Plat ou menu (`meal_kind`) ; `null` le laisse tel quel.
+    MealKind? mealKind,
   }) async {
     final why = justification?.trim() ?? '';
     final payload = <String, dynamic>{
@@ -375,8 +380,13 @@ class PlanningRepository {
       'target_portions': ?targetPortions,
       // Les composants suivent le plat : changer de recette, c'est recomposer
       // le repas. `null` laisse ceux en place ; une liste vide les retire.
+      // Le marqueur du plat principal d'un menu recopie le nouveau titre.
       if (components != null)
-        'components': [for (final c in components) c.toMap()],
+        'components': [
+          for (final c in withMainMarkerTitle(components, recipeTitre))
+            c.toMap(),
+        ],
+      if (mealKind != null) 'meal_kind': mealKind.key,
       // L'origine et les faits suivent le plat : un autre plat, une autre
       // origine. Sans origine fournie, ni l'une ni les autres ne changent.
       if (choiceSource != null) 'choice_source': choiceSource.value,
@@ -408,15 +418,18 @@ class PlanningRepository {
   }
 
   /// Remplace les composants d'un repas planifié — accompagnements ajoutés,
-  /// retirés ou choisis à la main, sans toucher au plat ni à sa recette.
+  /// retirés ou choisis à la main, services d'un menu —, sans toucher au plat
+  /// ni à sa recette. [mealKind] écrit `meal_kind` ; `null` le laisse.
   Future<void> updateMealComponents(
     String id,
-    List<MealComponent> components,
-  ) async {
+    List<MealComponent> components, {
+    MealKind? mealKind,
+  }) async {
     await _col.doc(id).update({
       'components': components.isEmpty
           ? FieldValue.delete()
           : [for (final c in components) c.toMap()],
+      if (mealKind != null) 'meal_kind': mealKind.key,
     });
   }
 

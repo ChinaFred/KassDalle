@@ -50,6 +50,7 @@ String plannedMealContentKey(PlannedMeal meal) => jsonEncode([
   meal.justification,
   meal.dismissedRecipeIds,
   [for (final c in meal.components) c.toMap()],
+  meal.mealKind?.key,
   meal.choiceSource?.value,
   meal.relaxedCriteria,
   // Un champ inconnu d'une version plus récente peut porter une date : il

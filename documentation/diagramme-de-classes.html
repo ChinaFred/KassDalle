@@ -850,10 +850,12 @@ classDiagram
     +String? justification
     +List~String~ dismissedRecipeIds
     +List~MealComponent~ components
+    +MealKind? mealKind
     +MealChoiceSource? choiceSource
     +List~String~ relaxedCriteria
     +DateTime createdAt
     +Map extra
+    +MealKind kind()
   }
 
   class MealSuggestion {
@@ -1389,8 +1391,36 @@ classDiagram
     +List~String~ provides
     +String? roleKey
     +String? sideOf
+    +String? id
+    +String? courseLabel
     +Map extra
+    +bool isMainMarker()
+    +bool isEmptyCourse()
+    +String courseTypeLabel()
     +withProvides(provides) MealComponent
+    +copyWith() MealComponent
+  }
+
+  class MealKind {
+    &lt;&lt;enumeration&gt;&gt;
+    plat
+    menu
+  }
+
+  class MealCourse {
+    +MealComponent component
+    +List~MealComponent~ sides
+    +bool isMain()
+    +bool isDish()
+    +bool isEmpty()
+    +String typeLabel()
+  }
+
+  class MenuTemplate {
+    &lt;&lt;enumeration&gt;&gt;
+    entreePlatDessert
+    entreePlat
+    platDessert
   }
 
   class SideChoice {
@@ -1503,9 +1533,26 @@ classDiagram
   }
 
   class MealComposition {
+    +MealKind kind
+    +List~MealCourse~ courses
+    +List~MealComponent~ detached
+    +fromComponents(components, stored) MealComposition
+    +toComponents(mainTitle) List~MealComponent~
+    +toMenu(template) MealComposition
+    +toDish() MealComposition
+    +addCourse(role) MealComposition
+    +removeCourse(index) MealComposition
+    +moveCourse(from, to) MealComposition
+    +changeCourseType(index, role) MealComposition
+    +setCourseContent(index, content) MealComposition
+    +setSides(index, sides) MealComposition
+  }
+
+  class MealComposerResult {
     +Recipe? main
     +bool mainChanged
-    +List~MealComponent~ sides
+    +MealComposition composition
+    +List~MealComponent~ sides()
   }
 
   class PlannedMeal
@@ -1612,7 +1659,14 @@ classDiagram
   DishSideStatus --> SideNeed : ce qui manque
   SlotRanking ..> RelaxedCriterion : relaxed, filtres relâchés par le serveur
   PlannedMeal ..> RelaxedCriterion : relaxedCriteria, ligne d'origine
-  MealComposition "1" *-- "0..6" MealComponent : « Composer le repas », une écriture à Enregistrer
+  MealComposerResult --> MealComposition : « Composer le repas », une écriture à Enregistrer
+  MealComposition "1" *-- "1..10" MealCourse : services ordonnés, un seul plat principal
+  MealComposition --> MealKind : plat ou menu
+  MealComposition ..> MenuTemplate : modèle de départ d'un menu
+  MealCourse "1" *-- "1" MealComponent : contenu, ou marqueur id main
+  MealCourse "1" *-- "0..6" MealComponent : accompagnements d'un plat
+  PlannedMeal --> MealKind : mealKind, absent = déduit des composants
+  MealComposition ..> PlannedMeal : ofMeal, toComponents vers components et meal_kind
   SideCandidate ..> MealStaple : garniture
   SideCandidate ..> Recipe : recette d'accompagnement
   SideCandidate ..> SideNeed : provides

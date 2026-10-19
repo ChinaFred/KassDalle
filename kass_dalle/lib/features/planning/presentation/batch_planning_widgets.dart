@@ -9,7 +9,9 @@ import '../domain/meal_choice_source.dart';
 import '../domain/relaxed_criteria.dart';
 import '../domain/side_chooser.dart';
 import '../domain/meal_component.dart';
+import '../domain/meal_composition.dart';
 import '../domain/meal_storage_rules.dart';
+import 'meal_course_style.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/recipe_search_scope.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -191,7 +193,7 @@ const double kBatchSlotCardMaxWidth = 560;
 const double kBatchSlotCardMinWidth = 340;
 
 /// Actions du menu ⋮ d'un créneau.
-enum _SlotAction { assign, exportToCalendar, remove, delete }
+enum _SlotAction { assign, compose, exportToCalendar, remove, delete }
 
 /// Carte d'un créneau de BatchPlanningScreen.
 ///
@@ -295,9 +297,22 @@ class BatchSlotTile extends StatefulWidget {
   final bool noStarterCandidate;
   final bool noDessertCandidate;
 
-  /// L'entrée et le dessert du créneau, quand son format en demande.
+  /// L'entrée et le dessert du créneau, quand son format en demande. Un
+  /// service « à choisir » posé par l'éditeur se lit comme absent.
   final MealComponent? starter;
   final MealComponent? dessert;
+
+  /// Les autres services d'un menu — deuxième entrée, sorbet, fromage, plat
+  /// secondaire, « Autre » —, montrés dans le pli « Détails ».
+  final List<MealCourse> extraCourses;
+
+  /// « Composer le menu » : l'éditeur partagé, en mémoire. Null sans
+  /// recette.
+  final VoidCallback? onCompose;
+
+  /// [Choisir] d'un service vide de [extraCourses] : sa position dans la
+  /// liste. Ouvre directement la feuille du type du service.
+  final ValueChanged<int>? onChooseExtraCourse;
   final VoidCallback? onChangeStarter;
   final VoidCallback? onRemoveStarter;
   final VoidCallback? onChangeDessert;
@@ -349,6 +364,9 @@ class BatchSlotTile extends StatefulWidget {
     this.noDessertCandidate = false,
     this.starter,
     this.dessert,
+    this.extraCourses = const [],
+    this.onCompose,
+    this.onChooseExtraCourse,
     this.onChangeStarter,
     this.onRemoveStarter,
     this.onChangeDessert,
@@ -360,13 +378,13 @@ class BatchSlotTile extends StatefulWidget {
   bool get missingStarter =>
       recipe != null &&
       dayConstraint.effectiveFormat.wantsStarter &&
-      starter == null;
+      (starter == null || starter!.isEmptyCourse);
 
   /// Le dessert manque alors que le format en demande un.
   bool get missingDessert =>
       recipe != null &&
       dayConstraint.effectiveFormat.wantsDessert &&
-      dessert == null;
+      (dessert == null || dessert!.isEmptyCourse);
 
   /// Ce qui manque encore au plat, en comptant ses accompagnements.
   List<SideNeed> get missingSides =>
@@ -446,6 +464,15 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
         ),
       ),
       PopupMenuItem(
+        value: _SlotAction.compose,
+        enabled: w.recipe != null && w.onCompose != null,
+        child: const ListTile(
+          leading: Icon(Icons.restaurant_menu_outlined),
+          title: Text('Composer le menu'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      PopupMenuItem(
         value: _SlotAction.exportToCalendar,
         enabled: w.recipe != null && w.onExportToCalendar != null,
         child: ListTile(
@@ -483,6 +510,8 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
     switch (action) {
       case _SlotAction.assign:
         widget.onAssign();
+      case _SlotAction.compose:
+        widget.onCompose?.call();
       case _SlotAction.exportToCalendar:
         widget.onExportToCalendar?.call();
       case _SlotAction.remove:
@@ -522,7 +551,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
     VoidCallback? onChange,
     VoidCallback? onRemove,
   ) {
-    final missing = course == null;
+    final missing = course == null || course.isEmptyCourse;
     final noCandidate = role == MealComponentRole.entree
         ? widget.noStarterCandidate
         : widget.noDessertCandidate;
@@ -562,7 +591,12 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
           TextButton(
             onPressed: onChange,
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            child: Text(missing ? 'Choisir' : 'Changer'),
+            child: Text(
+              missing ? 'Choisir' : 'Changer',
+              semanticsLabel: missing
+                  ? chooseCourseSemanticLabel(role, role.label)
+                  : null,
+            ),
           ),
         if (!missing && onRemove != null)
           IconButton(
@@ -570,6 +604,60 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
             tooltip: 'Retirer',
             visualDensity: VisualDensity.compact,
             onPressed: onRemove,
+          ),
+      ],
+    );
+  }
+
+  /// Un autre service du menu, en lecture : « Fromage : à choisir »,
+  /// « Plat : Gratin + Salade verte ». Il se modifie dans « Composer le
+  /// menu ».
+  Widget _buildExtraCourseLine(
+    ThemeData theme,
+    MealCourse course,
+    int position,
+  ) {
+    final sides = course.sides.map((s) => s.label).join(', ');
+    final missing = course.isEmpty;
+    final text = missing
+        ? '${course.typeLabel} : à choisir'
+        : '${course.typeLabel} : ${course.component.label}'
+              '${course.component.quantityLabel != null ? ' · ${course.component.quantityLabel}' : ''}'
+              '${sides.isEmpty ? '' : ' + $sides'}';
+    final color = missing
+        ? theme.colorScheme.error
+        : theme.colorScheme.onSurfaceVariant;
+    return Row(
+      children: [
+        Icon(
+          missing
+              ? courseRoleIcon(course.role)
+              : course.component.isRecipe
+              ? Icons.menu_book_outlined
+              : course.component.isStaple
+              ? Icons.rice_bowl_outlined
+              : courseRoleIcon(course.role),
+          size: AppIconSize.inline,
+          color: color,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: color,
+              fontWeight: missing ? FontWeight.w600 : null,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (missing && widget.onChooseExtraCourse != null)
+          ChooseCourseButton(
+            role: course.role,
+            typeLabel: course.typeLabel,
+            compact: true,
+            onPressed: () => widget.onChooseExtraCourse!(position),
           ),
       ],
     );
@@ -1025,7 +1113,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
         ),
       if (w.recipe != null) ...[
         const SizedBox(height: 8),
-        if (format.wantsStarter && w.starter != null)
+        if (format.wantsStarter && !w.missingStarter && w.starter != null)
           _buildCourseLine(
             theme,
             MealComponentRole.entree,
@@ -1034,7 +1122,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
             w.onRemoveStarter,
           ),
         ..._buildSideLines(theme),
-        if (format.wantsDessert && w.dessert != null)
+        if (format.wantsDessert && !w.missingDessert && w.dessert != null)
           _buildCourseLine(
             theme,
             MealComponentRole.dessert,
@@ -1042,6 +1130,8 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
             w.onChangeDessert,
             w.onRemoveDessert,
           ),
+        for (var i = 0; i < w.extraCourses.length; i++)
+          _buildExtraCourseLine(theme, w.extraCourses[i], i),
       ],
       if (storage != null) ...[const SizedBox(height: 4), storage],
       if (origin != null) ...[const SizedBox(height: 6), origin],

@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-19
 
-### v0.24.16 — fonctionnel
+### v0.24.17 — fonctionnel
 
 Un import de recette compte 21 pages au plus : la première et 20 pages supplémentaires.
 Au-delà, la file « Pages en attente » reste intacte : son titre devient « Pages à analyser
@@ -35,7 +35,7 @@ Le formulaire « Signaler ou proposer » refuse une adresse e-mail dans le titre
 description : « Retirez l'adresse e-mail : le ticket est publié sur un site public. », sous
 le champ concerné. Le serveur (`submitTicket`) fait le même contrôle.
 
-### v0.24.16 — technique
+### v0.24.17 — technique
 
 Cinq corrections de l'audit #151.
 
@@ -100,6 +100,47 @@ dans Firestore, que l'application affiche, reste celui du membre.
 #159 — `consolidateShoppingList` (`gemini/shopping.ts`) journalise par `logError` une
 réponse du modèle illisible avant de rendre une liste vide, avec le poste, le nombre
 d'ingrédients et la longueur de la réponse, sans leur contenu.
+
+### v0.24.16 — fonctionnel
+
+Troisième palier de la refonte plat / menu : un repas du planning est un plat ou un menu.
+L'éditeur du repas porte un choix « Plat | Menu » en tête. En passant en menu, le plat
+devient le service « Plat » avec ses accompagnements, et le modèle « Entrée, plat, dessert »
+s'applique d'office ; « Entrée et plat » et « Plat et dessert » le remplacent tant
+qu'aucun service n'est rempli. Un menu compte dix services au plus : entrée, plat, sorbet,
+fromage, dessert, ou « Autre… » avec un nom. Il peut avoir plusieurs plats, chacun avec
+ses accompagnements, six au plus. Les services s'ajoutent, se déplacent (poignée,
+« Monter », « Descendre »), changent de type et se retirent. Un service vide reste « à
+choisir » ; le programme ne remplit ni le fromage ni le sorbet. Le contenu d'un service se
+choisit parmi les garnitures et les recettes de son type, ou en texte libre. Sur la tuile,
+un menu affiche « Menu · N services » puis une ligne par service. Le menu ⋮ propose
+« Passer en menu » et « Repasser en plat ». Repasser en plat demande confirmation quand un
+service est rempli, et « Annuler » rend le menu. « Remettre à blanc » ne vide que le plat
+principal d'un menu. Dans Nouveau planning, les formats s'appellent « Menu : entrée, plat,
+dessert », « Menu : entrée et plat » et « Menu : plat et dessert », comme dans les
+préférences du planning, et « Composer le menu » sur un créneau garde la composition
+jusqu'à « Valider ». Les recettes et les garnitures de tous les services entrent dans les
+courses, et l'export Calendar les décrit dans l'ordre du menu ; un menu remis à blanc y
+écrit « Plat : à choisir », comme sur la tuile. Sur la tuile d'un menu, chaque
+accompagnement a sa ligne, s'ouvre d'un appui et porte « Recette non partagée » quand il le
+faut. « Passer en menu » n'est proposé que pour un plat ou une recette non classée, et le
+menu proposé à l'ouverture de l'éditeur ne compte pas comme une modification.
+
+### v0.24.16 — technique
+
+Nouveau champ `planned_meals.meal_kind` (`plat` | `menu`). Absent, il se déduit des
+composants : un composant d'un autre rôle qu'accompagnement fait un menu. Aucun backfill.
+`components[]` reçoit `id` (`main` pour le marqueur du plat principal, un identifiant court
+pour un plat secondaire, cité par `side_of`) et `course_label` (service « Autre »). Le plat
+principal reste dans `recipe_id` / `recipe_titre` ; sa place est marquée par
+`{role: plat, id: main, label: <titre>}`, dont le libellé suit le titre
+(`withMainMarkerTitle`) pour qu'une version antérieure affiche « Plat : … ». Le domaine
+`MealComposition` (`meal_composition.dart`) lit et réécrit la liste en services ordonnés et
+porte les opérations et les bornes (10 services, 6 accompagnements par plat). L'éditeur
+rend un `MealComposerResult`. `SidePickerSheet` choisit aussi le contenu d'un service
+(`courseCandidatesFor`). Nouveau planning garde une composition éditée par créneau et écrit
+`meal_kind` à la validation. Le prompt `planning` ne change pas : aucun poste d'IA, aucune
+Cloud Function ni règle Firestore modifiés. `TestBackend` reçoit l'option `planningWrites`.
 
 ### v0.24.15 — technique
 

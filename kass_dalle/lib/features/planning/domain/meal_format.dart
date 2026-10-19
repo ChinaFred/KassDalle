@@ -30,9 +30,9 @@ enum MealFormat {
 
   String get label => switch (this) {
     MealFormat.plat => 'Plat seul',
-    MealFormat.platDessert => 'Plat et dessert',
-    MealFormat.entreePlat => 'Entrée et plat',
-    MealFormat.entreePlatDessert => 'Entrée, plat et dessert',
+    MealFormat.platDessert => 'Menu : plat et dessert',
+    MealFormat.entreePlat => 'Menu : entrée et plat',
+    MealFormat.entreePlatDessert => 'Menu : entrée, plat, dessert',
     MealFormat.leger => 'Léger',
   };
 

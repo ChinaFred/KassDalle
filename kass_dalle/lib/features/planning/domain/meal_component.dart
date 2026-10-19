@@ -14,6 +14,17 @@ library;
 import '../../recipes/domain/recipe.dart';
 import 'meal_staple.dart';
 
+/// Identifiant du marqueur du plat principal dans un menu
+/// (`{role: plat, id: 'main', label: <recipe_titre>}`) : il dit où se sert le
+/// plat de `recipe_id` parmi les services. Il ne porte ni recette ni
+/// garniture ; son libellé recopie le titre du plat, pour qu'une version
+/// antérieure affiche « Plat : Veau sauté » plutôt qu'une ligne vide.
+const String kMainCourseId = 'main';
+
+/// Valeur qui distingue « ne pas changer » de « remettre à `null` » dans
+/// [MealComponent.copyWith].
+const Object _keep = Object();
+
 /// Rôle d'un composant dans le repas.
 ///
 /// Le plat principal reste porté par le repas lui-même (`recipe_id`). Les
@@ -69,6 +80,16 @@ class MealComponent {
   /// `null` : le plat principal du repas (`recipe_id`).
   final String? sideOf;
 
+  /// Identifiant court d'un service dans le repas (`id`) : [kMainCourseId]
+  /// pour le marqueur du plat principal, un identifiant unique dans le repas
+  /// pour un plat secondaire, que ses accompagnements citent dans [sideOf].
+  /// `null` pour les autres services et les accompagnements (v0.24.16).
+  final String? id;
+
+  /// Libellé d'un service « Autre » (`course_label`) : « Trou normand »,
+  /// 30 caractères au plus. `null` : « Autre » (v0.24.16).
+  final String? courseLabel;
+
   /// Champs lus en base que cette version ne connaît pas, réécrits tels
   /// quels. Un téléphone qui n'a pas encore la mise à jour retire ou ajoute
   /// un accompagnement sans effacer ce qu'une version récente a posé.
@@ -117,8 +138,34 @@ class MealComponent {
     this.provides = const [],
     this.roleKey,
     this.sideOf,
+    this.id,
+    this.courseLabel,
     this.extra = const {},
   });
+
+  /// Le marqueur du plat principal dans un menu : rôle plat, identifiant
+  /// [kMainCourseId], ni recette ni garniture.
+  bool get isMainMarker =>
+      role == MealComponentRole.plat &&
+      id == kMainCourseId &&
+      !isRecipe &&
+      !isStaple;
+
+  /// Un service « à choisir » : ni recette, ni garniture, ni texte.
+  bool get isEmptyCourse =>
+      role != MealComponentRole.accompagnement &&
+      !isMainMarker &&
+      isFree &&
+      label.trim().isEmpty;
+
+  /// Le type du service tel qu'on le lit : « Entrée », « Trou normand » pour
+  /// un service « Autre » qui a son libellé.
+  String get courseTypeLabel {
+    final custom = courseLabel?.trim() ?? '';
+    return role == MealComponentRole.autre && custom.isNotEmpty
+        ? custom
+        : role.label;
+  }
 
   /// Accompagnement du plat principal, celui de `recipe_id`.
   bool get isMainSide =>
@@ -184,19 +231,37 @@ class MealComponent {
 
   /// Le même composant, avec un autre apport ([provides]) : « Modifier
   /// l'apport » d'un texte libre.
-  MealComponent withProvides(List<String> provides) => MealComponent(
-    role: role,
-    roleKey: roleKey,
+  MealComponent withProvides(List<String> provides) =>
+      copyWith(provides: provides);
+
+  /// Le même composant, avec ce qui change. Changer [role] efface la valeur
+  /// d'origine d'un rôle inconnu ([roleKey]) : le service a pris le type
+  /// choisi. [sideOf], [id] et [courseLabel] se remettent à `null` en passant
+  /// `null` ; les omettre les garde.
+  MealComponent copyWith({
+    MealComponentRole? role,
+    String? label,
+    List<String>? provides,
+    Object? sideOf = _keep,
+    Object? id = _keep,
+    Object? courseLabel = _keep,
+  }) => MealComponent(
+    role: role ?? this.role,
+    roleKey: role == null || role == this.role ? roleKey : null,
     recipeId: recipeId,
     stapleId: stapleId,
-    label: label,
+    label: label ?? this.label,
     quantityPerPortion: quantityPerPortion,
     unit: unit,
     shoppingProduct: shoppingProduct,
     note: note,
     justification: justification,
-    provides: provides,
-    sideOf: sideOf,
+    provides: provides ?? this.provides,
+    sideOf: identical(sideOf, _keep) ? this.sideOf : sideOf as String?,
+    id: identical(id, _keep) ? this.id : id as String?,
+    courseLabel: identical(courseLabel, _keep)
+        ? this.courseLabel
+        : courseLabel as String?,
     extra: extra,
   );
 
@@ -233,6 +298,8 @@ class MealComponent {
     'justification',
     'provides',
     'side_of',
+    'id',
+    'course_label',
   };
 
   factory MealComponent.fromMap(Map<String, dynamic> data) {
@@ -257,6 +324,10 @@ class MealComponent {
             if (p is String && p.isNotEmpty) p,
       ],
       sideOf: data['side_of'] as String?,
+      id: data['id'] is String ? data['id'] as String : null,
+      courseLabel: data['course_label'] is String
+          ? data['course_label'] as String
+          : null,
       extra: {
         for (final e in data.entries)
           if (!_knownKeys.contains(e.key)) e.key: e.value,
@@ -278,6 +349,9 @@ class MealComponent {
       'justification': justification!.trim(),
     if (provides.isNotEmpty) 'provides': provides,
     if (sideOf != null && sideOf!.isNotEmpty) 'side_of': sideOf,
+    if (id != null && id!.isNotEmpty) 'id': id,
+    if (courseLabel != null && courseLabel!.trim().isNotEmpty)
+      'course_label': courseLabel!.trim(),
   };
 
   /// Lit une liste Firestore ; une entrée qui n'est pas une carte est ignorée.
@@ -304,15 +378,22 @@ String componentsSummary(Iterable<MealComponent> components) =>
 /// Un premier accompagnement rangé après un sorbet, un fromage ou un dessert
 /// — repas anciens `[entrée, dessert, salade]` — ne donne pas sa place : les
 /// nouveaux passent alors par [insertMainSide], avant le dessert.
+///
+/// Dans un menu qui porte le marqueur du plat principal ([kMainCourseId]),
+/// les accompagnements se rangent juste après lui.
 List<MealComponent> replaceMainSides(
   List<MealComponent> components,
   List<MealComponent> sides,
 ) {
-  final at = components.indexWhere((c) => c.isMainSide);
   final kept = [
     for (final c in components)
       if (!c.isMainSide) c,
   ];
+  final marker = kept.indexWhere((c) => c.isMainMarker);
+  if (marker >= 0) {
+    return [...kept.take(marker + 1), ...sides, ...kept.skip(marker + 1)];
+  }
+  final at = components.indexWhere((c) => c.isMainSide);
   final afterCourseFirst =
       at >= 0 && components.take(at).any((c) => c.role.isAfterMain);
   if (at >= 0 && !afterCourseFirst) {
@@ -332,10 +413,21 @@ List<MealComponent> replaceMainSides(
 /// Le premier service d'après le plat passe avant le dernier accompagnement :
 /// les versions antérieures ajoutaient l'accompagnement en fin de liste, et
 /// des repas `[entrée, riz, dessert, salade]` existent.
+///
+/// Dans un menu qui porte le marqueur du plat principal, l'accompagnement se
+/// range après ceux qui suivent le marqueur.
 List<MealComponent> insertMainSide(
   List<MealComponent> components,
   MealComponent side,
 ) {
+  final marker = components.indexWhere((c) => c.isMainMarker);
+  if (marker >= 0) {
+    var end = marker + 1;
+    while (end < components.length && components[end].isMainSide) {
+      end++;
+    }
+    return [...components.take(end), side, ...components.skip(end)];
+  }
   var at = components.indexWhere((c) => c.role.isAfterMain);
   if (at < 0) {
     final lastSide = components.lastIndexWhere((c) => c.isMainSide);

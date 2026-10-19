@@ -210,6 +210,10 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
       load: () async =>
           MealComposerData(main: recipe, recipes: _sideRecipes ?? const []),
       sides: sides,
+      // La feuille ne compose que l'accompagnement : le menu se fait depuis
+      // le planning, une fois le repas créé.
+      allowMenu: false,
+      mealDate: _selectedDate,
       canChangeRecipe: false,
       successMessage: null,
       onSave: (composition) async {

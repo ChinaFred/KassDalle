@@ -28,12 +28,19 @@ class SidePickerResult {
   const SidePickerResult.free(String this.freeLabel, {this.provides = const []})
     : candidate = null;
 
-  /// Le composant à poser.
-  MealComponent toComponent({String? justification}) {
+  /// Le composant à poser, accompagnement par défaut, ou service d'un menu
+  /// ([role]).
+  MealComponent toComponent({
+    String? justification,
+    MealComponentRole role = MealComponentRole.accompagnement,
+  }) {
     final c = candidate;
-    if (c != null) return c.toComponent(justification: justification);
+    if (c != null) {
+      return c.toComponent(justification: justification, role: role);
+    }
     return MealComponent.free(
       freeLabel!,
+      role: role,
       justification: justification,
       provides: provides,
     );
@@ -152,8 +159,14 @@ bool _listEquals(List<String> a, List<String> b) {
 /// Un texte libre passe par une étape de plus : deux pastilles facultatives,
 /// « Féculent » et « Légume », puis « Ajouter ». Sans pastille, son apport
 /// reste inconnu.
+///
+/// La même feuille choisit le contenu d'un service de menu ([role] autre
+/// qu'accompagnement, [title] « Entrée », « Fromage »…) : ses candidats
+/// viennent de `courseCandidatesFor`, sans suggestions du plat, et un texte
+/// libre s'ajoute sans l'étape des apports.
 class SidePickerSheet extends StatefulWidget {
-  final Recipe main;
+  /// Le plat accompagné, pour ses suggestions ; `null` pour un service.
+  final Recipe? main;
   final List<SideCandidate> candidates;
 
   /// Ce qui manque au plat quand la feuille s'ouvre par « Compléter » : la
@@ -161,12 +174,22 @@ class SidePickerSheet extends StatefulWidget {
   /// cochée d'office.
   final SideNeed? initialNeed;
 
+  /// Titre de la feuille : « Accompagnement », « Entrée », « Trou normand ».
+  final String title;
+
+  /// Le rôle du composant choisi ; un accompagnement par défaut.
+  final MealComponentRole role;
+
   const SidePickerSheet({
     super.key,
-    required this.main,
+    this.main,
     required this.candidates,
     this.initialNeed,
+    this.title = 'Accompagnement',
+    this.role = MealComponentRole.accompagnement,
   });
+
+  bool get _isSide => role == MealComponentRole.accompagnement;
 
   @override
   State<SidePickerSheet> createState() => _SidePickerSheetState();
@@ -206,7 +229,10 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
     final filtering = _family != null || _query.trim().isNotEmpty;
     final families = sideFamilyFiltersFor(candidates);
 
-    final allSuggested = suggestedCandidatesFor(widget.main, candidates);
+    final main = widget.main;
+    final allSuggested = main == null
+        ? const <SideCandidate>[]
+        : suggestedCandidatesFor(main, candidates);
     final suggestedIds = allSuggested.map((c) => c.id).toSet();
     final suggested = allSuggested.where(_matches).toList();
     final staples =
@@ -246,16 +272,19 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
           leading: const Icon(Icons.edit_note_outlined),
           title: Text('Ajouter « $freeLabel »'),
           subtitle: const Text('Texte libre, sans quantité ni courses'),
-          onTap: () => _askProvides(freeLabel),
+          onTap: () => _chooseFree(freeLabel),
         ),
       if (candidates.isEmpty && freeLabel.isEmpty)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: Text(
-            'Aucune garniture ni recette d\'accompagnement disponible. Un '
-            'administrateur peut semer les garnitures depuis Admin › '
-            'Backfills ; vos recettes d\'accompagnement doivent porter leur '
-            'rôle.',
+            widget._isSide
+                ? 'Aucune garniture ni recette d\'accompagnement disponible. '
+                      'Un administrateur peut semer les garnitures depuis '
+                      'Admin › Backfills ; vos recettes d\'accompagnement '
+                      'doivent porter leur rôle.'
+                : 'Aucune garniture ni recette proposée pour ce service. '
+                      'Saisissez un texte libre.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -265,14 +294,17 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           child: Text(
-            'Aucune garniture ni recette d\'accompagnement ne correspond.',
+            widget._isSide
+                ? 'Aucune garniture ni recette d\'accompagnement ne '
+                      'correspond.'
+                : 'Aucune garniture ni recette ne correspond.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ),
-      if (suggested.isNotEmpty) ...[
-        _Header('Suggérés pour « ${widget.main.titre} »'),
+      if (suggested.isNotEmpty && main != null) ...[
+        _Header('Suggérés pour « ${main.titre} »'),
         for (final c in suggested) _tile(context, c),
       ],
       if (staples.isNotEmpty) ...[
@@ -284,7 +316,7 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
         ],
       ],
       if (recipes.isNotEmpty) ...[
-        const _Header('Recettes d\'accompagnement'),
+        _Header(widget._isSide ? 'Recettes d\'accompagnement' : 'Recettes'),
         for (final c in recipes) _tile(context, c),
       ],
     ];
@@ -320,7 +352,7 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Text('Accompagnement', style: theme.textTheme.titleMedium),
+            child: Text(widget.title, style: theme.textTheme.titleMedium),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -332,7 +364,9 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
               ],
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
-                hintText: 'Rechercher ou saisir un accompagnement',
+                hintText: widget._isSide
+                    ? 'Rechercher ou saisir un accompagnement'
+                    : 'Rechercher ou saisir',
                 border: const OutlineInputBorder(),
                 isDense: true,
                 suffixIcon: _query.isEmpty
@@ -401,7 +435,17 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
         return;
       }
     }
-    _askProvides(label);
+    _chooseFree(label);
+  }
+
+  /// Un texte libre : l'étape des apports pour un accompagnement, choisi tout
+  /// de suite pour un service — une entrée ne se range pas en féculent.
+  void _chooseFree(String label) {
+    if (widget._isSide) {
+      _askProvides(label);
+    } else {
+      Navigator.pop(context, SidePickerResult.free(label));
+    }
   }
 
   /// L'étape du texte libre : son nom, deux pastilles facultatives, puis
@@ -492,7 +536,9 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
     final subtitle = staple != null
         ? '${formatStapleQuantity(staple.quantityPerPortion, staple.unit)} par part'
               '${staple.note.trim().isNotEmpty ? ' · ${staple.note.trim()}' : ''}'
-        : 'Recette d\'accompagnement';
+        : widget._isSide
+        ? 'Recette d\'accompagnement'
+        : 'Recette';
     return ListTile(
       leading: Icon(
         c.isRecipe ? Icons.menu_book_outlined : Icons.rice_bowl_outlined,

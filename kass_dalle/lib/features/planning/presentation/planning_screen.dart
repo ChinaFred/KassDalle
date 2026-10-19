@@ -24,7 +24,9 @@ import '../domain/meal_candidates.dart';
 import '../domain/meal_choice_source.dart';
 import '../domain/planning_refusals.dart';
 import '../domain/meal_component.dart';
+import '../domain/meal_composition.dart';
 import '../domain/meal_idea.dart';
+import '../domain/meal_kind.dart';
 import '../domain/meal_recipe_location.dart';
 import '../domain/meal_suggestion.dart';
 import '../domain/meal_staple.dart';
@@ -286,18 +288,19 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
   /// « Composer le repas » : le plat, ce qu'il apporte, ses accompagnements
   /// (0 à six), ce qui manque et ce que le programme propose pour le
-  /// combler. Une seule écriture, à « Enregistrer ».
-  Future<void> _composeMeal(PlannedMeal meal) => showMealComposer(
-    context,
-    load: () => _composerData(meal),
-    sides: [
-      for (final c in meal.components)
-        if (c.isMainSide) c,
-    ],
-    fallbackTitle: meal.recipeTitre,
-    dismissedRecipeIds: meal.dismissedRecipeIds.toSet(),
-    onSave: (composition) => _saveComposition(meal, composition),
-  );
+  /// combler ; ou le menu et ses services. Une seule écriture, à
+  /// « Enregistrer ». [initialKind] à menu : « Passer en menu ».
+  Future<void> _composeMeal(PlannedMeal meal, {MealKind? initialKind}) =>
+      showMealComposer(
+        context,
+        load: () => _composerData(meal),
+        initial: MealComposition.ofMeal(meal),
+        initialKind: initialKind,
+        mealDate: meal.plannedAt,
+        fallbackTitle: meal.recipeTitre,
+        dismissedRecipeIds: meal.dismissedRecipeIds.toSet(),
+        onSave: (result) => _saveComposition(meal, result),
+      );
 
   /// Ce que l'éditeur lit : le plat du repas, et les recettes proposées —
   /// les miennes validées et celles, non privées, de la famille. Une erreur
@@ -342,19 +345,26 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     return fetched;
   }
 
-  /// Écrit ce que l'éditeur rend : les accompagnements seuls, ou le plat et
-  /// ses accompagnements quand « Changer » a posé un autre plat. Une erreur
-  /// remonte à l'éditeur, qui reste ouvert.
+  /// Écrit ce que l'éditeur rend : les composants et `meal_kind`, et le plat
+  /// quand « Changer » en a posé un autre. Une erreur remonte à l'éditeur,
+  /// qui reste ouvert.
   Future<void> _saveComposition(
     PlannedMeal meal,
-    MealComposition composition,
+    MealComposerResult composition,
   ) async {
     final repo = ref.read(planningRepositoryProvider);
     if (repo == null) throw StateError('Utilisateur non connecté.');
-    final components = replaceMainSides(meal.components, composition.sides);
     final recipe = composition.main;
-    if (!composition.mainChanged || recipe == null) {
-      await repo.updateMealComponents(meal.id, components);
+    final changed = composition.mainChanged && recipe != null;
+    final components = composition.componentsFor(
+      changed ? recipe.titre : meal.recipeTitre,
+    );
+    if (!changed) {
+      await repo.updateMealComponents(
+        meal.id,
+        components,
+        mealKind: composition.kind,
+      );
       return;
     }
     final recipeId = recipe.id.isEmpty ? null : recipe.id;
@@ -370,6 +380,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       targetPortions: meal.targetPortions ?? recipe.portions,
       dismissRecipeId: _oustedBy(meal, recipeId),
       components: components,
+      mealKind: composition.kind,
       choiceSource: MealChoiceSource.manual,
     );
     if (recipeId != null && mounted) {
@@ -491,21 +502,223 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
   Future<void> _restoreComponents(
     String mealId,
-    List<MealComponent> components,
-  ) async {
+    List<MealComponent> components, {
+    MealKind? mealKind,
+    String failure = 'Accompagnement non remis. Réessayez.',
+  }) async {
     try {
       await ref
           .read(planningRepositoryProvider)
-          ?.updateMealComponents(mealId, components);
+          ?.updateMealComponents(mealId, components, mealKind: mealKind);
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'planningScreen.restoreComponents',
         error: e,
         stackTrace: stackTrace,
-        context: {'meal_id': mealId},
+        context: {'meal_id': mealId, 'meal_kind': ?mealKind?.key},
+      );
+      if (mounted) context.showErrorSnackBar(failure);
+    }
+  }
+
+  /// « Repasser en plat » sur un menu : les services autres que le plat
+  /// principal et ses accompagnements sont retirés. Une question d'abord si
+  /// l'un d'eux porte quelque chose ; « Annuler » rend le menu.
+  Future<void> _switchToDish(PlannedMeal meal) async {
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+    final composition = MealComposition.ofMeal(meal);
+    final filled = composition.filledDroppedAsDish;
+    if (filled.isNotEmpty) {
+      final names = [
+        for (final c in filled) '${c.typeLabel} : ${c.component.label}',
+      ].join(', ');
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Repasser en plat ?'),
+          content: Text('Seront retirés : $names.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Repasser en plat'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    final before = meal.components;
+    try {
+      await repo.updateMealComponents(
+        meal.id,
+        composition.toDish().toComponents(mainTitle: meal.recipeTitre),
+        mealKind: MealKind.plat,
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.switchToDish',
+        error: e,
+        stackTrace: stackTrace,
+        context: {
+          'meal_id': meal.id,
+          'course_count': composition.courses.length,
+        },
       );
       if (mounted) {
-        context.showErrorSnackBar('Accompagnement non remis. Réessayez.');
+        context.showErrorSnackBar('Repas non enregistré. Réessayez.');
+      }
+      return;
+    }
+    if (!mounted) return;
+    context.showSuccessSnackBar(
+      'Repassé en plat.',
+      action: SnackBarAction(
+        label: 'Annuler',
+        onPressed: () => _restoreComponents(
+          meal.id,
+          before,
+          mealKind: MealKind.menu,
+          failure: 'Menu non remis. Réessayez.',
+        ),
+      ),
+    );
+  }
+
+  /// Les garnitures du compte pour choisir un service : attendues si leur
+  /// lecture est en cours, sinon `null` après « Vos garnitures n'ont pas pu
+  /// être lues. » avec « Réessayer », comme dans l'éditeur. Sans elles, la
+  /// feuille dirait à tort qu'aucune garniture n'existe.
+  Future<List<UserStaple>?> _staplesForCourse(
+    PlannedMeal meal,
+    int index,
+  ) async {
+    var staples = ref.read(myStaplesProvider);
+    if (!staples.hasValue && !staples.hasError) {
+      final done = Completer<AsyncValue<List<UserStaple>>>();
+      final sub = ref.listenManual(myStaplesProvider, (_, next) {
+        if ((next.hasValue || next.hasError) && !done.isCompleted) {
+          done.complete(next);
+        }
+      });
+      try {
+        staples = await done.future.timeout(const Duration(seconds: 15));
+      } on TimeoutException catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'planningScreen.chooseCourse.staplesTimeout',
+          userId: ref.read(planningRepositoryProvider)?.uid,
+          error: e,
+          stackTrace: stackTrace,
+          context: {'meal_id': meal.id},
+        );
+      } finally {
+        sub.close();
+      }
+    }
+    if (staples.hasValue && !staples.hasError) return staples.value;
+    if (staples.hasError) {
+      reportUnexpectedError(
+        feature: 'planningScreen.chooseCourse.loadStaples',
+        userId: ref.read(planningRepositoryProvider)?.uid,
+        error: staples.error!,
+        stackTrace: staples.stackTrace,
+        context: {'meal_id': meal.id},
+      );
+    }
+    if (mounted) {
+      context.showErrorSnackBar(
+        'Vos garnitures n\'ont pas pu être lues.',
+        action: SnackBarAction(
+          label: 'Réessayer',
+          onPressed: () {
+            ref.invalidate(baseMealStaplesProvider);
+            ref.invalidate(myStapleOverridesProvider);
+            _chooseCourse(meal, index);
+          },
+        ),
+      );
+    }
+    return null;
+  }
+
+  /// [Choisir] sur un service « à choisir » d'un menu : la feuille des
+  /// recettes pour un plat, celle des garnitures et recettes du type sinon.
+  /// Le plat principal se choisit comme « Changer la recette ».
+  Future<void> _chooseCourse(PlannedMeal meal, int index) async {
+    final composition = MealComposition.ofMeal(meal);
+    if (index < 0 || index >= composition.courses.length) return;
+    final course = composition.courses[index];
+    if (course.isMain) {
+      await _changeRecipe(meal);
+      return;
+    }
+    await _loadRecipesIfNeeded();
+    final familyRecipes = await _loadFamilySideRecipesIfNeeded();
+    if (!mounted) return;
+    final seen = <String>{};
+    final recipes = [
+      for (final r in [..._availableRecipes, ...familyRecipes])
+        if (seen.add(r.id)) r,
+    ];
+    MealComponent? content;
+    if (course.isDish) {
+      final picked = await showModalBottomSheet<Recipe>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => RecipePickerSheet(
+          recipes: recipes,
+          hintText: 'Rechercher ou saisir un nom libre…',
+          freeNameAlways: true,
+        ),
+      );
+      if (picked == null) return;
+      content = picked.id.isEmpty
+          ? MealComponent.free(picked.titre, role: MealComponentRole.plat)
+          : MealComponent.recipe(picked, role: MealComponentRole.plat);
+    } else {
+      final staples = await _staplesForCourse(meal, index);
+      if (staples == null || !mounted) return;
+      final result = await showModalBottomSheet<SidePickerResult>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => SidePickerSheet(
+          title: course.typeLabel,
+          role: course.role,
+          candidates: courseCandidatesFor(
+            course.role,
+            staples: staples,
+            recipes: recipes,
+          ),
+        ),
+      );
+      content = result?.toComponent(role: course.role);
+    }
+    if (content == null || !mounted) return;
+    try {
+      await ref
+          .read(planningRepositoryProvider)
+          ?.updateMealComponents(
+            meal.id,
+            composition
+                .setCourseContent(index, content)
+                .toComponents(mainTitle: meal.recipeTitre),
+            mealKind: MealKind.menu,
+          );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.chooseCourse',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'meal_id': meal.id, 'role': course.role.name},
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Repas non enregistré. Réessayez.');
       }
     }
   }
@@ -856,7 +1069,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                   : total.toStringAsFixed(1),
               unit: c.unit ?? 'g',
             ),
-            source: '${meal.recipeTitre} · ${c.role.label.toLowerCase()}',
+            source: '${meal.recipeTitre} · ${c.courseTypeLabel.toLowerCase()}',
           ));
         } else if (c.isRecipe) {
           final side = recipesById[c.recipeId!];
@@ -1013,18 +1226,23 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     if (added) _sayMissing(collected.missing, collected.notShared);
   }
 
+  /// « Remettre à blanc » : un plat redevient un repas libre, sans rien.
+  /// Dans un menu, seul le plat principal est vidé — son marqueur et ses
+  /// accompagnements partent, les autres services restent.
   Future<void> _clearRecipe(PlannedMeal meal) async {
     final repo = ref.read(planningRepositoryProvider);
+    final isMenu = meal.kind == MealKind.menu;
     await repo?.updateMealRecipe(
       meal.id,
       recipeId: null,
-      recipeTitre: 'Repas libre',
+      recipeTitre: kFreeMealTitle,
       durationMinutes: 0,
       clearPortions: true,
       dismissRecipeId: _oustedBy(meal, null),
       // Sans plat, pas d'accompagnement, ni d'origine ni de faits : un repas
       // libre n'affiche pas « Choisie par vous ».
-      components: const [],
+      components: componentsWithoutMain(meal),
+      mealKind: isMenu ? MealKind.menu : null,
       clearChoice: true,
     );
   }
@@ -2438,6 +2656,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       onChangeRecipe: () => _changeRecipe(meal),
       onReschedule: () => _rescheduleMeal(meal),
       onCompose: () => _composeMeal(meal),
+      onSwitchToMenu: () => _composeMeal(meal, initialKind: MealKind.menu),
+      onSwitchToDish: () => _switchToDish(meal),
+      onChooseCourse: (i) => _chooseCourse(meal, i),
       onComplete: (need) => _completeMeal(meal, need),
       sideStatus: _sideStatusFor(meal),
       onRemoveComponent: (c) => _removeComponent(meal, c),
