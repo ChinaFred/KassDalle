@@ -166,6 +166,7 @@ export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillTitleKeysFn } from "./callable/titleKeysBackfillCallable";
 export { backfillInvitationGroupOwnerFn } from "./callable/invitationOwnerBackfillCallable";
+export { backfillIllustrationFoldersFn } from "./callable/illustrationFoldersBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
 export { backfillSystemBooksFn } from "./callable/systemBooksBackfillCallable";
 export { backfillGroupPlanningReachFn } from "./callable/groupPlanningReachBackfillCallable";

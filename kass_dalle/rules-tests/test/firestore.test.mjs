@@ -4999,6 +4999,102 @@ describe("recipes — durées estimées (estimated_times)", () => {
   });
 });
 
+// ── recipes — allergènes (allergens) ──────────────────────────────────
+//
+// Déduits par le serveur seul des ingrédients du référentiel
+// (`onRecipeWritten`, backfill « Allergènes »). Ni le créateur ni un
+// administrateur ne les posent à la création, ne les changent ni ne les
+// effacent ; une édition d'un autre champ d'une recette qui les porte passe.
+describe("recipes — allergènes (allergens)", () => {
+  const allergens = {
+    present: ["lait"],
+    complete: true,
+    by_ingredient: { lait: ["beurre"] },
+    computed_at: new Date("2026-10-12T05:00:00Z"),
+  };
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "recipes/allergens-editor": {
+        title: "Quiche",
+        created_by: EDITOR,
+        review_status: "validated",
+        allergens,
+      },
+    });
+  });
+
+  it("un éditeur ne crée pas de recette avec des allergènes", async () => {
+    await assertFails(
+      db("editor").doc("recipes/new-allergens").set({
+        title: "x",
+        created_by: EDITOR,
+        review_status: "draft",
+        allergens,
+      }),
+    );
+  });
+
+  it("l'administrateur ne crée pas de recette avec des allergènes", async () => {
+    await assertFails(
+      db("admin").doc("recipes/new-allergens-admin").set({
+        title: "x",
+        created_by: PERSONAS.admin.uid,
+        review_status: "draft",
+        allergens,
+      }),
+    );
+  });
+
+  it("le créateur ne pose pas d'allergènes", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/draft-reader")
+        .update({ allergens }),
+    );
+  });
+
+  it("le créateur ne change pas les allergènes", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/allergens-editor")
+        .update({ "allergens.present": [] }),
+    );
+  });
+
+  it("le créateur n'efface pas les allergènes", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/allergens-editor")
+        .update({ allergens: deleteField() }),
+    );
+  });
+
+  it("l'administrateur ne change pas les allergènes", async () => {
+    await assertFails(
+      db("admin")
+        .doc("recipes/allergens-editor")
+        .update({ allergens: { ...allergens, present: [] } }),
+    );
+  });
+
+  it("une édition qui ne touche pas les allergènes passe", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("recipes/allergens-editor")
+        .update({ title: "Quiche lorraine" }),
+    );
+  });
+
+  it("l'administrateur édite un autre champ d'une recette qui les porte", async () => {
+    await assertSucceeds(
+      db("admin")
+        .doc("recipes/allergens-editor")
+        .update({ title: "Quiche au thon" }),
+    );
+  });
+});
+
 // ── recipes — compteurs des reprises automatiques ───────────────────────
 //
 // `nutrition_catch_up_attempts`, `meal_role_failure_count` et

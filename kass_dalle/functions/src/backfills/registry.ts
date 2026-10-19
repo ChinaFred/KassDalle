@@ -36,6 +36,7 @@ export const BACKFILL_KEYS = [
   "ticket_delivered_pr",
   "recipe_title_keys",
   "invitation_group_owner",
+  "illustration_folders",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -155,6 +156,15 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     key: "invitation_group_owner",
     kind: "ponctuel",
     title: "Propriétaire du groupe des invitations",
+    usesAi: false,
+    defaultSchedule: null,
+  },
+  // Contrôle en lecture seule : n'écrit rien dans les recettes, liste dans
+  // « À revoir » celles dont une illustration est hors des dossiers modérés.
+  {
+    key: "illustration_folders",
+    kind: "ponctuel",
+    title: "Dossiers des illustrations",
     usesAi: false,
     defaultSchedule: null,
   },

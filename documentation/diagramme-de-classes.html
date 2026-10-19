@@ -327,7 +327,7 @@ classDiagram
         <br><br>
         <code>RecipeAllergens</code> est agrégé de la même façon : calculé côté serveur à partir
         du référentiel (champ <code>allergens</code>), absent tant qu'aucun calcul n'a eu lieu,
-        jamais écrit par le client. <code>present</code> suit l'ordre des quatorze clés de
+        refusé au client par les règles (<code>serverOnlyComputedFields</code>). <code>present</code> suit l'ordre des quatorze clés de
         l'annexe II INCO (<code>kAllergenKeys</code>, fixture <code>allergens.json</code>) ;
         <code>byIngredient</code> donne, par clé, les noms d'ingrédients en cause.
         <br><br>

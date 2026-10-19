@@ -20,6 +20,30 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-19
 
+### v0.24.15 — technique
+
+Après le déploiement : lancer *Admin › Backfills › Dossiers des illustrations* une fois. Si la
+liste « À revoir » est vide, une version suivante limitera l'affichage des illustrations
+d'une recette à `illustrations/` et `recipes/` (ticket #154).
+
+Le champ `allergens` d'une recette s'écrit par le serveur seul. Les règles Firestore le
+refusent à la création et à la mise à jour, créateur et administrateur compris
+(`serverOnlyComputedFields`). Le client ne l'écrivait déjà jamais, mais rien n'empêchait une
+écriture faite hors de l'application de poser une liste inventée, affichée sur la fiche. Une
+mise à jour d'un autre champ passe toujours. Huit cas dans `rules-tests`.
+
+Nouveau backfill ponctuel « Dossiers des illustrations » (`illustration_folders`,
+`backfillIllustrationFoldersFn`), suite de l'audit #151. Contrôle en lecture seule, sans
+appel d'IA : il liste dans « À revoir » les recettes dont une URL de `image_urls` ou de
+`thumbnail_urls` n'est pas sous `illustrations/` ou `recipes/` du bucket, avec le dossier
+trouvé, sans URL ni chemin complet. Il ne modifie aucune recette. `storageObjectPathOf`
+prend une option `silent` pour ne pas journaliser la référence refusée.
+
+Nouveau skill `steward` (`.claude/skills/steward/SKILL.md`) : suivre une PR jusqu'à sa fusion
+et son déploiement — fusion de `master` sans rebase, collision de version, job rouge par job,
+qui fusionne quoi, CI du commit de fusion, suivi du « Déploiement ». Une PR qui modifie ce
+skill attend un « fusionne » explicite. Cité dans `CLAUDE.md` et `handbook-reseau-agents.md`.
+
 ### v0.24.14 — technique
 
 Trois corrections de sécurité (tickets #152, #153 et #154).

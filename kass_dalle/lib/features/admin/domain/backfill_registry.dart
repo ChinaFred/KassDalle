@@ -33,6 +33,7 @@ abstract final class BackfillKeys {
   static const ticketDeliveredPr = 'ticket_delivered_pr';
   static const recipeTitleKeys = 'recipe_title_keys';
   static const invitationGroupOwner = 'invitation_group_owner';
+  static const illustrationFolders = 'illustration_folders';
 }
 
 class BackfillDefinition {
@@ -228,6 +229,16 @@ const List<BackfillDefinition> kBackfillRegistry = [
         'leur groupe, pour qu\'il les retrouve dans la feuille du groupe.',
     usesAi: false,
     passLimit: 'Chaque passage examine au plus 2 000 invitations.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.illustrationFolders,
+    kind: BackfillKind.ponctuel,
+    title: 'Dossiers des illustrations',
+    description:
+        'Liste, sans rien modifier, les recettes dont une illustration ou une '
+        'vignette n\'est pas rangée dans les dossiers des images modérées.',
+    usesAi: false,
+    passLimit: 'Chaque passage examine au plus 2 000 recettes.',
   ),
 ];
 

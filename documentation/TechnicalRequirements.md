@@ -514,7 +514,7 @@ Document principal d'une recette.
 | `shopping_products` | `List<Map>` | Produits d'achat `{name, qty, unit}`, écrits par `onRecipeWritten` (`deriveShoppingProducts`, fixture `shopping_products.json`). **Une entrée par produit et famille d'unité** : kilo et grammes s'additionnent (`1,5 kg`), litre, centilitre et millilitre aussi ; un comptage et un poids restent deux entrées sous le même nom — le client les affiche sur une ligne, « 2 kg + 6 pommes de terre ». Le nom est le `shopping_product` du référentiel quand il existe (« beurre » pour « beurre fondu »), sinon la première orthographe lue. Absent tant qu'aucun calcul n'a eu lieu ; *Admin › Backfills › Recalculer les produits d'achat* le refait sur tout le fonds sans appel de modèle |
 | `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants, huile absorbée à la friture) |
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
-| `allergens` | `Map?` | Allergènes majeurs de la recette — les 14 de l'annexe II INCO — **déduits sans appel de modèle** des `allergens` du référentiel (§3.10). Écrit par le serveur seul (`onRecipeWritten` → `syncRecipeAllergens`, et le backfill « Allergènes des ingrédients et des recettes ») — par convention du client : comme pour `nutrition`, les règles de `recipes` ne restreignent pas les champs qu'un créateur écrit ; le client le lit (`Recipe.allergens`, `RecipeAllergens`) et ne l'écrit jamais : `toFirestore` l'omet, une mise à jour partielle le laisse en place, une copie ne le reprend pas. Absent tant qu'aucun calcul n'a eu lieu — la fiche n'affiche alors rien. Voir structure ci-dessous |
+| `allergens` | `Map?` | Allergènes majeurs de la recette — les 14 de l'annexe II INCO — **déduits sans appel de modèle** des `allergens` du référentiel (§3.10). **Écrit par le serveur seul** (`onRecipeWritten` → `syncRecipeAllergens`, et le backfill « Allergènes des ingrédients et des recettes ») ; sa date de calcul est `allergens.computed_at`, à l'intérieur du champ. Les règles de `recipes` refusent au client de le poser à la création et de le changer ou l'effacer à une mise à jour, créateur et administrateur compris (`serverOnlyComputedFields`, §4) ; une mise à jour d'un autre champ d'une recette qui le porte passe. Le client le lit (`Recipe.allergens`, `RecipeAllergens`) et ne l'écrit jamais : `toFirestore` l'omet, une mise à jour partielle le laisse en place, une copie ne le reprend pas. Absent tant qu'aucun calcul n'a eu lieu — la fiche n'affiche alors rien. Voir structure ci-dessous |
 | `estimated_times` | `Map?` | Durées de préparation et de cuisson **estimées par le modèle** pour une recette qui ne les donne pas (poste `time_estimate`). Hors du CookLang : ce n'est pas ce que dit la recette. **Écrit par le serveur seul** (`onRecipeWritten` → `syncRecipeEstimatedTimes` ; le backfill « Durées estimées », qui a repris les recettes antérieures, est retiré en v0.23.52) ; les règles de `recipes` refusent au client de le poser à la création et de le changer ou l'effacer à une mise à jour, administrateur compris (§4). Le client le lit (`Recipe.estimatedTimes`, `RecipeEstimatedTimes`) ; `toFirestore` l'omet, une copie ne le reprend pas (le serveur réestime la copie). Une durée lue (`tags.prep_time`, `tags.cook_time`, métadonnée `>> temps_preparation:` / `>> temps_cuisson:`) garde la priorité. Absent tant que la recette n'a jamais manqué d'une durée. Quand les deux durées sont lues, le champ est **vidé** (`prep` et `cook` à `null`) et garde l'empreinte, pas supprimé. Voir structure ci-dessous |
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait. Une ligne isolée (l'écran de relecture) laisse un brouillon à réserve de côté ; une **validation en lot** (`WorkQueueScreen`, depuis le 28 septembre 2026) avertit puis le valide quand même si l'utilisateur confirme — voir `DraftValidationPlan.validatableInBatch` |
 | `fidelity_findings` | `List<Map>?` | Ce qui a été constaté : `{message, items?}`. Les éléments vivent à part de la phrase parce qu’ils s’affichent en **liste à puces** — sept mots mal lus concaténés forment un pavé qu’on ne relit pas, et une alerte qu’on ne relit pas ne sert à rien. `FidelityFinding.listFrom` lit aussi l’ancien format (liste de chaînes) |
@@ -2180,6 +2180,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_title_keys_backfill_checkpoint` | `backfillTitleKeysFn` : `last_doc_id`, la dernière recette examinée ; `null` quand `recipes` a été parcourue en entier sans échec |
 | `invitation_group_owner_backfill_checkpoint` | `backfillInvitationGroupOwnerFn` : `last_doc_id`, la dernière invitation examinée ; `null` quand `invitations` a été parcourue en entier sans échec |
+| `illustration_folders_backfill_checkpoint` | `backfillIllustrationFoldersFn` : `last_doc_id`, la dernière recette examinée ; `null` quand `recipes` a été parcourue jusqu'au bout |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
 | `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn`, retiré en v0.23.52 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `allergens_ingredients_backfill_checkpoint` | `backfillAllergensFn` — curseur du parcours du référentiel |
@@ -2204,7 +2205,7 @@ est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/back
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
 récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach`, `move_meals_to_group`,
-`ticket_analyses`, `ticket_delivered_pr`, `recipe_title_keys`, `invitation_group_owner` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
+`ticket_analyses`, `ticket_delivered_pr`, `recipe_title_keys`, `invitation_group_owner`, `illustration_folders` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
 rend un reste inconnu (`remaining: null`), il n'est donc jamais marqué terminé tout seul, et
 il n'a pas de point de reprise — chaque passage relit les repas de sa période. Il partage son verrou avec `group_planning_reach` (`LOCK_GROUPS`) : les deux écrivent
 `planned_meals.group_id`, et l'un refuse de partir pendant que l'autre tourne. Les ponctuels `recipe_protein`,
@@ -2806,6 +2807,11 @@ service cloud.firestore {
       function serverOnlyRetryFields() {
         return ['nutrition_catch_up_attempts', 'meal_role_failure_count', 'meal_role_attempt_at'];
       }
+      // Allergènes déduits par le serveur (`onRecipeWritten`, backfill
+      // « Allergènes ») : serveur seul, administrateur compris.
+      function serverOnlyComputedFields() {
+        return ['allergens'];
+      }
       // Marque « doublon possible » d'un brouillon issu d'un livre entier :
       // posée par le serveur seul (`recipeProcessor`). Le client ne peut que
       // l'effacer, en validant.
@@ -2823,11 +2829,13 @@ service cloud.firestore {
         && !('duplicate_of' in request.resource.data)
         && !request.resource.data.keys().hasAny(serverOnlySourceFields())
         && !request.resource.data.keys().hasAny(serverOnlyRetryFields())
+        && !request.resource.data.keys().hasAny(serverOnlyComputedFields())
         && bookCheck(true) && sourceUrlAccepted();
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
         && !changes('source_url') && !changes('source_site') && !changes('source_author')
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyRetryFields())
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyComputedFields())
         && !changes('estimated_times')
         && duplicateMarkKeptOrRemoved()
         && ((changes('book_id') && bookCheck(true))
@@ -3262,6 +3270,10 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   (`serverOnlyRetryFields`, v0.23.59) ne se posent pas à la création et ne se modifient ni ne
   s'effacent, éditeur créateur compris, alors que le même éditeur change le titre seul
   (« recipes — compteurs des reprises automatiques ») ;
+  `allergens` (`serverOnlyComputedFields`) ne se pose pas à la création, par un éditeur ni
+  par un administrateur, et ne se change ni ne s'efface, créateur et administrateur compris,
+  alors que l'un et l'autre changent le titre d'une recette qui le porte
+  (« recipes — allergènes (allergens) ») ;
   `duplicate_of` (« recipes — marque de doublon possible ») ne se pose pas à la création, ne se
   pose pas sur une recette qui n'en a pas et ne se change pas ; valider l'efface, et une autre
   mise à jour le garde ; aucune écriture du client ne les
@@ -5878,7 +5890,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Cinq tâches planifiées (Cloud Scheduler), onze reprises manuelles et deux réglages. Aucune
+Cinq tâches planifiées (Cloud Scheduler), treize reprises manuelles (quatorze backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -5904,6 +5916,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillTicketDeliveredPrFn` | `admin` | ponctuel `ticket_delivered_pr`, « PR des tickets livrés » (v0.23.78). Lit les tickets `delivered` ; pour chacun sans `delivered_pr_number` ou sans `delivered_version`, appelle `recordDeliveredPr` (deux à trois appels GitHub). Ticket sans PR retrouvable : compté « sans PR » et listé dans « À revoir » (le backfill ne se marque donc pas terminé tout seul). 100 tickets repris par passage, trois échecs de suite ou jeton refusé ou limite de débit : arrêt. Aucun appel de modèle |
 | `backfillTitleKeysFn` | `admin` | ponctuel `recipe_title_keys`, « Clé de titre des recettes ». Parcourt `recipes` par identifiant, pages de 400, depuis le point de reprise `app_config/recipe_title_keys_backfill_checkpoint`, et pose `titre_key` (`titleKeyUpdate`, `triggers/recipeTitleKey.ts`) sur chaque recette dont la clé manque ou ne suit plus le titre, par `update` ; une recette déjà à jour n'est pas réécrite (« déjà à jour »). Sans cette clé, un nouveau scan d'une recette antérieure à la détection des doublons n'est pas reconnu. 2 000 recettes par appel par défaut (`maxDocs`, 10 000 au plus), 8 minutes au plus, arrêt sur trois échecs d'écriture de suite. L'écriture de la clé réveille `onRecipeWritten`, qui sort aussitôt (`onlyTitleKeyChanged`) : ni rôle dans un repas, ni durées, ni nutrition, ni courses ; le passage ne provoque donc aucun appel de modèle. Compte rendu : examinées, posées, identiques, échouées, arrêts (délai, quota, erreurs), `completed`. Un passage avec un échec n'est pas terminé, et le curseur reste sur la dernière recette examinée. Sans appel de modèle. À lancer une fois après le déploiement de la détection des doublons ; `recipeProcessor` et `onRecipeWritten` tiennent ensuite la clé à jour |
 | `backfillInvitationGroupOwnerFn` | `admin` | ponctuel `invitation_group_owner`, « Propriétaire du groupe des invitations » (v0.24.14, ticket #152). Parcourt `invitations` par identifiant, pages de 400, depuis le point de reprise `app_config/invitation_group_owner_backfill_checkpoint`, et pose `group_owner_id` sur chaque invitation qui ne l'a pas, par `update`, depuis `groups/{group_id}.owner_id`. N'écrit que si le groupe existe, a un propriétaire lisible et que l'auteur de l'invitation (`invited_by`) en est le propriétaire (`invitationOwnerDecision`). Un auteur simple membre ne suffit pas : un groupe recréé sous le même identifiant par un autre compte peut le compter parmi ses membres s'il a accepté d'y entrer. Sinon, rien d'écrit et l'invitation est listée « À revoir » : elle reste lisible par l'administrateur seul. Une invitation déjà pourvue n'est pas réécrite. 2 000 invitations par appel par défaut (`maxDocs`, 10 000 au plus), 8 minutes au plus, arrêt sur trois échecs de suite. Compte rendu : examinées, posées, déjà à jour, sans groupe, échouées, arrêts, `completed`. Sans appel de modèle. Terminé tout seul seulement si aucune invitation n'est à revoir ; sinon, l'administrateur le marque terminé une fois la liste lue. À lancer une fois après le déploiement de v0.24.14 ; `manageInvitationFn` pose ensuite le champ à la création et au renvoi |
+| `backfillIllustrationFoldersFn` | `admin` | ponctuel `illustration_folders`, « Dossiers des illustrations » — **contrôle en lecture seule** (suite de l'audit #151, ticket #154). Parcourt `recipes` par identifiant, pages de 400, depuis le point de reprise `app_config/illustration_folders_backfill_checkpoint`, et lit chaque URL de `image_urls` et de `thumbnail_urls` (`recipeIllustrationIssues`, `backfills/illustrationFolders.ts`). Le chemin de l'objet se lit décodé, par `storageObjectPathOf` (`utils/storagePath.ts`) pour une URL `firebasestorage.googleapis.com` ou `gs://`, et directement pour une URL publique `storage.googleapis.com/<bucket>/<chemin>` — les formes que le client affiche (`app_image_url.dart`) ; buckets admis : le bucket par défaut et `kassdale-6d948.appspot.com`. Une URL conforme est sous `illustrations/` ou `recipes/` (`PUBLISHED_IMAGE_PREFIXES`), avec un chemin bien formé. Toute autre recette va dans `aRevoir` avec le lieu trouvé : premier segment du chemin (`scans/`, `rejected/` ; un nom hors `[A-Za-z0-9_.-]` ou de plus de 40 caractères devient « dossier inattendu »), « racine du bucket », « autre bucket », « hors du stockage de l'application », « chemin sans adresse », « chemin mal formé », « adresse vide ou illisible », ou « image_urls n'est pas une liste ». Ni l'URL ni le chemin complet (qui porte l'uid d'un scan) ne sont recopiés ; les journaux (`logInfo`, `illustration_folders_backfill`) ne reçoivent que les compteurs, et une URL illisible ou mal encodée n'est pas tracée par `storageObjectPathOf` (option `silent`, désactivée pour les autres appelants). **N'écrit rien dans les recettes** : seuls le curseur et `backfill_run_illustration_folders` sont écrits. 2 000 recettes par appel par défaut (`maxDocs`, 10 000 au plus), 8 minutes au plus, arrêt sur trois recettes illisibles de suite. Compte rendu : examinées, conformes, `horsDossiers`, échouées, `depuisLeDebut`, arrêts (délai, quota, erreurs), `completed`. Marqué terminé seulement par un passage parti du début de la collection et arrivé au bout sans recette à revoir : un passage repris au point de reprise ignore ce que les passages précédents ont listé. Sans appel de modèle. À lancer une fois après le déploiement ; une liste vide permet de limiter l'affichage des illustrations à ces deux dossiers |
 
 Trois reprises ponctuelles, menées au bout en production, sont retirées en v0.23.52 avec leur
 callable : `backfillRecipeProteinFn` (« Protéine et féculent des plats »),
@@ -6066,6 +6079,7 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillMoveMealsToGroupFn` | repas dont l'écriture a échoué (« Repas non déplacé : <message> », nature `meal`), nommés par leur identifiant et leur jour (« Repas <id> — AAAA-MM-JJ »), sans titre de recette |
 | `backfillTitleKeysFn` | recettes en échec d'écriture (« Échec d'écriture : <message> »), nommées par leur titre |
 | `backfillInvitationGroupOwnerFn` | invitations non reprises, nommées par leur adresse et le nom du groupe : groupe supprimé, groupe sans propriétaire lisible, auteur qui n'est pas propriétaire du groupe actuel (simple membre, groupe recréé ou quitté), invitation sans groupe lisible ; échecs d'écriture (« Échec : <message> ») |
+| `backfillIllustrationFoldersFn` | recettes dont une URL de `image_urls` ou de `thumbnail_urls` est hors de `illustrations/` et `recipes/` (« Illustration hors des dossiers modérés : scans/, autre bucket »), nommées par leur titre ; recettes illisibles (« Recette illisible : <message> ») |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du
