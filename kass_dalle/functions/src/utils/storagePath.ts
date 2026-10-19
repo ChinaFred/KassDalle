@@ -63,13 +63,18 @@ export function promotedScanPrefix(uid: string): string {
  * `bucketName` est fourni, une référence qui nomme un autre bucket l'est aussi :
  * le serveur ne lit que le bucket par défaut, et lirait sinon le même chemin
  * chez lui.
+ *
+ * `silent` coupe la trace d'un refus (`warnRefused`), qui recopie la
+ * référence brute — jeton `token=` et chemin `scans/{uid}/…` compris.
+ * L'appelant qui l'active compte lui-même ses refus, sans la référence
+ * (contrôle « Dossiers des illustrations »). Désactivé par défaut.
  */
 export function storageObjectPathOf(
   reference: string,
-  opts: { bucketName?: string; allowEmulator?: boolean } = {},
+  opts: { bucketName?: string; allowEmulator?: boolean; silent?: boolean } = {},
 ): string | null {
   if (typeof reference !== "string" || reference.length === 0) return null;
-  const { bucketName, allowEmulator = false } = opts;
+  const { bucketName, allowEmulator = false, silent = false } = opts;
 
   if (reference.startsWith("gs://")) {
     const rest = reference.substring("gs://".length);
@@ -89,7 +94,7 @@ export function storageObjectPathOf(
       // tracé. `console.warn` plutôt que `logWarn` : ce module reste pur et
       // testable sans Cloud Logging, et la sortie console d'une fonction est
       // collectée par Cloud Logging.
-      warnRefused("URL illisible", reference, err);
+      if (!silent) warnRefused("URL illisible", reference, err);
       return null;
     }
     const isProd = url.protocol === "https:" && url.hostname === DOWNLOAD_HOST;
@@ -100,19 +105,20 @@ export function storageObjectPathOf(
     if (!isProd && !isEmulator) return null;
     const match = url.pathname.match(/^\/v0\/b\/([^/]+)\/o\/([^/]+)$/);
     if (!match) return null;
-    if (bucketName && decodeSafe(match[1]) !== bucketName) return null;
-    return decodeSafe(match[2]);
+    if (bucketName && decodeSafe(match[1], silent) !== bucketName) return null;
+    return decodeSafe(match[2], silent);
   }
 
   return reference;
 }
 
-function decodeSafe(value: string): string | null {
+function decodeSafe(value: string, silent = false): string | null {
   try {
     return decodeURIComponent(value);
   } catch (err) {
     // Encodage invalide (`%E0%A4%A`) : refusé, comme toute référence illisible.
-    warnRefused("encodage invalide", value, err);
+    // `silent` : l'appelant compte le refus lui-même, sans la référence.
+    if (!silent) warnRefused("encodage invalide", value, err);
     return null;
   }
 }

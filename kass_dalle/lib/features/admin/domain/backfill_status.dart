@@ -448,6 +448,14 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
     case BackfillKeys.recipeTitleKeys:
       return '${_count(n('posees'), 'clé posée', 'clés posées')}, '
           '${_count(n('echouees'), 'échec', 'échecs')}';
+    case BackfillKeys.invitationGroupOwner:
+      return '${_count(n('posees'), 'invitation reprise', 'invitations reprises')}, '
+          '${_count(n('sansGroupe'), 'à revoir', 'à revoir')}, '
+          '${_count(n('echouees'), 'échec', 'échecs')}';
+    case BackfillKeys.illustrationFolders:
+      return '${_count(n('examinees'), 'recette examinée', 'recettes examinées')}, '
+          '${_count(n('conformes'), 'conforme', 'conformes')}, '
+          '${_count(n('horsDossiers') + n('echouees'), 'à revoir', 'à revoir')}';
     case BackfillKeys.moveMealsToGroup:
       final from = _isoDayOrNull(report['du']);
       final to = _isoDayOrNull(report['au']);

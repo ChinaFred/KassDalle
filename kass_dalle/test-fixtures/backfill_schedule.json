@@ -12,7 +12,9 @@
     { "key": "move_meals_to_group", "kind": "ponctuel", "uses_ai": false, "default_schedule": null },
     { "key": "ticket_analyses", "kind": "ponctuel", "uses_ai": false, "default_schedule": null },
     { "key": "ticket_delivered_pr", "kind": "ponctuel", "uses_ai": false, "default_schedule": null },
-    { "key": "recipe_title_keys", "kind": "ponctuel", "uses_ai": false, "default_schedule": null }
+    { "key": "recipe_title_keys", "kind": "ponctuel", "uses_ai": false, "default_schedule": null },
+    { "key": "invitation_group_owner", "kind": "ponctuel", "uses_ai": false, "default_schedule": null },
+    { "key": "illustration_folders", "kind": "ponctuel", "uses_ai": false, "default_schedule": null }
   ],
   "parse_schedule": [
     {

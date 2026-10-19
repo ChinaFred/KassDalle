@@ -32,6 +32,8 @@ abstract final class BackfillKeys {
   static const ticketAnalyses = 'ticket_analyses';
   static const ticketDeliveredPr = 'ticket_delivered_pr';
   static const recipeTitleKeys = 'recipe_title_keys';
+  static const invitationGroupOwner = 'invitation_group_owner';
+  static const illustrationFolders = 'illustration_folders';
 }
 
 class BackfillDefinition {
@@ -215,6 +217,26 @@ const List<BackfillDefinition> kBackfillRegistry = [
     description:
         'Pose sur les recettes existantes la clé de titre que l\'import '
         'compare pour reconnaître une page déjà présente dans le livre.',
+    usesAi: false,
+    passLimit: 'Chaque passage examine au plus 2 000 recettes.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.invitationGroupOwner,
+    kind: BackfillKind.ponctuel,
+    title: 'Propriétaire du groupe des invitations',
+    description:
+        'Recopie sur les invitations par e-mail existantes le propriétaire de '
+        'leur groupe, pour qu\'il les retrouve dans la feuille du groupe.',
+    usesAi: false,
+    passLimit: 'Chaque passage examine au plus 2 000 invitations.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.illustrationFolders,
+    kind: BackfillKind.ponctuel,
+    title: 'Dossiers des illustrations',
+    description:
+        'Liste, sans rien modifier, les recettes dont une illustration ou une '
+        'vignette n\'est pas rangée dans les dossiers des images modérées.',
     usesAi: false,
     passLimit: 'Chaque passage examine au plus 2 000 recettes.',
   ),

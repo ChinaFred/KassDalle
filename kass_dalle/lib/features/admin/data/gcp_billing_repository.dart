@@ -516,6 +516,34 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Pose `group_owner_id` sur les invitations par e-mail qui ne l'ont pas,
+  /// sans appel de modèle : la règle Firestore compare ce champ pour ouvrir
+  /// une invitation au propriétaire de son groupe. Les invitations sans
+  /// groupe sont dans `failures`.
+  Future<BackfillCounts> backfillInvitationGroupOwner() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillInvitationGroupOwnerFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
+  /// Contrôle, sans rien écrire dans les recettes, que leurs illustrations
+  /// (`image_urls`, `thumbnail_urls`) sont sous `illustrations/` ou
+  /// `recipes/` du bucket. Sans appel de modèle. Les recettes hors de ces
+  /// dossiers sont dans `failures`.
+  Future<BackfillCounts> backfillIllustrationFolders() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillIllustrationFoldersFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Déplace les repas du planning personnel de l'appelant, sur la période de
   /// [request], dans le planning du groupe choisi. Sans appel de modèle. Les
   /// drapeaux valent 1 ou 0 ; les repas en échec sont dans `failures`.

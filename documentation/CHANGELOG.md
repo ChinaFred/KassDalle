@@ -20,6 +20,70 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-19
 
+### v0.24.15 — technique
+
+Après le déploiement : lancer *Admin › Backfills › Dossiers des illustrations* une fois. Si la
+liste « À revoir » est vide, une version suivante limitera l'affichage des illustrations
+d'une recette à `illustrations/` et `recipes/` (ticket #154).
+
+Le champ `allergens` d'une recette s'écrit par le serveur seul. Les règles Firestore le
+refusent à la création et à la mise à jour, créateur et administrateur compris
+(`serverOnlyComputedFields`). Le client ne l'écrivait déjà jamais, mais rien n'empêchait une
+écriture faite hors de l'application de poser une liste inventée, affichée sur la fiche. Une
+mise à jour d'un autre champ passe toujours. Huit cas dans `rules-tests`.
+
+Nouveau backfill ponctuel « Dossiers des illustrations » (`illustration_folders`,
+`backfillIllustrationFoldersFn`), suite de l'audit #151. Contrôle en lecture seule, sans
+appel d'IA : il liste dans « À revoir » les recettes dont une URL de `image_urls` ou de
+`thumbnail_urls` n'est pas sous `illustrations/` ou `recipes/` du bucket, avec le dossier
+trouvé, sans URL ni chemin complet. Il ne modifie aucune recette. `storageObjectPathOf`
+prend une option `silent` pour ne pas journaliser la référence refusée.
+
+Nouveau skill `steward` (`.claude/skills/steward/SKILL.md`) : suivre une PR jusqu'à sa fusion
+et son déploiement — fusion de `master` sans rebase, collision de version, job rouge par job,
+qui fusionne quoi, CI du commit de fusion, suivi du « Déploiement ». Une PR qui modifie ce
+skill attend un « fusionne » explicite. Cité dans `CLAUDE.md` et `handbook-reseau-agents.md`.
+
+### v0.24.14 — technique
+
+Trois corrections de sécurité (tickets #152, #153 et #154).
+
+#152. Une invitation par e-mail porte maintenant `group_owner_id`, l'uid du propriétaire de
+son groupe, écrit par `manageInvitationFn` à la création et au renvoi. La règle Firestore de
+`invitations` compare ce champ au lecteur non administrateur, au lieu de lire le groupe
+courant. Avant, un groupe supprimé puis recréé sous le même identifiant par un autre éditeur
+lui ouvrait les invitations restées en base, adresses comprises. La feuille du groupe filtre
+sur `group_id` et `group_owner_id` (deux égalités, sans index composite). Les invitations
+existantes n'ont pas le champ : seul un administrateur les lit, et le propriétaire ne les voit
+plus dans la feuille du groupe tant que le backfill ponctuel « Propriétaire du groupe des
+invitations » (`backfillInvitationGroupOwnerFn`) n'est pas passé. Il recopie le propriétaire
+du groupe courant quand le groupe existe et que l'auteur de l'invitation en est le
+propriétaire ; sinon il n'écrit rien et liste l'invitation « À revoir ». À l'acceptation
+(`applyEmailInvitation`, `applyRevokedInvitation`), le groupe relu n'est rejoint que si son
+`owner_id` vaut `group_owner_id` (`invitationGroupOf`) : un groupe recréé par un autre éditeur
+ne reçoit plus l'invité sans son accord. Sinon, ou si l'invitation n'a pas le champ, le rôle
+s'applique sans le groupe (`group_missing: true`). Le renvoi pose `group_owner_id` seulement
+s'il manque et que l'auteur de l'invitation est le propriétaire relu, et refuse
+`group_changed` sinon, ou s'il diffère du propriétaire relu. Le test `OPEN_FLAW`
+de `rules-tests` est devenu bloquant.
+
+#153. Écrire sous `users/{uid}/preferences` et `users/{uid}/nutrition_portion_overrides`
+demande un compte nommé et non révoqué (`isApproved()`), en plus d'en être le titulaire.
+`preferences` n'accepte en création et modification que les six identifiants que le client
+écrit (`book_order`, `explore_filters`, `meal_staples`, `planning_refusals`,
+`planning_visibility`, `recipe_search_scope`). La lecture reste au titulaire.
+
+#154. `isAppImageUrl` décode le chemin de l'objet Storage et n'accepte que les dossiers
+écrits par le serveur (`covers/`, `scans/`, `illustrations/`, `recipes/`, `users/`). Un
+membre pouvait écrire dans `image_urls` l'URL à jeton d'un fichier de `quarantine/` ou de
+`tickets/`, et la famille voyait l'image sans modération. Un chemin vide, avec `..`, `.`,
+un segment vide ou un encodage illisible est refusé. Aucun écran n'affiche par URL une image
+non modérée : la modération et les captures de ticket les lisent par leur chemin.
+
+Après le déploiement : lancer *Admin › Backfills › Propriétaire du groupe des invitations*
+une fois, au plus tôt. Une invitation antérieure acceptée avant ce passage donne le rôle sans le
+groupe.
+
 ### v0.24.13 — fonctionnel
 
 Deuxième palier de la refonte plat / menu du planning : un repas dit ce qui manque à son

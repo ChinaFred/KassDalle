@@ -331,6 +331,52 @@ export function groupInviteFor(
   return "invited";
 }
 
+/**
+ * Le groupe relu d'une invitation, s'il est bien celui de l'invitation ;
+ * `null` sinon.
+ *
+ * Un identifiant de groupe est choisi par le client : un groupe supprimé peut
+ * être recréé sous le même identifiant par un autre éditeur. Le groupe relu
+ * n'est celui de l'invitation que si son `owner_id` (figé par les règles) vaut
+ * `group_owner_id`, écrit par le serveur à la création (ticket #152). Sinon,
+ * ou si l'invitation n'a pas le champ (antérieure à v0.24.14, pas encore
+ * reprise par le backfill), le groupe est traité comme absent : le rôle
+ * s'applique, l'invité n'entre dans aucun groupe, `group_missing: true`.
+ */
+export function invitationGroupOf(
+  group: Record<string, unknown> | undefined | null,
+  invitation: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (!group) return null;
+  const expected = invitation.group_owner_id;
+  if (typeof expected !== "string" || expected.length === 0) return null;
+  return group.owner_id === expected ? group : null;
+}
+
+/** Message du refus `group_changed` d'un renvoi. */
+export const GROUP_CHANGED_MESSAGE =
+  "Le groupe de cette invitation a changé de propriétaire depuis l'envoi. " +
+  "Annulez-la, puis invitez de nouveau.";
+
+/**
+ * Ce que le renvoi fait de `group_owner_id` : le poser s'il manque et que
+ * l'auteur de l'invitation est le propriétaire relu (`write`), ne rien écrire
+ * s'il vaut déjà le propriétaire relu (`keep`), refuser sinon (`refuse`,
+ * raison `group_changed`) — le groupe a pu être recréé sous le même
+ * identifiant par un autre compte. Même condition que le backfill
+ * `invitation_group_owner` pour une invitation sans le champ.
+ */
+export function resendGroupOwnerDecision(
+  invitation: Record<string, unknown>,
+  groupOwnerId: string,
+): "write" | "keep" | "refuse" {
+  const stored = invitation.group_owner_id;
+  if (typeof stored !== "string" || stored.length === 0) {
+    return invitation.invited_by === groupOwnerId ? "write" : "refuse";
+  }
+  return stored === groupOwnerId ? "keep" : "refuse";
+}
+
 /** Vrai si l'invitation stockée vise le compte révoqué `uid` et peut encore s'appliquer. */
 export function isOpenReturnInvitationFor(
   data: Record<string, unknown> | undefined | null,

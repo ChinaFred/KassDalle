@@ -58,13 +58,21 @@ class InvitationsRepository {
         );
   }
 
-  /// Les invitations d'un groupe, pour son propriétaire. La requête filtre sur
-  /// `group_id` : c'est ce filtre que la règle Firestore exige d'un non-admin.
-  /// Pas de tri serveur (il demanderait un index) : l'écran trie.
-  Stream<List<EmailInvitation>> watchGroupInvitations(String groupId) {
+  /// Les invitations d'un groupe, pour son propriétaire [ownerUid] (le compte
+  /// connecté). La requête filtre sur `group_owner_id` : la règle Firestore
+  /// n'ouvre une invitation à un non-administrateur que si ce champ vaut son
+  /// uid, et une requête doit être conforme à la règle pour être servie. Le
+  /// filtre sur `group_id` limite la liste au groupe affiché. Deux égalités se
+  /// servent sans index composite ; pas de tri serveur (il en demanderait
+  /// un) : l'écran trie.
+  Stream<List<EmailInvitation>> watchGroupInvitations({
+    required String groupId,
+    required String ownerUid,
+  }) {
     return _firestore
         .collection('invitations')
         .where('group_id', isEqualTo: groupId)
+        .where('group_owner_id', isEqualTo: ownerUid)
         .snapshots()
         .map(
           (snap) => snap.docs

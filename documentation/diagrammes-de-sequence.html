@@ -3757,9 +3757,9 @@ sequenceDiagram
     T->>T: rien n'est appliqué (logInfo) ; compte pending, invitation inchangée
   else invitation active de compte neuf (target absent ou new) de même email_key, invitant toujours admin
     T->>U: transaction — relit : toujours pending et non révoqué ?
-    T->>G: transaction — le groupe existe ?
+    T->>G: transaction — le groupe existe, et son owner_id vaut group_owner_id de l'invitation ?
     T->>U: role = rôle de l'invitation
-    opt groupe existant
+    opt groupe existant, owner_id = group_owner_id (sinon : group_missing)
       T->>G: member_ids + uid, invited_ids − uid
     end
     T->>I: status accepted, accepted_uid, accepted_at, group_missing
@@ -3824,9 +3824,9 @@ sequenceDiagram
       T->>T: rien n'est appliqué (logInfo) ; compte révoqué, invitation inchangée
     else invitation active, target revoked, target_uid = uid, invitant toujours admin
       T->>U: transaction — relit : toujours révoqué, pas le fondateur ?
-      T->>G: transaction — le groupe existe ? invitant encore membre ? déjà membre, déjà invité, 50 en attente ?
+      T->>G: transaction — le groupe existe, owner_id = group_owner_id ? invitant encore membre ? déjà membre, déjà invité, 50 en attente ?
       T->>U: is_revoked false, role = rôle de l'invitation
-      opt groupe existant, invitant membre, compte ni membre ni invité, moins de 50 invitations
+      opt groupe existant, owner_id = group_owner_id, invitant membre, compte ni membre ni invité, moins de 50 invitations
         T->>G: invited_ids + uid (jamais member_ids)
       end
       T->>I: status accepted, accepted_uid, accepted_at, group_invite, group_missing

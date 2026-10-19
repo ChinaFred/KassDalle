@@ -8,12 +8,12 @@
 //    aujourd'hui sans faire échouer la suite ; la correction retire l'option.
 
 import { after, before, beforeEach, describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 import {
   FOUNDER_EMAIL,
-  OPEN_FLAW,
   PERSONAS,
   as,
   createEnv,
@@ -3154,11 +3154,14 @@ describe("web_search_cache", () => {
 // ── invitations ──────────────────────────────────────────────────────────
 
 describe("invitations — lecture administrateur et propriétaire du groupe, écriture serveur seule", () => {
+  // `group_owner_id` : l'uid du propriétaire du groupe, écrit par le serveur à
+  // la création (`manageInvitationFn`). C'est lui que la règle compare.
   const INVITATION = {
     email: "marie@example.com",
     email_key: "marie@example.com",
     role: "reader",
     group_id: "g1",
+    group_owner_id: EDITOR,
     status: "sent",
   };
 
@@ -3198,13 +3201,24 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
           member_ids: [OTHER],
           invited_ids: [],
         },
-        "invitations/inv2": { ...INVITATION, group_id: "g2" },
+        "invitations/inv2": { ...INVITATION, group_id: "g2", group_owner_id: OTHER },
       });
     });
 
     it("lit une invitation de son groupe, document et requête filtrée", async () => {
       await assertSucceeds(db("editor").doc("invitations/inv1").get());
+      // La requête de `watchGroupInvitations` : groupe et propriétaire.
       await assertSucceeds(
+        db("editor")
+          .collection("invitations")
+          .where("group_id", "==", "g1")
+          .where("group_owner_id", "==", EDITOR)
+          .get(),
+      );
+    });
+
+    it("une requête filtrée sur le seul groupe est refusée", async () => {
+      await assertFails(
         db("editor")
           .collection("invitations")
           .where("group_id", "==", "g1")
@@ -3218,8 +3232,18 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
         db("editor")
           .collection("invitations")
           .where("group_id", "==", "g2")
+          .where("group_owner_id", "==", OTHER)
           .get(),
       );
+      // Filtrée sur son propre uid, la requête est permise et ne rend rien.
+      const mine = await assertSucceeds(
+        db("editor")
+          .collection("invitations")
+          .where("group_id", "==", "g2")
+          .where("group_owner_id", "==", EDITOR)
+          .get(),
+      );
+      assert.equal(mine.size, 0);
     });
 
     it("ne lit pas la collection entière", async () => {
@@ -3232,6 +3256,7 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
         db("otherReader")
           .collection("invitations")
           .where("group_id", "==", "g1")
+          .where("group_owner_id", "==", EDITOR)
           .get(),
       );
     });
@@ -3248,14 +3273,23 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
           owner_id: PERSONAS.pending.uid,
           member_ids: [PERSONAS.pending.uid],
         },
-        "invitations/invR": { ...INVITATION, group_id: "gR" },
-        "invitations/invP": { ...INVITATION, group_id: "gP" },
+        "invitations/invR": {
+          ...INVITATION,
+          group_id: "gR",
+          group_owner_id: PERSONAS.revoked.uid,
+        },
+        "invitations/invP": {
+          ...INVITATION,
+          group_id: "gP",
+          group_owner_id: PERSONAS.pending.uid,
+        },
       });
       await assertFails(db("revoked").doc("invitations/invR").get());
       await assertFails(
         db("revoked")
           .collection("invitations")
           .where("group_id", "==", "gR")
+          .where("group_owner_id", "==", PERSONAS.revoked.uid)
           .get(),
       );
       await assertFails(db("pending").doc("invitations/invP").get());
@@ -3263,6 +3297,7 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
         db("pending")
           .collection("invitations")
           .where("group_id", "==", "gP")
+          .where("group_owner_id", "==", PERSONAS.pending.uid)
           .get(),
       );
     });
@@ -3274,36 +3309,54 @@ describe("invitations — lecture administrateur et propriétaire du groupe, éc
           owner_id: PERSONAS.reader.uid,
           member_ids: [PERSONAS.reader.uid],
         },
-        "invitations/invL": { ...INVITATION, group_id: "gL" },
+        "invitations/invL": {
+          ...INVITATION,
+          group_id: "gL",
+          group_owner_id: PERSONAS.reader.uid,
+        },
       });
       await assertSucceeds(db("reader").doc("invitations/invL").get());
     });
 
-    it(
-      "un compte qui recrée un groupe supprimé sous le même identifiant ne lit pas ses invitations",
-      OPEN_FLAW,
-      async () => {
-        await seedDocs(env, {
-          "invitations/invD": { ...INVITATION, group_id: "gDeleted" },
-        });
-        await assertSucceeds(
-          db("editor")
-            .doc("groups/gDeleted")
-            .set({
-              name: "Pirate",
-              owner_id: EDITOR,
-              member_ids: [EDITOR],
-              invited_ids: [],
-            }),
-        );
-        await assertFails(
-          db("editor")
-            .collection("invitations")
-            .where("group_id", "==", "gDeleted")
-            .get(),
-        );
-      },
-    );
+    it("un compte qui recrée un groupe supprimé sous le même identifiant ne lit pas ses invitations", async () => {
+      await seedDocs(env, {
+        "invitations/invD": { ...INVITATION, group_id: "gDeleted", group_owner_id: OTHER },
+      });
+      await assertSucceeds(
+        db("editor")
+          .doc("groups/gDeleted")
+          .set({
+            name: "Pirate",
+            owner_id: EDITOR,
+            member_ids: [EDITOR],
+            invited_ids: [],
+          }),
+      );
+      await assertFails(db("editor").doc("invitations/invD").get());
+      await assertFails(
+        db("editor")
+          .collection("invitations")
+          .where("group_id", "==", "gDeleted")
+          .get(),
+      );
+      // La requête de la feuille du groupe recréé ne rend pas l'invitation.
+      const mine = await assertSucceeds(
+        db("editor")
+          .collection("invitations")
+          .where("group_id", "==", "gDeleted")
+          .where("group_owner_id", "==", EDITOR)
+          .get(),
+      );
+      assert.equal(mine.size, 0);
+    });
+
+    it("une invitation sans group_owner_id n'est lisible que par un administrateur", async () => {
+      const { group_owner_id: _omitted, ...legacy } = INVITATION;
+      await seedDocs(env, { "invitations/invOld": legacy });
+      // Le groupe g1 existe et appartient à l'éditeur : la règle ne le lit plus.
+      await assertFails(db("editor").doc("invitations/invOld").get());
+      await assertSucceeds(db("admin").doc("invitations/invOld").get());
+    });
 
     it("n'écrit toujours pas", async () => {
       await assertFails(
@@ -4777,6 +4830,103 @@ describe("planning_refusals — mémoire des refus, au titulaire seul", () => {
   });
 });
 
+// ── users/{uid}/preferences et nutrition_portion_overrides — écriture ────
+//
+// Ticket #153 : écrire demande un compte nommé et non révoqué, et un
+// identifiant de préférence que le client écrit réellement.
+
+describe("users/{uid}/preferences et nutrition_portion_overrides — compte nommé, identifiants connus", () => {
+  const KNOWN_IDS = [
+    "book_order",
+    "explore_filters",
+    "meal_staples",
+    "planning_refusals",
+    "planning_visibility",
+    "recipe_search_scope",
+  ];
+
+  for (const persona of ["pending", "revoked", "revokedStaleToken"]) {
+    it(`${persona} n'écrit ni ses préférences ni ses portions`, async () => {
+      const uid = PERSONAS[persona].uid;
+      await seedDocs(env, {
+        [`users/${uid}/preferences/book_order`]: { order: ["b1"] },
+        [`users/${uid}/nutrition_portion_overrides/r`]: { selected_portions: 4 },
+      });
+      await assertFails(
+        db(persona).doc(`users/${uid}/preferences/book_order`).set({ order: ["b2"] }),
+      );
+      await assertFails(
+        db(persona).doc(`users/${uid}/preferences/recipe_search_scope`).set({ scope: "all" }),
+      );
+      await assertFails(db(persona).doc(`users/${uid}/preferences/book_order`).delete());
+      await assertFails(
+        db(persona)
+          .doc(`users/${uid}/nutrition_portion_overrides/r`)
+          .set({ selected_portions: 2 }),
+      );
+      await assertFails(
+        db(persona)
+          .doc(`users/${uid}/nutrition_portion_overrides/r2`)
+          .set({ selected_portions: 2 }),
+      );
+      await assertFails(db(persona).doc(`users/${uid}/nutrition_portion_overrides/r`).delete());
+    });
+  }
+
+  it("le propriétaire approuvé écrit ses préférences connues et ses portions", async () => {
+    await assertSucceeds(
+      db("reader").doc(`users/${READER}/preferences/book_order`).set({ order: ["b1"] }),
+    );
+    await assertSucceeds(
+      db("reader").doc(`users/${READER}/preferences/meal_staples`).set({ overrides: {} }),
+    );
+    await assertSucceeds(
+      db("reader").doc(`users/${READER}/preferences/recipe_search_scope`).set({ scope: "all" }),
+    );
+    await assertSucceeds(db("reader").doc(`users/${READER}/preferences/book_order`).delete());
+    await assertSucceeds(
+      db("reader")
+        .doc(`users/${READER}/nutrition_portion_overrides/r`)
+        .set({ selected_portions: 4 }),
+    );
+    await assertSucceeds(db("reader").doc(`users/${READER}/nutrition_portion_overrides/r`).get());
+    await assertSucceeds(
+      db("reader").doc(`users/${READER}/nutrition_portion_overrides/r`).delete(),
+    );
+  });
+
+  it("un identifiant de préférence inconnu est refusé, administrateur compris", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}/preferences/anything`).set({ x: 1 }),
+    );
+    await assertFails(
+      db("reader").doc(`users/${READER}/preferences/Book_order`).set({ order: [] }),
+    );
+    await assertFails(db("admin").doc(`users/${OTHER}/preferences/anything`).set({ x: 1 }));
+  });
+
+  it("la liste des identifiants connus suit celle des règles", async () => {
+    // Un identifiant ajouté au client sans l'être à `knownPreferenceIds` est
+    // refusé : ce test le dit avant la production.
+    for (const id of KNOWN_IDS) {
+      if (id === "planning_refusals" || id === "explore_filters" || id === "planning_visibility") {
+        continue; // forme propre, testée dans leurs blocs
+      }
+      await assertSucceeds(db("reader").doc(`users/${READER}/preferences/${id}`).set({}));
+    }
+  });
+
+  it("un compte en attente ou révoqué lit encore ce qu'il a écrit", async () => {
+    const uid = PERSONAS.pending.uid;
+    await seedDocs(env, {
+      [`users/${uid}/preferences/book_order`]: { order: ["b1"] },
+      [`users/${uid}/nutrition_portion_overrides/r`]: { selected_portions: 4 },
+    });
+    await assertSucceeds(db("pending").doc(`users/${uid}/preferences/book_order`).get());
+    await assertSucceeds(db("pending").doc(`users/${uid}/nutrition_portion_overrides/r`).get());
+  });
+});
+
 // ── recipes — durées estimées (estimated_times) ─────────────────────────
 //
 // Écrites par le serveur seul (`onRecipeWritten`, backfill « Durées
@@ -4845,6 +4995,102 @@ describe("recipes — durées estimées (estimated_times)", () => {
       db("reader")
         .doc("recipes/estimated-reader")
         .update({ title: "Gratin dauphinois" }),
+    );
+  });
+});
+
+// ── recipes — allergènes (allergens) ──────────────────────────────────
+//
+// Déduits par le serveur seul des ingrédients du référentiel
+// (`onRecipeWritten`, backfill « Allergènes »). Ni le créateur ni un
+// administrateur ne les posent à la création, ne les changent ni ne les
+// effacent ; une édition d'un autre champ d'une recette qui les porte passe.
+describe("recipes — allergènes (allergens)", () => {
+  const allergens = {
+    present: ["lait"],
+    complete: true,
+    by_ingredient: { lait: ["beurre"] },
+    computed_at: new Date("2026-10-12T05:00:00Z"),
+  };
+
+  beforeEach(async () => {
+    await seedDocs(env, {
+      "recipes/allergens-editor": {
+        title: "Quiche",
+        created_by: EDITOR,
+        review_status: "validated",
+        allergens,
+      },
+    });
+  });
+
+  it("un éditeur ne crée pas de recette avec des allergènes", async () => {
+    await assertFails(
+      db("editor").doc("recipes/new-allergens").set({
+        title: "x",
+        created_by: EDITOR,
+        review_status: "draft",
+        allergens,
+      }),
+    );
+  });
+
+  it("l'administrateur ne crée pas de recette avec des allergènes", async () => {
+    await assertFails(
+      db("admin").doc("recipes/new-allergens-admin").set({
+        title: "x",
+        created_by: PERSONAS.admin.uid,
+        review_status: "draft",
+        allergens,
+      }),
+    );
+  });
+
+  it("le créateur ne pose pas d'allergènes", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/draft-reader")
+        .update({ allergens }),
+    );
+  });
+
+  it("le créateur ne change pas les allergènes", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/allergens-editor")
+        .update({ "allergens.present": [] }),
+    );
+  });
+
+  it("le créateur n'efface pas les allergènes", async () => {
+    await assertFails(
+      db("editor")
+        .doc("recipes/allergens-editor")
+        .update({ allergens: deleteField() }),
+    );
+  });
+
+  it("l'administrateur ne change pas les allergènes", async () => {
+    await assertFails(
+      db("admin")
+        .doc("recipes/allergens-editor")
+        .update({ allergens: { ...allergens, present: [] } }),
+    );
+  });
+
+  it("une édition qui ne touche pas les allergènes passe", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("recipes/allergens-editor")
+        .update({ title: "Quiche lorraine" }),
+    );
+  });
+
+  it("l'administrateur édite un autre champ d'une recette qui les porte", async () => {
+    await assertSucceeds(
+      db("admin")
+        .doc("recipes/allergens-editor")
+        .update({ title: "Quiche au thon" }),
     );
   });
 });

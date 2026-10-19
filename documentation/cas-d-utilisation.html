@@ -1013,7 +1013,7 @@ flowchart LR
         estime par l'IA les ingrédients encore non examinés ; elle est facturée. La seconde pose sur
         chaque recette l'union des allergènes de ses ingrédients, sans appel d'IA. Le compte rendu
         est chiffré pour chaque phase : traités, ignorés, en erreur.
-        <b>Backfills ponctuels et récurrents.</b> L'écran range ses neuf reprises en trois
+        <b>Backfills ponctuels et récurrents.</b> L'écran range ses quatorze reprises en trois
         sections : récurrents, ponctuels à lancer, ponctuels terminés. Chaque tuile affiche l'état
         de son dernier passage, lu en direct. Un récurrent se programme — jours et heure de
         Paris — et passe seul, chaque heure jusqu'à la fin s'il lui reste du travail, ou jusqu'au
@@ -1027,6 +1027,10 @@ flowchart LR
         trois fois ; la confirmation propose « Réessayer aussi les éléments exclus après 3 échecs ».
         Une recette exclue de « Rôle des recettes » est aussi reclassée, compteur remis à zéro,
         dès qu'on modifie son titre, ses ingrédients ou ses étapes.
+        <b>« Dossiers des illustrations »</b> est un contrôle de Backfills qui ne modifie
+        aucune recette : il liste dans « À revoir » chaque recette dont une illustration ou une
+        vignette n'est pas rangée dans les dossiers des images modérées, avec le dossier trouvé.
+        Aucun appel d'IA.
         <b>« Livres système des comptes »</b> est une reprise de Backfills : elle crée, pour
         chaque compte lecteur, éditeur ou administrateur, ceux des quatre livres système qui lui
         manquent. Un compte approuvé depuis la v0.23.50 les reçoit dès son approbation. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le

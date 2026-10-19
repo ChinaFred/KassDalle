@@ -35,11 +35,13 @@ class _FakeRepo implements InvitationsRepository {
   Stream<List<EmailInvitation>> watchInvitations() => Stream.value(invitations);
 
   @override
-  Stream<List<EmailInvitation>> watchGroupInvitations(String groupId) =>
-      Stream.value([
-        for (final i in invitations)
-          if (i.groupId == groupId) i,
-      ]);
+  Stream<List<EmailInvitation>> watchGroupInvitations({
+    required String groupId,
+    required String ownerUid,
+  }) => Stream.value([
+    for (final i in invitations)
+      if (i.groupId == groupId) i,
+  ]);
 
   @override
   Future<InvitationOutcome> create({
@@ -279,7 +281,8 @@ void main() {
     });
     expect(
       invitationSubtitle(gone, EmailInvitationStatus.accepted),
-      'Lecteur · Les Kassbi · accès rétabli · groupe supprimé',
+      'Lecteur · Les Kassbi · accès rétabli · groupe non rejoint (supprimé ou changé) : '
+      'invitez-le depuis Groupes familiaux',
     );
     // En attente, la ligne dit que le compte visé est révoqué.
     final pending = EmailInvitation.fromFirestore('f', {

@@ -511,6 +511,7 @@ quand la tâche le demande, sans contexte séparé.
 | `logique-dupliquee` | changer une logique du tableau « Logique dupliquée Dart ↔ TypeScript » |
 | `backfill` | reprendre des documents existants ou semer une donnée, par Admin › Backfills |
 | `experience-sandbox` | ajouter, faire avancer, porter ou retirer une expérience du bac à sable |
+| `steward` | suivre une PR jusqu'à sa fusion et son déploiement : CI rouge, conflit avec `master`, collision de version, relecture, fusion |
 
 Deux hooks, déclarés dans `.claude/settings.json` :
 
@@ -565,12 +566,13 @@ aucune : elle reçoit une réponse (voir « Une question appelle une réponse »
 4. **Versionner.** Incrémenter `version:` dans `kass_dalle/pubspec.yaml`, et ajouter l'entrée
    de cette version en tête de `documentation/CHANGELOG.md`, dans le même commit (voir
    « Documentation à tenir à jour »).
-5. **Ouvrir la PR et la suivre** jusqu'à une CI verte. Une CI rouge se corrige ; elle ne se
-   relance pas en espérant un autre résultat. Sur le PC, pas de PR : commit et push sur
-   `master`, puis suivre la CI.
+5. **Ouvrir la PR et la suivre** jusqu'à une CI verte, avec le skill `steward`. Une CI rouge
+   se corrige ; elle ne se relance pas en espérant un autre résultat. Sur le PC, pas de PR :
+   commit et push sur `master`, puis suivre la CI.
 6. **Déployer** : fusionner, suivre le workflow « Déploiement » jusqu'au bout, puis
-   annoncer la version en ligne. Un échec du workflow se diagnostique et se corrige comme
-   une CI rouge. Sur le PC, le push de l'étape 5 lance le même workflow.
+   annoncer la version en ligne (skill `steward`, étapes 5 et 6). Un échec du workflow se
+   diagnostique et se corrige comme une CI rouge. Sur le PC, le push de l'étape 5 lance le
+   même workflow.
 
 `product-owner-release` intervient pour une release complète ou un arbitrage de périmètre,
 pas pour chaque travail.
@@ -747,8 +749,8 @@ Une session ne touche à un ticket que sur demande de l'utilisateur :
   membre —, « traite #N » vaut aussi « fusionne » : la session principale fusionne la PR
   elle-même, après une CI verte, des relectures sans anomalie restante et le numéro de
   version vérifié contre `origin/master`, puis suit le déploiement. Une évolution, une
-  nouvelle fonctionnalité, ou une PR qui touche `check-version.sh`, `ci.yml` ou `deploy.yml`,
-  attend un « fusionne » explicite de l'utilisateur ; l'appui sur « Livrer » dans Admin ›
+  nouvelle fonctionnalité, ou une PR qui touche `check-version.sh`, `ci.yml`, `deploy.yml` ou
+  `.claude/skills/steward/`, attend un « fusionne » explicite de l'utilisateur ; l'appui sur « Livrer » dans Admin ›
   Tickets en est un, pour la seule PR qu'il livre.
 - **Question** : elle reçoit une réponse, jamais de code. La réponse que le membre lira dans
   l'application est un commentaire de `ChinaFred` qui commence par `Réponse :` ; la session
