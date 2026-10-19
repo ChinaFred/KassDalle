@@ -13,6 +13,7 @@ import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_target.dart';
 import '../services/calendar_service.dart';
+import '../../groups/presentation/group_providers.dart';
 import 'meal_composer.dart';
 import 'meal_staples_providers.dart';
 import 'planning_providers.dart';
@@ -93,14 +94,28 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   /// groupe dont l'utilisateur est le propriétaire.
   PlanningTarget _target = const PlanningTarget.personal();
 
-  /// Recettes d'accompagnement possibles : les recettes validées du compte,
-  /// lues à l'ouverture ; `null` tant qu'elles ne le sont pas.
+  /// Recettes d'accompagnement possibles : les recettes validées du compte et
+  /// celles, non privées, des autres membres de la famille — les mêmes
+  /// sources que « Composer le repas » depuis le planning. Lues à
+  /// l'ouverture ; `null` tant qu'elles ne le sont pas.
   List<Recipe>? _sideRecipes;
+
+  /// La ligne « Accompagnement » ne vaut que pour un plat, ou une recette pas
+  /// encore classée : un dessert, une entrée, un accompagnement n'en reçoit
+  /// pas.
+  bool get _composable {
+    final tags = widget.recipe?.tags;
+    if (tags == null) return false;
+    return !tags.hasMealRole || tags.mealRole == 'plat';
+  }
 
   /// Les accompagnements du repas : choisis par le programme dès que
   /// garnitures et recettes sont lues, puis changés dans « Composer le
   /// repas ». `null` tant qu'ils ne sont pas calculés.
   List<MealComponent>? _sides;
+
+  /// L'échec de lecture des garnitures a été signalé.
+  bool _staplesErrorReported = false;
 
   /// Préférences de planning, ou les valeurs par défaut tant qu'elles chargent.
   PlanningPreferences get _prefs =>
@@ -118,16 +133,18 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     _reminderCtrl = TextEditingController(text: '${widget.prepTimeMin ?? 30}');
-    if (widget.recipe != null) _loadSideRecipes();
+    if (_composable) _loadSideRecipes();
   }
 
-  /// Lit les recettes validées du compte pour les accompagnements. Un échec
-  /// est signalé ; le programme choisit alors parmi les garnitures seules.
+  /// Lit les recettes validées du compte, puis celles de la famille hors
+  /// livres privés, pour les accompagnements. Chaque échec est signalé ; le
+  /// programme choisit alors parmi ce qui a pu être lu, garnitures comprises.
   Future<void> _loadSideRecipes() async {
     final repo = ref.read(planningRepositoryProvider);
-    List<Recipe> recipes = const [];
+    var own = const <Recipe>[];
+    var family = const <Recipe>[];
     try {
-      recipes = await repo?.getValidatedRecipes() ?? const [];
+      own = await repo?.getValidatedRecipes() ?? const [];
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'scheduleRecipeSheet.loadSideRecipes',
@@ -135,7 +152,29 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         stackTrace: stackTrace,
       );
     }
-    if (mounted) setState(() => _sideRecipes = recipes);
+    if (repo != null) {
+      try {
+        final familyIds = (ref.read(groupMemberIdsProvider).value ?? {})
+            .where((id) => id != repo.uid)
+            .toList();
+        family = await repo.getFamilyValidatedRecipes(familyIds);
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'scheduleRecipeSheet.loadFamilySideRecipes',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+    final seen = <String>{};
+    if (mounted) {
+      setState(
+        () => _sideRecipes = [
+          for (final r in [...own, ...family])
+            if (seen.add(r.id)) r,
+        ],
+      );
+    }
   }
 
   /// Les accompagnements à afficher et à enregistrer : ceux déjà calculés ou
@@ -144,9 +183,10 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
     final current = _sides;
     if (current != null) return current;
     final recipe = widget.recipe;
+    if (!_composable || recipe == null) return null;
     final staples = ref.read(myStaplesProvider).value;
     final recipes = _sideRecipes;
-    if (recipe == null || staples == null || recipes == null) return null;
+    if (staples == null || recipes == null) return null;
     final chosen = [
       for (final c in chooseSides(
         main: recipe,
@@ -326,12 +366,26 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
 
   Widget _buildSidesRow() {
     // Abonné ici : les garnitures arrivent après l'ouverture.
-    ref.watch(myStaplesProvider);
+    final staples = ref.watch(myStaplesProvider);
     final sides = _currentSides();
+    // Garnitures illisibles : le repas s'ajoute quand même, sans
+    // accompagnement. Le flux ne remonte pas son erreur : on la signale ici,
+    // une fois.
+    final unavailable = sides == null && staples.hasError;
+    if (unavailable && !_staplesErrorReported) {
+      _staplesErrorReported = true;
+      reportUnexpectedError(
+        feature: 'scheduleRecipeSheet.loadStaples',
+        error: staples.error!,
+        stackTrace: staples.stackTrace,
+      );
+    }
     return _PickerRow(
       icon: Icons.rice_bowl_outlined,
       label: 'Accompagnement',
-      value: sides == null
+      value: unavailable
+          ? 'Accompagnements indisponibles'
+          : sides == null
           ? 'Calcul…'
           : sides.isEmpty
           ? 'Aucun'
@@ -486,10 +540,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           const SizedBox(height: 4),
 
           // Accompagnement : choisi par le programme, changé dans l'éditeur.
-          if (widget.recipe != null) ...[
-            _buildSidesRow(),
-            const SizedBox(height: 4),
-          ],
+          if (_composable) ...[_buildSidesRow(), const SizedBox(height: 4)],
 
           // Durée (informative)
           if (_totalDurationMin > 0) ...[

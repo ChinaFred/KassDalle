@@ -75,6 +75,7 @@ Future<void> showMealComposer(
   bool canChangeRecipe = true,
   Set<String> dismissedRecipeIds = const {},
   String? successMessage = 'Repas enregistré.',
+  ErrorReportService? errorReporter,
 }) {
   final messenger = ScaffoldMessenger.maybeOf(context);
   final scheme = Theme.of(context).colorScheme;
@@ -87,6 +88,7 @@ Future<void> showMealComposer(
     fallbackTitle: fallbackTitle,
     canChangeRecipe: canChangeRecipe,
     dismissedRecipeIds: dismissedRecipeIds,
+    errorReporter: errorReporter,
     onSaved: successMessage == null
         ? null
         : () => messenger?.showSuccessMessage(successMessage, scheme: scheme),
@@ -170,6 +172,17 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
   /// Vrai une fois la fermeture décidée (enregistré, ou abandon confirmé).
   bool _closing = false;
 
+  /// Le messager de l'éditeur : un échec d'enregistrement s'affiche dans
+  /// l'éditeur, au-dessus de sa barre, et non sous la feuille.
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+
+  /// L'échec de lecture des garnitures a été signalé.
+  bool _staplesErrorReported = false;
+
+  /// L'échec de la lecture en cours a été signalé ; remis à faux par
+  /// « Réessayer ».
+  bool _loadErrorReported = false;
+
   static String _keyOf(List<MealComponent> sides) =>
       jsonEncode([for (final c in sides) c.toMap()]);
 
@@ -179,6 +192,7 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
 
   void _retry() => setState(() {
     _data = null;
+    _loadErrorReported = false;
     _future = widget.load();
   });
 
@@ -253,7 +267,10 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
       );
       if (!mounted) return;
       setState(() => _saving = false);
-      context.showErrorSnackBar('Repas non enregistré. Réessayez.');
+      _messengerKey.currentState?.showErrorMessage(
+        'Repas non enregistré. Réessayez.',
+        scheme: Theme.of(context).colorScheme,
+      );
     }
   }
 
@@ -339,6 +356,7 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
       child: AppShortcuts(
         onSave: _save,
         child: ScaffoldMessenger(
+          key: _messengerKey,
           child: Scaffold(
             appBar: AppBar(
               automaticallyImplyLeading: false,
@@ -357,6 +375,15 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
                 // Défilable : sur un petit écran, le détail de l'erreur
                 // dépasse la hauteur laissée par la barre du bas.
                 if (snap.hasError) {
+                  if (!_loadErrorReported) {
+                    _loadErrorReported = true;
+                    reportUnexpectedError(
+                      feature: 'mealComposer.load',
+                      error: snap.error!,
+                      stackTrace: snap.stackTrace,
+                      service: widget.errorReporter,
+                    );
+                  }
                   return SingleChildScrollView(
                     child: AppErrorState(
                       error: snap.error,
@@ -367,11 +394,25 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
                   );
                 }
                 if (staplesAsync.hasError) {
+                  // Le flux des garnitures ne remonte pas son erreur.
+                  if (!_staplesErrorReported) {
+                    _staplesErrorReported = true;
+                    reportUnexpectedError(
+                      feature: 'mealComposer.loadStaples',
+                      error: staplesAsync.error!,
+                      stackTrace: staplesAsync.stackTrace,
+                      service: widget.errorReporter,
+                    );
+                  }
                   return SingleChildScrollView(
                     child: AppErrorState(
                       error: staplesAsync.error,
-                      title: 'Les recettes n\'ont pas pu être lues.',
-                      onRetry: () => ref.invalidate(baseMealStaplesProvider),
+                      title: 'Vos garnitures n\'ont pas pu être lues.',
+                      onRetry: () {
+                        _staplesErrorReported = false;
+                        ref.invalidate(baseMealStaplesProvider);
+                        ref.invalidate(myStapleOverridesProvider);
+                      },
                       compact: true,
                     ),
                   );
@@ -614,7 +655,8 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
 
 enum _SideAction { remove, editProvides }
 
-/// « Il manque : légume », « Plat complet », ou « Apports du plat inconnus ».
+/// « Il manque : légume » ou « Plat complet ». Un plat aux apports inconnus
+/// n'a pas de ligne ici : le sous-titre de la recette le dit.
 class _StatusLine extends StatelessWidget {
   final DishSideStatus status;
   const _StatusLine({required this.status});
@@ -633,9 +675,11 @@ class _StatusLine extends StatelessWidget {
         status.missingLabel,
         theme.colorScheme.tertiary,
       ),
+      // Déjà dit sous le titre : « Apports du plat inconnus ». Une recette
+      // supprimée ou un nom libre n'est pas « non classé ».
       DishSideState.unknown => (
         Icons.help_outline,
-        'Apports inconnus : le plat n\'est pas classé.',
+        '',
         theme.colorScheme.onSurfaceVariant,
       ),
       DishSideState.notApplicable => (

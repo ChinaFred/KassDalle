@@ -1003,11 +1003,8 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
     final format = w.dayConstraint.effectiveFormat;
     final storage = _buildStorageAdvice(theme);
     final origin = w.recipe != null
-        ? MealOriginLine.maybe(
-            source: w.choiceSource,
-            facts: w.justification,
-            relaxed: w.relaxed,
-          )
+        // Sans `relaxed` : les écarts ont déjà leur ligne hors du pli.
+        ? MealOriginLine.maybe(source: w.choiceSource, facts: w.justification)
         : null;
     // Les contraintes du jour, puis le repas dans son ordre (l'entrée, le
     // plat et son accompagnement, le dessert), puis la conservation, puis

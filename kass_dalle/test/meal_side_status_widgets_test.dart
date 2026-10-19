@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+import 'package:kass_dalle/core/services/error_report_service.dart';
 import 'package:kass_dalle/features/books/domain/book.dart';
 import 'package:kass_dalle/features/books/presentation/book_providers.dart';
 import 'package:kass_dalle/features/planning/domain/meal_choice_source.dart';
@@ -26,6 +27,24 @@ import 'package:kass_dalle/features/recipes/presentation/edit/recipe_meta_panel.
 /// manque à un plat, en comptant ses accompagnements, dit sur la tuile, dans
 /// Nouveau planning et dans « Composer le repas » ; les critères relâchés
 /// par le serveur, gardés sur le repas.
+/// Enregistre les postes signalés, sans Firebase.
+class _RecordingErrorReportService extends ErrorReportService {
+  final features = <String>[];
+
+  @override
+  Future<String> reportError({
+    String? userId,
+    String? jobId,
+    required String feature,
+    required Object error,
+    StackTrace? stackTrace,
+    Map<String, dynamic> context = const {},
+  }) async {
+    features.add(feature);
+    return 'report';
+  }
+}
+
 Recipe _recipe(
   String id,
   String titre, {
@@ -317,6 +336,7 @@ void main() {
       PlannedMeal meal, {
       DishSideStatus? status,
       bool readOnly = false,
+      bool isPast = false,
       ValueChanged<SideNeed>? onComplete,
       VoidCallback? onCompose,
     }) async {
@@ -325,7 +345,7 @@ void main() {
           home: Scaffold(
             body: PlanningMealTile(
               meal: meal,
-              isPast: false,
+              isPast: isPast,
               aiLoading: false,
               isWide: false,
               readOnly: readOnly,
@@ -357,6 +377,81 @@ void main() {
       expect(asked, SideNeed.legume);
       await tester.tap(find.text('Il manque : légume'));
       expect(composed, 1);
+    });
+
+    testWidgets('repas passé : ni « Il manque », ni « Compléter »', (
+      tester,
+    ) async {
+      await pumpTile(
+        tester,
+        _meal(),
+        isPast: true,
+        status: const DishSideStatus(
+          DishSideState.missing,
+          missing: [SideNeed.legume],
+        ),
+        onComplete: (_) {},
+      );
+      expect(find.textContaining('Il manque'), findsNothing);
+      expect(find.text('Compléter'), findsNothing);
+    });
+
+    testWidgets('six accompagnements : « Compléter » disparaît', (
+      tester,
+    ) async {
+      await pumpTile(
+        tester,
+        _meal(
+          components: [
+            for (var i = 0; i < kMaxSidesPerDish; i++)
+              MealComponent.free('Côté $i'),
+          ],
+        ),
+        status: const DishSideStatus(
+          DishSideState.missing,
+          missing: [SideNeed.legume],
+        ),
+        onComplete: (_) {},
+      );
+      expect(find.text('Il manque : légume'), findsOneWidget);
+      expect(find.text('Compléter'), findsNothing);
+    });
+
+    testWidgets('la ligne « Il manque » : 48 px et « Composer le repas »', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pumpTile(
+        tester,
+        _meal(),
+        status: const DishSideStatus(
+          DishSideState.missing,
+          missing: [SideNeed.legume],
+        ),
+        onCompose: () {},
+      );
+      final line = find.ancestor(
+        of: find.text('Il manque : légume'),
+        matching: find.byType(InkWell),
+      );
+      expect(tester.getSize(line.first).height, greaterThanOrEqualTo(48));
+      // Un nœud à part : le libellé de la tuile ne reçoit pas cette aide.
+      final data = tester.getSemantics(line.first).getSemanticsData();
+      expect(data.hint, 'Composer le repas');
+      expect(data.label, 'Il manque : légume');
+      handle.dispose();
+    });
+
+    testWidgets('un dessert ne se compose pas', (tester) async {
+      await pumpTile(
+        tester,
+        _meal(),
+        status: const DishSideStatus(DishSideState.notApplicable),
+        onCompose: () {},
+      );
+      await tester.tap(find.byType(PopupMenuButton<PlanningMealAction>));
+      await tester.pumpAndSettle();
+      expect(find.text('Composer le repas'), findsNothing);
     });
 
     testWidgets('plat non classé : apports inconnus, sans « Compléter »', (
@@ -495,6 +590,22 @@ void main() {
       );
     });
 
+    testWidgets('un écart ne s\'écrit qu\'une fois, pli déplié compris', (
+      tester,
+    ) async {
+      await pumpSlot(tester, relaxed: const ['in_cycle']);
+      await tester.tap(find.text('Détails'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('déjà servi dans ce cycle', findRichText: true),
+        findsNothing,
+      );
+      expect(
+        find.text('Déjà servi dans ce cycle, faute d\'autre choix'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('entrée demandée, aucune recette classée en entrée', (
       tester,
     ) async {
@@ -515,6 +626,9 @@ void main() {
       WidgetTester tester, {
       List<MealComponent> sides = const [],
       Future<MealComposerData> Function()? load,
+      Future<void> Function(MealComposition)? onSave,
+      AsyncValue<List<UserStaple>>? staples,
+      ErrorReportService? reporter,
     }) async {
       final saved = <MealComposition>[];
       await tester.binding.setSurfaceSize(const Size(500, 1000));
@@ -522,7 +636,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            myStaplesProvider.overrideWithValue(AsyncValue.data(_staples)),
+            myStaplesProvider.overrideWithValue(
+              staples ?? AsyncValue.data(_staples),
+            ),
           ],
           child: MaterialApp(
             home: Scaffold(
@@ -537,7 +653,8 @@ void main() {
                           recipes: [_blanquette],
                         ),
                     sides: sides,
-                    onSave: (c) async => saved.add(c),
+                    onSave: onSave ?? (c) async => saved.add(c),
+                    errorReporter: reporter ?? _RecordingErrorReportService(),
                   ),
                   child: const Text('Ouvrir'),
                 ),
@@ -631,5 +748,55 @@ void main() {
       expect(find.text('Blanquette de veau'), findsOneWidget);
       expect(calls, 2);
     });
+
+    testWidgets('échec d\'enregistrement : dit dans l\'éditeur, resté ouvert', (
+      tester,
+    ) async {
+      final reporter = _RecordingErrorReportService();
+      await pumpComposer(
+        tester,
+        onSave: (_) async => throw StateError('réseau'),
+        reporter: reporter,
+      );
+      await tester.tap(find.widgetWithText(TextButton, 'Ajouter').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Enregistrer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Composer le repas'), findsOneWidget);
+      final message = find.text('Repas non enregistré. Réessayez.');
+      expect(message, findsOneWidget);
+      // Le message est posé par le messager de l'éditeur, pas par celui de
+      // l'écran sous la feuille.
+      expect(
+        find.ancestor(of: message, matching: find.byType(MealComposerSheet)),
+        findsOneWidget,
+      );
+      expect(reporter.features, ['mealComposer.save']);
+    });
+
+    testWidgets('garnitures illisibles : leur propre message', (tester) async {
+      await pumpComposer(
+        tester,
+        staples: AsyncValue.error(StateError('réseau'), StackTrace.empty),
+      );
+      expect(
+        find.text('Vos garnitures n\'ont pas pu être lues.'),
+        findsOneWidget,
+      );
+      expect(find.text('Les recettes n\'ont pas pu être lues.'), findsNothing);
+    });
+
+    testWidgets(
+      'plat non classé : une seule ligne « Apports du plat inconnus »',
+      (tester) async {
+        await pumpComposer(
+          tester,
+          load: () async =>
+              MealComposerData(main: _recipe('x', 'Ragoût'), recipes: const []),
+        );
+        expect(find.text('Apports du plat inconnus'), findsOneWidget);
+        expect(find.textContaining('Apports inconnus'), findsNothing);
+      },
+    );
   });
 }

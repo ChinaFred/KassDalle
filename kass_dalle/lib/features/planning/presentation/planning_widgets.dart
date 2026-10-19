@@ -500,7 +500,10 @@ class PlanningMealTile extends StatelessWidget {
   /// seule, ni pour un plat complet : la tuile ne dit que ce qui manque.
   Widget? _buildSideStatus(ThemeData theme) {
     final status = sideStatus;
-    if (readOnly || status == null || meal.recipeId == null) return null;
+    // Un repas passé ne se complète plus : la ligne n'y apprend rien.
+    if (readOnly || isPast || status == null || meal.recipeId == null) {
+      return null;
+    }
     final String text;
     switch (status.state) {
       case DishSideState.missing:
@@ -539,20 +542,35 @@ class PlanningMealTile extends StatelessWidget {
     );
     final compose = onCompose;
     if (compose != null) {
-      label = InkWell(
-        onTap: compose,
-        borderRadius: BorderRadius.circular(4),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: label,
+      // Un nœud à part : sans `container`, l'aide se fondait dans la tuile,
+      // dont l'appui ouvre le plat.
+      label = Semantics(
+        container: true,
+        button: true,
+        hint: 'Composer le repas',
+        child: InkWell(
+          onTap: compose,
+          borderRadius: BorderRadius.circular(4),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              widthFactor: 1,
+              child: label,
+            ),
+          ),
         ),
       );
     }
     final complete = onComplete;
+    // Au sixième accompagnement, « Compléter » n'a plus de place.
+    final sideCount = meal.components.where((c) => c.isMainSide).length;
     return Row(
       children: [
         Flexible(child: label),
-        if (status.state == DishSideState.missing && complete != null)
+        if (status.state == DishSideState.missing &&
+            complete != null &&
+            sideCount < kMaxSidesPerDish)
           TextButton(
             onPressed: () => complete(status.missing.first),
             child: const Text('Compléter'),
@@ -801,7 +819,10 @@ class PlanningMealTile extends StatelessWidget {
       PlanningMealAction.otherSuggestion: ?_action(onOtherSuggestion),
       PlanningMealAction.changeRecipe: ?_action(onChangeRecipe),
       PlanningMealAction.reschedule: ?_action(onReschedule),
-      if (meal.recipeId != null)
+      // Un plat, ou une recette pas encore classée : pas un dessert, une
+      // entrée ni un accompagnement, qui ne se composent pas.
+      if (meal.recipeId != null &&
+          sideStatus?.state != DishSideState.notApplicable)
         PlanningMealAction.composeMeal: ?_action(onCompose),
       PlanningMealAction.clearRecipe: ?_action(onClearRecipe),
       if (meal.recipeId != null)

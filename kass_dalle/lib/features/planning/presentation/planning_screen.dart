@@ -383,11 +383,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   Future<void> _completeMeal(PlannedMeal meal, SideNeed need) async {
     final main = _mealRecipes[meal.recipeId];
     if (main == null) return;
+    // La tuile masque « Compléter » au sixième accompagnement.
     final sideCount = meal.components.where((c) => c.isMainSide).length;
-    if (sideCount >= kMaxSidesPerDish) {
-      context.showSnackBar('$kMaxSidesPerDish accompagnements au plus.');
-      return;
-    }
+    if (sideCount >= kMaxSidesPerDish) return;
     await _loadRecipesIfNeeded();
     final familyRecipes = await _loadFamilySideRecipesIfNeeded();
     if (!mounted) return;
@@ -482,7 +480,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       return;
     }
     if (!mounted) return;
-    context.showSnackBar(
+    context.showSuccessSnackBar(
       'Accompagnement retiré.',
       action: SnackBarAction(
         label: 'Annuler',
