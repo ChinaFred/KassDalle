@@ -301,7 +301,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     final component = result?.toComponent(justification: 'Choisi à la main.');
     if (component == null || !mounted) return;
     final repo = ref.read(planningRepositoryProvider);
-    await repo?.updateMealComponents(meal.id, [...meal.components, component]);
+    await repo?.updateMealComponents(
+      meal.id,
+      insertMainSide(meal.components, component),
+    );
   }
 
   /// Recettes validées et non privées des autres membres de la famille, lues
@@ -452,7 +455,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       targetPortions: meal.targetPortions ?? recipe.portions,
       dismissRecipeId: _oustedBy(meal, recipe.id),
       // Un autre plat, un autre accompagnement.
-      components: _composeComponents(recipe),
+      components: replaceMainSides(meal.components, _composeComponents(recipe)),
       choiceSource: MealChoiceSource.manual,
     );
     _recordRefusal(meal, recipe.id.isEmpty ? null : recipe.id);
@@ -937,7 +940,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         basePortions: recipe.portions,
         targetPortions: meal.targetPortions ?? recipe.portions,
         dismissRecipeId: _oustedBy(meal, recipe.id),
-        components: _composeComponents(recipe),
+        components: replaceMainSides(
+          meal.components,
+          _composeComponents(recipe),
+        ),
         choiceSource: suggestion.source,
         justification: suggestion.justification,
       );
@@ -1040,7 +1046,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         basePortions: recipe.portions,
         targetPortions: meal.targetPortions ?? recipe.portions,
         dismissRecipeId: _oustedBy(meal, id),
-        components: _composeComponents(recipe),
+        components: replaceMainSides(
+          meal.components,
+          _composeComponents(recipe),
+        ),
         choiceSource: MealChoiceSource.concept,
         justification: suggestion.justification,
       );

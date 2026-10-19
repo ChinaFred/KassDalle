@@ -443,7 +443,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (meal.dismissedRecipeIds.isNotEmpty) {
       _slotDismissed[i] = meal.dismissedRecipeIds.toSet();
     }
-    _slotSides[i] = first(MealComponentRole.accompagnement);
+    _slotSides[i] = meal.components.where((c) => c.isMainSide).firstOrNull;
     _slotStarters[i] = starter;
     _slotDesserts[i] = dessert;
     // Sa composition est décidée : le programme ne la recalcule pas.
@@ -1002,11 +1002,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       time.minute,
     );
     final duration = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
+    final saved = _registeredMeals[_slotSavedMealIds[i]];
+    final recipeId = recipe.id.isEmpty ? null : recipe.id;
     return PlannedMeal(
       id: _slotSavedMealIds[i] ?? '',
       uid: uid,
       groupId: widget.groupId,
-      recipeId: recipe.id.isEmpty ? null : recipe.id,
+      recipeId: recipeId,
       recipeTitre: recipe.titre,
       plannedAt: plannedAt,
       durationMinutes: duration > 0 ? duration : 30,
@@ -1026,14 +1028,22 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       // Ce qui accompagne le plat suit le repas, dans l'ordre du repas :
       // l'entrée et le dessert seulement si le format du créneau en
       // demande, l'accompagnement — garniture figée ou recette — toujours.
-      components: [
-        if (slotConstraint.effectiveFormat.wantsStarter) ?_slotStarters[i],
-        ?_slotSides[i],
-        if (slotConstraint.effectiveFormat.wantsDessert) ?_slotDesserts[i],
-      ],
+      // Un repas déjà enregistré garde ce que l'écran ne montre pas :
+      // deuxième entrée, fromage, sorbet, accompagnements de plus.
+      components: mergeSlotComponents(
+        saved?.components ?? const [],
+        starter: slotConstraint.effectiveFormat.wantsStarter
+            ? _slotStarters[i]
+            : null,
+        side: _slotSides[i],
+        dessert: slotConstraint.effectiveFormat.wantsDessert
+            ? _slotDesserts[i]
+            : null,
+        mainChanged: saved != null && saved.recipeId != recipeId,
+      ),
       // Un repas déjà au planning garde sa date de création.
-      createdAt:
-          _registeredMeals[_slotSavedMealIds[i]]?.createdAt ?? DateTime.now(),
+      createdAt: saved?.createdAt ?? DateTime.now(),
+      extra: saved?.extra ?? const {},
     );
   }
 

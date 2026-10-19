@@ -51,7 +51,9 @@ String plannedMealContentKey(PlannedMeal meal) => jsonEncode([
   meal.dismissedRecipeIds,
   [for (final c in meal.components) c.toMap()],
   meal.choiceSource?.value,
-]);
+  // Un champ inconnu d'une version plus récente peut porter une date : il
+  // entre dans la clé sous sa forme texte, sans faire échouer l'encodage.
+], toEncodable: (o) => o.toString());
 
 DateTime _dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
 

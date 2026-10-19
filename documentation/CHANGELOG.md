@@ -20,6 +20,26 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-19
 
+### v0.24.11 — fonctionnel
+
+Dans le planning, « Changer la recette », « Autre suggestion » et une recette conçue par
+l'IA ne retirent plus l'entrée ni le dessert du repas : seul l'accompagnement du plat est
+recomposé. Un accompagnement ajouté à la main se range avant le dessert, et non plus en fin
+de repas.
+
+### v0.24.11 — technique
+
+Premier palier de la refonte plat / menu du planning : la lecture d'un repas planifié
+conserve ce qu'elle ne connaît pas. Avant, un rôle de composant inconnu se lisait
+`accompagnement` et se réécrivait ainsi, et Nouveau planning réécrivait le document entier
+avec trois composants au plus. Un téléphone pas encore à jour aurait changé un « fromage »
+en accompagnement et effacé la deuxième entrée d'un menu. `MealComponentRole` reçoit `plat`,
+`sorbet`, `fromage` et `autre`. Un rôle inconnu se lit `autre` et se réécrit tel quel, comme
+les champs inconnus d'un composant et du repas. Changer le plat d'un repas ne retire plus
+l'entrée ni le dessert : seuls les accompagnements du plat principal sont recomposés. Un
+accompagnement ajouté se range avant le premier sorbet, fromage ou dessert. Ce palier doit
+être installé sur les téléphones avant le palier « menu ».
+
 ### v0.24.10 — technique
 
 Les agents `ux-designer` et `securite` n'étaient chargés dans aucune session. La valeur de

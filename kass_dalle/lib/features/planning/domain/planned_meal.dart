@@ -76,6 +76,12 @@ class PlannedMeal {
 
   final DateTime createdAt;
 
+  /// Champs lus en base que cette version ne connaît pas (`meal_kind`
+  /// d'une version plus récente, par exemple). Nouveau planning réécrit le
+  /// document entier : sans eux, un téléphone pas encore à jour effacerait
+  /// ce qu'une version récente a posé.
+  final Map<String, dynamic> extra;
+
   const PlannedMeal({
     required this.id,
     required this.uid,
@@ -94,7 +100,27 @@ class PlannedMeal {
     this.components = const [],
     this.choiceSource,
     required this.createdAt,
+    this.extra = const {},
   });
+
+  static const _knownKeys = {
+    'uid',
+    'group_id',
+    'recipe_id',
+    'recipe_titre',
+    'planned_at',
+    'duration_minutes',
+    'prep_minutes',
+    'cook_minutes',
+    'base_portions',
+    'target_portions',
+    'prep_date',
+    'justification',
+    'dismissed_recipe_ids',
+    'components',
+    'choice_source',
+    'created_at',
+  };
 
   /// Un repas du planning d'un groupe, et non du planning personnel.
   bool get isGroupMeal => groupId != null;
@@ -125,6 +151,10 @@ class PlannedMeal {
       components: MealComponent.listFromFirestore(data['components']),
       choiceSource: MealChoiceSource.fromValue(data['choice_source']),
       createdAt: (data['created_at'] as Timestamp).toDate(),
+      extra: {
+        for (final e in data.entries)
+          if (!_knownKeys.contains(e.key)) e.key: e.value,
+      },
     );
   }
 
@@ -138,6 +168,7 @@ class PlannedMeal {
   /// sans le champ. Réécrire un repas le repose à l'identique, ce que les
   /// règles exigent (`group_id` figé).
   Map<String, dynamic> toFirestore() => {
+    ...extra,
     'uid': uid,
     'group_id': groupId,
     'recipe_id': recipeId,
