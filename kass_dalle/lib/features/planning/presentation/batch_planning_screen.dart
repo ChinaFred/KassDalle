@@ -2081,7 +2081,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (result == null || !mounted) return;
     setState(() {
       _slotSideManual.add(index);
-      _slotSides[index] = result.candidate?.toComponent(
+      _slotSides[index] = result.toComponent(
         justification: 'Choisi à la main.',
       );
     });

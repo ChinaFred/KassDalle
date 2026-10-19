@@ -3,7 +3,7 @@
 /// Un repas n'est pas une recette : la blanquette se sert avec du riz, et le
 /// riz n'a pas de recette. Un composant est soit une **garniture** du
 /// référentiel (riz, salade verte, yaourt), soit une **recette** de rôle
-/// accompagnement, entrée ou dessert. Le plat, lui, reste dans `recipe_id` :
+/// accompagnement, entrée ou dessert, soit un **texte libre** saisi à la main. Le plat, lui, reste dans `recipe_id` :
 /// les écrans qui ne connaissent pas les composants continuent de le voir.
 ///
 /// Une garniture est **figée** au moment du choix — nom, part par personne,
@@ -114,6 +114,18 @@ class MealComponent {
     label: recipe.titre,
     justification: justification,
   );
+
+  /// Un texte libre saisi à la main : « Frites maison » quand ni garniture ni
+  /// recette ne convient. Ni quantité, ni produit de courses : il s'affiche,
+  /// il ne s'achète pas.
+  factory MealComponent.free(
+    String label, {
+    MealComponentRole role = MealComponentRole.accompagnement,
+    String? justification,
+  }) => MealComponent(role: role, label: label, justification: justification);
+
+  /// Ni recette ni garniture : un texte libre.
+  bool get isFree => !isRecipe && !isStaple;
 
   /// « 70 g par part », « 1 pièce par part » ; rien pour une recette.
   String? get quantityLabel {

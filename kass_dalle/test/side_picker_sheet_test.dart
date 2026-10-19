@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kass_dalle/features/planning/domain/meal_component.dart';
 import 'package:kass_dalle/features/planning/domain/meal_staple.dart';
 import 'package:kass_dalle/features/planning/domain/side_chooser.dart';
 import 'package:kass_dalle/features/planning/presentation/side_picker_sheet.dart';
@@ -48,8 +49,8 @@ final _candidates = [
   _staple('salade_verte', 'Salade verte', StapleCategory.salade),
   SideCandidate.recipe(
     _recipe(
-      'frites',
-      'Frites maison',
+      'dauphine',
+      'Pommes dauphine',
       role: 'accompagnement',
       contains: const ['feculent'],
     ),
@@ -63,6 +64,35 @@ final _main = _recipe(
   contains: const ['proteine'],
   sides: const ['riz'],
 );
+
+Future<void> _pumpOpener(
+  WidgetTester tester,
+  void Function(SidePickerResult?) onResult,
+) async {
+  await tester.binding.setSurfaceSize(const Size(800, 1200));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => onResult(
+              await showModalBottomSheet<SidePickerResult>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) =>
+                    SidePickerSheet(main: _main, candidates: _candidates),
+              ),
+            ),
+            child: const Text('Ouvrir'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Ouvrir'));
+  await tester.pumpAndSettle();
+}
 
 Future<void> _pump(WidgetTester tester) async {
   await tester.binding.setSurfaceSize(const Size(800, 1200));
@@ -89,6 +119,18 @@ void main() {
       expect(sideCandidateMatches(_candidates[3], query: 'vert'), isTrue);
     });
 
+    test("la recherche ignore le pluriel et l'ordre des mots", () {
+      final dauphine = _candidates[5];
+      expect(sideCandidateMatches(dauphine, query: 'pommes dauphines'), isTrue);
+      expect(sideCandidateMatches(dauphine, query: 'dauphine pomme'), isTrue);
+      expect(sideCandidateMatches(dauphine, query: 'pommes frites'), isFalse);
+    });
+
+    test('un nom identique au pluriel près désigne le candidat', () {
+      expect(sideCandidateNamed(_candidates[5], 'pommes dauphines'), isTrue);
+      expect(sideCandidateNamed(_candidates[5], 'pommes'), isFalse);
+    });
+
     test('le filtre de famille écarte les autres familles', () {
       const legume = SideFamilyFilter.category(StapleCategory.legume);
       expect(sideCandidateMatches(_candidates[3], family: legume), isTrue);
@@ -101,6 +143,29 @@ void main() {
       expect(sideCandidateMatches(_candidates[5], family: recipes), isTrue);
       expect(sideCandidateMatches(_candidates[0], family: recipes), isFalse);
     });
+  });
+
+  test('le texte libre est nettoyé et borné', () {
+    expect(sideFreeLabelFrom('  frites   maison '), 'Frites maison');
+    expect(sideFreeLabelFrom('   '), '');
+    expect(sideFreeLabelFrom('a' * 200).length, kSideFreeLabelMaxChars);
+  });
+
+  test('un texte libre devient un composant sans garniture ni recette', () {
+    final component = const SidePickerResult.free(
+      'Frites maison',
+    ).toComponent(justification: 'Choisi à la main.')!;
+    expect(component.isFree, isTrue);
+    expect(component.toMap(), {
+      'role': 'accompagnement',
+      'label': 'Frites maison',
+      'justification': 'Choisi à la main.',
+    });
+    final back = MealComponent.fromMap(component.toMap());
+    expect(back.isFree, isTrue);
+    expect(back.label, 'Frites maison');
+    expect(back.totalQuantityFor(4), isNull);
+    expect(const SidePickerResult.none().toComponent(), isNull);
   });
 
   test('les filtres proposés suivent les familles présentes', () {
@@ -135,18 +200,62 @@ void main() {
 
     expect(find.text('Haricots verts'), findsOneWidget);
     expect(find.text('Semoule'), findsNothing);
-    expect(find.text('Frites maison'), findsNothing);
+    expect(find.text('Pommes dauphine'), findsNothing);
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'Tout'));
     await tester.pump();
     expect(find.text('Semoule'), findsOneWidget);
   });
 
-  testWidgets('rien ne correspond : un message le dit', (tester) async {
-    await _pump(tester);
-    await tester.enterText(find.byType(TextField), 'quinoa');
+  testWidgets('rien ne correspond : le texte libre est proposé', (
+    tester,
+  ) async {
+    SidePickerResult? result;
+    await _pumpOpener(tester, (r) => result = r);
+    await tester.enterText(find.byType(TextField), 'frites maison');
     await tester.pump();
 
-    expect(find.text('Aucun accompagnement ne correspond.'), findsOneWidget);
+    expect(
+      find.text("Aucune garniture ni recette d'accompagnement ne correspond."),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Ajouter « Frites maison »'));
+    await tester.pumpAndSettle();
+
+    expect(result?.freeLabel, 'Frites maison');
+    expect(result?.candidate, isNull);
+  });
+
+  testWidgets('un nom déjà connu ne propose pas de texte libre', (
+    tester,
+  ) async {
+    await _pump(tester);
+    await tester.enterText(find.byType(TextField), 'pommes dauphines');
+    await tester.pump();
+
+    expect(find.text('Pommes dauphine'), findsOneWidget);
+    expect(find.textContaining('Ajouter «'), findsNothing);
+  });
+
+  testWidgets('Entrée choisit le candidat qui porte ce nom', (tester) async {
+    SidePickerResult? result;
+    await _pumpOpener(tester, (r) => result = r);
+    await tester.enterText(find.byType(TextField), 'pommes dauphines');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(result?.candidate?.id, 'dauphine');
+  });
+
+  testWidgets('Entrée pose le texte libre quand rien ne porte ce nom', (
+    tester,
+  ) async {
+    SidePickerResult? result;
+    await _pumpOpener(tester, (r) => result = r);
+    await tester.enterText(find.byType(TextField), 'poêlée forestière');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(result?.freeLabel, 'Poêlée forestière');
   });
 }

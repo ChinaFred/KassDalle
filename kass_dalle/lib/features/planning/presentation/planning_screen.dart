@@ -84,6 +84,10 @@ class PlanningScreen extends ConsumerStatefulWidget {
 class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   List<Recipe> _availableRecipes = [];
   bool _recipesLoaded = false;
+
+  /// Recettes de la famille pour « Ajouter un accompagnement », lues au
+  /// premier usage ; `null` tant qu'elles ne l'ont pas été.
+  List<Recipe>? _familySideRecipes;
   final Set<String> _aiLoadingIds = {};
   final Set<String> _storageLoadingIds = {};
 
@@ -275,7 +279,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       context.showSnackBar('Recette introuvable pour ce repas.');
       return;
     }
+    final familyRecipes = await _loadFamilySideRecipesIfNeeded();
+    if (!mounted) return;
     final staples = ref.read(myStaplesProvider).value ?? const [];
+    final seen = <String>{};
     final result = await showModalBottomSheet<SidePickerResult>(
       context: context,
       isScrollControlled: true,
@@ -284,16 +291,43 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         main: main,
         candidates: sideCandidatesFrom(
           staples: staples,
-          recipes: _availableRecipes,
+          recipes: [
+            for (final r in [..._availableRecipes, ...familyRecipes])
+              if (seen.add(r.id)) r,
+          ],
         ),
       ),
     );
-    if (result == null || result.isNone || !mounted) return;
+    final component = result?.toComponent(justification: 'Choisi à la main.');
+    if (component == null || !mounted) return;
     final repo = ref.read(planningRepositoryProvider);
-    await repo?.updateMealComponents(meal.id, [
-      ...meal.components,
-      result.candidate!.toComponent(justification: 'Choisi à la main.'),
-    ]);
+    await repo?.updateMealComponents(meal.id, [...meal.components, component]);
+  }
+
+  /// Recettes validées et non privées des autres membres de la famille, lues
+  /// une fois, pour proposer leurs recettes d'accompagnement à la main —
+  /// « Pommes dauphine » d'un autre membre. En cas d'échec, l'erreur est
+  /// signalée et la feuille s'ouvre avec les seules recettes du compte.
+  Future<List<Recipe>> _loadFamilySideRecipesIfNeeded() async {
+    final cached = _familySideRecipes;
+    if (cached != null) return cached;
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return const [];
+    try {
+      final familyIds = (ref.read(groupMemberIdsProvider).value ?? {})
+          .where((id) => id != repo.uid)
+          .toList();
+      final recipes = await repo.getFamilyValidatedRecipes(familyIds);
+      _familySideRecipes = recipes;
+      return recipes;
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.loadFamilySideRecipes',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      return const [];
+    }
   }
 
   /// Retire un accompagnement déjà posé sur ce repas, auto ou choisi à la
@@ -556,9 +590,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   /// Un repas compte-t-il pour les courses ? Il lui faut une recette ou un
-  /// accompagnement : un repas libre sans rien n'apporte aucun article.
+  /// accompagnement qui s'achète : un repas libre sans rien, ou avec un
+  /// accompagnement en texte libre, n'apporte aucun article.
   static bool _bringsShopping(PlannedMeal meal) =>
-      (meal.recipeId ?? '').isNotEmpty || meal.components.isNotEmpty;
+      (meal.recipeId ?? '').isNotEmpty || meal.components.any((c) => !c.isFree);
 
   /// « Ajouter aux courses » sur un repas, ou null quand l'action n'existe
   /// pas : repas passé, plat dont la recette ne se lit pas (cadenas), repas

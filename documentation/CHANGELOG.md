@@ -18,6 +18,25 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-19
+
+### v0.24.9 — fonctionnel
+
+Le choix d'un accompagnement accepte un texte libre et trouve mieux les recettes. Quand
+aucune garniture ni recette ne porte le nom tapé, la ligne « Ajouter « Frites maison » »
+le pose tel quel ; il s'affiche dans le repas, sans quantité, et n'entre pas dans les
+courses. La recherche compare mot à mot, sans tenir compte du pluriel ni de l'ordre :
+« pommes dauphines » ne trouvait pas la recette « Pommes dauphine ». « Ajouter un
+accompagnement » dans le planning propose aussi les recettes d'accompagnement des autres
+membres de la famille (hors livres privés), comme le faisait déjà « Nouveau planning ».
+
+### v0.24.9 — technique
+
+Un composant de repas peut n'avoir ni `recipe_id` ni `staple_id` : `MealComponent.free`,
+`label` seul. Aucune règle Firestore ni Function ne lit `components`, et l'export Calendar
+et la liste de courses lisaient déjà ce cas sans erreur. `SidePickerResult` porte le texte
+libre et rend le composant par `toComponent`.
+
 ## 2026-10-18
 
 ### v0.24.8 — fonctionnel

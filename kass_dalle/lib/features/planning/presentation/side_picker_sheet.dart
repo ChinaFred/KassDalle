@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_filter.dart';
@@ -6,15 +7,51 @@ import '../domain/meal_component.dart';
 import '../domain/meal_staple.dart';
 import '../domain/side_chooser.dart';
 
-/// Ce que la feuille rend : un candidat, ou « aucun accompagnement ».
+/// Longueur maximale d'un accompagnement saisi en texte libre.
+const int kSideFreeLabelMaxChars = 80;
+
+/// Ce que la feuille rend : un candidat, un texte libre, ou « aucun
+/// accompagnement ».
 class SidePickerResult {
   final SideCandidate? candidate;
 
-  const SidePickerResult.pick(SideCandidate this.candidate);
-  const SidePickerResult.none() : candidate = null;
+  /// Texte saisi quand ni garniture ni recette ne convient.
+  final String? freeLabel;
 
-  bool get isNone => candidate == null;
+  const SidePickerResult.pick(SideCandidate this.candidate) : freeLabel = null;
+  const SidePickerResult.free(String this.freeLabel) : candidate = null;
+  const SidePickerResult.none() : candidate = null, freeLabel = null;
+
+  bool get isNone => candidate == null && freeLabel == null;
+
+  /// Le composant à poser, ou null pour « aucun accompagnement ».
+  MealComponent? toComponent({String? justification}) {
+    final c = candidate;
+    if (c != null) return c.toComponent(justification: justification);
+    final label = freeLabel;
+    if (label == null) return null;
+    return MealComponent.free(label, justification: justification);
+  }
 }
+
+/// Le texte saisi, tel qu'il sera posé : espaces réduites, première lettre
+/// en majuscule, borné à [kSideFreeLabelMaxChars]. Vide si rien d'utile.
+String sideFreeLabelFrom(String input) {
+  final s = input.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (s.isEmpty) return '';
+  final bounded = s.length > kSideFreeLabelMaxChars
+      ? s.substring(0, kSideFreeLabelMaxChars).trimRight()
+      : s;
+  return bounded[0].toUpperCase() + bounded.substring(1);
+}
+
+/// Mots comparables d'un texte : minuscules, sans accents, au singulier
+/// (« dauphines » → « dauphine »), comme [sideNameKey].
+List<String> _searchWords(String value) => [
+  for (final w in foldSearchText(value).split(' '))
+    if (w.isNotEmpty)
+      w.length > 3 && w.endsWith('s') ? w.substring(0, w.length - 1) : w,
+];
 
 /// Un filtre de la rangée de pastilles : une famille de garnitures, ou les
 /// recettes d'accompagnement. `null` dans la feuille veut dire « Tout ».
@@ -56,16 +93,35 @@ List<SideFamilyFilter> sideFamilyFiltersFor(List<SideCandidate> candidates) {
 
 /// Vrai si [c] passe le filtre de famille et la recherche par nom.
 ///
-/// La recherche ignore la casse et les accents, et cherche une sous-chaîne :
-/// « pate » trouve « Pâtes », « vert » trouve « Haricots verts ».
+/// La recherche ignore la casse, les accents et le pluriel, mot à mot :
+/// chaque mot tapé doit commencer un mot du nom, dans n'importe quel ordre.
+/// « pate » trouve « Pâtes », « vert » trouve « Haricots verts »,
+/// « pommes dauphines » trouve « Pommes dauphine ».
 bool sideCandidateMatches(
   SideCandidate c, {
   SideFamilyFilter? family,
   String query = '',
 }) {
   if (family != null && !family.accepts(c)) return false;
-  final q = foldSearchText(query);
-  return q.isEmpty || foldSearchText(c.name).contains(q);
+  final wanted = _searchWords(query);
+  if (wanted.isEmpty) return true;
+  final words = _searchWords(c.name);
+  return wanted.every((q) => words.any((w) => w.startsWith(q)));
+}
+
+/// Vrai si [c] porte le nom [query], au pluriel et aux accents près : la
+/// tuile « texte libre » n'est alors pas proposée, le candidat suffit.
+bool sideCandidateNamed(SideCandidate c, String query) {
+  final wanted = _searchWords(query);
+  return wanted.isNotEmpty && _listEquals(wanted, _searchWords(c.name));
+}
+
+bool _listEquals(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 /// Choisir l'accompagnement d'un plat, à la main.
@@ -142,6 +198,8 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
           );
     final noMatch =
         filtering && suggested.isEmpty && staples.isEmpty && recipes.isEmpty;
+    final freeLabel = _freeLabelOffered();
+    final currentFree = current != null && current.isFree ? current : null;
 
     final children = <Widget>[
       ListTile(
@@ -153,7 +211,26 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
         trailing: current == null ? const Icon(Icons.check) : null,
         onTap: () => Navigator.pop(context, const SidePickerResult.none()),
       ),
-      if (candidates.isEmpty)
+      if (currentFree != null)
+        ListTile(
+          leading: Icon(
+            Icons.edit_note_outlined,
+            color: theme.colorScheme.primary,
+          ),
+          title: Text(currentFree.label),
+          subtitle: const Text('Texte libre'),
+          trailing: const Icon(Icons.check),
+          onTap: () =>
+              Navigator.pop(context, SidePickerResult.free(currentFree.label)),
+        ),
+      if (freeLabel.isNotEmpty)
+        ListTile(
+          leading: const Icon(Icons.edit_note_outlined),
+          title: Text('Ajouter « $freeLabel »'),
+          subtitle: const Text('Texte libre, sans quantité ni courses'),
+          onTap: () => Navigator.pop(context, SidePickerResult.free(freeLabel)),
+        ),
+      if (candidates.isEmpty && freeLabel.isEmpty)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: Text(
@@ -170,7 +247,7 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           child: Text(
-            'Aucun accompagnement ne correspond.',
+            'Aucune garniture ni recette d\'accompagnement ne correspond.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -227,45 +304,45 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Text('Accompagnement', style: theme.textTheme.titleMedium),
           ),
-          if (candidates.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: TextField(
-                controller: _searchCtrl,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search),
-                  hintText: 'Rechercher un accompagnement',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                  suffixIcon: _query.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Effacer la recherche',
-                          icon: const Icon(Icons.clear),
-                          onPressed: () => setState(() {
-                            _searchCtrl.clear();
-                            _query = '';
-                          }),
-                        ),
-                ),
-                onChanged: (v) => setState(() => _query = v),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: TextField(
+              controller: _searchCtrl,
+              textInputAction: TextInputAction.done,
+              inputFormatters: [
+                LengthLimitingTextInputFormatter(kSideFreeLabelMaxChars),
+              ],
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: 'Rechercher ou saisir un accompagnement',
+                border: const OutlineInputBorder(),
+                isDense: true,
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Effacer la recherche',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () => setState(() {
+                          _searchCtrl.clear();
+                          _query = '';
+                        }),
+                      ),
+              ),
+              onChanged: (v) => setState(() => _query = v),
+              onSubmitted: (_) => _submit(),
+            ),
+          ),
+          if (families.length > 1)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  _familyChip(null, 'Tout'),
+                  for (final f in families) _familyChip(f, f.label),
+                ],
               ),
             ),
-            if (families.length > 1)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                child: Row(
-                  children: [
-                    _familyChip(null, 'Tout'),
-                    for (final f in families) _familyChip(f, f.label),
-                  ],
-                ),
-              ),
-          ],
           // Hauteur fixe tant qu'il y a des candidats : la liste ne saute
           // pas à chaque lettre tapée. `Flexible` la laisse se réduire quand
           // le clavier prend la place.
@@ -280,6 +357,28 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
         ],
       ),
     );
+  }
+
+  /// Le texte libre à proposer : ce qui est tapé, sauf si un candidat porte
+  /// déjà ce nom — on choisit alors le candidat.
+  String _freeLabelOffered() {
+    final label = sideFreeLabelFrom(_query);
+    if (label.isEmpty) return '';
+    if (widget.candidates.any((c) => sideCandidateNamed(c, label))) return '';
+    return label;
+  }
+
+  /// Entrée au clavier : le candidat qui porte ce nom, sinon le texte libre.
+  void _submit() {
+    final label = sideFreeLabelFrom(_query);
+    if (label.isEmpty) return;
+    for (final c in widget.candidates) {
+      if (sideCandidateNamed(c, label)) {
+        Navigator.pop(context, SidePickerResult.pick(c));
+        return;
+      }
+    }
+    Navigator.pop(context, SidePickerResult.free(label));
   }
 
   Widget _familyChip(SideFamilyFilter? family, String label) => Padding(

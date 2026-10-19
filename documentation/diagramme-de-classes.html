@@ -1553,7 +1553,7 @@ classDiagram
 
   MealStaple "1" <.. "0..1" StapleOverride : retouche, sous users/{uid}
   MealStaple ..> UserStaple : mergeStaples, base + retouches
-  PlannedMeal "1" *-- "0..*" MealComponent : components, le plat reste dans recipeId
+  PlannedMeal "1" *-- "0..*" MealComponent : components, le plat reste dans recipeId ; texte libre = ni recipeId ni stapleId
   PlannedMeal --> MealChoiceSource : qui a choisi la recette
   SlotRanking "1" *-- "0..*" RankedCandidate : classés par le serveur
   RankedCandidate ..> PlannedMeal : « Autre suggestion », sans IA
