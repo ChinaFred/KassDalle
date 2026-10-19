@@ -20,6 +20,15 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-19
 
+### v0.24.10 — technique
+
+Les agents `ux-designer` et `securite` n'étaient chargés dans aucune session. La valeur de
+`description:` de leur en-tête YAML n'était pas entre guillemets et contenait « Lecture
+seule : il … ». Un deux-points suivi d'une espace y ouvre une nouvelle clé : js-yaml rejette
+l'en-tête (« bad indentation of a mapping entry »), et Claude Code écarte l'agent sans
+message d'erreur. Les deux descriptions sont maintenant entre guillemets doubles, texte
+inchangé ; les six en-têtes se lisent avec js-yaml. Le handbook (§5.1) note la règle.
+
 ### v0.24.9 — fonctionnel
 
 Le choix d'un accompagnement accepte un texte libre et trouve mieux les recettes. Quand

@@ -1,6 +1,6 @@
 ---
 name: ux-designer
-description: Expert UX de Kass'Dalle — parcours, disposition des écrans, cohérence avec le thème et les composants existants, rendu sur mobile, web et desktop Windows, accessibilité, libellés en français. À utiliser avant d'écrire un écran neuf ou de modifier un parcours (proposition), et après l'implémentation pour relire les écrans touchés (revue). Lecture seule : il propose et relit, il ne code pas.
+description: "Expert UX de Kass'Dalle — parcours, disposition des écrans, cohérence avec le thème et les composants existants, rendu sur mobile, web et desktop Windows, accessibilité, libellés en français. À utiliser avant d'écrire un écran neuf ou de modifier un parcours (proposition), et après l'implémentation pour relire les écrans touchés (revue). Lecture seule : il propose et relit, il ne code pas."
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---

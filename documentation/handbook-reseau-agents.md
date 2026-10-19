@@ -247,6 +247,9 @@ Règles de construction :
   relit, même par erreur.
 - **La description commence par le rôle et dit quand l'utiliser.** C'est elle que la session
   principale lit pour choisir.
+- **Une description qui contient « : » se met entre guillemets doubles.** Un deux-points
+  suivi d'une espace, fréquent en français (« Lecture seule : il… »), rend l'en-tête YAML
+  invalide. Claude Code ne charge alors pas l'agent, et n'affiche aucun message d'erreur.
 - **L'agent lit `CLAUDE.md`** et ne recopie pas ses règles. Il peut en lister les contrôles,
   avec un renvoi à la section.
 - **Le livrable a un format fixe** : une ligne par anomalie, `[règle] fichier:ligne — ce qui est

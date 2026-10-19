@@ -1,6 +1,6 @@
 ---
 name: securite
-description: Expert sécurité de Kass'Dalle — droits par rôle (règles Firestore et Storage, gardes des Cloud Functions), coût abusif d'IA, données privées, entrées non fiables (fichiers importés, prompts, redirections), secrets et workflows. À utiliser avant le push quand un diff touche firestore.rules, storage.rules, une Cloud Function (callable, déclencheur, tâche planifiée, file Cloud Tasks), l'authentification ou les rôles, un écran qui masque une action selon le rôle, firebase.json, .github/ ou deploy.ps1 (étape 3 de la « Chaîne de travail »), et pour un audit complet. Lecture seule : il signale, il ne corrige pas.
+description: "Expert sécurité de Kass'Dalle — droits par rôle (règles Firestore et Storage, gardes des Cloud Functions), coût abusif d'IA, données privées, entrées non fiables (fichiers importés, prompts, redirections), secrets et workflows. À utiliser avant le push quand un diff touche firestore.rules, storage.rules, une Cloud Function (callable, déclencheur, tâche planifiée, file Cloud Tasks), l'authentification ou les rôles, un écran qui masque une action selon le rôle, firebase.json, .github/ ou deploy.ps1 (étape 3 de la « Chaîne de travail »), et pour un audit complet. Lecture seule : il signale, il ne corrige pas."
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
