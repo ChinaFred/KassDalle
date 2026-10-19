@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 
 import {
   CSP_REPORT_MAX_ITEMS,
+  CspBodyError,
   CspLogBudget,
   cspReportFormat,
   parseCspReports,
@@ -108,6 +109,18 @@ describe("parseCspReports — format report-uri", () => {
     assert.ok(!JSON.stringify(parsed).includes("secret"));
   });
 
+  test("disposition : enforce ou report, sinon null", () => {
+    const withDisposition = (d: unknown) =>
+      parseCspReports(
+        "csp-report",
+        JSON.stringify({ "csp-report": { ...body["csp-report"], disposition: d } }),
+      )?.[0]?.disposition;
+    assert.equal(withDisposition("enforce"), "enforce");
+    assert.equal(withDisposition("report"), "report");
+    assert.equal(withDisposition("Votre compte est suspendu, voir https://exemple.test"), null);
+    assert.equal(withDisposition(42), null);
+  });
+
   test("violated-directive en repli, réduite à son nom", () => {
     const legacy = {
       "csp-report": {
@@ -122,8 +135,8 @@ describe("parseCspReports — format report-uri", () => {
     assert.equal(v.line, null);
   });
 
-  test("JSON illisible ou forme inattendue : null", () => {
-    assert.equal(parseCspReports("csp-report", "{"), null);
+  test("JSON illisible : CspBodyError ; forme inattendue : null", () => {
+    assert.throws(() => parseCspReports("csp-report", "{"), CspBodyError);
     assert.equal(parseCspReports("csp-report", "[]"), null);
     assert.equal(parseCspReports("csp-report", '{"autre": {}}'), null);
   });
@@ -216,5 +229,15 @@ describe("CspLogBudget", () => {
     budget.refuse();
     assert.deepEqual(budget.roll(61_000), { dropped: 1, refused: 1 });
     assert.equal(budget.roll(200_000), null, "rien d'écarté : aucun relevé");
+  });
+
+  test("corps illisible : un seul journalisé par fenêtre, tous comptés", () => {
+    const budget = new CspLogBudget(30, 60_000);
+    budget.roll(0);
+    budget.refuse();
+    assert.equal(budget.refuseUnreadable(), true);
+    assert.equal(budget.refuseUnreadable(), false);
+    assert.deepEqual(budget.roll(60_000), { dropped: 0, refused: 3 });
+    assert.equal(budget.refuseUnreadable(), true);
   });
 });

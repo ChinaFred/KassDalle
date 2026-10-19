@@ -2,7 +2,7 @@
  * Point de collecte des rapports de violation de la Content Security Policy.
  *
  * Les navigateurs y envoient un rapport chaque fois que la page enfreint la
- * politique posée par `firebase.json` (`report-uri` et `report-to`). Hosting
+ * politique posée par `firebase.json` (`report-uri` ; `report-to` n'est pas posé). Hosting
  * réécrit `/csp-report` vers cette fonction : le rapport part vers la même
  * origine que la page, et la politique n'a pas à autoriser un autre domaine.
  *
@@ -22,17 +22,19 @@
  *  - `maxInstances: 1` borne le débit total : au-delà de ce qu'une instance
  *    absorbe, Cloud Run répond 429 sans exécuter le code.
  *
- * Journalisation par `logWarn` : un rapport en mode `report` (politique non
- * bloquante) est un avertissement, un rapport `enforce` (ressource bloquée)
- * aussi — l'écran des journaux les montre sous le filtre « WARN+ ».
+ * Journalisation par `logInfo` : la fonction est publique, et n'importe qui
+ * peut y envoyer 30 rapports distincts par minute. En `logWarn`, ils
+ * noieraient les vrais avertissements sous le filtre « WARN+ » de l'écran des
+ * journaux ; ils se lisent en filtrant sur le préfixe `cspReport`.
  */
 
 import { onRequest } from "firebase-functions/v2/https";
 
 import { REGION } from "../config";
-import { logInfo, logWarn, newCorrelationId } from "../logging";
+import { logError, logInfo, newCorrelationId } from "../logging";
 import {
   CSP_REPORT_MAX_BYTES,
+  CspBodyError,
   CspLogBudget,
   cspReportFormat,
   parseCspReports,
@@ -77,7 +79,25 @@ export const cspReportFn = onRequest(
       res.status(415).send("");
       return;
     }
-    const violations = parseCspReports(format, rawBody.toString("utf8"));
+    let violations: ReturnType<typeof parseCspReports>;
+    try {
+      violations = parseCspReports(format, rawBody.toString("utf8"));
+    } catch (err) {
+      if (!(err instanceof CspBodyError)) throw err;
+      // Fonction publique : seul le premier corps illisible de la minute est
+      // journalisé en erreur, les suivants sont comptés dans la ligne de bilan.
+      if (budget.refuseUnreadable()) {
+        await logError({
+          message: "cspReport : corps de rapport illisible (premier de la minute)",
+          correlationId: newCorrelationId("csp"),
+          // Le message de V8 cite le début du corps, choisi par l'appelant : on
+          // n'en garde que le nom de l'erreur.
+          extra: { format, error: err instanceof Error ? err.name : "inconnue" },
+        });
+      }
+      res.status(400).send("");
+      return;
+    }
     if (violations === null) {
       budget.refuse();
       res.status(400).send("");
@@ -87,7 +107,7 @@ export const cspReportFn = onRequest(
     const correlationId = newCorrelationId("csp");
     for (const v of violations) {
       if (!budget.admit(violationKey(v))) continue;
-      await logWarn({
+      await logInfo({
         message: `cspReport : ${v.directive} a refusé ${v.blocked} sur ${v.documentPath}`,
         correlationId,
         extra: {

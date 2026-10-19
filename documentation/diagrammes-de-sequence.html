@@ -4831,19 +4831,24 @@ sequenceDiagram
   B->>B: une ressource ou un script enfreint la politique
   B->>H: POST /csp-report (application/csp-report)
   H->>R: réécriture vers cspReportFn (europe-west1)
-  alt plus de 16 Ko, autre type, JSON illisible
+  opt première requête d'une nouvelle minute, avec des écarts
+    R->>L: logInfo : violations non journalisées et corps refusés
+  end
+  alt autre méthode que POST
+    R-->>B: 405
+  else plus de 16 Ko, autre type, JSON illisible
     R-->>B: 413, 415 ou 400 (refus compté)
+    opt JSON illisible, premier de la minute
+      R->>L: logError « cspReport : corps de rapport illisible »
+    end
   else rapport lisible
     R->>R: directive, origine bloquée, chemin du document (sans requête ni fragment)
     alt déjà vue dans la minute, ou 30 violations distinctes atteintes
       R->>R: comptée, non journalisée
     else
-      R->>L: logWarn « cspReport : … »
+      R->>L: logInfo « cspReport : … »
     end
     R-->>B: 204
-  end
-  opt premier rapport d'une nouvelle minute, avec des écarts
-    R->>L: logInfo : violations non journalisées et corps refusés
   end
 </pre>
       </div>

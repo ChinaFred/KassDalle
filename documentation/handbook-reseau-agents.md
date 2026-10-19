@@ -723,7 +723,8 @@ La CLI du workflow ne s'installe pas par `npm install -g` : elle est déclarée 
 s'installe ne s'exécute donc avec le jeton du compte de service, et l'arbre de dépendances est
 celui du verrou, sommes de contrôle comprises. Pour reproduire ailleurs : un dossier dédié avec
 la seule dépendance `firebase-tools` à version exacte, `npm install --ignore-scripts` pour
-produire le verrou, et le dossier `node_modules/.bin` ajouté au `PATH` du job.
+produire le verrou, et un dossier qui ne contient qu'un lien vers `node_modules/.bin/firebase` ajouté au `PATH`
+du job (les autres exécutables de `node_modules/.bin` masqueraient des commandes du même nom).
 
 `--force` n'est passé qu'au déploiement des Functions (suppression d'une fonction retirée du
 code). Sur `firestore`, il supprimerait les index absents du fichier d'index.

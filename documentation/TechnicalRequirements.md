@@ -6350,9 +6350,11 @@ FlutterFire, impose donc de reporter les nouvelles empreintes, que le test affic
 l'empreinte des scripts construits par `deploy.ps1`.
 
 **Rapports CSP.** `cspReportFn` (HTTPS publique, europe-west1, `maxInstances: 1`) accepte
-`application/csp-report`, `application/reports+json` et `application/json`, refuse un corps de
-plus de 16 Ko (413), un autre type (415) ou un JSON illisible (400), et répond 204. Elle
-journalise par `logWarn` une ligne par violation : directive, origine de la ressource bloquée
+`application/csp-report`, `application/reports+json` et `application/json`, refuse une autre
+méthode que POST (405), un corps de plus de 16 Ko (413), un autre type (415) ou un JSON
+illisible (400 ; le premier de la minute est journalisé par `logError`), et répond 204. Elle
+journalise en INFO (`logInfo`, préfixe `cspReport`, hors du filtre « WARN+ » de l'écran des
+journaux : la fonction est publique) une ligne par violation : directive, origine de la ressource bloquée
 (ou mot-clé `inline`, `eval`, schéma `data`, `blob`), chemin du document sans requête ni
 fragment, fichier source réduit à l'origine et au chemin, ligne, colonne, `disposition`.
 L'extrait de script et la politique complète ne sont pas repris. Une violation déjà vue dans
@@ -6631,7 +6633,7 @@ cloud. Une session cloud fusionne sa PR sur `master` ; le PC commite sur `master
 | Asset des nouveautés | avant le build web, `node .github/scripts/changelog-recent.mjs` régénère `kass_dalle/assets/changelog_recent.json` (voir « Nouveautés ») ; l'APK construit ensuite l'embarque aussi |
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
 | APK | construit et signé seulement si `version:` de `pubspec.yaml` dépasse celle de l'APK en ligne (`.github/scripts/build-apk.sh`), avant le déploiement des Functions ; sinon l'APK en ligne est conservé |
-| CLI Firebase | `firebase-tools` 15.32.1, déclaré dans `kass_dalle/deploy-tools/package.json` et verrouillé par son `package-lock.json` ; installé par `npm ci --ignore-scripts` **avant** l'authentification Google Cloud, puis appelé depuis `deploy-tools/node_modules/.bin` (voir ci-dessous) |
+| CLI Firebase | `firebase-tools` 15.32.1, déclaré dans `kass_dalle/deploy-tools/package.json` et verrouillé par son `package-lock.json` ; installé par `npm ci --ignore-scripts` **avant** l'authentification Google Cloud, puis appelé par un lien `firebase` seul, posé dans `$RUNNER_TEMP/firebase-cli` (voir ci-dessous) |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
 | Droits et actions | jeton GitHub limité à `contents: read`, plus `id-token: write` sur le job `deploy` pour le jeton OIDC échangé auprès de Google Cloud (voir « Accès à Google Cloud, sans clé ») ; actions tierces épinglées par SHA de commit, version en commentaire (`actions/checkout@11d5960… # v4.4.0`, etc.) : ce job reçoit la clé de signature Android et l'accès au compte de service Firebase, et une étiquette `@v4` peut être déplacée vers un autre code. `actions/checkout` avec `persist-credentials: false` : le jeton ne reste pas dans `.git/config` pendant les builds. Monter une action : remplacer le SHA par celui de la nouvelle étiquette (`git ls-remote --tags`) |
 
@@ -6654,7 +6656,9 @@ le jeton du compte de service dans l'environnement. L'étape « Firebase CLI » 
 juste après « Dépendances », avant tout accès à Google Cloud : `npm ci --ignore-scripts
 --prefix deploy-tools` installe l'arbre exact de `deploy-tools/package-lock.json` (sommes de
 contrôle comprises), sans exécuter aucun script d'installation, puis ajoute
-`deploy-tools/node_modules/.bin` au `PATH` du job. firebase-tools n'a pas besoin de ces
+au `PATH` du job un dossier `$RUNNER_TEMP/firebase-cli` qui ne contient qu'un lien vers
+`deploy-tools/node_modules/.bin/firebase` : les 32 autres exécutables de ce dossier (semver,
+rimraf, glob…) ne masquent ainsi aucune commande des étapes suivantes. firebase-tools n'a pas besoin de ces
 scripts : des trois paquets qui en déclarent, `fsevents` (macOS) et `re2` (accélérateur
 optionnel de l'émulateur d'hébergement) sont optionnels, et celui de `protobufjs` ne fait
 qu'afficher un avertissement. L'étape « CLI Firebase locale », juste avant le premier

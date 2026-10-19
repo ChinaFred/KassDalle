@@ -66,19 +66,28 @@ function text(value: unknown): string | null {
   return trimmed.slice(0, FIELD_MAX_CHARS);
 }
 
+/** Seules valeurs admises : un texte libre finirait tel quel dans les journaux. */
+function disposition(value: unknown): "enforce" | "report" | null {
+  return value === "enforce" || value === "report" ? value : null;
+}
+
 function int(value: unknown): number | null {
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
   if (typeof value === "string" && /^\d{1,9}$/.test(value)) return Number(value);
   return null;
 }
 
+// Une valeur qui n'est pas une URL est un mot-clé (`inline`, `eval`…) : ce
+// n'est pas une erreur, l'appelant la traite comme telle.
 function parseUrl(value: string): URL | null {
-  try {
-    return new URL(value);
-  } catch {
-    // Une valeur qui n'est pas une URL est un mot-clé (`inline`, `eval`…) :
-    // ce n'est pas une erreur, l'appelant la traite comme telle.
-    return null;
+  return URL.canParse(value) ? new URL(value) : null;
+}
+
+/** Corps de rapport qui n'est pas du JSON : l'appelant le compte et le journalise. */
+export class CspBodyError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message.slice(0, 200) : "JSON illisible");
+    this.name = "CspBodyError";
   }
 }
 
@@ -133,7 +142,7 @@ function fromLegacy(report: Record<string, unknown>): CspViolation | null {
     sourceFile: reduceSource(report["source-file"]),
     line: int(report["line-number"]),
     column: int(report["column-number"]),
-    disposition: text(report.disposition),
+    disposition: disposition(report.disposition),
   };
 }
 
@@ -153,7 +162,7 @@ function fromReportingApi(item: unknown): CspViolation | null {
     sourceFile: reduceSource(b.sourceFile),
     line: int(b.lineNumber),
     column: int(b.columnNumber),
-    disposition: text(b.disposition),
+    disposition: disposition(b.disposition),
   };
 }
 
@@ -171,9 +180,8 @@ export function parseCspReports(
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
-    // Corps illisible : l'appelant le compte et le journalise.
-    return null;
+  } catch (err) {
+    throw new CspBodyError(err);
   }
   if (format === "csp-report") {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
@@ -211,6 +219,7 @@ export class CspLogBudget {
   private seen = new Set<string>();
   private dropped = 0;
   private refused = 0;
+  private unreadableLogged = false;
 
   constructor(
     private readonly perWindow = CSP_LOG_PER_WINDOW,
@@ -229,6 +238,7 @@ export class CspLogBudget {
     this.seen = new Set();
     this.dropped = 0;
     this.refused = 0;
+    this.unreadableLogged = false;
     return result.dropped > 0 || result.refused > 0 ? result : null;
   }
 
@@ -245,5 +255,16 @@ export class CspLogBudget {
   /** Compte un corps refusé (trop gros, format inconnu, JSON illisible). */
   refuse(): void {
     this.refused++;
+  }
+
+  /**
+   * Compte un corps au JSON illisible ; vrai pour le premier de la fenêtre,
+   * le seul que l'appelant journalise en erreur.
+   */
+  refuseUnreadable(): boolean {
+    this.refused++;
+    if (this.unreadableLogged) return false;
+    this.unreadableLogged = true;
+    return true;
   }
 }

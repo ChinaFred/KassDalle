@@ -168,8 +168,13 @@ jobs:
         # après l'authentification, dépendances transitives non verrouillées.
         run: |
           npm ci --ignore-scripts --no-audit --no-fund --prefix deploy-tools
-          echo "$GITHUB_WORKSPACE/kass_dalle/deploy-tools/node_modules/.bin" >> "$GITHUB_PATH"
-          deploy-tools/node_modules/.bin/firebase --version
+          # Seul « firebase » rejoint le PATH : node_modules/.bin contient 32
+          # autres exécutables (semver, rimraf, glob…) qui masqueraient, pour
+          # toutes les étapes suivantes, une commande du même nom.
+          mkdir -p "$RUNNER_TEMP/firebase-cli"
+          ln -s "$GITHUB_WORKSPACE/kass_dalle/deploy-tools/node_modules/.bin/firebase" "$RUNNER_TEMP/firebase-cli/firebase"
+          echo "$RUNNER_TEMP/firebase-cli" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/firebase-cli/firebase" --version
 
       - name: Nouveautés — générer l'asset
         # L'écran « Nouveautés » embarque les six dernières versions du
@@ -223,7 +228,7 @@ jobs:
         # firebase-deploy.sh appelle « firebase » : il doit résoudre vers la CLI
         # verrouillée installée avant l'authentification, et pas vers une autre.
         run: |
-          test "$(command -v firebase)" = "$GITHUB_WORKSPACE/kass_dalle/deploy-tools/node_modules/.bin/firebase"
+          test "$(command -v firebase)" = "$RUNNER_TEMP/firebase-cli/firebase"
 
       - name: Déployer les Functions
         # Budget de découverte du bundle, comme dans deploy.ps1.
