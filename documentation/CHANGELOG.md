@@ -20,6 +20,87 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-19
 
+### v0.24.17 — fonctionnel
+
+Un import de recette compte 21 pages au plus : la première et 20 pages supplémentaires.
+Au-delà, la file « Pages en attente » reste intacte : son titre devient « Pages à analyser
+(25 sur 21 au plus) », une ligne en rouge dit « Retirez 4 pages pour lancer l'analyse. », et
+« Analyser » reste désactivé jusqu'à ce que la file revienne à 21 pages. Une session du
+scanner du système rend 20 pages au plus et passe toujours ; deux sessions, ou une sélection
+de plus de 21 fichiers (web, Windows), demandent maintenant de retirer des pages alors
+qu'elles partaient avant (ticket #156). Un import de plus de 200 Mo au total est refusé par le
+serveur ; le job passe en erreur avec un message qui donne le poids.
+
+Le formulaire « Signaler ou proposer » refuse une adresse e-mail dans le titre ou la
+description : « Retirez l'adresse e-mail : le ticket est publié sur un site public. », sous
+le champ concerné. Le serveur (`submitTicket`) fait le même contrôle.
+
+### v0.24.17 — technique
+
+Cinq corrections de l'audit #151.
+
+#155 — `sandboxFn` appelle `requireAdmin` une fois, avant l'aiguillage sur `experiment`. Un
+appel non administrateur est refusé quel que soit `experiment`, absent ou inconnu compris ;
+il recevait avant `invalid-argument` sans passer par la garde. Les trois expériences
+reçoivent le contexte de la garde et gardent leur poste de coût. Test
+`sandboxGuard.test.ts` (six cas).
+
+#156 — `additional_file_urls` d'un job d'import compte 20 entrées au plus. La règle
+`processing_jobs` refuse une liste plus longue ou d'un autre type, en création et en mise à
+jour, administrateur compris (`additionalFileUrlsBounded`, cinq cas dans `rules-tests`). Le
+processeur refuse le job avant tout téléchargement (`TooManyPagesError`, dead letter
+`too_many_pages`, message lisible dans `error_message`) et télécharge les pages une à une au
+lieu de `Promise.all` (`pipeline/jobPages.ts`). Le client désactive « Analyser » au-delà
+(`kMaxAdditionalFileUrls`, `pagesOverLimit`), et `processPages` garde le même contrôle sans
+vider la file. La borne vit à trois endroits ; un test Dart et un test Functions relisent
+`firestore.rules` et échouent si les valeurs divergent. Le client ne posait aucune limite ;
+20 est la taille d'une session du scanner du système. Test de widget
+`scan_screen_page_limit_test.dart`.
+
+Poids total d'un import : 200 Mo au plus pour une recette ou une couverture (page principale
+et pages supplémentaires), lu sur les métadonnées Storage avant tout téléchargement
+(`assertImportSizeWithin`, `MAX_IMPORT_TOTAL_BYTES`). Au-delà, ou si une taille est
+illisible : `ImportTooLargeError`, dead letter `too_large` sans nouvel essai, message lisible
+dans `error_message`, affiché par la file de travail. Un livre entier (`bookDocumentScan`)
+garde sa borne d'envoi de 300 Mo (`MAX_BOOK_UPLOAD_SIZE_BYTES`) : la borne de 200 Mo aurait
+refusé des livres admis à l'envoi.
+
+`submitTicket` refuse une adresse e-mail dans le titre ou la description (`readTicketInput`,
+`TICKET_EMAIL_MESSAGE`, `details.reason` `contains_email`), sur le texte saisi et sur le
+texte publié. `refuseTicket` et `submitTicket` transmettent maintenant `details.reason`. Le
+client valide avant l'envoi (`validateTicketForm`, `ticketTextContainsEmail`,
+`kTicketFormEmailMessage`) ; la fixture `ticket_answer_text.json` couvre déjà la détection
+et n'a pas changé.
+
+#157 — la modération d'images n'accepte que JPEG et PNG, lus sur la signature des octets
+(`moderationImageMime`). L'objet publié et `mime_type` portent le type détecté ; le
+`contentType` envoyé par le client n'est plus lu, sort de `ModerationItem` et n'est plus
+envoyé par `ImageModerationService`. `scanUpload` rendait pour un `.txt` le type déclaré :
+un texte pouvait être publié sous `image/jpeg` par la modération, et promu sous
+`image/jpeg` ou `application/pdf` par `scanAndPromoteUploadFn`. Un `.txt` doit maintenant se
+déclarer `text/plain` ou sans type, et sort en type texte.
+L'approbation manuelle exige un `mime_type` JPEG ou PNG ; la relance relit le type sur les
+octets et laisse en attente, avec un `logError`, un fichier d'un autre format. Les parcours
+du client n'envoient déjà que du JPEG ou du PNG (`canonicalImageType`), et l'import par lien
+convertit en JPEG.
+
+#158 — le texte publié sur GitHub par le module tickets (titre, description, motif de refus,
+« Répondre », commentaire de clôture) passe par `neutralizeMarkup` avant les mentions et les
+renvois : commentaires HTML retirés, une espace sans chasse après chaque `<`, entre `!` et
+`[` et après le `://` des pièces jointes que GitHub intègre. Le texte lu ne change pas ; le
+HTML, les images et les pièces jointes ne chargent plus rien. Les définitions de référence
+(`[//]: # (…)`, `[x]: https://…`) reçoivent une espace sans chasse entre `]` et `:` et
+s'affichent en texte ; l'ancien format de pièce jointe `github.com/<owner>/<repo>/assets/`
+est traité comme `user-attachments`. Un motif, une réponse ou un commentaire fait d'un seul
+commentaire HTML est refusé comme trop court. La recherche d'adresse e-mail porte sur le
+texte saisi et sur le texte publié (`jean<!-- x -->@gmail.com` recollait une adresse), et
+s'applique aussi au motif de refus. Le texte stocké
+dans Firestore, que l'application affiche, reste celui du membre.
+
+#159 — `consolidateShoppingList` (`gemini/shopping.ts`) journalise par `logError` une
+réponse du modèle illisible avant de rendre une liste vide, avec le poste, le nombre
+d'ingrédients et la longueur de la réponse, sans leur contenu.
+
 ### v0.24.16 — fonctionnel
 
 Troisième palier de la refonte plat / menu : un repas du planning est un plat ou un menu.

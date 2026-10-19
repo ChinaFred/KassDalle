@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/tickets/domain/ticket.dart';
+import 'package:kass_dalle/features/tickets/domain/ticket_form.dart'
+    show kTicketFormEmailMessage;
 import 'package:kass_dalle/features/tickets/presentation/ticket_form_screen.dart';
 import 'package:kass_dalle/features/tickets/presentation/ticket_widgets.dart';
 
@@ -102,6 +105,35 @@ void main() {
       expect(find.text(fault), findsNothing);
     },
   );
+
+  testWidgets('adresse e-mail : le message complet, sans coupure, sous les '
+      'deux champs', (tester) async {
+    // La police des tests donne 14 px par caractère : à 600 px, le message
+    // demande deux lignes. Sans `errorMaxLines`, il serait coupé à une.
+    tester.view.physicalSize = const Size(600, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pump(tester);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Titre'),
+      'Contact jean@exemple.fr',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Description'),
+      'Écrivez à marie.dupont@gmail.com',
+    );
+    await tester.ensureVisible(find.text('Envoyer'));
+    await tester.tap(find.text('Envoyer'));
+    await tester.pump();
+
+    final message = find.text(kTicketFormEmailMessage);
+    expect(message, findsNWidgets(2));
+    for (final element in message.evaluate()) {
+      final paragraph = element.renderObject! as RenderParagraph;
+      expect(paragraph.didExceedMaxLines, isFalse);
+    }
+  });
 
   testWidgets('l\'icône de type n\'est annoncée qu\'une fois', (tester) async {
     final handle = tester.ensureSemantics();

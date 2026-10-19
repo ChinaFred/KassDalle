@@ -13,6 +13,27 @@ Ticket _createdAt(DateTime? created) => Ticket.fromMap('t', {
 
 void main() {
   group('validateTicketForm', () {
+    test('adresse e-mail dans le titre ou la description : refusée', () {
+      final e = validateTicketForm(
+        type: TicketType.bug,
+        title: 'Contact jean@exemple.fr',
+        description: 'Écrivez à marie.dupont@gmail.com svp',
+      );
+      expect(e.title, kTicketFormEmailMessage);
+      expect(e.description, kTicketFormEmailMessage);
+      expect(
+        kTicketFormEmailMessage,
+        "Retirez l'adresse e-mail : le ticket est publié sur un site public.",
+      );
+      // Une mention n'est pas une adresse.
+      final ok = validateTicketForm(
+        type: TicketType.bug,
+        title: 'Merci @ChinaFred',
+        description: 'Rien de privé ici.',
+      );
+      expect(ok.isValid, isTrue);
+    });
+
     test('formulaire vide : trois fautes', () {
       final e = validateTicketForm(type: null, title: '', description: '  ');
       expect(e.isValid, isFalse);

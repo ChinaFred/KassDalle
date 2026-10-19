@@ -19,7 +19,7 @@ import { logError, logInfo, logWarn } from "../logging";
 import { BudgetExceededError, withDailyBudget } from "../ai/budget";
 import { estimateAiCostUsd, loadAiPricingTable } from "../ai/pricing";
 import { recordUsage } from "../ai/usage";
-import { scanUpload } from "../utils/uploadSecurity";
+import { moderationImageMime, scanUpload } from "../utils/uploadSecurity";
 import { decideModeration, type ModerationDecision } from "./decision";
 import {
   MODERATION_FEATURE,
@@ -58,7 +58,6 @@ export interface ModerationItem {
   quarantinePath: string;
   targetKind: ModerationTargetKind;
   ownerId: string | null;
-  contentType: string;
   origin: ImageOrigin;
   /**
    * Ajouter l'image à `image_urls` de la recette (`recipe_illustration`) dès
@@ -265,6 +264,29 @@ export async function moderateAndPromote(args: {
       );
     }
 
+    // JPEG ou PNG seulement, lu sur les octets (ticket #157) : `scanUpload`
+    // admet aussi les formats d'import (PDF, DOCX, EPUB, texte). Le type
+    // détecté est celui posé sur l'objet publié et sur la ligne de journal ;
+    // le type déclaré par le client n'est plus lu.
+    const imageMime = moderationImageMime(bytes);
+    if (imageMime == null) {
+      await logError({
+        message: "Image bloquée avant modération : ni JPEG ni PNG",
+        moduleType: "MODERATION",
+        userId,
+        correlationId,
+        extra: {
+          quarantinePath: item.quarantinePath,
+          declaredType: meta.contentType ?? null,
+          detectedType: formatScan.normalizedMimeType ?? null,
+        },
+      });
+      throw new ImageFormatRejected(
+        item.quarantinePath,
+        "Seules les images JPEG et PNG sont acceptées.",
+      );
+    }
+
     // L'origine retenue, pas celle déclarée : un `asset` dont l'empreinte
     // n'est pas celle d'une image livrée redevient une image d'utilisateur.
     const { origin, downgraded } = resolveImageOrigin(item.origin, sha256Hex(bytes));
@@ -359,7 +381,7 @@ export async function moderateAndPromote(args: {
       const promoted = await promoteImage({
         quarantinePath: item.quarantinePath,
         targetPath,
-        contentType: item.contentType,
+        contentType: imageMime,
         moderationId: docRef.id,
         correlationId,
         sourceGeneration: generation,
@@ -386,7 +408,7 @@ export async function moderateAndPromote(args: {
       target_path: targetPath,
       target_kind: item.targetKind,
       owner_id: item.ownerId,
-      mime_type: meta.contentType ?? item.contentType,
+      mime_type: imageMime,
       size_bytes: bytes.length,
       signals,
       culinary_matches: decision.culinaryMatches,

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../admin/domain/backfill_status.dart' show parisWallTime;
 import 'ticket.dart';
+import 'ticket_answer.dart' show ticketTextContainsEmail;
 
 /// Règles du formulaire « Signaler ou proposer », sans Flutter ni Firebase.
 ///
@@ -15,6 +16,12 @@ const kTicketDescriptionMaxLength = 2000;
 
 /// Taille maximale d'une capture, celle que `storage.rules` accepte.
 const kTicketScreenshotMaxBytes = 5 * 1024 * 1024;
+
+/// Faute d'un titre ou d'une description qui contient une adresse e-mail :
+/// le ticket devient une Issue d'un dépôt public. `submitTicket` refuse aussi
+/// (`details.reason` `contains_email`).
+const kTicketFormEmailMessage =
+    "Retirez l'adresse e-mail : le ticket est publié sur un site public.";
 
 /// À partir de ce reste, le formulaire annonce les envois du jour.
 const kTicketRemainingNoticeThreshold = 2;
@@ -44,12 +51,16 @@ TicketFormErrors validateTicketForm({
         ? 'Le titre doit faire au moins $kTicketTitleMinLength caractères.'
         : t.length > kTicketTitleMaxLength
         ? 'Le titre ne doit pas dépasser $kTicketTitleMaxLength caractères.'
+        : ticketTextContainsEmail(t)
+        ? kTicketFormEmailMessage
         : null,
     description: d.isEmpty
         ? 'Décrivez votre demande.'
         : d.length > kTicketDescriptionMaxLength
         ? 'La description ne doit pas dépasser '
               '$kTicketDescriptionMaxLength caractères.'
+        : ticketTextContainsEmail(d)
+        ? kTicketFormEmailMessage
         : null,
   );
 }

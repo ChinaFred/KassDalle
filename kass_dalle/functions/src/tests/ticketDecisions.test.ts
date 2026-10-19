@@ -257,6 +257,18 @@ describe("analysesFromComments", () => {
 // ── Motif de refus ──────────────────────────────────────────────────────────
 
 describe("readRefusalReason", () => {
+  test("motif fait d'un seul commentaire HTML : refusé (ticket #158)", () => {
+    assert.throws(() => readRefusalReason("<!-- rien de lisible -->"), TicketInputError);
+  });
+
+  test("motif : HTML et images neutralisés", () => {
+    const zwsp = String.fromCharCode(0x200b);
+    assert.equal(
+      readRefusalReason("Hors sujet <!-- x --> ![a](https://x.test/i.png)"),
+      `Hors sujet  !${zwsp}[a](https://x.test/i.png)`,
+    );
+  });
+
   test("nettoie, garde les retours à la ligne, neutralise mentions et renvois", () => {
     assert.equal(
       readRefusalReason("  Hors du périmètre.\r\nVoir @ChinaFred et #12.\u0007  "),
@@ -747,6 +759,30 @@ describe("Clore", () => {
       });
     }
     assert.notEqual(answerPrecondition({ status: "closed", type: "bug", hasIssue: true }), null);
+  });
+
+  test("une adresse recollée par le retrait d'un commentaire HTML est refusée", () => {
+    const glued = "Merci jean<!-- x -->@gmail.com";
+    for (const read of [readAnswerText, readCloseComment, readRefusalReason]) {
+      assert.throws(
+        () => read(glued),
+        (err: unknown) => err instanceof TicketInputError && err.reason === "contains_email",
+        read.name,
+      );
+    }
+  });
+
+  test("motif de refus : une adresse e-mail est refusée, comme pour « Répondre »", () => {
+    assert.throws(
+      () => readRefusalReason("Écrivez à moi@exemple.fr"),
+      (err: unknown) => err instanceof TicketInputError && err.reason === "contains_email",
+    );
+  });
+
+  test("réponse et commentaire : HTML neutralisé, commentaire HTML seul refusé (ticket #158)", () => {
+    assert.equal(readAnswerText("Oui <!-- caché --> <b>ok</b>"), `Oui  <${ZWSP}b>ok<${ZWSP}/b>`);
+    assert.throws(() => readAnswerText("<!-- seulement ceci -->"), /au moins 5/);
+    assert.throws(() => readCloseComment("<!-- seulement ceci -->"), /au moins 5/);
   });
 
   test("commentaire : mêmes contrôles que la réponse, champ comment", () => {

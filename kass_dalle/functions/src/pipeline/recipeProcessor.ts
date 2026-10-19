@@ -71,6 +71,15 @@ import {
   storageEmulatorActive,
 } from "../utils/storagePath";
 import { ZipLimitError } from "../utils/boundedZip";
+import {
+  ImportTooLargeError,
+  MAX_IMPORT_TOTAL_BYTES,
+  TooManyPagesError,
+  assertImportSizeWithin,
+  downloadInSequence,
+  readAdditionalFileUrls,
+} from "./jobPages";
+import { MAX_BOOK_UPLOAD_SIZE_BYTES } from "../utils/uploadSecurity";
 import { parseBookWindow, runBookImport } from "./bookImport";
 import { parseCheckpoint, serializeCheckpoint } from "./transcriptionCheckpoint";
 import {
@@ -368,8 +377,9 @@ export const recipeProcessor = onTaskDispatched(
 
       // ── IMPORT ────────────────────────────────────────────────────────────
       const fileUrl = job.file_url as string;
-      const rawAdditional: unknown = job.additional_file_urls ?? [];
-      const additionalFileUrls = Array.isArray(rawAdditional) ? (rawAdditional as string[]) : [];
+      // 20 pages supplémentaires au plus (ticket #156) : au-delà, le job est
+      // refusé avant tout téléchargement et tout appel de modèle.
+      const additionalFileUrls = readAdditionalFileUrls(job.additional_file_urls);
       const mimeType = (job.mime_type as string | undefined) ?? "image/jpeg";
 
       // Le fichier source vient du client : seul le dossier promu du
@@ -382,10 +392,17 @@ export const recipeProcessor = onTaskDispatched(
       if (stepIndex(currentStep) <= stepIndex("import")) {
         await jobRef.update({ current_step: "import", updated_at: Timestamp.now() });
       }
-      const primaryBytes = await downloadFromStorage(primaryPath);
-      const additionalBytes = await Promise.all(
-        additionalPaths.map((path) => downloadFromStorage(path)),
+      // Poids total lu sur les métadonnées, avant tout téléchargement : 200 Mo
+      // pour une recette ou une couverture. Un livre entier garde sa borne
+      // d'envoi (300 Mo), un seul fichier.
+      await assertImportSizeWithin(
+        [primaryPath, ...additionalPaths],
+        storageObjectSize,
+        jobType === "bookDocumentScan" ? MAX_BOOK_UPLOAD_SIZE_BYTES : MAX_IMPORT_TOTAL_BYTES,
       );
+      const primaryBytes = await downloadFromStorage(primaryPath);
+      // En séquence : une page en cours de téléchargement à la fois.
+      const additionalBytes = await downloadInSequence(additionalPaths, downloadFromStorage);
 
       logInfo({
         message: "Fichiers téléchargés",
@@ -982,6 +999,10 @@ export const recipeProcessor = onTaskDispatched(
       // Une archive (DOCX, EPUB) au-delà des bornes de lecture le restera :
       // chaque tentative la retéléchargerait pour la refuser au même endroit.
       const isZipLimit = err instanceof ZipLimitError;
+      // Trop de pages supplémentaires : la liste ne raccourcira pas d'elle-même.
+      const isTooManyPages = err instanceof TooManyPagesError;
+      // Un import trop lourd le restera.
+      const isTooLarge = err instanceof ImportTooLargeError;
       // Un import par lien : un échec lisible (page bloquée, sans recette,
       // adresse refusée) ne se rejoue pas ; un délai dépassé, si.
       const urlError = err instanceof UrlImportError ? err : null;
@@ -1018,6 +1039,8 @@ export const recipeProcessor = onTaskDispatched(
           isForeignBook,
           isForbiddenSource,
           isZipLimit,
+          isTooManyPages,
+          isTooLarge,
           urlErrorCode: urlError?.code ?? null,
         },
       });
@@ -1025,8 +1048,10 @@ export const recipeProcessor = onTaskDispatched(
       // Dernière tentative — ou plafond atteint, fichier illisible, balisage
       // coupé, livre cible d'un autre (`foreign_book`), fichier source hors du
       // dossier du propriétaire (`forbidden_source_path`), archive au-delà des
-      // bornes de lecture (`archive_limit_exceeded`) : ces six cas se rejouent
-      // à l'identique, il est inutile de les réessayer.
+      // bornes de lecture (`archive_limit_exceeded`), plus de 20 pages
+      // supplémentaires (`too_many_pages`), plus de 200 Mo au total
+      // (`too_large`) : ces huit cas se rejouent à l'identique, il est inutile
+      // de les réessayer.
       if (
         attempt + 1 >= MAX_RETRY_ATTEMPTS ||
         isBudget ||
@@ -1035,6 +1060,8 @@ export const recipeProcessor = onTaskDispatched(
         isForeignBook ||
         isForbiddenSource ||
         isZipLimit ||
+        isTooManyPages ||
+        isTooLarge ||
         isFinalUrlError
       ) {
         await moveToDeadLetter({
@@ -1053,11 +1080,15 @@ export const recipeProcessor = onTaskDispatched(
                     ? "forbidden_source_path"
                     : isZipLimit
                       ? "archive_limit_exceeded"
-                      : urlError
-                        ? `url_${urlError.code}`
-                        : isQuota
-                          ? "quota_exceeded"
-                          : "pipeline_error",
+                      : isTooManyPages
+                        ? "too_many_pages"
+                        : isTooLarge
+                          ? "too_large"
+                          : urlError
+                            ? `url_${urlError.code}`
+                            : isQuota
+                              ? "quota_exceeded"
+                              : "pipeline_error",
           lastError: message,
           retryCount: attempt + 1,
           filePath:
@@ -1099,6 +1130,12 @@ function resolveJobSourcePath(reference: unknown, ownerUid: string): string {
     bucketName: getStorage().bucket().name,
     allowEmulator: storageEmulatorActive(),
   });
+}
+
+/** Taille d'un objet du bucket par défaut, lue sur ses métadonnées — chemin déjà vérifié. */
+async function storageObjectSize(path: string): Promise<unknown> {
+  const [meta] = await getStorage().bucket().file(path).getMetadata();
+  return meta.size;
 }
 
 /** Télécharge un objet du bucket par défaut — chemin déjà vérifié. */

@@ -1,5 +1,6 @@
 import { extractJsonArray } from "./client";
 import { callModel } from "../ai/router";
+import { logError } from "../logging";
 import { textPart, type ModelCallContext } from "../ai/types";
 import { type AiUsageMeta } from "./tokenUsage";
 
@@ -157,7 +158,20 @@ export async function consolidateShoppingList(
         } satisfies ShoppingProductResult;
       })
       .filter((entry): entry is ShoppingProductResult => entry !== null);
-  } catch {
+  } catch (err) {
+    // Réponse du modèle illisible : la liste reste sans regroupement, et
+    // l'appel facturé est visible dans les journaux (ticket #159). Ni le texte
+    // de la réponse ni les ingrédients ne sont journalisés.
+    await logError({
+      message: "Courses : réponse du modèle illisible, aucun regroupement rendu",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: ctx.moduleType,
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      jobId: ctx.jobId,
+      feature: options.feature ?? "shopping_list",
+      extra: { ingredientCount: ingredients.length, responseChars: text.length },
+    });
     return [];
   }
 }
