@@ -83,7 +83,7 @@ Trois principes portent tout le reste :
 | Node 22, npm | Functions et hooks | même version que la CI |
 | SDK du langage du projet (ici Flutter 3.44.6) | analyse, tests | même version que la CI |
 | Java 21 | émulateurs Firebase des tests de règles | |
-| `firebase-tools` 15.x, `gcloud` | secrets, déploiement de secours | |
+| `firebase-tools` 15.x, `gcloud` | secrets, déploiement de secours | sur le PC, installé à la main (`npm install -g firebase-tools@15.32.1`, même version que `kass_dalle/deploy-tools/`) ; le workflow « Déploiement » n'utilise pas d'installation globale |
 | VS Code + extension Claude Code | travail quotidien | |
 
 ---
@@ -716,6 +716,14 @@ La CLI Firebase peut rendre 0 sans rien déployer, ou malgré des fonctions en �
 aucune ligne `Functions deploy had errors`. Sa relance vise les seules fonctions en échec
 (`--only functions:<nom>`) : une relance complète saute les fonctions dont le code n'a pas
 changé.
+
+La CLI du workflow ne s'installe pas par `npm install -g` : elle est déclarée dans
+`kass_dalle/deploy-tools/package.json`, verrouillée par son `package-lock.json`, et installée par
+`npm ci --ignore-scripts` **avant** l'étape d'authentification Google Cloud. Rien de ce qui
+s'installe ne s'exécute donc avec le jeton du compte de service, et l'arbre de dépendances est
+celui du verrou, sommes de contrôle comprises. Pour reproduire ailleurs : un dossier dédié avec
+la seule dépendance `firebase-tools` à version exacte, `npm install --ignore-scripts` pour
+produire le verrou, et le dossier `node_modules/.bin` ajouté au `PATH` du job.
 
 `--force` n'est passé qu'au déploiement des Functions (suppression d'une fonction retirée du
 code). Sur `firestore`, il supprimerait les index absents du fichier d'index.

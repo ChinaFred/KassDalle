@@ -1,0 +1,11 @@
+{
+  "name": "kass-dalle-deploy-tools",
+  "private": true,
+  "description": "CLI Firebase du workflow « Déploiement », verrouillée par package-lock.json et installée par npm ci --ignore-scripts avant l'authentification Google Cloud.",
+  "engines": {
+    "node": "22"
+  },
+  "dependencies": {
+    "firebase-tools": "15.32.1"
+  }
+}

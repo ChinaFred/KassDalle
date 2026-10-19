@@ -3220,7 +3220,8 @@ avant la propagation — une heure au plus), le fichier dépasse 50 Mo (300 Mo s
 
 `kass_dalle/rules-tests/` est un paquet Node à part, séparé de `functions/` pour que le
 `npm test` des Functions n'exige pas Java. Il dépend de `@firebase/rules-unit-testing`, de
-`firebase` et de `firebase-tools` épinglé à la version de `deploy.yml` (15.32.1).
+`firebase` et de `firebase-tools` épinglé à la version de `kass_dalle/deploy-tools/`, celle du
+workflow « Déploiement » (15.32.1).
 
 ```bash
 cd kass_dalle/rules-tests
@@ -6293,17 +6294,80 @@ Dans `kass_dalle/firebase.json` :
 - `apk_release.json` porte les mêmes en-têtes anti-cache. C'est le manifeste que
   l'application Android interroge au lancement : un cache d'une heure retarderait
   d'autant la proposition de mise à jour.
-- Une seule règle de réécriture, `** → /index.html`, comme toute application à route unique.
+- Deux règles de réécriture : `/csp-report` vers la fonction `cspReportFn` (europe-west1),
+  puis `** → /index.html`, comme toute application à route unique. La première doit précéder
+  la seconde, qui capterait sinon les rapports.
 
 Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne version.
 
 ### En-têtes de sécurité et CSP
 
 `firebase.json` pose `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` et une
-`Content-Security-Policy-Report-Only`. La CSP est **en rapport seul, sans destination de
-rapport** (ni `report-uri`, ni `report-to`) : le projet n'a pas de point de collecte. Une
-violation s'affiche dans la console du navigateur de celui qui la provoque, et nulle part
-ailleurs. La CSP ne bloque donc rien, et personne n'est prévenu de ce qu'elle bloquerait.
+`Content-Security-Policy-Report-Only`. La CSP est **en rapport seul** : elle ne bloque rien,
+et chaque violation part en rapport vers `/csp-report` (directive `report-uri`, chemin
+relatif, même origine que la page). Hosting réécrit ce chemin vers `cspReportFn`, qui
+journalise (voir « Rapports CSP » ci-dessous). `report-to` n'est pas posé : quand il est
+présent, Chromium ignore `report-uri` et passe par la Reporting API, dont l'envoi n'a pas pu
+être vérifié en local (aucun rapport reçu en 75 s sous Chromium sans interface, alors que
+`report-uri` arrive aussitôt).
+
+**Directives (validées sur le build réel, Issue #160).** Le build `flutter build web
+--release` servi avec les en-têtes de `firebase.json`, la CSP passée en mode bloquant,
+ouvert dans Chromium jusqu'à l'écran de connexion, avec et sans Trusted Types : aucune
+violation. L'ancienne politique en levait trois, qui auraient empêché le démarrage en mode
+bloquant : les deux scripts en ligne de `index.html`, et le téléchargement de
+`canvaskit.wasm` depuis `www.gstatic.com` (`connect-src`).
+
+| Directive | Valeurs | Pour quoi |
+|---|---|---|
+| `script-src` | `'self'`, `'wasm-unsafe-eval'` | `main.dart.js`, `flutter_bootstrap.js` ; compilation de CanvasKit |
+| | 2 empreintes `sha256-…` | les deux scripts en ligne de `web/index.html` (écran d'attente, mise à jour du service worker) |
+| | 14 empreintes `sha256-…` | les scripts en ligne que `firebase_core_web` injecte pour charger le SDK JS de chaque service (7 services, deux variantes : avec et sans Trusted Types) |
+| | `https://www.gstatic.com` | CanvasKit (`flutter-canvaskit/`), SDK Firebase JS (`firebasejs/`), scripts de reCAPTCHA |
+| | `https://www.google.com` | `recaptcha/enterprise.js` (App Check) |
+| | `https://apis.google.com` | chargeur `gapi` de Firebase Auth pour `signInWithPopup` |
+| | `https://accounts.google.com/gsi/client` | Google Identity Services, chargé au démarrage par `google_sign_in_web` même si le web se connecte par Firebase Auth |
+| `connect-src` | `https://www.gstatic.com` | `canvaskit.wasm` |
+| | `https://fonts.gstatic.com` | polices de secours de CanvasKit |
+| | `https://*.googleapis.com` | Firestore, Storage, Auth (`identitytoolkit`, `securetoken`), App Check, Agenda et Tâches Google |
+| | `https://*.googleusercontent.com` | photos de profil Google, que CanvasKit télécharge par `fetch` |
+| | `https://*.google.com`, `https://*.cloudfunctions.net` | reCAPTCHA, callables europe-west1 et `sandboxFn` |
+| | `wss://*.firebaseio.com` | Realtime Database, que l'application n'utilise pas ; valeur reprise de la politique précédente |
+| `img-src` | `'self'`, `data:`, `blob:`, `https://*.googleapis.com`, `https://*.googleusercontent.com` | voir ci-dessous |
+| `font-src` | `'self'`, `data:`, `https://fonts.gstatic.com` | polices embarquées et de secours |
+| `style-src` | `'self'`, `'unsafe-inline'` | styles posés par le moteur Flutter et par `index.html` |
+| `frame-src` | `https://kassdale-6d948.firebaseapp.com`, `https://www.google.com`, `https://recaptcha.google.com` | iframe de Firebase Auth, cadres de reCAPTCHA |
+| `default-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'` | | |
+| `report-uri` | `/csp-report` | rapports vers `cspReportFn` |
+
+**Empreintes.** `script-src` n'a pas de `'unsafe-inline'` : chaque script en ligne est nommé
+par son empreinte. `functions/src/tests/webCsp.test.ts` recalcule les deux de `index.html` et
+les quatorze de FlutterFire, et échoue si une manque, si une est en trop, si la version de
+`firebase_core_web` verrouillée dans `pubspec.lock` n'est plus 3.12.0 (SDK JS 12.19.0), ou si un
+plugin FlutterFire web apparaît ou disparaît. Modifier un script de `index.html`, ou monter
+FlutterFire, impose donc de reporter les nouvelles empreintes, que le test affiche.
+`.gitattributes` garde `web/index.html` en LF : une copie en CRLF, sur le PC Windows, changerait
+l'empreinte des scripts construits par `deploy.ps1`.
+
+**Rapports CSP.** `cspReportFn` (HTTPS publique, europe-west1, `maxInstances: 1`) accepte
+`application/csp-report`, `application/reports+json` et `application/json`, refuse un corps de
+plus de 16 Ko (413), un autre type (415) ou un JSON illisible (400), et répond 204. Elle
+journalise par `logWarn` une ligne par violation : directive, origine de la ressource bloquée
+(ou mot-clé `inline`, `eval`, schéma `data`, `blob`), chemin du document sans requête ni
+fragment, fichier source réduit à l'origine et au chemin, ligne, colonne, `disposition`.
+L'extrait de script et la politique complète ne sont pas repris. Une violation déjà vue dans
+la minute n'est pas rejournalisée, et au plus 30 violations distinctes par minute et par
+instance le sont ; les violations écartées et les corps refusés sont comptés et journalisés
+en une ligne (`logInfo`) au premier rapport de la minute suivante. Rien n'est écrit dans
+Firestore, aucun modèle n'est appelé. Code : `functions/src/csp/` ; tests :
+`cspReport.test.ts`.
+
+**Passage en mode bloquant.** Il se fera dans une version suivante, après lecture des
+rapports de production (Admin › Journaux, messages `cspReport :`) : la même politique, sous
+la clé `Content-Security-Policy`. Ce que la validation locale n'a pas couvert, faute de compte
+et de réseau dans l'environnement de test : les requêtes d'une session connectée (Firestore,
+Storage, callables), le popup de connexion Google, et les sous-ressources de reCAPTCHA
+(`www.google.com` refusé par le proxy du test). Les rapports de production les couvriront.
 
 `font-src` et `connect-src` admettent `https://fonts.gstatic.com` (v0.23.16) : CanvasKit y
 télécharge les polices de secours des écritures que ses polices embarquées ne couvrent pas
@@ -6383,10 +6447,6 @@ téléchargée. » (`ForeignImageUrl.message`, intercepté par `on ForeignImageU
 Exception, décidée par l'utilisateur : la photo de profil (`photo_url`, `googleusercontent.com` pour un compte
 Google) reste affichée sans filtre, dans le menu du compte (`app_shell.dart`), l'écran Compte
 (`account_screen.dart`) et la liste des utilisateurs (`admin_screen.dart`).
-
-Suite proposée pour la CSP (audit sécurité 2026-10-09, « Faible ») : mesurer d'abord, en
-ajoutant une destination de rapport (petite fonction HTTP qui journalise par `logWarn`, ou
-service externe), puis basculer en mode bloquant une fois les rapports vides.
 
 ### Build et déploiement
 
@@ -6571,6 +6631,7 @@ cloud. Une session cloud fusionne sa PR sur `master` ; le PC commite sur `master
 | Asset des nouveautés | avant le build web, `node .github/scripts/changelog-recent.mjs` régénère `kass_dalle/assets/changelog_recent.json` (voir « Nouveautés ») ; l'APK construit ensuite l'embarque aussi |
 | Déployé | Cloud Functions, puis hosting + règles Firestore + règles Storage |
 | APK | construit et signé seulement si `version:` de `pubspec.yaml` dépasse celle de l'APK en ligne (`.github/scripts/build-apk.sh`), avant le déploiement des Functions ; sinon l'APK en ligne est conservé |
+| CLI Firebase | `firebase-tools` 15.32.1, déclaré dans `kass_dalle/deploy-tools/package.json` et verrouillé par son `package-lock.json` ; installé par `npm ci --ignore-scripts` **avant** l'authentification Google Cloud, puis appelé depuis `deploy-tools/node_modules/.bin` (voir ci-dessous) |
 | Concurrence | un déploiement à la fois, jamais interrompu (`deploy-production`) |
 | Droits et actions | jeton GitHub limité à `contents: read`, plus `id-token: write` sur le job `deploy` pour le jeton OIDC échangé auprès de Google Cloud (voir « Accès à Google Cloud, sans clé ») ; actions tierces épinglées par SHA de commit, version en commentaire (`actions/checkout@11d5960… # v4.4.0`, etc.) : ce job reçoit la clé de signature Android et l'accès au compte de service Firebase, et une étiquette `@v4` peut être déplacée vers un autre code. `actions/checkout` avec `persist-credentials: false` : le jeton ne reste pas dans `.git/config` pendant les builds. Monter une action : remplacer le SHA par celui de la nouvelle étiquette (`git ls-remote --tags`) |
 
@@ -6584,6 +6645,24 @@ l'a sautée et a annoncé un succès. Une fonction nommée par `--only` n'est ja
 `deploy.ps1` suit la même règle depuis la v0.22.109 : il lisait auparavant les seules lignes
 `Failed to update function …`, que l'échec d'une file Cloud Tasks n'écrit pas (`Failed to upsert
 task queue function …`), et commençait par une relance complète.
+
+**La CLI Firebase est installée avant l'authentification (Issue #161).** Jusqu'ici, l'étape
+« Firebase CLI » lançait `npm install -g firebase-tools@15.32.1` après
+`google-github-actions/auth` : les quelque 670 dépendances transitives, non verrouillées,
+étaient résolues au moment du déploiement, et leurs scripts d'installation s'exécutaient avec
+le jeton du compte de service dans l'environnement. L'étape « Firebase CLI » tourne désormais
+juste après « Dépendances », avant tout accès à Google Cloud : `npm ci --ignore-scripts
+--prefix deploy-tools` installe l'arbre exact de `deploy-tools/package-lock.json` (sommes de
+contrôle comprises), sans exécuter aucun script d'installation, puis ajoute
+`deploy-tools/node_modules/.bin` au `PATH` du job. firebase-tools n'a pas besoin de ces
+scripts : des trois paquets qui en déclarent, `fsevents` (macOS) et `re2` (accélérateur
+optionnel de l'émulateur d'hébergement) sont optionnels, et celui de `protobufjs` ne fait
+qu'afficher un avertissement. L'étape « CLI Firebase locale », juste avant le premier
+déploiement, vérifie que `firebase` désigne bien ce binaire. Le cache npm de `setup-node` suit
+les deux verrous (`functions/` et `deploy-tools/`). Monter la CLI : changer la version dans
+`deploy-tools/package.json`, `npm install --ignore-scripts` dans ce dossier, et monter
+`rules-tests/package.json` à la même version. `deploy.ps1` n'installe pas la CLI : il appelle
+le `firebase` du PC, installé à la main (voir `handbook-reseau-agents.md`).
 
 **`--force` n'est passé qu'aux Functions.** En mode non interactif, la CLI refuse sinon de
 supprimer une fonction retirée du code : une fonction supprimée du dépôt disparaît donc de la
