@@ -18,6 +18,9 @@ abstract final class BackfillFailureKind {
 
   /// Un ticket de membre : ouvert dans Admin › Tickets des membres.
   static const ticket = 'ticket';
+
+  /// Une invitation par e-mail : affichée sans lien.
+  static const invitation = 'invitation';
 }
 
 /// Un élément à revoir : un ingrédient, une unité, une recette, un compte.

@@ -48,6 +48,7 @@ import { isFounderEmail } from "./founderRole";
 import {
   asDate,
   groupInviteFor,
+  invitationGroupOf,
   isInvitableRole,
   isOpenReturnInvitationFor,
   isStaleReturnInvitation,
@@ -150,7 +151,11 @@ export const applyEmailInvitation = onDocumentCreated(
         const groupId = typeof chosen.data.group_id === "string" ? chosen.data.group_id : "";
         const groupRef = groupId ? db.collection(COLL_GROUPS).doc(groupId) : null;
         const groupSnap = groupRef ? await tx.get(groupRef) : null;
-        const groupExists = groupSnap?.exists === true;
+        // Un groupe recréé sous le même identifiant par un autre compte, ou
+        // une invitation sans `group_owner_id`, compte comme un groupe absent :
+        // l'invité ne rejoint pas un groupe qu'on ne lui a pas proposé.
+        const groupExists =
+          groupSnap?.exists === true && invitationGroupOf(groupSnap.data(), chosen.data) !== null;
 
         tx.update(userRef, { role });
         if (groupExists && groupRef) {
@@ -359,7 +364,11 @@ export const applyRevokedInvitation = onDocumentUpdated(
         const groupId = typeof chosen.data.group_id === "string" ? chosen.data.group_id : "";
         const groupRef = groupId ? db.collection(COLL_GROUPS).doc(groupId) : null;
         const groupSnap = groupRef ? await tx.get(groupRef) : null;
-        const groupExists = groupSnap?.exists === true;
+        // Même garde qu'à la première connexion : un groupe recréé par un
+        // autre compte, ou une invitation sans `group_owner_id`, compte comme
+        // un groupe absent.
+        const groupExists =
+          groupSnap?.exists === true && invitationGroupOf(groupSnap.data(), chosen.data) !== null;
         // L'invitant est relu dans le groupe : sorti entre l'envoi et le
         // retour, il ne peut plus y inviter, et le serveur ne le fait pas à
         // sa place (`missing`). Le rôle et le rétablissement restent.

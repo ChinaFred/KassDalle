@@ -27,6 +27,8 @@ import {
   effectiveStatus,
   escapeHtml,
   groupInviteFor,
+  invitationGroupOf,
+  resendGroupOwnerDecision,
   invitationFits,
   invitationTargetOf,
   expiryFrom,
@@ -794,5 +796,47 @@ describe("syncUserClaims — relecture du document", () => {
       exists: true,
       data: snapshot,
     });
+  });
+});
+
+describe("groupe recréé sous le même identifiant (ticket #152)", () => {
+  const inviteA = { group_id: "g1", group_owner_id: "A", invited_by: "A" };
+
+  test("invitation de A, groupe recréé par E : l'invité n'entre pas dans member_ids", () => {
+    const pirate = { owner_id: "E", member_ids: ["E"], invited_ids: [] };
+    assert.equal(invitationGroupOf(pirate, inviteA), null);
+    // Le trigger traite alors le groupe comme absent : rien d'écrit sur le
+    // groupe, `group_missing: true`, et au retour d'un compte révoqué
+    // `groupInviteFor(null, …)` rend `missing`.
+    assert.equal(groupInviteFor(invitationGroupOf(pirate, inviteA), "invite", "A"), "missing");
+  });
+
+  test("groupe de A : rendu tel quel", () => {
+    const group = { owner_id: "A", member_ids: ["A"] };
+    assert.equal(invitationGroupOf(group, inviteA), group);
+  });
+
+  test("invitation sans group_owner_id (avant le backfill) : groupe absent", () => {
+    const group = { owner_id: "A", member_ids: ["A"] };
+    for (const value of [undefined, "", 3, null]) {
+      assert.equal(invitationGroupOf(group, { ...inviteA, group_owner_id: value }), null);
+    }
+  });
+
+  test("groupe supprimé : null", () => {
+    assert.equal(invitationGroupOf(null, inviteA), null);
+    assert.equal(invitationGroupOf(undefined, inviteA), null);
+  });
+
+  test("renvoi : champ absent posé, égal gardé, différent refusé", () => {
+    assert.equal(resendGroupOwnerDecision({ invited_by: "A" }, "A"), "write");
+    assert.equal(resendGroupOwnerDecision({ group_owner_id: "", invited_by: "A" }, "A"), "write");
+    assert.equal(resendGroupOwnerDecision({ group_owner_id: "A" }, "A"), "keep");
+    assert.equal(resendGroupOwnerDecision({ group_owner_id: "A" }, "E"), "refuse");
+  });
+
+  test("renvoi d'une invitation sans champ : l'auteur doit être le propriétaire relu", () => {
+    assert.equal(resendGroupOwnerDecision({ invited_by: "X" }, "E"), "refuse");
+    assert.equal(resendGroupOwnerDecision({}, "E"), "refuse");
   });
 });

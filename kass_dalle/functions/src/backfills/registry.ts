@@ -35,6 +35,7 @@ export const BACKFILL_KEYS = [
   "ticket_analyses",
   "ticket_delivered_pr",
   "recipe_title_keys",
+  "invitation_group_owner",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -147,6 +148,13 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     key: "recipe_title_keys",
     kind: "ponctuel",
     title: "Clé de titre des recettes",
+    usesAi: false,
+    defaultSchedule: null,
+  },
+  {
+    key: "invitation_group_owner",
+    kind: "ponctuel",
+    title: "Propriétaire du groupe des invitations",
     usesAi: false,
     defaultSchedule: null,
   },

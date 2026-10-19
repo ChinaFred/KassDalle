@@ -32,6 +32,7 @@ abstract final class BackfillKeys {
   static const ticketAnalyses = 'ticket_analyses';
   static const ticketDeliveredPr = 'ticket_delivered_pr';
   static const recipeTitleKeys = 'recipe_title_keys';
+  static const invitationGroupOwner = 'invitation_group_owner';
 }
 
 class BackfillDefinition {
@@ -217,6 +218,16 @@ const List<BackfillDefinition> kBackfillRegistry = [
         'compare pour reconnaître une page déjà présente dans le livre.',
     usesAi: false,
     passLimit: 'Chaque passage examine au plus 2 000 recettes.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.invitationGroupOwner,
+    kind: BackfillKind.ponctuel,
+    title: 'Propriétaire du groupe des invitations',
+    description:
+        'Recopie sur les invitations par e-mail existantes le propriétaire de '
+        'leur groupe, pour qu\'il les retrouve dans la feuille du groupe.',
+    usesAi: false,
+    passLimit: 'Chaque passage examine au plus 2 000 invitations.',
   ),
 ];
 

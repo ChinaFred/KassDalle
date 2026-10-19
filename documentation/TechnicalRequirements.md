@@ -291,7 +291,10 @@ encore `admin` non révoqué, et l'appartenance de l'invitant au groupe. Il écr
 ajoute l'uid à `invited_ids` du groupe — **jamais** à `member_ids` : l'invité accepte dans
 Groupes familiaux —, et passe l'invitation à `accepted` avec `group_invite`. Il n'écrit rien au
 groupe si le compte y est déjà membre ou invité, ou si 50 invitations y attendent (plafond de
-`boundedGroup`) ; groupe supprimé : rôle seul, `group_missing: true` ; invitant qui n'est plus
+`boundedGroup`) ; groupe supprimé, ou groupe relu dont `owner_id` diffère du
+`group_owner_id` de l'invitation (groupe recréé sous le même identifiant par un autre compte),
+ou invitation sans `group_owner_id` (`invitationGroupOf`, v0.24.13) : rôle seul,
+`group_missing: true` ; invitant qui n'est plus
 ni propriétaire ni membre du groupe : rôle seul, `group_invite: "missing"`, `group_missing:
 false`. Le statut `accepted`, relu
 dans la transaction, empêche une seconde application. L'écriture réveille `syncUserClaims`
@@ -1334,7 +1337,9 @@ Une invitation envoyée par un administrateur à une personne qui n'a pas encore
 dont le compte est révoqué. Écrite par le serveur seul (`manageInvitationFn`,
 `applyEmailInvitation`, `applyRevokedInvitation`) ; lue par un
 administrateur (Admin › Gestion des utilisateurs › Invitations, tri `created_at` décroissant,
-index simple).
+index simple), et par le propriétaire du groupe dont l'uid est `group_owner_id` (feuille du
+groupe, requête `group_id == g` et `group_owner_id == moi` : deux égalités, servies par les
+index simples, sans index composite).
 
 | Champ | Type | Description |
 |---|---|---|
@@ -1342,6 +1347,7 @@ index simple).
 | `email_key` | `String` | Clé de comparaison (`normalizeEmailKey`, `functions/src/invitations/rules.ts`) : minuscules ; pour `gmail.com` et `googlemail.com`, points et suffixe `+…` de la partie locale retirés, `googlemail.com` → `gmail.com`. Logique serveur seule, sans jumeau Dart |
 | `role` | `String` | `reader` ou `editor`. Jamais `admin` : la callable le refuse |
 | `group_id` | `String` | Groupe que l'invité rejoindra |
+| `group_owner_id` | `String` | UID du propriétaire du groupe (`groups/{group_id}.owner_id`, figé par les règles), écrit par le serveur à la création, et au renvoi seulement s'il manque et que l'auteur de l'invitation est le propriétaire relu (`manageInvitationFn` ; sinon, ou présent et différent du propriétaire relu : refus `group_changed`). À l'acceptation, le groupe relu n'est rejoint que si son `owner_id` vaut ce champ (`invitationGroupOf`, `applyEmailInvitation`, `applyRevokedInvitation`). C'est le champ que compare la règle de lecture d'un non-administrateur (§4, ticket #152) : un groupe supprimé puis recréé sous le même identifiant par un autre compte ne lui ouvre pas les invitations restées en base. Absent sur les invitations créées avant v0.24.13 : elles ne sont lisibles que par un administrateur jusqu'au backfill ponctuel « Propriétaire du groupe des invitations » (`backfillInvitationGroupOwnerFn`, §7.10), qui le recopie depuis le groupe courant quand il existe et que l'auteur de l'invitation en est le propriétaire. Une invitation sans le champ acceptée entre-temps donne le rôle sans le groupe |
 | `group_name` | `String` | Nom du groupe au moment de l'invitation, pour l'e-mail et la liste |
 | `message` | `String` | Message de l'administrateur, 500 caractères au plus. Le formulaire le préremplit (`defaultInvitationMessage`, client seul) ; vide, il reste vide et l'e-mail part sans paragraphe personnel |
 | `invited_by` | `String` | UID de l'administrateur qui a créé l'invitation |
@@ -1357,7 +1363,7 @@ index simple).
 | `accepted_at` | `Timestamp?` | Date de l'acceptation |
 | `cancelled_by` | `String?` | UID de l'administrateur qui a annulé, ou `system` quand le serveur SMTP a refusé définitivement l'adresse, ou quand une invitation de retour est devenue sans objet (compte rétabli, `syncUserClaims`) |
 | `cancelled_at` | `Timestamp?` | Date de l'annulation |
-| `group_missing` | `Boolean` | `true` si le groupe n'existait plus à l'acceptation : le rôle a été donné sans groupe |
+| `group_missing` | `Boolean` | `true` si le groupe n'existait plus à l'acceptation, ou n'était plus celui de l'invitation (son `owner_id` diffère de `group_owner_id`, ou l'invitation n'a pas ce champ : `invitationGroupOf`, v0.24.13) : le rôle a été donné sans groupe |
 | `target` | `String` | Compte visé, fixé à la création : `new` (aucun compte sous l'adresse ; appliquée par `applyEmailInvitation`) ou `revoked` (compte révoqué ; appliquée par `applyRevokedInvitation`). Absent sur les invitations créées avant l'invitation des comptes révoqués : lu `new`. Aucun backfill |
 | `target_uid` | `String?` | Pour `target: "revoked"`, l'uid du compte révoqué visé. Seul ce compte peut l'appliquer, même si un autre compte avait la même clé d'adresse. `null` sinon |
 | `group_invite` | `String?` | Pour un compte révoqué revenu : `invited` (uid ajouté à `invited_ids`), `already_member`, `already_invited`, `full` (50 invitations en attente, rien écrit) ou `missing` (groupe supprimé, ou invitant qui n'en est plus ni propriétaire ni membre : rien écrit). `null` sinon |
@@ -2170,6 +2176,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `nutrition_catch_up_checkpoint` | `backfillNutritionFn`, passage manuel seulement : le passage programmé repart du début à chaque fois, comme l'ancienne tâche de 5 h |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
 | `recipe_title_keys_backfill_checkpoint` | `backfillTitleKeysFn` : `last_doc_id`, la dernière recette examinée ; `null` quand `recipes` a été parcourue en entier sans échec |
+| `invitation_group_owner_backfill_checkpoint` | `backfillInvitationGroupOwnerFn` : `last_doc_id`, la dernière invitation examinée ; `null` quand `invitations` a été parcourue en entier sans échec |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
 | `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn`, retiré en v0.23.52 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `allergens_ingredients_backfill_checkpoint` | `backfillAllergensFn` — curseur du parcours du référentiel |
@@ -2194,7 +2201,7 @@ est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/back
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
 récurrents ; `refresh_sodium`, `system_books`, `group_planning_reach`, `move_meals_to_group`,
-`ticket_analyses`, `ticket_delivered_pr`, `recipe_title_keys` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
+`ticket_analyses`, `ticket_delivered_pr`, `recipe_title_keys`, `invitation_group_owner` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
 rend un reste inconnu (`remaining: null`), il n'est donc jamais marqué terminé tout seul, et
 il n'a pas de point de reprise — chaque passage relit les repas de sa période. Il partage son verrou avec `group_planning_reach` (`LOCK_GROUPS`) : les deux écrivent
 `planned_meals.group_id`, et l'un refuse de partir pendant que l'autre tourne. Les ponctuels `recipe_protein`,
@@ -2632,8 +2639,12 @@ service cloud.firestore {
       // `nutrition_portion_overrides/{recipeId}` : le nombre de parts retenu
       // pour cette recette-là. `preferences/{prefId}` : l'affichage, dont
       // `book_order`, le rangement de la bibliothèque.
+      //
+      // Écrire demande un compte nommé et non révoqué (`isApproved`) côté
+      // propriétaire (ticket #153) ; la lecture reste au propriétaire.
       match /nutrition_portion_overrides/{recipeId} {
-        allow read, write: if isOwner(uid) || isAdmin();
+        allow read: if isOwner(uid) || isAdmin();
+        allow write: if (isOwner(uid) && isApproved()) || isAdmin();
       }
       // `devices/{token}` : jeton FCM d'un administrateur. Écrit par son
       // titulaire administrateur (`token` égal à l'identifiant, `platform`
@@ -2644,10 +2655,15 @@ service cloud.firestore {
         allow delete: if isOwner(uid);
       }
       // `preferences/planning_refusals` : la mémoire des refus du planning,
-      // lue par `suggestMealPlanFn`. Sa forme est bornée.
+      // lue par `suggestMealPlanFn`. Sa forme est bornée. Écrire demande un
+      // compte nommé et un identifiant que le client écrit
+      // (`knownPreferenceIds` : book_order, explore_filters, meal_staples,
+      // planning_refusals, planning_visibility, recipe_search_scope).
       match /preferences/{prefId} {
-        allow read, delete: if isOwner(uid) || isAdmin();
-        allow create, update: if (isOwner(uid) || isAdmin())
+        allow read: if isOwner(uid) || isAdmin();
+        allow delete: if (isOwner(uid) && isApproved()) || isAdmin();
+        allow create, update: if ((isOwner(uid) && isApproved()) || isAdmin())
+          && prefId in knownPreferenceIds()
           && (prefId != 'planning_refusals'
               || isPlanningRefusals(request.resource.data))
           && (prefId != 'planning_visibility'
@@ -2856,8 +2872,8 @@ service cloud.firestore {
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` |
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
-| `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
-| `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Pour `planning_visibility`, la forme `isPlanningVisibility` (clés `editor`, `reader`, `updated_at` seulement ; listes de 100 entrées au plus). Pour `explore_filters`, la forme `isExploreFilters` (clés `sources`, `sort`, `filters`, `updated_at` seulement, bornées). Un autre compte ne lit ni n'écrit les préférences d'un autre (`rules-tests`) |
+| `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire **nommé et non révoqué** (`isApproved()`, v0.24.13, ticket #153) ou admin ; un compte `pending` ou révoqué n'écrit plus (`rules-tests`) |
+| `users/{uid}/preferences` | propriétaire ou admin | propriétaire **nommé et non révoqué** (`isApproved()`, v0.24.13, ticket #153) ou admin, création, modification et suppression ; création et modification limitées aux identifiants que le client écrit (`knownPreferenceIds` : `book_order`, `explore_filters`, `meal_staples`, `planning_refusals`, `planning_visibility`, `recipe_search_scope`), un autre identifiant est refusé, administrateur compris ; pour `planning_refusals`, création et modification exigent la forme `isPlanningRefusals` (`entries` en carte de 300 entrées au plus, `updated_at` en `timestamp`, aucun autre champ). Pour `planning_visibility`, la forme `isPlanningVisibility` (clés `editor`, `reader`, `updated_at` seulement ; listes de 100 entrées au plus). Pour `explore_filters`, la forme `isExploreFilters` (clés `sources`, `sort`, `filters`, `updated_at` seulement, bornées). Un autre compte ne lit ni n'écrit les préférences d'un autre (`rules-tests`) |
 | `users/{uid}/shopping/current` | le titulaire seul, compte nommé (`isOwner(uid) && isApproved()`) ; un administrateur n'y a pas accès | le titulaire seul, compte nommé ; un seul document (`current`) ; création et modification exigent la forme `isShoppingCart` : `items` en carte de 300 articles au plus, `updated_at` en `timestamp`, aucun autre champ. Les règles ne parcourent pas une carte : les longueurs de chaque article sont bornées par le client (§3.8 quinquies), le document par la limite de 1 Mio de Firestore (`rules-tests/test/shopping.test.mjs`) |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
@@ -2878,7 +2894,7 @@ service cloud.firestore {
 | `scan_spend` | admin | **serveur seul** — un client qui pourrait relever son propre plafond ne serait plus plafonné |
 | `url_import_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — un client qui pourrait remettre son compteur à zéro ne serait plus plafonné |
 | `web_search_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — même raison que `url_import_daily` |
-| `invitations` · `invitation_sends_daily` | `invitations` : admin, et le propriétaire du groupe désigné par `group_id` (v0.23.89, requête filtrée sur `group_id`, `get` du groupe à chaque document lu) ; `invitation_sends_daily` : admin | **serveur seul** (`allow write: if false`) — `manageInvitationFn`, `applyEmailInvitation` et `applyRevokedInvitation`. Une invitation décide du rôle d'un compte à sa première connexion : un client qui pourrait en écrire une s'inviterait lui-même, sous une autre adresse, avec le rôle de son choix. Testé dans `rules-tests` (admin lit ; propriétaire non admin lit les invitations de son groupe seulement, pas la collection entière ; membre non propriétaire, reader, pending, révoqué et anonyme refusés ; aucune écriture client) |
+| `invitations` · `invitation_sends_daily` | `invitations` : admin, et le compte nommé dont l'uid est `group_owner_id` (v0.24.13, ticket #152 ; requête filtrée sur `group_owner_id`). La règle ne lit plus le groupe courant : avant, un groupe supprimé puis recréé sous le même identifiant par un autre éditeur lui ouvrait les invitations restées en base. Une invitation sans `group_owner_id` n'est lisible que par un administrateur ; `invitation_sends_daily` : admin | **serveur seul** (`allow write: if false`) — `manageInvitationFn`, `applyEmailInvitation` et `applyRevokedInvitation`. Une invitation décide du rôle d'un compte à sa première connexion : un client qui pourrait en écrire une s'inviterait lui-même, sous une autre adresse, avec le rôle de son choix. Testé dans `rules-tests` (admin lit ; propriétaire non admin lit les invitations de son groupe seulement, par une requête filtrée sur `group_owner_id`, pas la collection entière ni une requête filtrée sur le seul `group_id` ; groupe recréé sous le même identifiant : rien de lisible ; invitation sans `group_owner_id` : admin seul ; membre non propriétaire, reader, pending, révoqué et anonyme refusés ; aucune écriture client) |
 | `web_search_cache` | **personne** | **serveur seul** — ouvert au client, il laisserait servir à toute la famille des pages choisies par un seul compte, sans appel ni décompte |
 | `member_email_search_daily` | **personne** | **serveur seul** (`allow read, write: if false`) — `findMemberByEmailFn`. Un client qui pourrait remettre son compteur à zéro essaierait des adresses sans borne. Testé dans `rules-tests` (aucun rôle ne lit ni n'écrit) |
 | `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
@@ -3484,15 +3500,15 @@ non révoqué, App Check selon la politique) aiguille sur `action` :
 
 | `action` | Entrée | Ce que le serveur vérifie, puis fait |
 |---|---|---|
-| `create` | `email`, `role`, `groupId`, `message` | `role` vaut `reader` ou `editor` (`admin` → `invalid-argument`) ; adresse de forme valide (`cleanEmail`, `normalizeEmailKey`) ; groupe existant dont l'appelant est propriétaire ou membre ; aucun compte `users` dont la clé d'adresse est la même, ou un compte révoqué qui n'est pas le fondateur (parcours de `users`, trois champs, comparaison sur `email_key` : une requête d'égalité ne retrouverait pas `jean.dupont@gmail.com` saisi `jeandupont@gmail.com` ; décision `accountDecision`). Compte révoqué : l'invitation porte `target: "revoked"` et `target_uid` ; sinon `target: "new"`. Puis, dans une transaction : aucune invitation active de même `email_key`, moins de 20 envois du jour (`invitation_sends_daily`), écriture de l'invitation et du compteur. L'e-mail part ensuite |
-| `resend` | `invitationId` | invitation ni acceptée ni annulée (une expirée se renvoie) ; même contrôle de groupe qu'à la création (groupe existant — sinon « Ce groupe n'existe plus. » —, appelant propriétaire ou membre) ; le compte visé n'a pas changé (`resendRefusal` : invitation de compte neuf, toujours aucun compte ; invitation de compte révoqué, le même `target_uid` toujours révoqué ; sinon refus `target_changed`, « Le compte de cette adresse a changé depuis l'invitation. Annulez-la, puis invitez de nouveau. », ou le refus du compte actif ou en attente), aucune autre invitation active pour elle, plafond du jour ; `last_sent_at`, `expires_at` (+30 jours), `send_count`, `last_sent_by`, `group_name` mis à jour, puis envoi |
+| `create` | `email`, `role`, `groupId`, `message` | `role` vaut `reader` ou `editor` (`admin` → `invalid-argument`) ; adresse de forme valide (`cleanEmail`, `normalizeEmailKey`) ; groupe existant dont l'appelant est propriétaire ou membre ; aucun compte `users` dont la clé d'adresse est la même, ou un compte révoqué qui n'est pas le fondateur (parcours de `users`, trois champs, comparaison sur `email_key` : une requête d'égalité ne retrouverait pas `jean.dupont@gmail.com` saisi `jeandupont@gmail.com` ; décision `accountDecision`). Compte révoqué : l'invitation porte `target: "revoked"` et `target_uid` ; sinon `target: "new"`. Puis, dans une transaction : aucune invitation active de même `email_key`, moins de 20 envois du jour (`invitation_sends_daily`), écriture de l'invitation — avec `group_owner_id`, le propriétaire du groupe lu au contrôle (groupe sans `owner_id` lisible : refus `group_missing`) — et du compteur. L'e-mail part ensuite |
+| `resend` | `invitationId` | invitation ni acceptée ni annulée (une expirée se renvoie) ; même contrôle de groupe qu'à la création (groupe existant — sinon « Ce groupe n'existe plus. » —, appelant propriétaire ou membre) ; le compte visé n'a pas changé (`resendRefusal` : invitation de compte neuf, toujours aucun compte ; invitation de compte révoqué, le même `target_uid` toujours révoqué ; sinon refus `target_changed`, « Le compte de cette adresse a changé depuis l'invitation. Annulez-la, puis invitez de nouveau. », ou le refus du compte actif ou en attente), aucune autre invitation active pour elle, plafond du jour ; `group_owner_id` déjà posé et différent du propriétaire relu, ou absent et auteur de l'invitation (`invited_by`) autre que le propriétaire relu : refus `group_changed` (« Le groupe de cette invitation a changé de propriétaire depuis l'envoi. Annulez-la, puis invitez de nouveau. », `resendGroupOwnerDecision`) ; `last_sent_at`, `expires_at` (+30 jours), `send_count`, `last_sent_by`, `group_name` mis à jour, et `group_owner_id` posé s'il manque (jamais réécrit), puis envoi |
 | `cancel` | `invitationId` | invitation non acceptée ; `status: cancelled`, `cancelled_by`, `cancelled_at` |
 
 Réponses : `{status: "sent", invitationId, target}`, `{status: "send_failed", invitationId,
 error, target}` (`target` : `new` ou `revoked`, pour que le formulaire annonce le
 rétablissement), `{status: "cancelled", invitationId}`, ou un refus métier `{status: "refused",
 reason, message, field, invitationId?, existingUid?}` — `reason` parmi `invalid_email`,
-`group_required`, `group_missing`, `group_not_member`, `account_active`, `account_pending`,
+`group_required`, `group_missing`, `group_not_member`, `group_changed`, `account_active`, `account_pending`,
 `founder`, `target_changed`, `duplicate`, `daily_limit`, `not_found`, `not_resendable`, `not_cancellable`,
 `address_rejected` (Gmail a refusé l'adresse, l'invitation est annulée ; `invitationId` fourni) ;
 `field` (`email`, `group` ou `null`) dit sous quel champ le formulaire affiche le message.
@@ -3539,7 +3555,13 @@ nettoyé (`headerSafeName` : ni retour à la ligne, ni guillemet, ni chevron) ; 
 destinataire a passé `cleanEmail`, qui refuse espace, virgule, chevron et retour à la ligne.
 
 **`applyEmailInvitation`** (`triggers/invitationSignup.ts`, `onDocumentCreated` sur
-`users/{uid}`) : voir §3.1, « Exception décidée par le serveur ». Il relit dans la
+`users/{uid}`) : voir §3.1, « Exception décidée par le serveur ». Le groupe relu n'est
+celui de l'invitation que si son `owner_id` vaut `group_owner_id` (`invitationGroupOf`) ;
+sinon, ou si l'invitation n'a pas le champ, il est traité comme supprimé : rôle seul,
+`group_missing: true`, rien d'écrit au groupe (ticket #152 — un groupe recréé sous le même
+identifiant par un autre éditeur ne reçoit pas l'invité sans son accord). Une invitation
+antérieure à v0.24.13 acceptée avant le backfill « Propriétaire du groupe des invitations »
+donne donc le rôle sans le groupe : l'administrateur ajoute ensuite le compte au groupe. Il relit dans la
 transaction le compte de l'administrateur du dernier envoi (`inviterUidOf` : `last_sent_by`,
 sinon `invited_by`) et n'applique rien s'il n'est plus `admin` ou s'il est révoqué
 (`inviterStillAdmin`, même règle `accessDenial` que `requireAdmin`) : journal `logInfo`, compte
@@ -3592,7 +3614,9 @@ figée au déploiement). Gmail limite l'envoi à environ 500 destinataires par j
 personnel : le plafond de 20 envois par administrateur en reste loin.
 
 **Client.** `InvitationsRepository` (`features/admin/data/`) lit `invitations` par
-`orderBy('created_at', descending: true)` et appelle la callable ; `emailInvitationsProvider`
+`orderBy('created_at', descending: true)` (administrateur), ou par `group_id == g` et
+`group_owner_id == moi` pour la feuille d'un groupe possédé (`watchGroupInvitations`,
+`groupEmailInvitationsProvider`), et appelle la callable ; `emailInvitationsProvider`
 et `invitationsRepositoryProvider` vivent dans `admin_providers.dart` ; le modèle
 `EmailInvitation` (`features/admin/domain/email_invitation.dart`) calcule le statut effectif
 (`statusAt`, jumeau de `effectiveStatus`, fixture `email_invitation_status.json`) et porte le
@@ -5874,6 +5898,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillTicketAnalysesFn` | `admin` | ponctuel `ticket_analyses`, « Analyses des tickets » (v0.23.62). Lit tous les `tickets` une fois ; pour chaque ticket qui a un numéro d'Issue et pas encore de sous-document `tickets/{id}/admin/analysis`, relit les commentaires de l'Issue (`GET /issues/{n}/comments`, un appel par tranche de cent) et écrit le sous-document (`writeTicketAnalyses`, §3.12 bis). Un ticket sans Issue est compté « sans Issue » ; un ticket déjà relevé est sauté. 200 tickets écrits par appel, arrêt sur trois échecs de suite, sur un jeton refusé (`token_invalid_since` posé) ou sur la limite de débit de GitHub. Un ticket en échec rejoint la liste « À revoir » (nature `ticket`, libellé « Issue #N », ouvert dans Admin › Tickets des membres). Monte `GITHUB_TICKETS_TOKEN`. Sans appel de modèle. À lancer une fois après le déploiement de v0.23.62 ; le webhook, la tâche horaire et les décisions tiennent ensuite les analyses à jour |
 | `backfillTicketDeliveredPrFn` | `admin` | ponctuel `ticket_delivered_pr`, « PR des tickets livrés » (v0.23.78). Lit les tickets `delivered` ; pour chacun sans `delivered_pr_number` ou sans `delivered_version`, appelle `recordDeliveredPr` (deux à trois appels GitHub). Ticket sans PR retrouvable : compté « sans PR » et listé dans « À revoir » (le backfill ne se marque donc pas terminé tout seul). 100 tickets repris par passage, trois échecs de suite ou jeton refusé ou limite de débit : arrêt. Aucun appel de modèle |
 | `backfillTitleKeysFn` | `admin` | ponctuel `recipe_title_keys`, « Clé de titre des recettes ». Parcourt `recipes` par identifiant, pages de 400, depuis le point de reprise `app_config/recipe_title_keys_backfill_checkpoint`, et pose `titre_key` (`titleKeyUpdate`, `triggers/recipeTitleKey.ts`) sur chaque recette dont la clé manque ou ne suit plus le titre, par `update` ; une recette déjà à jour n'est pas réécrite (« déjà à jour »). Sans cette clé, un nouveau scan d'une recette antérieure à la détection des doublons n'est pas reconnu. 2 000 recettes par appel par défaut (`maxDocs`, 10 000 au plus), 8 minutes au plus, arrêt sur trois échecs d'écriture de suite. L'écriture de la clé réveille `onRecipeWritten`, qui sort aussitôt (`onlyTitleKeyChanged`) : ni rôle dans un repas, ni durées, ni nutrition, ni courses ; le passage ne provoque donc aucun appel de modèle. Compte rendu : examinées, posées, identiques, échouées, arrêts (délai, quota, erreurs), `completed`. Un passage avec un échec n'est pas terminé, et le curseur reste sur la dernière recette examinée. Sans appel de modèle. À lancer une fois après le déploiement de la détection des doublons ; `recipeProcessor` et `onRecipeWritten` tiennent ensuite la clé à jour |
+| `backfillInvitationGroupOwnerFn` | `admin` | ponctuel `invitation_group_owner`, « Propriétaire du groupe des invitations » (v0.24.13, ticket #152). Parcourt `invitations` par identifiant, pages de 400, depuis le point de reprise `app_config/invitation_group_owner_backfill_checkpoint`, et pose `group_owner_id` sur chaque invitation qui ne l'a pas, par `update`, depuis `groups/{group_id}.owner_id`. N'écrit que si le groupe existe, a un propriétaire lisible et que l'auteur de l'invitation (`invited_by`) en est le propriétaire (`invitationOwnerDecision`). Un auteur simple membre ne suffit pas : un groupe recréé sous le même identifiant par un autre compte peut le compter parmi ses membres s'il a accepté d'y entrer. Sinon, rien d'écrit et l'invitation est listée « À revoir » : elle reste lisible par l'administrateur seul. Une invitation déjà pourvue n'est pas réécrite. 2 000 invitations par appel par défaut (`maxDocs`, 10 000 au plus), 8 minutes au plus, arrêt sur trois échecs de suite. Compte rendu : examinées, posées, déjà à jour, sans groupe, échouées, arrêts, `completed`. Sans appel de modèle. Terminé tout seul seulement si aucune invitation n'est à revoir ; sinon, l'administrateur le marque terminé une fois la liste lue. À lancer une fois après le déploiement de v0.24.13 ; `manageInvitationFn` pose ensuite le champ à la création et au renvoi |
 
 Trois reprises ponctuelles, menées au bout en production, sont retirées en v0.23.52 avec leur
 callable : `backfillRecipeProteinFn` (« Protéine et féculent des plats »),
@@ -6018,7 +6043,7 @@ Journaux : la tâche écrit sous `backfill_programme`, chaque passage programmé
 **Liste « à revoir ».** Chaque reprise manuelle renvoie, en plus de ses compteurs, le champ
 `aRevoir: { items, total }` : les éléments que le passage n'a pas pu traiter, nommés. Une
 entrée vaut `{ kind, id, label, reason }` : `kind` est `ingredient`, `unit`, `recipe`,
-`account` ou `meal` ; `label` le nom canonique, le titre de la recette (`titre`) ou le nom du compte ;
+`account`, `meal`, `ticket` ou `invitation` ; `label` le nom canonique, le titre de la recette (`titre`) ou le nom du compte ;
 `reason` la raison en français simple. Le collecteur commun, `callable/_backfillReview.ts`
 (`BackfillReview`), garde les cent premières entrées dans l'ordre de traitement ; `total`
 compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée que dans le
@@ -6035,6 +6060,7 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillGroupPlanningReachFn` | comptes dont une portée n'a pas pu être recalculée (« Portée non recalculée : <message> »), nommés par leur uid ; repas planifiés restés sans `group_id` (« group_id non posé : <message> », nature `meal`, « Repas <id> ») |
 | `backfillMoveMealsToGroupFn` | repas dont l'écriture a échoué (« Repas non déplacé : <message> », nature `meal`), nommés par leur identifiant et leur jour (« Repas <id> — AAAA-MM-JJ »), sans titre de recette |
 | `backfillTitleKeysFn` | recettes en échec d'écriture (« Échec d'écriture : <message> »), nommées par leur titre |
+| `backfillInvitationGroupOwnerFn` | invitations non reprises, nommées par leur adresse et le nom du groupe : groupe supprimé, groupe sans propriétaire lisible, auteur qui n'est pas propriétaire du groupe actuel (simple membre, groupe recréé ou quitté), invitation sans groupe lisible ; échecs d'écriture (« Échec : <message> ») |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du
@@ -6261,7 +6287,28 @@ sur toutes les plateformes et indépendamment de la CSP. `isAppImageUrl`
 Le bucket est lu dans `DefaultFirebaseOptions.web.storageBucket` (le même pour toutes les
 plateformes). Tout le reste est refusé : un autre bucket, un autre hôte, `http://`, un port ou
 des identifiants dans l'URL, un chemin qui ne désigne pas un objet, une URL illisible, `data:`,
-`blob:`, `file:`. Les assets embarqués (`assets/…`) s'affichent par `Image.asset` et ne passent
+`blob:`, `file:`.
+
+**Dossier de l'objet (v0.24.13, ticket #154).** Le bucket ne suffit pas : un membre téléverse
+sous `quarantine/{uid}/…` ou `tickets/{uid}/…`, qu'il lit et que la modération n'a pas vus, et
+la réponse de l'envoi lui donne une URL de téléchargement à jeton, qui passe outre les règles
+Storage. Écrite dans `image_urls`, elle montrait l'image à toute la famille. `isAppImageUrl`
+décode donc le chemin de l'objet — le segment encodé après `/o/`, ou les segments qui suivent
+le bucket pour `storage.googleapis.com` — et n'accepte que les dossiers publiés,
+`kPublishedImagePrefixes` : `covers/`, `scans/`, `illustrations/`, `recipes/`, `users/`.
+Ce sont les dossiers que `storage.rules` ferme à l'écriture client (`allow write: if false`) :
+seul le serveur y dépose, après la modération (`moderateAndPromote`) ou depuis un scan contrôlé
+(`scanAndPromoteUploadFn`, découpes et images générées). `quarantine/`, `rejected/` et
+`tickets/` sont refusés, comme un fichier à la racine. Le chemin décodé doit être bien formé,
+même contrôle que `isWellFormedObjectPath` côté serveur : ni vide, ni segment vide, `.` ou
+`..`, ni barre oblique inverse, ni caractère de contrôle ; un encodage illisible (échappement
+tronqué, octets qui ne forment pas de l'UTF-8) est un refus, sans exception levée. Aucun écran
+n'affiche par URL une image non modérée : la file de modération lit `quarantine/` et
+`rejected/` par leur chemin (`getData`, droits de l'administrateur qui consulte), et la capture
+d'un ticket aussi (`TicketRepository`). Il n'existe donc pas d'option pour les admettre. Le
+calcul n'est pas en double : le serveur garde sa propre liste par flux
+(`PUBLISHED_IMAGE_PREFIXES`, `utils/storagePath.ts`), et ne télécharge pas les URL de
+`image_urls`. Tests : `test/app_image_url_test.dart`. Les assets embarqués (`assets/…`) s'affichent par `Image.asset` et ne passent
 pas par ce filtre.
 
 `AppNetworkImage` (`lib/core/widgets/app_network_image.dart`) est le seul point d'affichage

@@ -95,6 +95,18 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
+    /// Identifiants des documents de `users/{uid}/preferences` que le client
+    /// écrit : `book_order` (`BookRepository`), `explore_filters`
+    /// (`ExplorePreferencesRepository`), `meal_staples`
+    /// (`MealStaplesRepository`), `planning_refusals`
+    /// (`PlanningRefusalsRepository`), `planning_visibility`
+    /// (`PlanningVisibilityStore`), `recipe_search_scope`
+    /// (`PlanningRepository`). Un nouveau document s'ajoute ici, avec son test.
+    function knownPreferenceIds() {
+      return ['book_order', 'explore_filters', 'meal_staples', 'planning_refusals',
+              'planning_visibility', 'recipe_search_scope'];
+    }
+
     /// Forme de `users/{uid}/preferences/planning_refusals` :
     /// `{ entries: { recipeId: { refused_at, count } }, updated_at }`.
     function isPlanningRefusals(data) {
@@ -264,9 +276,13 @@ service cloud.firestore {
 
       allow delete: if isAdmin() && !targetIsFounder();
 
-      // Préférences nutrition persistées par utilisateur/recette.
+      // Préférences nutrition persistées par utilisateur/recette. Écrire
+      // demande un compte nommé et non révoqué (`isApproved`), comme le reste
+      // de l'application : un compte `pending` ou révoqué ne remplit plus son
+      // espace (ticket #153). La lecture reste à son propriétaire.
       match /nutrition_portion_overrides/{recipeId} {
-        allow read, write: if isOwner(uid) || isAdmin();
+        allow read: if isOwner(uid) || isAdmin();
+        allow write: if (isOwner(uid) && isApproved()) || isAdmin();
       }
 
       // Préférences d'affichage — dont `book_order`, le rangement de la
@@ -277,9 +293,17 @@ service cloud.firestore {
       // `suggestMealPlanFn` pour pondérer la présélection : sa forme est
       // bornée ici (`entries` en carte, 300 entrées au plus), comme le client
       // l'écrit (`PlanningRefusalsRepository`).
+      //
+      // Écrire demande un compte nommé et non révoqué (`isApproved`), et un
+      // identifiant que le client écrit réellement (`knownPreferenceIds`) :
+      // un compte `pending` ou révoqué ne remplissait pas moins son espace de
+      // documents aux noms de son choix (ticket #153). La lecture reste à son
+      // propriétaire.
       match /preferences/{prefId} {
-        allow read, delete: if isOwner(uid) || isAdmin();
-        allow create, update: if (isOwner(uid) || isAdmin())
+        allow read: if isOwner(uid) || isAdmin();
+        allow delete: if (isOwner(uid) && isApproved()) || isAdmin();
+        allow create, update: if ((isOwner(uid) && isApproved()) || isAdmin())
+          && prefId in knownPreferenceIds()
           && (prefId != 'planning_refusals'
               || isPlanningRefusals(request.resource.data))
           && (prefId != 'explore_filters'
@@ -1076,16 +1100,19 @@ service cloud.firestore {
     //
     // Le propriétaire d'un groupe, admin ou non, lit les invitations de son
     // groupe : la feuille du groupe lui montre qui a été invité. Un membre
-    // non propriétaire n'en lit aucune. La lecture exige une requête filtrée
-    // sur `group_id` (la règle compare le champ du document au groupe).
+    // non propriétaire n'en lit aucune. La règle compare `group_owner_id`,
+    // l'uid du propriétaire écrit par le serveur à la création de
+    // l'invitation (`owner_id` d'un groupe est figé), et non le groupe
+    // courant : un groupe supprimé puis recréé sous le même identifiant par
+    // un autre compte lui ouvrait les invitations restées en base, adresses
+    // comprises (ticket #152). Une invitation sans ce champ — antérieure à
+    // v0.24.13 et pas encore reprise par le backfill « Propriétaire du groupe
+    // des invitations » — n'est lisible que par un administrateur. La lecture
+    // exige une requête filtrée sur `group_owner_id`.
     match /invitations/{invitationId} {
       allow read: if isAdmin()
         || (isApproved()
-          && resource.data.group_id is string
-          && resource.data.group_id.size() > 0
-          && exists(/databases/$(database)/documents/groups/$(resource.data.group_id))
-          && get(/databases/$(database)/documents/groups/$(resource.data.group_id)).data.owner_id
-             == request.auth.uid);
+          && resource.data.get('group_owner_id', null) == request.auth.uid);
       allow write: if false;
     }
 

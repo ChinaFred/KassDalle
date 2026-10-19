@@ -463,7 +463,7 @@ classDiagram
   }
 
   class EmailInvitation {
-    &lt;&lt;invitations, serveur seul, lu par l'admin&gt;&gt;
+    &lt;&lt;invitations, serveur seul, lu par l'admin et group_owner_id&gt;&gt;
     +String id
     +String email
     +UserRole role
@@ -902,6 +902,7 @@ classDiagram
   AppUser ..> GroupReach : rôle du propriétaire, groupe masqué s'il n'est plus éditeur
   AppUser "1" --&gt; "0..*" EmailInvitation : invitedBy (admin)
   EmailInvitation "0..*" --&gt; "1" FamilyGroup : groupId
+  EmailInvitation "0..*" --&gt; "1" AppUser : group_owner_id (propriétaire du groupe)
   EmailInvitation "0..1" --&gt; "0..1" AppUser : acceptedUid
   EmailInvitation ..> EmailInvitationStatus : statusAt (expirée calculée)
   AppUser "1" --&gt; "0..*" Ticket : authorUid
@@ -959,7 +960,10 @@ classDiagram
         se calcule contre les repas du groupe. Supprimée avec le groupe, ou au départ de son auteur.
         <b>EmailInvitation</b> (<code>invitations/{id}</code>) est l'invitation par e-mail d'une
         personne qui n'a pas encore de compte, ou dont le compte est révoqué : écrite par le
-        serveur seul, lue par l'administrateur. <code>target</code> dit lequel (<code>new</code>
+        serveur seul, lue par l'administrateur et par le propriétaire du groupe dont l'uid est
+        dans le champ Firestore <code>group_owner_id</code> (v0.24.13), posé par le serveur à la
+        création. Le modèle client ne le lit pas : il sert de filtre à la requête de la feuille
+        du groupe, et c'est lui que compare la règle de lecture. <code>target</code> dit lequel (<code>new</code>
         ou <code>revoked</code>, avec <code>targetUid</code>). À la première connexion sous
         l'adresse invitée, le serveur donne au compte neuf son rôle et l'ajoute à
         <code>memberIds</code> du groupe, sans passer par <code>invitedIds</code>. À la

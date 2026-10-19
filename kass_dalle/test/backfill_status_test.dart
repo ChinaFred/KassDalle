@@ -407,13 +407,14 @@ void main() {
         'ticket_analyses',
         'ticket_delivered_pr',
         'recipe_title_keys',
+        'invitation_group_owner',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['system_books']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(7));
+      expect(sections.ponctuelsALancer, hasLength(8));
       expect(sections.ponctuelsTermines, isEmpty);
     });
 
