@@ -31,7 +31,14 @@ export function checkDefinition(yaml, text, expectedName) {
   try {
     data = yaml.load(header);
   } catch (error) {
-    const reason = String(error.reason ?? error.message).split("\n")[0];
+    // Le motif de js-yaml peut recopier du texte du fichier après un « : ».
+    // La sortie du hook entre dans le contexte de la session : on ne garde que
+    // le libellé de js-yaml, sur une ligne, en lettres et chiffres.
+    const reason = String(error.reason ?? error.message)
+      .split(/[:\n]/)[0]
+      .replace(/[^\p{L}\p{N} '-]/gu, "")
+      .slice(0, 80)
+      .trim();
     const line = error.mark ? `, ligne ${error.mark.line + 2}` : "";
     return [`en-tête YAML invalide${line} : ${reason}`];
   }
@@ -45,7 +52,8 @@ export function checkDefinition(yaml, text, expectedName) {
     }
   }
   if (typeof data.name === "string" && data.name !== expectedName) {
-    problems.push(`\`name: ${data.name}\` diffère du nom attendu \`${expectedName}\``);
+    // La valeur lue n'est pas recopiée : elle peut porter n'importe quel texte.
+    problems.push(`\`name\` diffère du nom attendu \`${expectedName}\``);
   }
   return problems;
 }
