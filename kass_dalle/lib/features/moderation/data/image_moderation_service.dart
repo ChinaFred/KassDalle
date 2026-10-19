@@ -292,7 +292,8 @@ class ImageModerationService {
         'quarantinePath': path,
         'targetKind': image.target.wire,
         'ownerId': image.ownerId,
-        'contentType': contentType,
+        // Pas de `contentType` : le serveur lit le type sur les octets
+        // (ticket #157) et ignore celui qu'on lui enverrait.
         'origin': image.origin.wire,
       });
     }

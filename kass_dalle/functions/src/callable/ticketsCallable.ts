@@ -163,7 +163,10 @@ export const submitTicket = onCall(
       input = readTicketInput(raw);
     } catch (err) {
       if (err instanceof TicketInputError) {
-        throw new HttpsError("invalid-argument", err.message, { field: err.field });
+        throw new HttpsError("invalid-argument", err.message, {
+          field: err.field,
+          ...(err.reason !== null ? { reason: err.reason } : {}),
+        });
       }
       throw err;
     }
@@ -427,7 +430,10 @@ export function readRefusalArg(data: unknown): string {
     return readRefusalReason(raw);
   } catch (err) {
     if (err instanceof TicketInputError) {
-      throw new HttpsError("invalid-argument", err.message, { field: err.field });
+      throw new HttpsError("invalid-argument", err.message, {
+        field: err.field,
+        ...(err.reason !== null ? { reason: err.reason } : {}),
+      });
     }
     throw err;
   }

@@ -4,8 +4,8 @@
  * Rien ici ne lit Firestore ni GitHub. On y trouve :
  *  - la lecture des entrées de `submitTicket` (types, bornes, écran) ;
  *  - le corps de l'Issue publiée sur un dépôt PUBLIC, construit sur un gabarit
- *    fixe : ni nom, ni adresse, ni uid, ni capture, mentions `@` et renvois
- *    `#N` neutralisés ;
+ *    fixe : ni nom, ni adresse, ni uid, ni capture, mentions `@`, renvois
+ *    `#N`, commentaires HTML, HTML brut et images neutralisés ;
  *  - la correspondance état GitHub → statut du ticket, et la règle de
  *    non-recul ;
  *  - le filtre de la réponse de l'administrateur (`reply_text`) et des PR
@@ -201,11 +201,16 @@ export function routeTemplateOrNull(value: string): string | null {
 /** Version de l'application : `0.23.53+400`, 40 caractères au plus. */
 const APP_VERSION_PATTERN = /^[0-9A-Za-z.+-]{1,40}$/;
 
+/** Refus d'un titre ou d'une description qui contient une adresse e-mail. */
+export const TICKET_EMAIL_MESSAGE =
+  "Retirez l'adresse e-mail : le ticket est publié sur un site public.";
+
 /**
  * Lit et valide les entrées de `submitTicket`. Lève `TicketInputError`.
  *
  * Titre : une ligne, 5 à 100 caractères après nettoyage. Description : 1 à
- * 2 000 caractères. Écran : un modèle de route, sinon remplacé par `inconnu`
+ * 2 000 caractères. Aucune adresse e-mail dans l'un ou l'autre (raison
+ * `contains_email`). Écran : un modèle de route, sinon remplacé par `inconnu`
  * (le membre n'y peut rien, le ticket n'est pas refusé pour autant).
  */
 export function readTicketInput(raw: Record<string, unknown>): TicketInput {
@@ -234,6 +239,15 @@ export function readTicketInput(raw: Record<string, unknown>): TicketInput {
       "description",
       "La description ne doit pas dépasser 2 000 caractères.",
     );
+  }
+  // Ni le titre ni la description ne publient d'adresse e-mail : le ticket
+  // devient une Issue d'un dépôt public. Contrôle sur le texte saisi et sur le
+  // texte publié, comme « Répondre » (`jean<!-- x -->@gmail.com`).
+  if (containsEmailAddress(title) || containsEmailAddress(publicText(title))) {
+    throw new TicketInputError("title", TICKET_EMAIL_MESSAGE, "contains_email");
+  }
+  if (containsEmailAddress(description) || containsEmailAddress(publicText(description))) {
+    throw new TicketInputError("description", TICKET_EMAIL_MESSAGE, "contains_email");
   }
   if (typeof raw.screen !== "string" || raw.screen.length > 2 * TICKET_SCREEN_MAX) {
     throw new TicketInputError("screen", "L'écran concerné est invalide.");
@@ -284,9 +298,56 @@ export function neutralizeIssueReferences(text: string): string {
   return text.replace(/#(?=\d)/g, `#${ZERO_WIDTH_SPACE}`);
 }
 
-/** Texte d'un membre publié sur le dépôt public : mentions et renvois neutralisés. */
+/** Commentaire HTML fermé, `<!--` … `-->`, sur une ou plusieurs lignes. */
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+
+/**
+ * Adresses que GitHub intègre d'elles-mêmes quand elles sont seules sur une
+ * ligne : une pièce jointe vidéo ou image de `user-attachments`, et les
+ * anciens hébergements d'images des Issues.
+ */
+const EMBEDDED_ASSET_URL =
+  /(https?:)\/\/(?=(?:github\.com\/user-attachments\/|github\.com\/[^/\s]+\/[^/\s]+\/assets\/|(?:private-)?user-images\.githubusercontent\.com\/))/gi;
+
+/**
+ * Neutralise ce que GitHub interprète en dehors du texte lu (audit #151,
+ * ticket #158) :
+ *
+ * - les commentaires HTML `<!-- … -->` sont retirés : invisibles sur GitHub,
+ *   ils restent transmis par l'API, et donc lus par une session qui analyse
+ *   le ticket. Un `<!--` sans fermeture, qui cacherait tout le texte qui suit,
+ *   perd ses quatre caractères : le reste du texte reste visible ;
+ * - le HTML brut : chaque `<` reçoit une espace sans chasse. GitHub ne
+ *   reconnaît une balise que si un nom, `/`, `!` ou `?` suit immédiatement le
+ *   `<` : `<img>`, `<details>` ou `<picture>` s'affichent en texte, sans rien
+ *   charger. Le texte lu ne change pas ;
+ * - les images Markdown `![…](…)` et `![…][…]` : une espace sans chasse
+ *   entre `!` et `[` en fait un `!` suivi d'un lien, qui ne charge rien ;
+ * - les pièces jointes que GitHub intègre (`EMBEDDED_ASSET_URL`, dont l'ancien
+ *   format `github.com/<owner>/<repo>/assets/…`) : une espace sans chasse
+ *   après `://` ; l'adresse reste lisible, sans lien ni lecteur ;
+ * - les définitions de référence (`[//]: # (texte caché)`, `[x]: https://…`,
+ *   notes `[^1]: …`) : invisibles sur GitHub mais transmises par l'API. Une
+ *   espace sans chasse entre `]` et `:` les rend en texte visible.
+ *
+ * Pure ; appliquée avant les mentions et les renvois par `publicText`.
+ */
+export function neutralizeMarkup(text: string): string {
+  return text
+    .replace(HTML_COMMENT, "")
+    .replace(/<!--/g, "")
+    .replace(/</g, `<${ZERO_WIDTH_SPACE}`)
+    .replace(/!\[/g, `!${ZERO_WIDTH_SPACE}[`)
+    .replace(/\]:/g, `]${ZERO_WIDTH_SPACE}:`)
+    .replace(EMBEDDED_ASSET_URL, `$1//${ZERO_WIDTH_SPACE}`);
+}
+
+/**
+ * Texte publié sur le dépôt public (titre, description, réponse, motif de
+ * refus, commentaire de clôture) : balisage, mentions et renvois neutralisés.
+ */
 function publicText(text: string): string {
-  return neutralizeIssueReferences(neutralizeMentions(text));
+  return neutralizeIssueReferences(neutralizeMentions(neutralizeMarkup(text)));
 }
 
 function screenLabel(screen: string): string {
@@ -295,9 +356,9 @@ function screenLabel(screen: string): string {
   return `\`${screen}\``;
 }
 
-/** Titre de l'Issue : celui du ticket, mentions et renvois neutralisés. */
+/** Titre de l'Issue : celui du ticket, balisage, mentions et renvois neutralisés. */
 export function buildIssueTitle(title: string): string {
-  return publicText(singleLine(title));
+  return singleLine(publicText(title));
 }
 
 /**
@@ -306,8 +367,9 @@ export function buildIssueTitle(title: string): string {
  * Ce qui part : type, écran (modèle de route), version, plateforme,
  * référence opaque (l'identifiant du document `tickets`), description.
  * Ce qui ne part jamais : nom, adresse, uid, capture, contenu de recette.
- * Le texte du membre n'est pas échappé en Markdown, seulement privé de ses
- * mentions et de ses renvois `#N`.
+ * Le texte du membre n'est pas échappé en Markdown : il perd ses mentions,
+ * ses renvois `#N`, ses commentaires HTML, et son HTML brut, ses images et
+ * ses pièces jointes intégrées ne chargent plus rien (`neutralizeMarkup`).
  */
 export function buildIssueBody(args: {
   ticketId: string;
@@ -782,7 +844,7 @@ export function containsEmailAddress(text: string): boolean {
  * `answer`). Caractères de contrôle retirés (retours à la ligne gardés),
  * NFC, espaces de bord retirées, 5 à 4 000 caractères, aucune adresse
  * e-mail (raison `contains_email`). Le texte part sur un dépôt PUBLIC :
- * mentions `@` et renvois `#N` neutralisés après les contrôles.
+ * balisage, mentions `@` et renvois `#N` neutralisés après les contrôles.
  */
 export function readAnswerText(raw: unknown): string {
   return readPublicComment(raw, "answer", "La réponse", "La réponse est requise.");
@@ -790,7 +852,7 @@ export function readAnswerText(raw: unknown): string {
 
 /**
  * Commentaire de clôture : mêmes contrôles que `readAnswerText` (5 à 4 000
- * caractères, aucune adresse e-mail, mentions et renvois neutralisés), champ
+ * caractères, aucune adresse e-mail, balisage, mentions et renvois neutralisés), champ
  * `comment`.
  */
 export function readCloseComment(raw: unknown): string {
@@ -813,10 +875,17 @@ function readPublicComment(
   if (text.length > ANSWER_MAX_CHARS) {
     throw new TicketInputError(field, `${subject} ne doit pas dépasser 4 000 caractères.`);
   }
-  if (containsEmailAddress(text)) {
+  // Un texte fait d'un seul commentaire HTML ne publie rien de lisible.
+  const published = publicText(text);
+  if (published.trim().length === 0) {
+    throw new TicketInputError(field, `${subject} doit faire au moins 5 caractères.`);
+  }
+  // Sur le texte saisi ET sur le texte publié : retirer un commentaire HTML
+  // peut recoller une adresse (`jean<!-- x -->@gmail.com`).
+  if (containsEmailAddress(text) || containsEmailAddress(published)) {
     throw new TicketInputError(field, ANSWER_EMAIL_MESSAGE, "contains_email");
   }
-  return publicText(text);
+  return published;
 }
 
 /** Corps du commentaire publié par « Répondre ». */
@@ -878,8 +947,9 @@ export const REPLY_COMMENT_PREFIX = "Réponse : ";
  * Lit le motif d'un refus. Lève `TicketInputError` (champ `reason`).
  *
  * Caractères de contrôle retirés (retours à la ligne gardés), espaces de
- * tête et de fin retirées, NFC, 5 à 2 000 caractères. Le motif part sur un
- * dépôt PUBLIC : mentions `@` et renvois `#N` neutralisés après le contrôle
+ * tête et de fin retirées, NFC, 5 à 2 000 caractères, aucune adresse e-mail
+ * (raison `contains_email`, comme « Répondre »). Le motif part sur un
+ * dépôt PUBLIC : balisage, mentions `@` et renvois `#N` neutralisés après le contrôle
  * de longueur.
  */
 export function readRefusalReason(raw: unknown): string {
@@ -893,7 +963,16 @@ export function readRefusalReason(raw: unknown): string {
   if (reason.length > REFUSAL_REASON_MAX) {
     throw new TicketInputError("reason", "Le motif ne doit pas dépasser 2 000 caractères.");
   }
-  return publicText(reason);
+  // Un motif fait d'un seul commentaire HTML ne publie rien de lisible.
+  const published = publicText(reason);
+  if (published.trim().length === 0) {
+    throw new TicketInputError("reason", "Le motif doit faire au moins 5 caractères.");
+  }
+  // Même contrôle que « Répondre », sur le texte saisi et sur le texte publié.
+  if (containsEmailAddress(reason) || containsEmailAddress(published)) {
+    throw new TicketInputError("reason", ANSWER_EMAIL_MESSAGE, "contains_email");
+  }
+  return published;
 }
 
 /** Corps du commentaire qui publie le motif. */

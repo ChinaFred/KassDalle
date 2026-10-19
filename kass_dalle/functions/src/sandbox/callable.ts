@@ -13,7 +13,7 @@
 import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, MAX_CALLABLE_INSTANCES, REGION } from "../config";
-import { requireAdmin } from "../callable/_auth";
+import { requireAdmin, type AuthContext } from "../callable/_auth";
 import { readModelChoice } from "./model";
 import { detectOrientation } from "./orientation";
 import { detectPageQuad } from "./page";
@@ -48,6 +48,18 @@ const FEATURE_DETECT_PAGE = "sandbox_detect_page";
 const FEATURE_DETECT_ORIENTATION = "sandbox_detect_orientation";
 const FEATURE_DETECT_REGIONS = "sandbox_detect_regions";
 
+/**
+ * Le poste nommé par la garde, selon l'expérience demandée. Il ne sert qu'à la
+ * racine du `correlationId` et au journal App Check : l'imputation du coût
+ * reste posée par chaque expérience (`ctx.feature`). Une expérience absente ou
+ * inconnue est gardée sous le nom générique « sandbox ».
+ */
+const GUARD_FEATURES: Readonly<Record<string, string>> = {
+  "image_import.detect_page": FEATURE_DETECT_PAGE,
+  "image_import.detect_orientation": FEATURE_DETECT_ORIENTATION,
+  "image_import.detect_regions": FEATURE_DETECT_REGIONS,
+};
+
 interface SandboxRequest {
   experiment?: string;
   bytesBase64?: string;
@@ -63,24 +75,35 @@ interface SandboxRequest {
 
 export const sandboxFn = onCall<SandboxRequest>(sandboxOpts, async (req) => {
   const experiment = req.data?.experiment;
+  // Une seule garde, avant tout aiguillage : un appel non administrateur est
+  // refusé quel que soit `experiment`, absent ou inconnu compris (audit #151,
+  // ticket #155). Une expérience ajoutée au `switch` n'a pas à s'en souvenir.
+  const guardFeature =
+    typeof experiment === "string" && Object.hasOwn(GUARD_FEATURES, experiment)
+      ? GUARD_FEATURES[experiment]
+      : "sandbox";
+  const ctx = await requireAdmin(req, guardFeature);
+
   if (!experiment) {
     throw new HttpsError("invalid-argument", "experiment est requis.");
   }
 
   switch (experiment) {
     case "image_import.detect_page":
-      return detectPage(req);
+      return detectPage(req, ctx);
     case "image_import.detect_orientation":
-      return detectPageOrientation(req);
+      return detectPageOrientation(req, ctx);
     case "image_import.detect_regions":
-      return detectRegions(req);
+      return detectRegions(req, ctx);
     default:
       throw new HttpsError("invalid-argument", `Expérience inconnue : ${experiment}`);
   }
 });
 
-async function detectPage(req: CallableRequest<SandboxRequest>): Promise<{ page: unknown | null }> {
-  const ctx = await requireAdmin(req, FEATURE_DETECT_PAGE);
+async function detectPage(
+  req: CallableRequest<SandboxRequest>,
+  ctx: AuthContext,
+): Promise<{ page: unknown | null }> {
   const { bytesBase64, mimeType, widthPx, heightPx } = req.data ?? {};
   if (!bytesBase64 || !mimeType) {
     throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
@@ -108,8 +131,8 @@ async function detectPage(req: CallableRequest<SandboxRequest>): Promise<{ page:
 
 async function detectRegions(
   req: CallableRequest<SandboxRequest>,
+  ctx: AuthContext,
 ): Promise<{ regions: unknown[]; engines: unknown[] }> {
-  const ctx = await requireAdmin(req, FEATURE_DETECT_REGIONS);
   const { bytesBase64, mimeType, widthPx, heightPx } = req.data ?? {};
   if (!bytesBase64 || !mimeType) {
     throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
@@ -137,8 +160,8 @@ async function detectRegions(
 
 async function detectPageOrientation(
   req: CallableRequest<SandboxRequest>,
+  ctx: AuthContext,
 ): Promise<{ orientation: unknown | null }> {
-  const ctx = await requireAdmin(req, FEATURE_DETECT_ORIENTATION);
   const { bytesBase64, mimeType, widthPx, heightPx } = req.data ?? {};
   if (!bytesBase64 || !mimeType) {
     throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
