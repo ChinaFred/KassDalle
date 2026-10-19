@@ -749,8 +749,8 @@ Une session ne touche à un ticket que sur demande de l'utilisateur :
   membre —, « traite #N » vaut aussi « fusionne » : la session principale fusionne la PR
   elle-même, après une CI verte, des relectures sans anomalie restante et le numéro de
   version vérifié contre `origin/master`, puis suit le déploiement. Une évolution, une
-  nouvelle fonctionnalité, ou une PR qui touche `check-version.sh`, `ci.yml` ou `deploy.yml`,
-  attend un « fusionne » explicite de l'utilisateur ; l'appui sur « Livrer » dans Admin ›
+  nouvelle fonctionnalité, ou une PR qui touche `check-version.sh`, `ci.yml`, `deploy.yml` ou
+  `.claude/skills/steward/`, attend un « fusionne » explicite de l'utilisateur ; l'appui sur « Livrer » dans Admin ›
   Tickets en est un, pour la seule PR qu'il livre.
 - **Question** : elle reçoit une réponse, jamais de code. La réponse que le membre lira dans
   l'application est un commentaire de `ChinaFred` qui commence par `Réponse :` ; la session
