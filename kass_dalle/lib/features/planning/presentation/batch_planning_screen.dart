@@ -2268,13 +2268,22 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   /// format du créneau les montre.
   List<MealCourse> _extraCourses(int index) {
     final composition = _slotComposition(index);
+    if (composition == null) return const [];
+    return [for (final i in _extraCourseIndexes(index)) composition.courses[i]];
+  }
+
+  /// Les positions, dans `MealComposition.courses`, des services que
+  /// [_extraCourses] rend, dans le même ordre.
+  List<int> _extraCourseIndexes(int index) {
+    final composition = _slotComposition(index);
     if (composition == null || !composition.isMenu) return const [];
     final format =
         (_slotConstraints[index] ?? const DayConstraint()).effectiveFormat;
     var starterShown = !format.wantsStarter || _slotStarters[index] == null;
     var dessertShown = !format.wantsDessert || _slotDesserts[index] == null;
-    final out = <MealCourse>[];
-    for (final c in composition.courses) {
+    final out = <int>[];
+    for (var i = 0; i < composition.courses.length; i++) {
+      final c = composition.courses[i];
       if (c.isMain) continue;
       if (!starterShown && c.role == MealComponentRole.entree) {
         starterShown = true;
@@ -2284,9 +2293,64 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         dessertShown = true;
         continue;
       }
-      out.add(c);
+      out.add(i);
     }
     return out;
+  }
+
+  /// [Choisir] d'un service vide dans « Détails » : la feuille du type du
+  /// service, comme pour l'entrée et le dessert — le sélecteur de recettes
+  /// pour un plat, les garnitures et recettes du type sinon. Rien n'est écrit
+  /// avant « Valider ».
+  Future<void> _chooseExtraCourse(int slot, int position) async {
+    final composition = _slotComposition(slot);
+    final indexes = _extraCourseIndexes(slot);
+    if (composition == null || position < 0 || position >= indexes.length) {
+      return;
+    }
+    final courseIndex = indexes[position];
+    final course = composition.courses[courseIndex];
+    MealComponent? content;
+    if (course.isDish) {
+      final picked = await showModalBottomSheet<Recipe>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => RecipePickerSheet(
+          recipes: _allRecipes,
+          hintText: 'Rechercher ou saisir un nom libre…',
+          freeNameAlways: true,
+          dismissedFrom: 'créneau',
+        ),
+      );
+      if (picked == null) return;
+      content = picked.id.isEmpty
+          ? MealComponent.free(picked.titre, role: MealComponentRole.plat)
+          : MealComponent.recipe(picked, role: MealComponentRole.plat);
+    } else {
+      final result = await showModalBottomSheet<SidePickerResult>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => SidePickerSheet(
+          title: course.typeLabel,
+          role: course.role,
+          candidates: courseCandidatesFor(
+            course.role,
+            staples: _staples,
+            recipes: _allRecipes,
+          ),
+        ),
+      );
+      content = result?.toComponent(role: course.role);
+    }
+    if (content == null || !mounted) return;
+    setState(
+      () => _adoptSlotComposition(
+        slot,
+        composition.setCourseContent(courseIndex, content),
+      ),
+    );
   }
 
   /// « Composer le menu » sur un créneau : l'éditeur partagé, en mémoire.
@@ -3070,6 +3134,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       dessert: _slotDesserts[index],
       extraCourses: _extraCourses(index),
       onCompose: _slots[index] != null ? () => _composeSlot(index) : null,
+      onChooseExtraCourse: (position) => _chooseExtraCourse(index, position),
       onChangeStarter: _slots[index] != null
           ? () => _changeCourse(index, MealComponentRole.entree)
           : null,

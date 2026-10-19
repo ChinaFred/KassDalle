@@ -11,6 +11,7 @@ import '../domain/side_chooser.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_composition.dart';
 import '../domain/meal_storage_rules.dart';
+import 'meal_course_style.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/recipe_search_scope.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -308,6 +309,10 @@ class BatchSlotTile extends StatefulWidget {
   /// « Composer le menu » : l'éditeur partagé, en mémoire. Null sans
   /// recette.
   final VoidCallback? onCompose;
+
+  /// [Choisir] d'un service vide de [extraCourses] : sa position dans la
+  /// liste. Ouvre directement la feuille du type du service.
+  final ValueChanged<int>? onChooseExtraCourse;
   final VoidCallback? onChangeStarter;
   final VoidCallback? onRemoveStarter;
   final VoidCallback? onChangeDessert;
@@ -361,6 +366,7 @@ class BatchSlotTile extends StatefulWidget {
     this.dessert,
     this.extraCourses = const [],
     this.onCompose,
+    this.onChooseExtraCourse,
     this.onChangeStarter,
     this.onRemoveStarter,
     this.onChangeDessert,
@@ -585,7 +591,12 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
           TextButton(
             onPressed: onChange,
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            child: Text(missing ? 'Choisir' : 'Changer'),
+            child: Text(
+              missing ? 'Choisir' : 'Changer',
+              semanticsLabel: missing
+                  ? chooseCourseSemanticLabel(role, role.label)
+                  : null,
+            ),
           ),
         if (!missing && onRemove != null)
           IconButton(
@@ -601,7 +612,11 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
   /// Un autre service du menu, en lecture : « Fromage : à choisir »,
   /// « Plat : Gratin + Salade verte ». Il se modifie dans « Composer le
   /// menu ».
-  Widget _buildExtraCourseLine(ThemeData theme, MealCourse course) {
+  Widget _buildExtraCourseLine(
+    ThemeData theme,
+    MealCourse course,
+    int position,
+  ) {
     final sides = course.sides.map((s) => s.label).join(', ');
     final missing = course.isEmpty;
     final text = missing
@@ -615,9 +630,13 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
     return Row(
       children: [
         Icon(
-          course.component.isRecipe
+          missing
+              ? courseRoleIcon(course.role)
+              : course.component.isRecipe
               ? Icons.menu_book_outlined
-              : Icons.rice_bowl_outlined,
+              : course.component.isStaple
+              ? Icons.rice_bowl_outlined
+              : courseRoleIcon(course.role),
           size: AppIconSize.inline,
           color: color,
         ),
@@ -633,11 +652,12 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        if (missing && widget.onCompose != null)
-          TextButton(
-            onPressed: widget.onCompose,
-            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            child: const Text('Choisir'),
+        if (missing && widget.onChooseExtraCourse != null)
+          ChooseCourseButton(
+            role: course.role,
+            typeLabel: course.typeLabel,
+            compact: true,
+            onPressed: () => widget.onChooseExtraCourse!(position),
           ),
       ],
     );
@@ -1110,7 +1130,8 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
             w.onChangeDessert,
             w.onRemoveDessert,
           ),
-        for (final c in w.extraCourses) _buildExtraCourseLine(theme, c),
+        for (var i = 0; i < w.extraCourses.length; i++)
+          _buildExtraCourseLine(theme, w.extraCourses[i], i),
       ],
       if (storage != null) ...[const SizedBox(height: 4), storage],
       if (origin != null) ...[const SizedBox(height: 6), origin],

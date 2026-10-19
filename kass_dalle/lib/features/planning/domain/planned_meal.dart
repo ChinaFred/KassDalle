@@ -73,7 +73,7 @@ class PlannedMeal {
   /// le plat n'apporte pas — jamais par le modèle au moment du planning.
   final List<MealComponent> components;
 
-  /// Plat ou menu (`meal_kind`, v0.24.14). `null` sur un repas antérieur :
+  /// Plat ou menu (`meal_kind`, v0.24.16). `null` sur un repas antérieur :
   /// la nature se déduit alors des composants ([kind]).
   final MealKind? mealKind;
 

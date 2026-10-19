@@ -20,6 +20,7 @@ import '../domain/meal_composition.dart';
 import '../domain/meal_kind.dart';
 import '../domain/meal_staple.dart';
 import '../domain/side_chooser.dart';
+import 'meal_course_style.dart';
 import 'meal_staples_providers.dart';
 import 'recipe_picker_sheet.dart';
 import 'side_picker_sheet.dart';
@@ -217,7 +218,22 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
       ? widget.initial.toMenu()
       : widget.initial;
   String? _initialMainId;
-  late final String _initialKey = _keyOf(widget.initial);
+
+  /// La composition d'ouverture, modèle de menu compris : la référence de
+  /// « Abandonner les modifications ? ». Un menu proposé à l'ouverture
+  /// (« Passer en menu », « Composer le menu ») n'est pas une modification.
+  late final String _initialKey;
+
+  /// Vrai quand l'éditeur s'ouvre sur un menu proposé à partir d'un plat :
+  /// « Enregistrer » le crée même sans autre geste.
+  late final bool _proposedAtOpening;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialKey = _keyOf(_composition);
+    _proposedAtOpening = _keyOf(widget.initial) != _initialKey;
+  }
 
   bool _saving = false;
 
@@ -255,6 +271,11 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
     _data = data;
     _main = data.main;
     _initialMainId = data.main?.id;
+    // La barre du bas a été construite avant la fin de la lecture :
+    // « Enregistrer » s'y active au rendu suivant, même sans autre geste.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   // ── Fermeture ──────────────────────────────────────────────────────────
@@ -290,7 +311,7 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
 
   Future<void> _save() async {
     if (_saving || _data == null) return;
-    if (!_dirty) {
+    if (!_dirty && !_proposedAtOpening) {
       _closing = true;
       Navigator.of(context).pop();
       return;
@@ -537,6 +558,8 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
       if (label == null || !mounted) return;
       courseLabel = courseLabelFrom(label);
     }
+    final before = _composition;
+    final lost = picked == MealComponentRole.plat ? 0 : course.sides.length;
     setState(() {
       _composition = _composition.changeCourseType(
         index,
@@ -544,6 +567,19 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
         courseLabel: courseLabel,
       );
     });
+    if (lost == 0) return;
+    // Un plat secondaire qui change de type perd ses accompagnements : le
+    // dire, et laisser revenir en arrière.
+    _messengerKey.currentState?.showSuccessMessage(
+      lost == 1 ? '1 accompagnement retiré.' : '$lost accompagnements retirés.',
+      scheme: Theme.of(context).colorScheme,
+      action: SnackBarAction(
+        label: 'Annuler',
+        onPressed: () {
+          if (mounted) setState(() => _composition = before);
+        },
+      ),
+    );
   }
 
   /// Le libellé d'un service « Autre… » ; `null` si l'on annule, vide pour
@@ -740,9 +776,6 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
     final theme = Theme.of(context);
     final main = _main;
     final dropped = _composition.droppedAsDish.length;
-    final contains = main == null
-        ? const <String>[]
-        : orderedMealContains(main.tags.contains);
     return ListView(
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
       children: [
@@ -758,13 +791,7 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
         ListTile(
           leading: const Icon(Icons.restaurant_outlined),
           title: Text(main?.titre ?? widget.fallbackTitle),
-          subtitle: Text(
-            contains.isEmpty
-                ? (main?.tags.hasMealRole ?? false)
-                      ? 'Apporte : rien de noté'
-                      : 'Apports du plat inconnus'
-                : 'Apporte : ${contains.map(mealContainsLabel).join(', ')}',
-          ),
+          subtitle: Text(_containsLabel(main)),
           trailing: widget.canChangeRecipe
               ? TextButton(
                   onPressed: _saving ? null : () => _changeRecipe(staples),
@@ -775,6 +802,21 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
         ..._buildDishBlock(theme, staples, _mainIndex, withHeader: true),
       ],
     );
+  }
+
+  /// « Apporte : Protéine, Légume », « Apporte : rien de noté », ou
+  /// « Apports du plat inconnus » pour une recette non classée, supprimée ou
+  /// un nom libre ([recipe] nul).
+  static String _containsLabel(Recipe? recipe) {
+    final contains = recipe == null
+        ? const <String>[]
+        : orderedMealContains(recipe.tags.contains);
+    if (contains.isNotEmpty) {
+      return 'Apporte : ${contains.map(mealContainsLabel).join(', ')}';
+    }
+    return (recipe?.tags.hasMealRole ?? false)
+        ? 'Apporte : rien de noté'
+        : 'Apports du plat inconnus';
   }
 
   /// Ce qu'un plat apporte avec ses accompagnements : « Il manque : … » ou
@@ -811,7 +853,8 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
             needs: status.missing,
             takenIds: {for (final s in sides) s.sourceId},
           );
-    final canAdd = !course.isMain || recipe != null;
+    // Un plat secondaire reçoit ses accompagnements une fois choisi.
+    final canAdd = course.isMain ? recipe != null : !course.isEmpty;
     Widget padded(Widget child) => indent == 0
         ? child
         : Padding(
@@ -1132,6 +1175,11 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
       detail = course.component.quantityLabel;
     }
     final missing = content == null;
+    // Sous un plat choisi, la même ligne d'apport qu'en mode plat.
+    if (course.isDish && !missing) {
+      final apport = _containsLabel(_dishRecipe(course));
+      detail = detail == null ? apport : '$detail · $apport';
+    }
     final color = missing
         ? theme.colorScheme.error
         : theme.colorScheme.onSurface;
@@ -1189,11 +1237,12 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
               ),
             ),
             if (canChoose)
-              TextButton(
+              ChooseCourseButton(
+                role: course.role,
+                typeLabel: course.typeLabel,
                 onPressed: _saving
                     ? null
                     : () => _changeContent(index, staples),
-                child: const Text('Choisir'),
               ),
             PopupMenuButton<_CourseAction>(
               tooltip: 'Actions sur « ${course.typeLabel} »',

@@ -589,6 +589,62 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     );
   }
 
+  /// Les garnitures du compte pour choisir un service : attendues si leur
+  /// lecture est en cours, sinon `null` après « Vos garnitures n'ont pas pu
+  /// être lues. » avec « Réessayer », comme dans l'éditeur. Sans elles, la
+  /// feuille dirait à tort qu'aucune garniture n'existe.
+  Future<List<UserStaple>?> _staplesForCourse(
+    PlannedMeal meal,
+    int index,
+  ) async {
+    var staples = ref.read(myStaplesProvider);
+    if (!staples.hasValue && !staples.hasError) {
+      final done = Completer<AsyncValue<List<UserStaple>>>();
+      final sub = ref.listenManual(myStaplesProvider, (_, next) {
+        if ((next.hasValue || next.hasError) && !done.isCompleted) {
+          done.complete(next);
+        }
+      });
+      try {
+        staples = await done.future.timeout(const Duration(seconds: 15));
+      } on TimeoutException catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'planningScreen.chooseCourse.staplesTimeout',
+          userId: ref.read(planningRepositoryProvider)?.uid,
+          error: e,
+          stackTrace: stackTrace,
+          context: {'meal_id': meal.id},
+        );
+      } finally {
+        sub.close();
+      }
+    }
+    if (staples.hasValue && !staples.hasError) return staples.value;
+    if (staples.hasError) {
+      reportUnexpectedError(
+        feature: 'planningScreen.chooseCourse.loadStaples',
+        userId: ref.read(planningRepositoryProvider)?.uid,
+        error: staples.error!,
+        stackTrace: staples.stackTrace,
+        context: {'meal_id': meal.id},
+      );
+    }
+    if (mounted) {
+      context.showErrorSnackBar(
+        'Vos garnitures n\'ont pas pu être lues.',
+        action: SnackBarAction(
+          label: 'Réessayer',
+          onPressed: () {
+            ref.invalidate(baseMealStaplesProvider);
+            ref.invalidate(myStapleOverridesProvider);
+            _chooseCourse(meal, index);
+          },
+        ),
+      );
+    }
+    return null;
+  }
+
   /// [Choisir] sur un service « à choisir » d'un menu : la feuille des
   /// recettes pour un plat, celle des garnitures et recettes du type sinon.
   /// Le plat principal se choisit comme « Changer la recette ».
@@ -625,7 +681,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           ? MealComponent.free(picked.titre, role: MealComponentRole.plat)
           : MealComponent.recipe(picked, role: MealComponentRole.plat);
     } else {
-      final staples = ref.read(myStaplesProvider).value ?? const [];
+      final staples = await _staplesForCourse(meal, index);
+      if (staples == null || !mounted) return;
       final result = await showModalBottomSheet<SidePickerResult>(
         context: context,
         isScrollControlled: true,

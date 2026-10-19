@@ -83,11 +83,11 @@ class MealComponent {
   /// Identifiant court d'un service dans le repas (`id`) : [kMainCourseId]
   /// pour le marqueur du plat principal, un identifiant unique dans le repas
   /// pour un plat secondaire, que ses accompagnements citent dans [sideOf].
-  /// `null` pour les autres services et les accompagnements (v0.24.14).
+  /// `null` pour les autres services et les accompagnements (v0.24.16).
   final String? id;
 
   /// Libellé d'un service « Autre » (`course_label`) : « Trou normand »,
-  /// 30 caractères au plus. `null` : « Autre » (v0.24.14).
+  /// 30 caractères au plus. `null` : « Autre » (v0.24.16).
   final String? courseLabel;
 
   /// Champs lus en base que cette version ne connaît pas, réécrits tels

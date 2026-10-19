@@ -766,6 +766,19 @@ void main() {
       ]);
     });
 
+    test('menu remis à blanc : « Plat : à choisir », comme la tuile', () {
+      final text = mealCalendarDescription(
+        meal(
+          [c('entree', 'Velouté'), c('dessert', 'Tarte')],
+          kind: MealKind.menu,
+          titre: kFreeMealTitle,
+          recipeId: null,
+        ),
+      );
+      expect(text, contains('Plat : à choisir'));
+      expect(text, isNot(contains('Repas libre')));
+    });
+
     test('un plat garde sa description d\'avant', () {
       final text = mealCalendarDescription(meal([c('accompagnement', 'Riz')]));
       expect(text, contains('Accompagnement : Riz'));

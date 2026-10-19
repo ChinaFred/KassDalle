@@ -40,14 +40,17 @@ String buildCalendarDescription({
 /// Une ligne par composant : « Accompagnement : Riz · 280 g pour 4 parts »,
 /// et le lien de la fiche quand c'est une recette. Un service de menu prend
 /// son type (« Trou normand » pour un service « Autre » nommé) ; un service
-/// vide se lit « Fromage : à choisir ».
+/// vide se lit « Fromage : à choisir », et le marqueur d'un plat principal
+/// sans titre « Plat : à choisir ».
 List<String> componentCalendarLines(
   Iterable<MealComponent> components, {
   int? portions,
 }) {
   final lines = <String>[];
   for (final c in components) {
-    final label = c.isEmptyCourse ? 'à choisir' : c.label;
+    final label = c.isEmptyCourse || (c.isMainMarker && c.label.trim().isEmpty)
+        ? 'à choisir'
+        : c.label;
     final buffer = StringBuffer('${c.courseTypeLabel} : $label');
     final total = c.totalQuantityFor(portions);
     if (total != null) {
@@ -81,11 +84,12 @@ String formatComponentQuantity(double quantity, String unit) {
 
 /// Description d'un repas planifié : le lien vers sa recette, ouvert pour ses
 /// parts et son jour de préparation, et ses accompagnements — pour un menu,
-/// ses services dans l'ordre, chaque plat suivi des siens.
+/// ses services dans l'ordre, chaque plat suivi des siens. Un menu remis à
+/// blanc dit « Plat : à choisir », comme la tuile, et non « Repas libre ».
 String mealCalendarDescription(PlannedMeal meal) => buildCalendarDescription(
   recipeLocation: mealRecipeLocation(meal),
   components: MealComposition.ofMeal(
     meal,
-  ).toComponents(mainTitle: meal.recipeTitre),
+  ).toComponents(mainTitle: mealMainIsEmpty(meal) ? '' : meal.recipeTitre),
   portions: meal.portionsForComponents,
 );

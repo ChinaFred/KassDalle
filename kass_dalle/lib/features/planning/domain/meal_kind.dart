@@ -1,4 +1,4 @@
-/// Un repas est un plat ou un menu (`planned_meals.meal_kind`, v0.24.14).
+/// Un repas est un plat ou un menu (`planned_meals.meal_kind`, v0.24.16).
 ///
 /// Un **plat** : la recette du repas et ses accompagnements. Un **menu** : une
 /// suite ordonnée de services — entrée, plat, sorbet, fromage, dessert,

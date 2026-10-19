@@ -370,6 +370,73 @@ void main() {
       expect(fromage.stapleId, 'comte');
     });
 
+    testWidgets('mode menu : la ligne d\'apport sous chaque plat', (
+      tester,
+    ) async {
+      await pumpComposer(
+        tester,
+        initial: MealComposition.fromComponents([
+          _c('entree', 'Velouté'),
+          _c('plat', 'Blanquette de veau', id: 'main'),
+          _c('plat', 'Gratin', id: 'p2'),
+        ]),
+      );
+      expect(find.text('Apporte : Protéine'), findsOneWidget);
+      expect(find.text('Apports du plat inconnus'), findsOneWidget);
+    });
+
+    testWidgets('« Passer en menu » puis Annuler : pas de question', (
+      tester,
+    ) async {
+      final saved = await pumpComposer(tester, initialKind: MealKind.menu);
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(find.text('Abandonner les modifications ?'), findsNothing);
+      expect(saved, isEmpty);
+    });
+
+    testWidgets('« Passer en menu » puis Enregistrer : le menu proposé est '
+        'créé', (tester) async {
+      final saved = await pumpComposer(tester, initialKind: MealKind.menu);
+      await tester.tap(find.text('Enregistrer'));
+      await tester.pumpAndSettle();
+      expect(saved.single.kind, MealKind.menu);
+    });
+
+    testWidgets('un plat secondaire qui change de type : « 2 accompagnements '
+        'retirés. » avec « Annuler »', (tester) async {
+      await pumpComposer(
+        tester,
+        initial: MealComposition.fromComponents([
+          _c('plat', 'Blanquette de veau', id: 'main'),
+          _c('plat', 'Gratin', id: 'p2'),
+          _c('accompagnement', 'Salade', sideOf: 'p2'),
+          _c('accompagnement', 'Pain', sideOf: 'p2'),
+        ]),
+      );
+      await courseAction(tester, 'Plat', 'Changer le type', at: 1);
+      await tester.tap(find.text('Dessert'));
+      await tester.pumpAndSettle();
+      expect(find.text('Salade'), findsNothing);
+      expect(find.text('2 accompagnements retirés.'), findsOneWidget);
+      await tester.tap(find.widgetWithText(SnackBarAction, 'Annuler'));
+      await tester.pumpAndSettle();
+      expect(find.text('Salade'), findsOneWidget);
+      expect(find.text('Pain'), findsOneWidget);
+    });
+
+    testWidgets('un plat secondaire à choisir n\'a pas encore '
+        '« Ajouter un accompagnement »', (tester) async {
+      await pumpComposer(
+        tester,
+        initial: MealComposition.fromComponents([
+          _c('plat', 'Blanquette de veau', id: 'main'),
+          _c('plat', '', id: 'p2'),
+        ]),
+      );
+      expect(find.text('Ajouter un accompagnement'), findsOneWidget);
+    });
+
     testWidgets('six accompagnements au plus pour un plat du menu', (
       tester,
     ) async {
@@ -446,7 +513,10 @@ void main() {
       expect(find.text('Blanquette de veau'), findsOneWidget);
       expect(find.text('Menu · 4 services'), findsOneWidget);
       expect(find.text('Entrée : Velouté'), findsOneWidget);
-      expect(find.text('Plat : + Riz, Haricots verts'), findsOneWidget);
+      // Le plat principal, puis ses accompagnements en retrait.
+      expect(find.text('Plat'), findsOneWidget);
+      expect(find.text('+ Riz'), findsOneWidget);
+      expect(find.text('+ Haricots verts'), findsOneWidget);
       expect(find.text('Fromage : à choisir'), findsOneWidget);
       expect(find.text('Dessert : Tarte de Marie'), findsOneWidget);
       final text = tester.widget<Text>(find.text('Fromage : à choisir'));
@@ -503,6 +573,118 @@ void main() {
       expect(switched, isTrue);
     });
 
+    testWidgets('un accompagnement-recette verrouillé garde son cadenas', (
+      tester,
+    ) async {
+      await pumpTile(
+        tester,
+        PlanningMealTile(
+          meal: menuMeal(
+            components: [
+              _c('entree', 'Velouté'),
+              _c('plat', 'Blanquette de veau', id: 'main'),
+              MealComponent.fromMap({
+                'role': 'accompagnement',
+                'label': 'Purée',
+                'recipe_id': 'puree',
+              }),
+              MealComponent.fromMap({
+                'role': 'plat',
+                'id': 'p2',
+                'label': 'Gratin',
+                'recipe_id': 'gratin',
+              }),
+            ],
+          ),
+          isPast: false,
+          aiLoading: false,
+          isWide: false,
+          readOnly: true,
+          lockedRecipeIds: const {'puree', 'gratin'},
+          onComponentTap: (_) {},
+        ),
+      );
+      expect(find.text('+ Purée · Recette non partagée'), findsOneWidget);
+      // La mention désigne le plat secondaire, sur sa propre ligne.
+      expect(find.text('Plat : Gratin · Recette non partagée'), findsOneWidget);
+      expect(find.byIcon(Icons.lock_outline), findsNWidgets(2));
+    });
+
+    testWidgets('un accompagnement-recette lisible s\'ouvre d\'un appui', (
+      tester,
+    ) async {
+      final opened = <String>[];
+      await pumpTile(
+        tester,
+        PlanningMealTile(
+          meal: menuMeal(
+            components: [
+              _c('entree', 'Velouté'),
+              _c('plat', 'Blanquette de veau', id: 'main'),
+              MealComponent.fromMap({
+                'role': 'accompagnement',
+                'label': 'Purée',
+                'recipe_id': 'puree',
+              }),
+            ],
+          ),
+          isPast: false,
+          aiLoading: false,
+          isWide: false,
+          readOnly: true,
+          onComponentTap: (c) => opened.add(c.recipeId!),
+        ),
+      );
+      await tester.tap(find.text('+ Purée'));
+      expect(opened, ['puree']);
+    });
+
+    testWidgets('[Choisir] porte un libellé pour lecteur d\'écran', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await pumpTile(
+        tester,
+        PlanningMealTile(
+          meal: menuMeal(),
+          isPast: false,
+          aiLoading: false,
+          isWide: false,
+          onChooseCourse: (_) {},
+        ),
+      );
+      expect(find.bySemanticsLabel('Choisir le fromage'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    testWidgets('pas de « Passer en menu » sur un dessert', (tester) async {
+      await pumpTile(
+        tester,
+        PlanningMealTile(
+          meal: PlannedMeal(
+            id: 'm3',
+            uid: 'uid',
+            recipeId: 'tarte',
+            recipeTitre: 'Tarte aux pommes',
+            plannedAt: DateTime(2030, 1, 6, 12),
+            durationMinutes: 60,
+            createdAt: DateTime(2026, 1, 1),
+          ),
+          isPast: false,
+          aiLoading: false,
+          isWide: false,
+          sideStatus: const DishSideStatus(DishSideState.notApplicable),
+          onDelete: () {},
+          onCompose: () {},
+          onSwitchToMenu: () {},
+        ),
+      );
+      await tester.tap(find.byType(PopupMenuButton<PlanningMealAction>));
+      await tester.pumpAndSettle();
+      expect(find.text('Passer en menu'), findsNothing);
+      expect(find.text('Composer le repas'), findsNothing);
+    });
+
     testWidgets('menu ⋮ : « Passer en menu » sur un plat', (tester) async {
       var switched = false;
       await pumpTile(
@@ -556,6 +738,7 @@ void main() {
       MealComponent? starter,
       List<MealCourse> extra = const [],
       VoidCallback? onCompose,
+      ValueChanged<int>? onChooseExtraCourse,
     }) async {
       await tester.binding.setSurfaceSize(const Size(500, 1200));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -585,6 +768,7 @@ void main() {
                 starter: starter,
                 extraCourses: extra,
                 onCompose: onCompose,
+                onChooseExtraCourse: onChooseExtraCourse,
               ),
             ),
           ),
@@ -603,6 +787,7 @@ void main() {
     testWidgets('les autres services dans « Détails », « Composer le menu » '
         'dans ⋮', (tester) async {
       var composed = 0;
+      final chosen = <int>[];
       final courses = MealComposition.fromComponents([
         _c('entree', 'Velouté'),
         _c('plat', 'Blanquette de veau', id: 'main'),
@@ -615,20 +800,28 @@ void main() {
         starter: _c('entree', 'Velouté'),
         extra: [courses[2], courses[3]],
         onCompose: () => composed++,
+        onChooseExtraCourse: chosen.add,
       );
       // Le pli « Détails » s'ouvre d'un appui.
       await tester.tap(find.text('Détails'));
       await tester.pumpAndSettle();
       expect(find.text('Plat : Gratin + Salade'), findsOneWidget);
       expect(find.text('Fromage : à choisir'), findsOneWidget);
+      // [Choisir] ouvre la feuille du type, pas l'éditeur.
       await tester.tap(find.widgetWithText(TextButton, 'Choisir'));
-      expect(composed, 1);
+      expect(chosen, [1]);
+      expect(composed, 0);
+      expect(
+        find.byIcon(Icons.rice_bowl_outlined),
+        findsNothing,
+        reason: 'un service vide porte l\'icône de son type',
+      );
 
       await tester.tap(find.byTooltip('Plus d\'actions'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Composer le menu'));
       await tester.pumpAndSettle();
-      expect(composed, 2);
+      expect(composed, 1);
     });
 
     test('le format du repas se lit « Menu : … »', () {
@@ -648,6 +841,7 @@ void main() {
       WidgetTester tester,
       List<MealComponent> components, {
       UserRole role = UserRole.editor,
+      AsyncValue<List<UserStaple>>? staples,
     }) async {
       final backend = TestBackend(
         user: testUser(role: role),
@@ -685,6 +879,7 @@ void main() {
                 const PlanningReach(uids: {}, groupIds: {}, maskedGroupIds: {}),
               ),
             ),
+            if (staples != null) myStaplesProvider.overrideWithValue(staples),
           ],
           child: const MaterialApp(
             locale: Locale('fr'),
@@ -748,6 +943,23 @@ void main() {
       await tester.pumpAndSettle();
       expect((await stored(backend))['meal_kind'], 'menu');
       expect(find.text('Repassé en plat.'), findsNothing);
+    });
+
+    testWidgets('[Choisir] sans garnitures lisibles : le dire, avec '
+        '« Réessayer »', (tester) async {
+      await pumpPlanning(tester, [
+        _c('entree', 'Velouté'),
+        _c('plat', 'Blanquette de veau', id: 'main'),
+        _c('fromage', ''),
+      ], staples: AsyncValue.error(StateError('réseau'), StackTrace.empty));
+      await tester.tap(find.widgetWithText(TextButton, 'Choisir'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Vos garnitures n\'ont pas pu être lues.'),
+        findsOneWidget,
+      );
+      expect(find.text('Réessayer'), findsOneWidget);
+      expect(find.textContaining('Aucune garniture ni recette'), findsNothing);
     });
 
     testWidgets('services tous vides : pas de question', (tester) async {

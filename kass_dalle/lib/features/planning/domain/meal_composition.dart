@@ -7,7 +7,7 @@
 /// réécrit. Rien ici n'appelle Firestore ni un modèle : des fonctions pures,
 /// testées dans `meal_composition_test.dart`.
 ///
-/// Écriture d'un menu (v0.24.14) : chaque service dans l'ordre ; le plat
+/// Écriture d'un menu (v0.24.16) : chaque service dans l'ordre ; le plat
 /// principal par un marqueur `{role: plat, id: 'main', label: <titre>}`
 /// suivi de ses accompagnements ; un plat secondaire par son composant
 /// (`id` court) suivi des siens (`side_of: <id>`). Un plat s'écrit comme

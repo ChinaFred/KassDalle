@@ -561,11 +561,15 @@ flowchart LR
         devient le service « Plat », un modèle « Entrée, plat, dessert » s'applique d'office,
         et l'on ajoute, déplace, retype ou retire des services — dix au plus, entrée, plat,
         sorbet, fromage, dessert ou « Autre… » nommé —, plusieurs plats compris, chacun avec
-        ses accompagnements. Un service vide reste « à choisir » : le programme ne remplit ni
-        le fromage ni le sorbet. Sur la tuile, « Menu · N services » puis une ligne par
-        service ; « Repasser en plat » demande confirmation quand un service est rempli, et
-        « Annuler » rend le menu. Dans Nouveau planning, « Composer le menu » sur un créneau
-        travaille en mémoire jusqu'à « Valider ». Un lecteur et le repas d'autrui restent en
+        ses accompagnements. Un plat secondaire qui change de type perd ses accompagnements,
+        et « Annuler » les rend. Un service vide reste « à choisir » : le programme ne remplit
+        ni le fromage ni le sorbet. « Passer en menu » n'existe que pour un plat ou une
+        recette non classée ; le menu proposé à l'ouverture n'est créé qu'à « Enregistrer ».
+        Sur la tuile, « Menu · N services » puis une ligne par service, et une ligne en
+        retrait par accompagnement d'un plat ; « Repasser en plat » demande confirmation
+        quand un service est rempli, et « Annuler » rend le menu. Dans Nouveau planning,
+        « Composer le menu » sur un créneau travaille en mémoire jusqu'à « Valider », et
+        [Choisir] d'un service vide ouvre la feuille de son type. Un lecteur et le repas d'autrui restent en
         lecture seule. <b>Le texte d'origine d'une recette traduite</b> se lit sans appel d'IA
         non plus : il a été enregistré à l'import, et tout lecteur de la recette l'ouvre depuis
         la mention « Traduit de l'… ».
