@@ -20,6 +20,20 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-19
 
+### v0.24.12 — technique
+
+Un agent ou un skill que Claude Code ne peut pas charger est maintenant signalé.
+`.github/scripts/check-agents.mjs` lit l'en-tête YAML de chaque `.claude/agents/*.md` et
+`.claude/skills/*/SKILL.md` avec js-yaml, exige `name` et `description`, compare `name` au nom
+du fichier, et vérifie que chaque agent et skill cité dans `CLAUDE.md` existe. Le job Functions
+de la CI le lance et échoue sur une anomalie : la fusion de la PR #71, qui a retiré
+`ux-designer` et `securite` de toutes les sessions du 14 au 19 octobre, aurait été bloquée.
+`session-start.sh` le lance aussi, sur le poste comme dans le cloud, et affiche un
+avertissement sans bloquer. `CLAUDE.md` (« Agents ») demande à la session de signaler un agent
+absent et de s'arrêter, sans le remplacer ni sauter la relecture. `js-yaml` devient une
+dépendance de développement directe des Functions (4.3.1 → 4.3.2) ; il n'était présent qu'à
+travers ESLint.
+
 ### v0.24.11 — fonctionnel
 
 Dans le planning, « Changer la recette », « Autre suggestion » et une recette conçue par
