@@ -1,9 +1,9 @@
-/// Un composant d'un repas planifié, en plus du plat.
+/// Un composant d'un repas planifié, en plus du plat principal.
 ///
 /// Un repas n'est pas une recette : la blanquette se sert avec du riz, et le
 /// riz n'a pas de recette. Un composant est soit une **garniture** du
-/// référentiel (riz, salade verte, yaourt), soit une **recette** de rôle
-/// accompagnement, entrée ou dessert, soit un **texte libre** saisi à la main. Le plat, lui, reste dans `recipe_id` :
+/// référentiel (riz, salade verte, yaourt), soit une **recette**, soit un
+/// **texte libre** saisi à la main. Le plat principal reste dans `recipe_id` :
 /// les écrans qui ne connaissent pas les composants continuent de le voir.
 ///
 /// Une garniture est **figée** au moment du choix — nom, part par personne,
@@ -14,28 +14,65 @@ library;
 import '../../recipes/domain/recipe.dart';
 import 'meal_staple.dart';
 
-/// Rôle d'un composant dans le repas. Le plat n'en est pas un : il est porté
-/// par le repas lui-même.
+/// Rôle d'un composant dans le repas.
+///
+/// Le plat principal reste porté par le repas lui-même (`recipe_id`). Les
+/// rôles [plat], [sorbet], [fromage] et [autre] servent aux services d'un
+/// menu. Un rôle que cette version ne connaît pas se lit [autre], et sa
+/// valeur d'origine est réécrite telle quelle (voir [MealComponent.roleKey]).
 enum MealComponentRole {
   accompagnement,
   entree,
-  dessert;
+  plat,
+  sorbet,
+  fromage,
+  dessert,
+  autre;
 
   String get label => switch (this) {
     MealComponentRole.accompagnement => 'Accompagnement',
     MealComponentRole.entree => 'Entrée',
+    MealComponentRole.plat => 'Plat',
+    MealComponentRole.sorbet => 'Sorbet',
+    MealComponentRole.fromage => 'Fromage',
     MealComponentRole.dessert => 'Dessert',
+    MealComponentRole.autre => 'Autre',
   };
 
-  static MealComponentRole fromKey(String? key) =>
-      MealComponentRole.values.firstWhere(
-        (r) => r.name == key,
-        orElse: () => MealComponentRole.accompagnement,
-      );
+  /// Sans rôle : un accompagnement, seul composant des premiers repas. Un
+  /// rôle inconnu se lit [autre], jamais accompagnement : un accompagnement
+  /// serait remplacé au prochain changement de plat.
+  static MealComponentRole fromKey(String? key) {
+    if (key == null || key.isEmpty) return MealComponentRole.accompagnement;
+    for (final r in MealComponentRole.values) {
+      if (r.name == key) return r;
+    }
+    return MealComponentRole.autre;
+  }
+
+  /// Servi après le plat : sorbet, fromage, dessert.
+  bool get isAfterMain =>
+      this == MealComponentRole.sorbet ||
+      this == MealComponentRole.fromage ||
+      this == MealComponentRole.dessert;
 }
 
 class MealComponent {
   final MealComponentRole role;
+
+  /// Valeur de `role` lue en base quand cette version ne la connaît pas.
+  /// Elle est réécrite telle quelle : une version plus ancienne de
+  /// l'application ne change pas le service posé par une version plus récente.
+  final String? roleKey;
+
+  /// Le plat qu'accompagne ce composant, dans un menu à plusieurs plats.
+  /// `null` : le plat principal du repas (`recipe_id`).
+  final String? sideOf;
+
+  /// Champs lus en base que cette version ne connaît pas, réécrits tels
+  /// quels. Un téléphone qui n'a pas encore la mise à jour retire ou ajoute
+  /// un accompagnement sans effacer ce qu'une version récente a posé.
+  final Map<String, dynamic> extra;
 
   /// Une recette d'accompagnement, d'entrée ou de dessert.
   final String? recipeId;
@@ -71,7 +108,15 @@ class MealComponent {
     this.shoppingProduct,
     this.note,
     this.justification,
+    this.roleKey,
+    this.sideOf,
+    this.extra = const {},
   });
+
+  /// Accompagnement du plat principal, celui de `recipe_id`.
+  bool get isMainSide =>
+      role == MealComponentRole.accompagnement &&
+      (sideOf == null || sideOf!.isEmpty);
 
   bool get isRecipe => recipeId != null && recipeId!.isNotEmpty;
   bool get isStaple => stapleId != null && stapleId!.isNotEmpty;
@@ -145,20 +190,46 @@ class MealComponent {
     return q * n;
   }
 
-  factory MealComponent.fromMap(Map<String, dynamic> data) => MealComponent(
-    role: MealComponentRole.fromKey(data['role'] as String?),
-    recipeId: data['recipe_id'] as String?,
-    stapleId: data['staple_id'] as String?,
-    label: data['label'] as String? ?? '',
-    quantityPerPortion: (data['quantity_per_portion'] as num?)?.toDouble(),
-    unit: data['unit'] as String?,
-    shoppingProduct: data['shopping_product'] as String?,
-    note: data['note'] as String?,
-    justification: data['justification'] as String?,
-  );
+  static const _knownKeys = {
+    'role',
+    'recipe_id',
+    'staple_id',
+    'label',
+    'quantity_per_portion',
+    'unit',
+    'shopping_product',
+    'note',
+    'justification',
+    'side_of',
+  };
+
+  factory MealComponent.fromMap(Map<String, dynamic> data) {
+    final rawRole = data['role'] as String?;
+    final role = MealComponentRole.fromKey(rawRole);
+    return MealComponent(
+      role: role,
+      roleKey: rawRole != null && rawRole.isNotEmpty && rawRole != role.name
+          ? rawRole
+          : null,
+      recipeId: data['recipe_id'] as String?,
+      stapleId: data['staple_id'] as String?,
+      label: data['label'] as String? ?? '',
+      quantityPerPortion: (data['quantity_per_portion'] as num?)?.toDouble(),
+      unit: data['unit'] as String?,
+      shoppingProduct: data['shopping_product'] as String?,
+      note: data['note'] as String?,
+      justification: data['justification'] as String?,
+      sideOf: data['side_of'] as String?,
+      extra: {
+        for (final e in data.entries)
+          if (!_knownKeys.contains(e.key)) e.key: e.value,
+      },
+    );
+  }
 
   Map<String, dynamic> toMap() => {
-    'role': role.name,
+    ...extra,
+    'role': roleKey ?? role.name,
     if (isRecipe) 'recipe_id': recipeId,
     if (isStaple) 'staple_id': stapleId,
     'label': label,
@@ -168,6 +239,7 @@ class MealComponent {
     if (note != null) 'note': note,
     if (justification != null && justification!.trim().isNotEmpty)
       'justification': justification!.trim(),
+    if (sideOf != null && sideOf!.isNotEmpty) 'side_of': sideOf,
   };
 
   /// Lit une liste Firestore ; une entrée qui n'est pas une carte est ignorée.
@@ -183,3 +255,87 @@ class MealComponent {
 /// « Riz · Salade verte » — les composants en une ligne, pour la liste.
 String componentsSummary(Iterable<MealComponent> components) =>
     components.map((c) => c.label).join(' · ');
+
+/// [components] où [sides] remplacent les accompagnements du plat principal.
+///
+/// Changer de plat recompose son accompagnement, et rien d'autre : l'entrée,
+/// le dessert et les autres services d'un menu restent en place, dans leur
+/// ordre. Les nouveaux accompagnements prennent la place du premier retiré,
+/// sinon celle que leur donne [insertMainSide].
+List<MealComponent> replaceMainSides(
+  List<MealComponent> components,
+  List<MealComponent> sides,
+) {
+  final at = components.indexWhere((c) => c.isMainSide);
+  final kept = [
+    for (final c in components)
+      if (!c.isMainSide) c,
+  ];
+  if (at >= 0) return [...kept.take(at), ...sides, ...kept.skip(at)];
+  var result = kept;
+  for (final s in sides) {
+    result = insertMainSide(result, s);
+  }
+  return result;
+}
+
+/// [components] avec [side] ajouté à sa place : avant le premier service qui
+/// suit le plat (sorbet, fromage, dessert), sinon après le dernier
+/// accompagnement du plat principal, sinon à la fin.
+///
+/// Le premier service d'après le plat passe avant le dernier accompagnement :
+/// les versions antérieures ajoutaient l'accompagnement en fin de liste, et
+/// des repas `[entrée, riz, dessert, salade]` existent.
+List<MealComponent> insertMainSide(
+  List<MealComponent> components,
+  MealComponent side,
+) {
+  var at = components.indexWhere((c) => c.role.isAfterMain);
+  if (at < 0) {
+    final lastSide = components.lastIndexWhere((c) => c.isMainSide);
+    if (lastSide < 0) return [...components, side];
+    at = lastSide + 1;
+  }
+  return [...components.take(at), side, ...components.skip(at)];
+}
+
+/// Composants d'un repas déjà enregistré, réécrits par Nouveau planning, qui
+/// n'en montre que trois : la première entrée, le premier accompagnement du
+/// plat principal et le premier dessert.
+///
+/// Chacun des trois est remplacé à sa place par la valeur du créneau, ou
+/// retiré quand elle est `null`. Tout le reste est gardé, dans l'ordre :
+/// deuxième entrée, sorbet, fromage, accompagnements de plus. Quand
+/// [mainChanged], le plat a changé : tous ses anciens accompagnements
+/// partent, et seul [side] le suit.
+List<MealComponent> mergeSlotComponents(
+  List<MealComponent> original, {
+  MealComponent? starter,
+  MealComponent? side,
+  MealComponent? dessert,
+  bool mainChanged = false,
+}) {
+  final result = <MealComponent>[];
+  var starterDone = false;
+  var sideDone = false;
+  var dessertDone = false;
+  for (final c in original) {
+    if (!starterDone && c.role == MealComponentRole.entree) {
+      starterDone = true;
+      if (starter != null) result.add(starter);
+    } else if (c.isMainSide && (mainChanged || !sideDone)) {
+      if (!sideDone && side != null) result.add(side);
+      sideDone = true;
+    } else if (!dessertDone && c.role == MealComponentRole.dessert) {
+      dessertDone = true;
+      if (dessert != null) result.add(dessert);
+    } else {
+      result.add(c);
+    }
+  }
+  var merged = result;
+  if (!starterDone && starter != null) merged = [starter, ...merged];
+  if (!sideDone && side != null) merged = insertMainSide(merged, side);
+  if (!dessertDone && dessert != null) merged = [...merged, dessert];
+  return merged;
+}

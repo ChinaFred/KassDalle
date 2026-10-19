@@ -253,7 +253,7 @@ Règles de construction :
   `.github/scripts/check-agents.mjs` le vérifie : dans la CI (job Functions), où il
   échoue, et au démarrage de chaque session (`session-start.sh`), où il avertit sans
   bloquer. `CLAUDE.md` demande à la session de signaler un agent absent et de s'arrêter,
-  sans le remplacer par un autre ni sauter la relecture (v0.24.11).
+  sans le remplacer par un autre ni sauter la relecture (v0.24.12).
 - **L'agent lit `CLAUDE.md`** et ne recopie pas ses règles. Il peut en lister les contrôles,
   avec un renvoi à la section.
 - **Le livrable a un format fixe** : une ligne par anomalie, `[règle] fichier:ligne — ce qui est

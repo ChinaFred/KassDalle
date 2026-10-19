@@ -101,7 +101,8 @@ void main() {
       ]);
       expect(out, hasLength(2));
       expect(out.first.stapleId, 'riz');
-      expect(out.last.role, MealComponentRole.accompagnement);
+      expect(out.last.role, MealComponentRole.autre);
+      expect(out.last.toMap()['role'], 'inconnu');
     });
 
     test('pas une liste : rien', () {
@@ -121,5 +122,178 @@ void main() {
       ]),
       'Riz · Tarte aux pommes',
     );
+  });
+
+  group('lecture tolérante', () {
+    test('rôle absent : accompagnement', () {
+      final c = MealComponent.fromMap({'label': 'Riz'});
+      expect(c.role, MealComponentRole.accompagnement);
+      expect(c.toMap()['role'], 'accompagnement');
+    });
+
+    test('rôle connu : lu et réécrit', () {
+      final c = MealComponent.fromMap({'role': 'fromage', 'label': 'Comté'});
+      expect(c.role, MealComponentRole.fromage);
+      expect(c.roleKey, isNull);
+      expect(c.toMap()['role'], 'fromage');
+      expect(c.isMainSide, isFalse);
+    });
+
+    test('rôle inconnu : lu « autre », réécrit tel quel', () {
+      final c = MealComponent.fromMap({'role': 'trou_normand', 'label': 'x'});
+      expect(c.role, MealComponentRole.autre);
+      expect(c.isMainSide, isFalse);
+      expect(c.toMap()['role'], 'trou_normand');
+    });
+
+    test('champs inconnus réécrits, side_of lu', () {
+      final data = {
+        'role': 'accompagnement',
+        'label': 'Frites maison',
+        'provides': ['feculent'],
+        'side_of': 'p2',
+      };
+      final c = MealComponent.fromMap(data);
+      expect(c.sideOf, 'p2');
+      expect(c.isMainSide, isFalse);
+      expect(c.toMap(), data);
+    });
+  });
+
+  group('ordre des composants', () {
+    MealComponent c(String role, String label) =>
+        MealComponent.fromMap({'role': role, 'label': label});
+    List<String> labels(List<MealComponent> l) => [for (final x in l) x.label];
+
+    test('un accompagnement ajouté passe avant le dessert', () {
+      final menu = [c('entree', 'Velouté'), c('dessert', 'Tatin')];
+      expect(labels(insertMainSide(menu, c('accompagnement', 'Riz'))), [
+        'Velouté',
+        'Riz',
+        'Tatin',
+      ]);
+    });
+
+    test('après le dernier accompagnement du plat principal', () {
+      final menu = [
+        c('accompagnement', 'Riz'),
+        c('fromage', 'Comté'),
+        c('dessert', 'Tatin'),
+      ];
+      expect(labels(insertMainSide(menu, c('accompagnement', 'Haricots'))), [
+        'Riz',
+        'Haricots',
+        'Comté',
+        'Tatin',
+      ]);
+    });
+
+    test(
+      'repas ancien, accompagnement après le dessert : avant le dessert',
+      () {
+        final legacy = [
+          c('entree', 'Velouté'),
+          c('accompagnement', 'Riz'),
+          c('dessert', 'Tatin'),
+          c('accompagnement', 'Salade'),
+        ];
+        expect(
+          labels(insertMainSide(legacy, c('accompagnement', 'Haricots'))),
+          ['Velouté', 'Riz', 'Haricots', 'Tatin', 'Salade'],
+        );
+      },
+    );
+
+    test('sans service après le plat : à la fin', () {
+      expect(labels(insertMainSide([c('entree', 'Velouté')], c('', 'Riz'))), [
+        'Velouté',
+        'Riz',
+      ]);
+    });
+
+    test('changer de plat ne remplace que ses accompagnements', () {
+      final menu = [
+        c('entree', 'Velouté'),
+        c('accompagnement', 'Riz'),
+        MealComponent.fromMap({
+          'role': 'accompagnement',
+          'label': 'Purée',
+          'side_of': 'p2',
+        }),
+        c('accompagnement', 'Haricots'),
+        c('sorbet', 'Citron'),
+        c('dessert', 'Tatin'),
+      ];
+      expect(labels(replaceMainSides(menu, [c('accompagnement', 'Pâtes')])), [
+        'Velouté',
+        'Pâtes',
+        'Purée',
+        'Citron',
+        'Tatin',
+      ]);
+      expect(labels(replaceMainSides(menu, const [])), [
+        'Velouté',
+        'Purée',
+        'Citron',
+        'Tatin',
+      ]);
+    });
+
+    test("Nouveau planning garde ce qu'il ne montre pas", () {
+      final menu = [
+        c('entree', 'Velouté'),
+        c('entree', 'Œufs mimosa'),
+        c('accompagnement', 'Riz'),
+        c('accompagnement', 'Haricots'),
+        c('fromage', 'Comté'),
+        c('dessert', 'Tatin'),
+      ];
+      final merged = mergeSlotComponents(
+        menu,
+        starter: menu[0],
+        side: menu[2],
+        dessert: menu[5],
+      );
+      expect(labels(merged), labels(menu));
+    });
+
+    test('Nouveau planning : dessert retiré, entrée remplacée', () {
+      final menu = [
+        c('entree', 'Velouté'),
+        c('accompagnement', 'Riz'),
+        c('fromage', 'Comté'),
+        c('dessert', 'Tatin'),
+      ];
+      final merged = mergeSlotComponents(
+        menu,
+        starter: c('entree', 'Gaspacho'),
+        side: menu[1],
+      );
+      expect(labels(merged), ['Gaspacho', 'Riz', 'Comté']);
+    });
+
+    test('Nouveau planning : un autre plat perd tous ses accompagnements', () {
+      final menu = [
+        c('accompagnement', 'Riz'),
+        c('accompagnement', 'Haricots'),
+        c('fromage', 'Comté'),
+      ];
+      final merged = mergeSlotComponents(
+        menu,
+        side: c('accompagnement', 'Pâtes'),
+        mainChanged: true,
+      );
+      expect(labels(merged), ['Pâtes', 'Comté']);
+    });
+
+    test('Nouveau planning : entrée et dessert ajoutés à leur place', () {
+      final merged = mergeSlotComponents(
+        [c('accompagnement', 'Riz'), c('fromage', 'Comté')],
+        starter: c('entree', 'Velouté'),
+        side: c('accompagnement', 'Riz'),
+        dessert: c('dessert', 'Tatin'),
+      );
+      expect(labels(merged), ['Velouté', 'Riz', 'Comté', 'Tatin']);
+    });
   });
 }
