@@ -4,7 +4,19 @@
 # format, lint et tests.
 set -euo pipefail
 
+# Agents et skills : un en-tête YAML invalide les retire de la session sans
+# message. L'avertissement part sur stdout, que la session lit. Sur le poste
+# comme dans le cloud ; n'échoue jamais.
+check_agents() {
+  if command -v node >/dev/null 2>&1; then
+    node "$CLAUDE_PROJECT_DIR/.github/scripts/check-agents.mjs" --warn || true
+  else
+    echo "session-start : node absent, agents et skills non vérifiés."
+  fi
+}
+
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+  check_agents
   exit 0
 fi
 
@@ -43,3 +55,5 @@ if [ -z "$java_major" ]; then
 elif [ "$java_major" -lt 21 ]; then
   echo "session-start : Java $java_major trouvé, les émulateurs des tests des règles exigent Java 21." >&2
 fi
+# Après npm ci : js-yaml vient de kass_dalle/functions/node_modules.
+check_agents

@@ -692,6 +692,9 @@ flowchart TB
         <code>assets/changelog_recent.json</code> (six dernières versions « fonctionnel » du
         <code>CHANGELOG.md</code>) avec <code>.github/scripts/changelog-recent.mjs</code> ; l'écran
         « Nouveautés » le lit.
+        Le job Functions de <code>ci.yml</code> vérifie aussi que chaque agent et chaque skill de
+        <code>.claude/</code> a un en-tête YAML lisible (<code>.github/scripts/check-agents.mjs</code>) :
+        Claude Code écarte sans message un en-tête invalide.
         La base Firestore reçoit deux sauvegardes planifiées, quotidienne (7 jours) et
         hebdomadaire (14 semaines), et le bucket Storage garde 30 jours les versions remplacées
         ou supprimées. La base refuse d'être supprimée (protection activée). Ces réglages se font dans Google Cloud, et non par ce workflow :

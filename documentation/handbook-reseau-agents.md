@@ -250,6 +250,10 @@ Règles de construction :
 - **Une description qui contient « : » se met entre guillemets doubles.** Un deux-points
   suivi d'une espace, fréquent en français (« Lecture seule : il… »), rend l'en-tête YAML
   invalide. Claude Code ne charge alors pas l'agent, et n'affiche aucun message d'erreur.
+  `.github/scripts/check-agents.mjs` le vérifie : dans la CI (job Functions), où il
+  échoue, et au démarrage de chaque session (`session-start.sh`), où il avertit sans
+  bloquer. `CLAUDE.md` demande à la session de signaler un agent absent et de s'arrêter,
+  sans le remplacer par un autre ni sauter la relecture (v0.24.11).
 - **L'agent lit `CLAUDE.md`** et ne recopie pas ses règles. Il peut en lister les contrôles,
   avec un renvoi à la section.
 - **Le livrable a un format fixe** : une ligne par anomalie, `[règle] fichier:ligne — ce qui est
@@ -375,8 +379,10 @@ dans `.claude/settings.json`, partagé par le poste et les sessions cloud.
 
 ### 7.1 `session-start.sh` — préparer une session cloud
 
-Il ne fait rien sur le poste (`CLAUDE_CODE_REMOTE` n'y vaut pas `true`). Dans une session
-cloud, il installe la chaîne d'outils à la **même version que la CI**, puis les dépendances,
+Sur le poste (`CLAUDE_CODE_REMOTE` n'y vaut pas `true`), il ne fait qu'une chose : lancer
+`check-agents.mjs --warn`, qui écrit sur stdout un avertissement « ATTENTION — … » pour chaque
+agent ou skill que Claude Code ne pourra pas charger. Le hook n'échoue jamais pour autant ; la
+session lit cette sortie et la signale. Dans une session cloud, il installe la chaîne d'outils à la **même version que la CI**, puis les dépendances,
 pour que les agents puissent rejouer les contrôles. Une variable exportée pour la suite de la
 session s'écrit dans `$CLAUDE_ENV_FILE`.
 
@@ -385,13 +391,14 @@ Structure à reprendre :
 ```bash
 #!/bin/bash
 set -euo pipefail
-[ "${CLAUDE_CODE_REMOTE:-}" != "true" ] && exit 0
+[ "${CLAUDE_CODE_REMOTE:-}" != "true" ] && { check_agents; exit 0; }
 
 TOOL_VERSION="<même version que ci.yml>"
 # 1. installer l'outil s'il manque ou n'a pas la bonne version
 # 2. echo "export PATH=\"<chemin>/bin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
 # 3. installer les dépendances (npm ci, pas npm install : le lockfile reste intact)
 # 4. avertir sans échouer pour un outil facultatif (Java des émulateurs)
+# 5. vérifier les en-têtes des agents et skills (check-agents.mjs --warn), aussi sur le poste
 ```
 
 Le fichier doit être exécutable (`git update-index --chmod=+x`) et en fins de ligne LF
