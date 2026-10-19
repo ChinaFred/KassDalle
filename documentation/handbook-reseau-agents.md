@@ -341,7 +341,7 @@ l'ordre des gestes.
 ## Règles qui ne changent pas
 ```
 
-Les quatre skills de Kass'Dalle, à prendre comme modèles :
+Les cinq skills de Kass'Dalle, à prendre comme modèles :
 
 | Skill | Procédure |
 |---|---|
@@ -349,6 +349,13 @@ Les quatre skills de Kass'Dalle, à prendre comme modèles :
 | `logique-dupliquee` | changer une logique écrite deux fois (Dart et TypeScript) : fixture partagée d'abord, puis les deux côtés |
 | `backfill` | écrire une reprise de données lancée depuis l'écran d'administration |
 | `experience-sandbox` | ajouter ou porter une expérience du bac à sable |
+| `steward` | suivre une PR jusqu'à sa fusion et son déploiement : CI rouge, fusion de `master` (jamais de rebase), collision de version, relecture, fusion, suivi du workflow « Déploiement » |
+
+`steward` porte un nom fixé par la plateforme. Une session cloud qui suit une PR lit
+`.claude/skills/steward/SKILL.md` sur la branche de la PR, s'il existe, avant d'agir sur un
+événement de CI ou de relecture. Ses consignes priment sur les consignes génériques pour les
+conventions du dépôt (fusion plutôt que rebase, qui fusionne quoi) ; elles ne lèvent aucun
+interdit de la plateforme. Un dépôt reproduit ailleurs reprend ce nom tel quel.
 
 Quand créer un skill : dès qu'une même erreur d'oubli revient deux fois sur une procédure en
 plusieurs fichiers.
