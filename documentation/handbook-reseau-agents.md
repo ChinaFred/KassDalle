@@ -474,6 +474,7 @@ Les agents travaillent en parallèle quand leurs tâches sont indépendantes : `
 | `.github/workflows/deploy.yml` | déploiement après une CI verte sur `master` |
 | `.github/scripts/check-version.sh` | refuse un numéro de version déjà pris ou sans entrée au CHANGELOG |
 | `.github/scripts/changelog-recent.mjs` | extrait les six dernières versions « fonctionnel » du CHANGELOG vers l'asset de l'écran « Nouveautés » ; son test tourne dans le job Application |
+| `.github/scripts/check-agents.mjs` | vérifie que chaque agent et skill de `.claude/` a un en-tête YAML lisible, `name` et `description`, et que chaque nom cité dans `CLAUDE.md` existe ; il tourne avec son test dans le job Fonctions serveur, et en `--warn` dans `session-start.sh` |
 | `.github/scripts/firebase-deploy.sh` | déploiement vérifié et relance ciblée (section 11) |
 | `.gitattributes` | `*.sh text eol=lf` |
 | `.gitignore` | `build/`, `Release/`, `.dart_tool/`, `node_modules/` |
@@ -485,7 +486,7 @@ Les agents travaillent en parallèle quand leurs tâches sont indépendantes : `
 | Version | `check-version.sh` contre la `master` du moment (PR) ou celle d'avant le push |
 | Déjà testé en PR | sur un push de fusion : saute les jobs lourds si l'arbre est celui d'une tête de PR à jour de `master` et verte |
 | Application | dépendances, analyse statique stricte, formatage vérifié, lockfile à jour, test et génération de l'asset des nouveautés, tests, build |
-| Fonctions serveur | `npm ci`, lint, `format:check`, build, tests |
+| Fonctions serveur | `npm ci`, `check-agents.mjs` et son test, lint, `format:check`, build, tests |
 | Règles d'accès | tests des règles contre les émulateurs |
 | Android | quand le diff touche `pubspec.yaml`, `pubspec.lock` ou `android/` : APK release compilé avec une clé jetable |
 
