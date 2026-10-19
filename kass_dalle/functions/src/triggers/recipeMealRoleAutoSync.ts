@@ -22,7 +22,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { recipeBudgetUserId } from "../ai/budget";
 import { BACKFILL_FAILURE_LIMIT, readFailureCount } from "../backfills/failureMemory";
 import { COLL_RECIPES, GEMINI_API_KEY } from "../config";
-import { mainIngredientsPatch } from "../gemini/mealRole";
+import { containsPatch, mainIngredientsPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 
@@ -207,12 +207,15 @@ export async function syncRecipeMealRole(args: {
     }
 
     const patch = mainIngredientsPatch(tags, fields);
+    // Ce que la recette apporte, corrigé à la main (`contains_manual`), n'est
+    // jamais réécrit par le modèle.
+    const contains = containsPatch(tags, fields.contains);
     await getFirestore()
       .collection(COLL_RECIPES)
       .doc(recipeId)
       .update({
         "tags.meal_role": fields.mealRole,
-        "tags.contains": fields.contains,
+        ...("contains" in contains ? { "tags.contains": contains.contains } : {}),
         "tags.suggested_sides": fields.suggestedSides,
         // Une valeur posée à la main avant le classement n'est pas remplacée.
         ...(patch.main_protein ? { "tags.main_protein": patch.main_protein } : {}),

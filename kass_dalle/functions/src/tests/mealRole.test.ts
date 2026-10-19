@@ -17,9 +17,12 @@ import path from "node:path";
 import {
   EMPTY_MEAL_ROLE_FIELDS,
   MAIN_PROTEINS,
+  MEAL_COMPONENTS,
   MAIN_STARCHES,
   MEAL_ROLES,
   ROLES_WITH_MAIN_INGREDIENTS,
+  containsPatch,
+  isContainsManual,
   needsSide,
   normalizeRoleKey,
   parseMealContains,
@@ -342,4 +345,33 @@ describe("fixture partagée avec le client", () => {
     assert.deepEqual([...MAIN_STARCHES], fixture.main_starches);
     assert.deepEqual([...ROLES_WITH_MAIN_INGREDIENTS], fixture.roles_with_main_ingredients);
   });
+});
+
+describe("ce que la recette apporte, corrigé à la main", () => {
+  const fixturePath = path.join(__dirname, "..", "..", "..", "test-fixtures", "meal_roles.json");
+  const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as {
+    contains: string[];
+    contains_manual_cases: {
+      name: string;
+      tags: Record<string, unknown>;
+      model_contains: string[];
+      manual: boolean;
+      result: string[];
+    }[];
+  };
+
+  // Le client propose ces valeurs en pastilles et les affiche sur la fiche.
+  test("le vocabulaire est le même que côté client", () => {
+    assert.deepEqual([...MEAL_COMPONENTS], fixture.contains);
+  });
+
+  for (const c of fixture.contains_manual_cases) {
+    test(c.name, () => {
+      assert.equal(isContainsManual(c.tags), c.manual);
+      const model = parseMealContains(c.model_contains);
+      const patch = containsPatch(c.tags, model);
+      const after = "contains" in patch ? patch.contains : (c.tags.contains as string[]);
+      assert.deepEqual(after, c.result);
+    });
+  }
 });

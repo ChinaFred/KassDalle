@@ -10,27 +10,33 @@ import '../domain/side_chooser.dart';
 /// Longueur maximale d'un accompagnement saisi en texte libre.
 const int kSideFreeLabelMaxChars = 80;
 
-/// Ce que la feuille rend : un candidat, un texte libre, ou « aucun
-/// accompagnement ».
+/// Ce que la feuille rend : un candidat ou un texte libre. Fermer la feuille
+/// sans choisir rend `null`.
 class SidePickerResult {
   final SideCandidate? candidate;
 
   /// Texte saisi quand ni garniture ni recette ne convient.
   final String? freeLabel;
 
-  const SidePickerResult.pick(SideCandidate this.candidate) : freeLabel = null;
-  const SidePickerResult.free(String this.freeLabel) : candidate = null;
-  const SidePickerResult.none() : candidate = null, freeLabel = null;
+  /// Ce qu'apporte le texte libre, coché dans la feuille : `feculent`,
+  /// `legume`. Vide : apport inconnu.
+  final List<String> provides;
 
-  bool get isNone => candidate == null && freeLabel == null;
+  const SidePickerResult.pick(SideCandidate this.candidate)
+    : freeLabel = null,
+      provides = const [];
+  const SidePickerResult.free(String this.freeLabel, {this.provides = const []})
+    : candidate = null;
 
-  /// Le composant à poser, ou null pour « aucun accompagnement ».
-  MealComponent? toComponent({String? justification}) {
+  /// Le composant à poser.
+  MealComponent toComponent({String? justification}) {
     final c = candidate;
     if (c != null) return c.toComponent(justification: justification);
-    final label = freeLabel;
-    if (label == null) return null;
-    return MealComponent.free(label, justification: justification);
+    return MealComponent.free(
+      freeLabel!,
+      justification: justification,
+      provides: provides,
+    );
   }
 }
 
@@ -53,29 +59,41 @@ List<String> _searchWords(String value) => [
       w.length > 3 && w.endsWith('s') ? w.substring(0, w.length - 1) : w,
 ];
 
-/// Un filtre de la rangée de pastilles : une famille de garnitures, ou les
-/// recettes d'accompagnement. `null` dans la feuille veut dire « Tout ».
+/// Un filtre de la rangée de pastilles : une famille de garnitures, les
+/// recettes d'accompagnement, ou ce qui manque au plat (« Pour le légume »,
+/// garnitures et recettes confondues). `null` dans la feuille veut dire
+/// « Tout ».
 @immutable
 class SideFamilyFilter {
-  /// Famille de garnitures ; `null` pour les recettes d'accompagnement.
+  /// Famille de garnitures ; `null` pour les recettes ou pour un besoin.
   final StapleCategory? category;
 
-  const SideFamilyFilter.category(StapleCategory this.category);
-  const SideFamilyFilter.recipes() : category = null;
+  /// Ce qui manque au plat ; `null` pour une famille ou les recettes.
+  final SideNeed? need;
 
-  bool get isRecipes => category == null;
+  const SideFamilyFilter.category(StapleCategory this.category) : need = null;
+  const SideFamilyFilter.recipes() : category = null, need = null;
+  const SideFamilyFilter.need(SideNeed this.need) : category = null;
 
-  String get label => category?.label ?? 'Recettes';
+  bool get isRecipes => category == null && need == null;
 
-  bool accepts(SideCandidate c) =>
-      isRecipes ? c.isRecipe : c.staple?.category == category;
+  String get label =>
+      need != null ? 'Pour le ${need!.label}' : category?.label ?? 'Recettes';
+
+  bool accepts(SideCandidate c) {
+    final n = need;
+    if (n != null) return c.provides(n);
+    return isRecipes ? c.isRecipe : c.staple?.category == category;
+  }
 
   @override
   bool operator ==(Object other) =>
-      other is SideFamilyFilter && other.category == category;
+      other is SideFamilyFilter &&
+      other.category == category &&
+      other.need == need;
 
   @override
-  int get hashCode => category.hashCode;
+  int get hashCode => Object.hash(category, need);
 }
 
 /// Les filtres à proposer : les familles présentes parmi les candidats, dans
@@ -124,22 +142,30 @@ bool _listEquals(List<String> a, List<String> b) {
   return true;
 }
 
-/// Choisir l'accompagnement d'un plat, à la main.
+/// Choisir un accompagnement de plus pour un plat, à la main : « Compléter »,
+/// « Ajouter un accompagnement » de l'éditeur et de Nouveau planning.
 ///
 /// D'abord ce que le plat suggère, puis les garnitures par famille, puis les
 /// recettes d'accompagnement. Une recherche par nom et une rangée de filtres
-/// par famille réduisent la liste. Ce que le programme a choisi est coché ;
-/// on peut aussi ne rien mettre.
+/// par famille réduisent la liste. Fermer la feuille, c'est ne rien ajouter.
+///
+/// Un texte libre passe par une étape de plus : deux pastilles facultatives,
+/// « Féculent » et « Légume », puis « Ajouter ». Sans pastille, son apport
+/// reste inconnu.
 class SidePickerSheet extends StatefulWidget {
   final Recipe main;
   final List<SideCandidate> candidates;
-  final MealComponent? current;
+
+  /// Ce qui manque au plat quand la feuille s'ouvre par « Compléter » : la
+  /// liste s'ouvre filtrée sur ce besoin, et la pastille du texte libre est
+  /// cochée d'office.
+  final SideNeed? initialNeed;
 
   const SidePickerSheet({
     super.key,
     required this.main,
     required this.candidates,
-    this.current,
+    this.initialNeed,
   });
 
   @override
@@ -149,7 +175,20 @@ class SidePickerSheet extends StatefulWidget {
 class _SidePickerSheetState extends State<SidePickerSheet> {
   final _searchCtrl = TextEditingController();
   String _query = '';
-  SideFamilyFilter? _family;
+  late SideFamilyFilter? _family = widget.initialNeed == null
+      ? null
+      : SideFamilyFilter.need(widget.initialNeed!);
+
+  /// Texte libre en attente de son apport, ou `null` hors de cette étape.
+  String? _pendingFree;
+  final Set<SideNeed> _pendingProvides = {};
+
+  void _askProvides(String label) => setState(() {
+    _pendingFree = label;
+    _pendingProvides
+      ..clear()
+      ..addAll([?widget.initialNeed]);
+  });
 
   @override
   void dispose() {
@@ -164,7 +203,6 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final candidates = widget.candidates;
-    final current = widget.current;
     final filtering = _family != null || _query.trim().isNotEmpty;
     final families = sideFamilyFiltersFor(candidates);
 
@@ -199,36 +237,16 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
     final noMatch =
         filtering && suggested.isEmpty && staples.isEmpty && recipes.isEmpty;
     final freeLabel = _freeLabelOffered();
-    final currentFree = current != null && current.isFree ? current : null;
+    final pending = _pendingFree;
+    if (pending != null) return _buildProvidesStep(theme, pending);
 
     final children = <Widget>[
-      ListTile(
-        leading: Icon(
-          Icons.block_outlined,
-          color: current == null ? theme.colorScheme.primary : null,
-        ),
-        title: const Text('Aucun accompagnement'),
-        trailing: current == null ? const Icon(Icons.check) : null,
-        onTap: () => Navigator.pop(context, const SidePickerResult.none()),
-      ),
-      if (currentFree != null)
-        ListTile(
-          leading: Icon(
-            Icons.edit_note_outlined,
-            color: theme.colorScheme.primary,
-          ),
-          title: Text(currentFree.label),
-          subtitle: const Text('Texte libre'),
-          trailing: const Icon(Icons.check),
-          onTap: () =>
-              Navigator.pop(context, SidePickerResult.free(currentFree.label)),
-        ),
       if (freeLabel.isNotEmpty)
         ListTile(
           leading: const Icon(Icons.edit_note_outlined),
           title: Text('Ajouter « $freeLabel »'),
           subtitle: const Text('Texte libre, sans quantité ni courses'),
-          onTap: () => Navigator.pop(context, SidePickerResult.free(freeLabel)),
+          onTap: () => _askProvides(freeLabel),
         ),
       if (candidates.isEmpty && freeLabel.isEmpty)
         Padding(
@@ -332,13 +350,18 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
               onSubmitted: (_) => _submit(),
             ),
           ),
-          if (families.length > 1)
+          if (families.length > 1 || widget.initialNeed != null)
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Row(
                 children: [
                   _familyChip(null, 'Tout'),
+                  if (widget.initialNeed != null)
+                    _familyChip(
+                      SideFamilyFilter.need(widget.initialNeed!),
+                      SideFamilyFilter.need(widget.initialNeed!).label,
+                    ),
                   for (final f in families) _familyChip(f, f.label),
                 ],
               ),
@@ -378,7 +401,81 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
         return;
       }
     }
-    Navigator.pop(context, SidePickerResult.free(label));
+    _askProvides(label);
+  }
+
+  /// L'étape du texte libre : son nom, deux pastilles facultatives, puis
+  /// « Ajouter ». « Retour » rend la liste.
+  Widget _buildProvidesStep(ThemeData theme, String label) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('« $label »', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 12),
+          Text(
+            'Ce qu\'il apporte (facultatif)',
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final need in SideNeed.values)
+                FilterChip(
+                  label: Text(need.chipLabel),
+                  selected: _pendingProvides.contains(need),
+                  onSelected: (v) => setState(() {
+                    if (v) {
+                      _pendingProvides.add(need);
+                    } else {
+                      _pendingProvides.remove(need);
+                    }
+                  }),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Sans choix, son apport reste inconnu.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => setState(() => _pendingFree = null),
+                child: const Text('Retour'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: () => Navigator.pop(
+                  context,
+                  SidePickerResult.free(
+                    label,
+                    provides: [
+                      for (final n in SideNeed.values)
+                        if (_pendingProvides.contains(n)) n.name,
+                    ],
+                  ),
+                ),
+                child: const Text('Ajouter'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _familyChip(SideFamilyFilter? family, String label) => Padding(
@@ -391,8 +488,6 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
   );
 
   Widget _tile(BuildContext context, SideCandidate c) {
-    final theme = Theme.of(context);
-    final selected = widget.current?.sourceId == c.id;
     final staple = c.staple;
     final subtitle = staple != null
         ? '${formatStapleQuantity(staple.quantityPerPortion, staple.unit)} par part'
@@ -401,11 +496,9 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
     return ListTile(
       leading: Icon(
         c.isRecipe ? Icons.menu_book_outlined : Icons.rice_bowl_outlined,
-        color: selected ? theme.colorScheme.primary : null,
       ),
       title: Text(c.name),
       subtitle: Text(subtitle),
-      trailing: selected ? const Icon(Icons.check) : null,
       onTap: () => Navigator.pop(context, SidePickerResult.pick(c)),
     );
   }

@@ -944,6 +944,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     onMealRoleChanged: setMealRole,
     onMainProteinChanged: setMainProtein,
     onMainStarchChanged: setMainStarch,
+    selectedContains: selectedContains,
+    onContainsChanged: setContains,
     onIngredientsChanged: setIngredients,
     onUploadImage: _uploadImageFromGallery,
     onExtractIllustrations: () => _doExtractIllustrations(recipe),

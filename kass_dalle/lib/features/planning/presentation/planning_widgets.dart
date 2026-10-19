@@ -9,6 +9,7 @@ import '../domain/meal_choice_source.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
+import '../domain/side_chooser.dart';
 import 'batch_planning_widgets.dart' show MealOriginLine;
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
@@ -281,8 +282,18 @@ class PlanningMealTile extends StatelessWidget {
   final VoidCallback? onOtherSuggestion;
   final VoidCallback? onReschedule;
 
-  /// Ajoute un accompagnement de plus, choisi à la main.
-  final VoidCallback? onAddComponent;
+  /// Ouvre l'éditeur « Composer le repas » : menu ⋮, ou appui sur la ligne
+  /// « Il manque » ou « Apports du plat inconnus ».
+  final VoidCallback? onCompose;
+
+  /// « Compléter » : ouvre le choix d'un accompagnement filtré sur ce qui
+  /// manque.
+  final ValueChanged<SideNeed>? onComplete;
+
+  /// Ce que le plat et ses accompagnements apportent, calculé par l'écran
+  /// depuis la recette du plat. `null` tant qu'elle n'est pas lue : rien ne
+  /// s'affiche. « Plat complet » ne s'affiche pas sur la tuile.
+  final DishSideStatus? sideStatus;
 
   /// Retire un accompagnement déjà posé, auto ou choisi à la main.
   final ValueChanged<MealComponent>? onRemoveComponent;
@@ -335,7 +346,9 @@ class PlanningMealTile extends StatelessWidget {
     this.onClearRecipe,
     this.onOtherSuggestion,
     this.onReschedule,
-    this.onAddComponent,
+    this.onCompose,
+    this.onComplete,
+    this.sideStatus,
     this.onRemoveComponent,
     this.onStorageAdvice,
     this.onTimeChanged,
@@ -375,7 +388,11 @@ class PlanningMealTile extends StatelessWidget {
       source = MealChoiceSource.manual;
       facts = '';
     }
-    final line = MealOriginLine.maybe(source: source, facts: facts);
+    final line = MealOriginLine.maybe(
+      source: source,
+      facts: facts,
+      relaxed: meal.relaxedCriteria,
+    );
     if (line == null) return null;
     return Padding(padding: const EdgeInsets.only(top: 4), child: line);
   }
@@ -478,6 +495,72 @@ class PlanningMealTile extends StatelessWidget {
     );
   }
 
+  /// « Il manque : légume » avec « Compléter », ou « Apports du plat
+  /// inconnus » pour une recette non classée. Rien sur un repas en lecture
+  /// seule, ni pour un plat complet : la tuile ne dit que ce qui manque.
+  Widget? _buildSideStatus(ThemeData theme) {
+    final status = sideStatus;
+    if (readOnly || status == null || meal.recipeId == null) return null;
+    final String text;
+    switch (status.state) {
+      case DishSideState.missing:
+        text = status.missingLabel;
+      case DishSideState.unknown:
+        text = 'Apports du plat inconnus';
+      case DishSideState.complete:
+      case DishSideState.notApplicable:
+        return null;
+    }
+    final color = status.state == DishSideState.missing
+        ? theme.colorScheme.tertiary
+        : theme.colorScheme.onSurfaceVariant;
+    Widget label = Row(
+      children: [
+        Icon(
+          status.state == DishSideState.missing
+              ? Icons.info_outline
+              : Icons.help_outline,
+          size: AppIconSize.badge,
+          color: color,
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            text,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+    final compose = onCompose;
+    if (compose != null) {
+      label = InkWell(
+        onTap: compose,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: label,
+        ),
+      );
+    }
+    final complete = onComplete;
+    return Row(
+      children: [
+        Flexible(child: label),
+        if (status.state == DishSideState.missing && complete != null)
+          TextButton(
+            onPressed: () => complete(status.missing.first),
+            child: const Text('Compléter'),
+          ),
+      ],
+    );
+  }
+
   /// « Marie », précédé de la silhouette : à qui est ce repas. « Famille
   /// Dupont », précédé de l'icône du groupe, pour un repas de groupe.
   Widget? _buildOwner(ThemeData theme) {
@@ -525,6 +608,7 @@ class PlanningMealTile extends StatelessWidget {
     final locked = _buildLocked(theme);
     final why = _buildWhy(theme);
     final components = _buildComponents(theme);
+    final sideStatus = _buildSideStatus(theme);
     final prep = meal.prepDate;
     final daysAhead = prep == null
         ? 0
@@ -534,7 +618,8 @@ class PlanningMealTile extends StatelessWidget {
           locked == null &&
           subtitle == null &&
           why == null &&
-          components == null) {
+          components == null &&
+          sideStatus == null) {
         return null;
       }
       return Column(
@@ -545,6 +630,7 @@ class PlanningMealTile extends StatelessWidget {
           ?locked,
           if (subtitle != null) Text(subtitle),
           ?components,
+          ?sideStatus,
           ?why,
         ],
       );
@@ -586,6 +672,7 @@ class PlanningMealTile extends StatelessWidget {
           ],
         ),
         ?components,
+        ?sideStatus,
         ?why,
       ],
     );
@@ -715,7 +802,7 @@ class PlanningMealTile extends StatelessWidget {
       PlanningMealAction.changeRecipe: ?_action(onChangeRecipe),
       PlanningMealAction.reschedule: ?_action(onReschedule),
       if (meal.recipeId != null)
-        PlanningMealAction.addComponent: ?_action(onAddComponent),
+        PlanningMealAction.composeMeal: ?_action(onCompose),
       PlanningMealAction.clearRecipe: ?_action(onClearRecipe),
       if (meal.recipeId != null)
         PlanningMealAction.storageAdvice: ?_action(onStorageAdvice),
@@ -761,9 +848,9 @@ class PlanningMealTile extends StatelessWidget {
         Icons.calendar_month_outlined,
         'Replanifier',
       ),
-      PlanningMealAction.addComponent => (
-        Icons.add_circle_outline,
-        'Ajouter un accompagnement',
+      PlanningMealAction.composeMeal => (
+        Icons.restaurant_menu_outlined,
+        'Composer le repas',
       ),
       PlanningMealAction.clearRecipe => (
         Icons.radio_button_unchecked_outlined,
@@ -834,7 +921,7 @@ enum PlanningMealAction {
   otherSuggestion,
   changeRecipe,
   reschedule,
-  addComponent,
+  composeMeal,
   clearRecipe,
   storageAdvice,
   exportToCalendar,

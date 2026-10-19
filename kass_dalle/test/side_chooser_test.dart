@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kass_dalle/features/planning/domain/meal_component.dart';
 import 'package:kass_dalle/features/planning/domain/meal_staple.dart';
 import 'package:kass_dalle/features/planning/domain/side_chooser.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
@@ -156,12 +157,16 @@ void main() {
       'blanquette',
       'Blanquette de veau',
       role: 'plat',
-      contains: ['proteine'],
+      contains: ['proteine', 'legume'],
       sides: ['riz', 'pommes vapeur'],
     );
 
+    SideChoice? first(List<SideChoice> out) => out.isEmpty ? null : out.first;
+
     test('la blanquette reçoit du riz, son accompagnement classique', () {
-      final choice = chooseSide(main: blanquette, candidates: _candidates())!;
+      final choice = first(
+        chooseSides(main: blanquette, candidates: _candidates()),
+      )!;
       expect(choice.component.stapleId, 'riz');
       expect(choice.component.quantityPerPortion, 70);
       expect(choice.need, SideNeed.feculent);
@@ -175,12 +180,14 @@ void main() {
         'steak',
         'Steak',
         role: 'plat',
-        contains: ['proteine'],
+        contains: ['proteine', 'legume'],
         sides: ['frites'],
       );
-      final choice = chooseSide(
-        main: steak,
-        candidates: _candidates(recipes: [_fritesMaison]),
+      final choice = first(
+        chooseSides(
+          main: steak,
+          candidates: _candidates(recipes: [_fritesMaison]),
+        ),
       )!;
       expect(choice.component.recipeId, 'frites');
       expect(choice.component.label, 'Frites maison');
@@ -188,10 +195,12 @@ void main() {
     });
 
     test('servi la veille, le riz cède la place : pâtes, par rang', () {
-      final choice = chooseSide(
-        main: blanquette,
-        candidates: _candidates(),
-        avoidIds: {'riz'},
+      final choice = first(
+        chooseSides(
+          main: blanquette,
+          candidates: _candidates(),
+          avoidIds: {'riz'},
+        ),
       )!;
       expect(choice.component.stapleId, 'pates');
       expect(choice.fromSuggestion, isFalse);
@@ -199,72 +208,163 @@ void main() {
     });
 
     test('déjà posé dans le cycle, on prend autre chose tant qu\'on peut', () {
-      final choice = chooseSide(
-        main: blanquette,
-        candidates: _candidates(),
-        usedInCycleIds: {'riz', 'pates'},
+      final choice = first(
+        chooseSides(
+          main: blanquette,
+          candidates: _candidates(),
+          usedInCycleIds: {'riz', 'pates'},
+        ),
       )!;
       expect(choice.component.stapleId, 'pommes_de_terre_vapeur');
     });
 
-    test('tout déjà servi : on ne laisse pas le plat seul', () {
-      final choice = chooseSide(
-        main: blanquette,
-        candidates: _candidates(),
-        avoidIds: {
-          'riz',
-          'pates',
-          'pommes_de_terre_vapeur',
-          'frites_surgelees',
-        },
+    test('tout déjà servi : on ne laisse pas le besoin sans réponse', () {
+      final choice = first(
+        chooseSides(
+          main: blanquette,
+          candidates: _candidates(),
+          avoidIds: {
+            'riz',
+            'pates',
+            'pommes_de_terre_vapeur',
+            'frites_surgelees',
+          },
+        ),
       )!;
       expect(choice.component.stapleId, 'riz');
     });
 
-    test('un plat sans légume reçoit un légume', () {
-      final risotto = _recipe(
-        'risotto',
-        'Risotto',
-        role: 'plat',
-        contains: ['proteine', 'feculent'],
-        sides: ['haricots verts'],
+    test('déjà posé sur le repas : jamais reproposé', () {
+      final out = chooseSides(
+        main: blanquette,
+        candidates: _candidates(),
+        takenIds: {'riz'},
       );
-      final choice = chooseSide(main: risotto, candidates: _candidates())!;
-      expect(choice.component.stapleId, 'haricots_verts');
-      expect(choice.need, SideNeed.legume);
+      expect(out.single.component.stapleId, 'pates');
+    });
+
+    test('un besoin donné remplace ce qui manque au plat seul', () {
+      final nu = _recipe(
+        'nu',
+        'Steak nu',
+        role: 'plat',
+        contains: ['proteine'],
+      );
+      final out = chooseSides(
+        main: nu,
+        candidates: _candidates(),
+        needs: const [SideNeed.legume],
+      );
+      expect(out.single.need, SideNeed.legume);
+      expect(out.single.component.stapleId, 'haricots_verts');
     });
 
     test('rien pour un plat complet, un dessert, une recette non classée', () {
-      expect(
-        chooseSide(
-          main: _recipe(
-            'couscous',
-            'Couscous',
-            role: 'plat',
-            contains: ['proteine', 'feculent', 'legume'],
+      for (final r in [
+        _recipe(
+          'couscous',
+          'Couscous',
+          role: 'plat',
+          contains: ['proteine', 'feculent', 'legume'],
+        ),
+        _recipe('tarte', 'Tarte', role: 'dessert'),
+        _recipe('x', 'Non classée'),
+      ]) {
+        expect(chooseSides(main: r, candidates: _candidates()), isEmpty);
+      }
+    });
+  });
+
+  group('ce qui manque à un plat, avec ses accompagnements', () {
+    const categories = {
+      'riz': StapleCategory.feculent,
+      'haricots_verts': StapleCategory.legume,
+      'salade_verte': StapleCategory.salade,
+    };
+    final plat = const RecipeTags(mealRole: 'plat', contains: ['proteine']);
+    MealComponent staple(String id) => MealComponent(
+      role: MealComponentRole.accompagnement,
+      stapleId: id,
+      label: id,
+    );
+
+    test('sans accompagnement : il manque féculent et légume', () {
+      final status = dishSideStatus(mainTags: plat, sides: const []);
+      expect(status.state, DishSideState.missing);
+      expect(status.missing, [SideNeed.feculent, SideNeed.legume]);
+      expect(status.missingLabel, 'Il manque : féculent, légume');
+    });
+
+    test('une garniture couvre sa famille, la salade vaut un légume', () {
+      final status = dishSideStatus(
+        mainTags: plat,
+        sides: [staple('riz'), staple('salade_verte')],
+        stapleCategories: categories,
+      );
+      expect(status.state, DishSideState.complete);
+    });
+
+    test('une recette couvre ce que dit son contains', () {
+      final status = dishSideStatus(
+        mainTags: plat,
+        sides: [
+          const MealComponent(
+            role: MealComponentRole.accompagnement,
+            recipeId: 'frites',
+            label: 'Frites maison',
           ),
-          candidates: _candidates(),
-        ),
-        isNull,
+        ],
+        recipesById: {'frites': _fritesMaison},
       );
+      expect(status.missing, [SideNeed.legume]);
+      expect(status.missingLabel, 'Il manque : légume');
+    });
+
+    test('un texte libre couvre ce qui a été coché, rien sinon', () {
       expect(
-        chooseSide(
-          main: _recipe('tarte', 'Tarte', role: 'dessert'),
-          candidates: _candidates(),
-        ),
-        isNull,
-      );
-      expect(
-        chooseSide(
-          main: _recipe('x', 'Non classée'),
-          candidates: _candidates(),
-        ),
-        isNull,
+        dishSideStatus(
+          mainTags: plat,
+          sides: [
+            MealComponent.free('Poêlée', provides: const ['legume']),
+            MealComponent.free('Pain'),
+          ],
+        ).missing,
+        [SideNeed.feculent],
       );
     });
 
-    test('rien sans candidat', () {
-      expect(chooseSide(main: blanquette, candidates: const []), isNull);
+    test('garniture inconnue du référentiel : n\'apporte rien de connu', () {
+      expect(
+        dishSideStatus(mainTags: plat, sides: [staple('disparue')]).missing,
+        [SideNeed.feculent, SideNeed.legume],
+      );
+    });
+
+    test('plat non classé : apports inconnus ; dessert : rien à dire', () {
+      expect(
+        dishSideStatus(mainTags: const RecipeTags(), sides: const []).state,
+        DishSideState.unknown,
+      );
+      expect(
+        dishSideStatus(
+          mainTags: const RecipeTags(mealRole: 'dessert'),
+          sides: const [],
+        ).state,
+        DishSideState.notApplicable,
+      );
+    });
+
+    test('un plat complet par lui-même est complet', () {
+      expect(
+        dishSideStatus(
+          mainTags: const RecipeTags(
+            mealRole: 'plat',
+            contains: ['proteine', 'feculent', 'legume'],
+          ),
+          sides: const [],
+        ).isComplete,
+        isTrue,
+      );
     });
   });
 

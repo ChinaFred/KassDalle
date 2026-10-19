@@ -49,6 +49,16 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   String? selectedMainProtein;
   String? selectedMainStarch;
 
+  /// Ce que la recette apporte (`tags.contains`) tel que le formulaire le
+  /// montre : celui de la base à l'ouverture, puis les pastilles « Ce que la
+  /// recette apporte », le féculent principal, ou « Suggérer les tags ».
+  List<String> selectedContains = const [];
+
+  /// Vrai dès que [selectedContains] a été corrigé à la main, ou quand la base
+  /// porte déjà une correction (`contains_manual`) : le modèle ne le réécrit
+  /// plus, ni ici ni côté serveur.
+  bool containsManual = false;
+
   /// Marqueur d'examen (`main_ingredients_checked_at`) que l'enregistrement
   /// écrira. Celui de la base à l'ouverture ; l'heure du choix quand
   /// l'utilisateur a renseigné les deux champs ; `null` dès que l'un des deux
@@ -105,6 +115,8 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     mainIngredientsCheckedAt = carries
         ? recipe.tags.mainIngredientsCheckedAt
         : null;
+    selectedContains = List<String>.from(recipe.tags.contains);
+    containsManual = recipe.tags.containsManual;
     formInitialized = true;
   }
 
@@ -150,10 +162,28 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   });
 
   /// Choix à la main du féculent principal ; `null` : « Non renseigné ».
+  ///
+  /// Un féculent coche « Féculent » dans ce que la recette apporte, « Sans
+  /// féculent » le décoche : c'est alors une correction à la main.
   void setMainStarch(String? v) => setState(() {
     selectedMainStarch = v;
     _markMainIngredientsChosenByHand();
+    final next = mealContainsWithStarch(selectedContains, v);
+    if (!_sameContains(next, selectedContains)) {
+      selectedContains = next;
+      containsManual = true;
+    }
   });
+
+  /// Correction à la main de ce que la recette apporte (pastilles Protéine,
+  /// Féculent, Légume).
+  void setContains(List<String> v) => setState(() {
+    selectedContains = orderedMealContains(v);
+    containsManual = true;
+  });
+
+  static bool _sameContains(List<String> a, List<String> b) =>
+      a.length == b.length && a.toSet().containsAll(b);
 
   /// Les deux champs renseignés : la recette est examinée, le backfill la
   /// saute. Un seul renseigné : pas de marqueur, le backfill demande au
@@ -218,12 +248,14 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final tags = baseTags.copyWith(
       cuisines: selectedCuisines,
       dishTypes: selectedDishTypes,
-      // Le rôle est celui de la liste du formulaire. Ce que la recette
-      // apporte et ses accompagnements classiques ne se saisissent pas : ils
-      // viennent de la base, ou de la dernière suggestion de l'IA dans cette
-      // session — un `null` laisse ceux de la base, `copyWith` n'efface pas.
+      // Le rôle est celui de la liste du formulaire, ce que la recette
+      // apporte celui des pastilles, avec son marqueur de correction. Les
+      // accompagnements classiques ne se saisissent pas : ils viennent de la
+      // base, ou de la dernière suggestion de l'IA dans cette session — un
+      // `null` laisse ceux de la base, `copyWith` n'efface pas.
       mealRole: selectedMealRole,
-      contains: aiClassifiedInSession ? suggestedContains : null,
+      contains: selectedContains,
+      containsManual: containsManual,
       suggestedSides: aiClassifiedInSession ? suggestedSidesByAI : null,
       difficulty: difficultyCtrl.text.trim().isEmpty
           ? null
@@ -274,10 +306,9 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   bool suggestingTags = false;
 
   /// Vrai dès que « Suggérer les tags » a rendu un rôle dans cette session :
-  /// [suggestedContains] et [suggestedSidesByAI] valent alors pour la recette
-  /// et remplacent ceux de la base à l'enregistrement.
+  /// [suggestedSidesByAI] vaut alors pour la recette et remplace celui de la
+  /// base à l'enregistrement.
   bool aiClassifiedInSession = false;
-  List<String> suggestedContains = const [];
   List<String> suggestedSidesByAI = const [];
 
   /// Suggère des tags (cuisine, type de plat, rôle dans un repas) via l'IA
@@ -297,7 +328,13 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         setState(() {
           selectedMealRole = result.mealRole;
           aiClassifiedInSession = true;
-          suggestedContains = result.contains;
+          // Une correction à la main de ce que la recette apporte n'est
+          // jamais remplacée par le modèle.
+          selectedContains = mealContainsAfterSuggestion(
+            manual: containsManual,
+            current: selectedContains,
+            suggested: result.contains,
+          );
           suggestedSidesByAI = result.suggestedSides;
           // La suggestion remplit les deux listes. Une réponse vide ou hors
           // liste laisse la valeur du formulaire, choisie à la main ou lue

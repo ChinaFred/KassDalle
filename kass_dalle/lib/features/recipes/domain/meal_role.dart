@@ -74,3 +74,53 @@ String mainStarchLabel(String starch) => switch (starch) {
   'aucun' => 'Sans féculent',
   _ => starch,
 };
+
+/// Ce que la recette apporte déjà (`tags.contains`). Même ordre que
+/// `MEAL_COMPONENTS` côté serveur, qui seul lit la réponse du modèle ; le
+/// client les propose en pastilles dans « Catégorisation » et les affiche sur
+/// la fiche (« Apporte : Protéine, Légume »).
+const kMealContains = ['proteine', 'feculent', 'legume'];
+
+/// Libellé d'un apport. Une valeur inconnue s'affiche telle quelle.
+String mealContainsLabel(String value) => switch (value) {
+  'proteine' => 'Protéine',
+  'feculent' => 'Féculent',
+  'legume' => 'Légume',
+  _ => value,
+};
+
+/// [contains] rangé dans l'ordre de [kMealContains], une fois chacun ; les
+/// valeurs inconnues suivent, dans leur ordre.
+List<String> orderedMealContains(Iterable<String> contains) {
+  final set = contains.toSet();
+  return [
+    for (final c in kMealContains)
+      if (set.contains(c)) c,
+    for (final c in set)
+      if (!kMealContains.contains(c)) c,
+  ];
+}
+
+/// Ce que la recette apporte une fois le féculent principal choisi : un
+/// féculent coche « Féculent », « Sans féculent » (`aucun`) le décoche,
+/// « Non renseigné » (`null`) ne change rien.
+List<String> mealContainsWithStarch(List<String> contains, String? starch) {
+  if (starch == null || starch.isEmpty) return contains;
+  final set = contains.toSet();
+  if (starch == 'aucun') {
+    set.remove('feculent');
+  } else {
+    set.add('feculent');
+  }
+  return orderedMealContains(set);
+}
+
+/// Ce que vaut `contains` après une suggestion du modèle : [suggested], sauf
+/// si la recette a été corrigée à la main ([manual]) — [current] reste alors.
+/// Même règle que `containsPatch` côté serveur (`contains_manual_cases` de
+/// `test-fixtures/meal_roles.json`).
+List<String> mealContainsAfterSuggestion({
+  required bool manual,
+  required List<String> current,
+  required List<String> suggested,
+}) => manual ? current : suggested;

@@ -301,7 +301,9 @@ flowchart LR
     a17(["Gérer mon compte et mon nom affiché"])
     a18(["Suivre l'avancement de mes imports"])
     a19(["Demander des idées de repas à l'IA"])
-    a20(["Choisir l'accompagnement, l'entrée et le dessert d'un créneau"])
+    a20(["Choisir les accompagnements, l'entrée et le dessert d'un créneau"])
+    a44(["Composer le repas&lt;br/&gt;plat et accompagnements, sans IA"])
+    a45(["Compléter un plat&lt;br/&gt;« Il manque : légume »"])
     a21(["Reprendre une semaine passée"])
     a22(["Replanifier un repas à une autre date"])
     a23(["Exporter vers Google Calendar"])
@@ -398,6 +400,9 @@ flowchart LR
   a9 --- a14
   a19 -.->|"étend : éditeur ou admin"| a9
   a12 --- a20
+  a9 --- a44
+  a9 --- a45
+  a45 -.->|"appui sur la ligne"| a44
   a12 --- a21
   a12 --- a23
   a9 --- a27
@@ -536,7 +541,15 @@ flowchart LR
         dernières demandent confirmation quand le créneau porte une recette. Quitter
         l'écran avec des repas non validés demande confirmation ; Ctrl+S valide.
         <b>Reprendre une semaine passée, replanifier et choisir un accompagnement</b> se font sans
-        appel d'IA. <b>Le texte d'origine d'une recette traduite</b> se lit sans appel d'IA
+        appel d'IA. Un plat porte six accompagnements au plus. Une carte dit « Il manque un
+        légume. » avec « Choisir », et une ligne par critère que Kass'Dalle a dû relâcher
+        (« Déjà servi dans ce cycle, faute d'autre choix ») ; ces écarts restent sur le repas.
+        <b>Composer le repas</b> (menu ⋮ d'un repas) montre la recette avec « Changer », ce
+        qu'elle apporte, ce qui manque ou « Plat complet », les accompagnements et une
+        suggestion par besoin non couvert ; rien n'est écrit avant « Enregistrer ».
+        <b>Compléter un plat</b> part de la ligne « Il manque : légume » de la tuile : la
+        feuille de choix s'ouvre filtrée sur le légume. Un repas d'autrui ne porte ni l'une
+        ni l'autre. <b>Le texte d'origine d'une recette traduite</b> se lit sans appel d'IA
         non plus : il a été enregistré à l'import, et tout lecteur de la recette l'ouvre depuis
         la mention « Traduit de l'… ».
         <b>Consulter les allergènes n'appelle aucun modèle</b> : la fiche lit la liste que le
@@ -651,6 +664,7 @@ flowchart LR
     b16(["Valider, relancer ou supprimer en lot"])
     b17(["Choisir le rôle de la recette dans un repas"])
     b20(["Corriger la protéine et le féculent&lt;br/&gt;d'un plat ou d'un accompagnement"])
+    b21(["Corriger ce que la recette apporte&lt;br/&gt;protéine, féculent, légume"])
     b18(["Retoucher une illustration par l'IA"])
     b2(["Créer une recette à la main"])
     b3(["Faire générer une recette&lt;br/&gt;en brouillon"])
@@ -688,6 +702,7 @@ flowchart LR
   LEC --- b16
   LEC --- b17
   LEC --- b20
+  LEC --- b21
   ADM --- b18
   EDI --- b21
   ADM --- b21
@@ -717,6 +732,7 @@ flowchart LR
   b4 -.->|"à l'écriture, si aucun rôle"| c5
   b17 -.->|"Non classé : reclassé"| c5
   b17 -.->|"plat ou accompagnement"| b20
+  b17 -.->|"plat ou accompagnement"| b21
   c5 --- GEM
   c2 -.->|"étend : recette dans une autre langue"| c6
   b2 -.->|"étend : texte collé dans une autre langue"| c6
@@ -776,6 +792,9 @@ flowchart LR
         listes placées sous « Rôle dans un repas » et visibles seulement pour un plat ou un
         accompagnement. Le créateur de la recette ou un administrateur les modifie.
         « Non renseigné » efface la valeur ; aucune reprise automatique ne la redemande.
+        <b>Ce que la recette apporte</b> se corrige de même, par trois pastilles Protéine,
+        Féculent, Légume sous « Féculent principal » ; choisir un féculent coche Féculent,
+        « Sans féculent » le décoche, et le modèle ne réécrit plus cette correction.
         Ni l'import, ni le classement à l'écriture, ni une reprise ne remplacent une valeur posée à la main ; « Suggérer les tags », geste explicite, remplit les deux listes. Passer le rôle à entrée,
         dessert ou snack efface les deux valeurs à l'enregistrement.
         <b>La traduction n'a lieu que pour une recette écrite dans une autre langue</b>, que la

@@ -227,6 +227,28 @@ export function mainIngredientsPatch(
 }
 
 /**
+ * Vrai quand ce que la recette apporte (`tags.contains`) a été corrigé à la
+ * main : le client pose `tags.contains_manual = true`, booléen strict. Une
+ * autre valeur, une chaîne `"true"` comprise, n'est pas une correction.
+ * Cas verrouillés par `contains_manual_cases` de `test-fixtures/meal_roles.json`.
+ */
+export function isContainsManual(existingTags: Record<string, unknown>): boolean {
+  return existingTags.contains_manual === true;
+}
+
+/**
+ * `contains` à écrire : celui du modèle, sauf si la recette porte une
+ * correction à la main. Rien alors : le modèle ne réécrit jamais ce que
+ * l'utilisateur a corrigé, ni au classement, ni au backfill forcé.
+ */
+export function containsPatch(
+  existingTags: Record<string, unknown>,
+  contains: MealComponent[],
+): { contains?: MealComponent[] } {
+  return isContainsManual(existingTags) ? {} : { contains };
+}
+
+/**
  * Variantes d'écriture admises : accent, pluriel, ligature, espace au lieu du
  * tiret bas. Aucun synonyme de sens (« poulet », « veau ») : une valeur
  * voisine rangée par le code serait une valeur inventée.

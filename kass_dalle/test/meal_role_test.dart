@@ -175,4 +175,84 @@ void main() {
       expect(summary, 'Cuisine: française | Type de plat: viande');
     });
   });
+
+  group('ce que la recette apporte', () {
+    test('mêmes valeurs que côté serveur, chacune avec son libellé', () {
+      expect(kMealContains, List<String>.from(fixture['contains'] as List));
+      expect(kMealContains.map(mealContainsLabel), [
+        'Protéine',
+        'Féculent',
+        'Légume',
+      ]);
+      expect(mealContainsLabel('fibre'), 'fibre');
+    });
+
+    final cases = (fixture['contains_manual_cases'] as List)
+        .cast<Map<String, dynamic>>();
+    for (final c in cases) {
+      test('correction à la main : ${c['name']}', () {
+        final tags = RecipeTags.fromMap(
+          Map<String, dynamic>.from(c['tags'] as Map),
+        );
+        expect(tags.containsManual, c['manual']);
+        final after = mealContainsAfterSuggestion(
+          manual: tags.containsManual,
+          current: tags.contains,
+          suggested: List<String>.from(c['model_contains'] as List),
+        );
+        expect(after, List<String>.from(c['result'] as List));
+      });
+    }
+
+    test(
+      'le marqueur est réécrit avec la carte, absent quand il ne vaut pas',
+      () {
+        final manual = RecipeTags.fromMap({
+          'meal_role': 'plat',
+          'contains': ['proteine'],
+          'contains_manual': true,
+        });
+        expect(manual.toMap()['contains_manual'], isTrue);
+        expect(
+          const RecipeTags(
+            mealRole: 'plat',
+          ).toMap().containsKey('contains_manual'),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'choisir un féculent coche Féculent, « Sans féculent » le décoche',
+      () {
+        expect(mealContainsWithStarch(['proteine'], 'riz'), [
+          'proteine',
+          'feculent',
+        ]);
+        expect(
+          mealContainsWithStarch(['feculent', 'proteine', 'legume'], 'aucun'),
+          ['proteine', 'legume'],
+        );
+        expect(mealContainsWithStarch(['legume'], null), ['legume']);
+      },
+    );
+
+    test("la fiche dit ce qu'apporte un plat, après le féculent", () {
+      final sections = buildRecipeTagSections(
+        const RecipeTags(
+          mealRole: 'plat',
+          mainStarch: 'riz',
+          contains: ['legume', 'proteine'],
+        ),
+      );
+      expect(sections.last.label, 'Apporte');
+      expect(sections.last.values, ['Protéine', 'Légume']);
+      expect(
+        buildRecipeTagSections(
+          const RecipeTags(mealRole: 'dessert', contains: ['feculent']),
+        ).map((s) => s.label),
+        isNot(contains('Apporte')),
+      );
+    });
+  });
 }

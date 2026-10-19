@@ -251,10 +251,25 @@ void main() {
       final merged = mergeSlotComponents(
         menu,
         starter: menu[0],
-        side: menu[2],
+        sides: [menu[2], menu[3]],
         dessert: menu[5],
       );
       expect(labels(merged), labels(menu));
+    });
+
+    test('Nouveau planning garde tous les accompagnements du plat', () {
+      final menu = [
+        c('accompagnement', 'Riz'),
+        c('accompagnement', 'Haricots'),
+        c('accompagnement', 'Salade'),
+        c('dessert', 'Tatin'),
+      ];
+      final merged = mergeSlotComponents(
+        menu,
+        sides: menu.take(3).toList(),
+        dessert: menu[3],
+      );
+      expect(labels(merged), ['Riz', 'Haricots', 'Salade', 'Tatin']);
     });
 
     test('Nouveau planning : dessert retiré, entrée remplacée', () {
@@ -267,7 +282,7 @@ void main() {
       final merged = mergeSlotComponents(
         menu,
         starter: c('entree', 'Gaspacho'),
-        side: menu[1],
+        sides: [menu[1]],
       );
       expect(labels(merged), ['Gaspacho', 'Riz', 'Comté']);
     });
@@ -280,20 +295,79 @@ void main() {
       ];
       final merged = mergeSlotComponents(
         menu,
-        side: c('accompagnement', 'Pâtes'),
-        mainChanged: true,
+        sides: [c('accompagnement', 'Pâtes')],
       );
       expect(labels(merged), ['Pâtes', 'Comté']);
+    });
+
+    test('repas ancien, accompagnement après le dessert : '
+        'le nouveau passe avant le dessert', () {
+      final legacy = [
+        c('entree', 'Velouté'),
+        c('dessert', 'Tatin'),
+        c('accompagnement', 'Salade'),
+      ];
+      expect(
+        labels(
+          replaceMainSides(legacy, [
+            c('accompagnement', 'Riz'),
+            c('accompagnement', 'Haricots'),
+          ]),
+        ),
+        ['Velouté', 'Riz', 'Haricots', 'Tatin'],
+      );
     });
 
     test('Nouveau planning : entrée et dessert ajoutés à leur place', () {
       final merged = mergeSlotComponents(
         [c('accompagnement', 'Riz'), c('fromage', 'Comté')],
         starter: c('entree', 'Velouté'),
-        side: c('accompagnement', 'Riz'),
+        sides: [c('accompagnement', 'Riz')],
         dessert: c('dessert', 'Tatin'),
       );
       expect(labels(merged), ['Velouté', 'Riz', 'Comté', 'Tatin']);
+    });
+  });
+
+  group('apport d\'un texte libre', () {
+    test('provides lu, réécrit, absent quand vide', () {
+      final free = MealComponent.free(
+        'Frites maison',
+        provides: const ['feculent'],
+      );
+      expect(free.toMap()['provides'], ['feculent']);
+      final back = MealComponent.fromMap(free.toMap());
+      expect(back.provides, ['feculent']);
+      expect(
+        MealComponent.free('Poêlée').toMap().containsKey('provides'),
+        isFalse,
+      );
+    });
+
+    test('lecture tolérante : seules les chaînes non vides restent', () {
+      final c = MealComponent.fromMap({
+        'label': 'Poêlée',
+        'provides': ['legume', 3, '', 'fibre'],
+      });
+      expect(c.provides, ['legume', 'fibre']);
+      expect(c.extra.containsKey('provides'), isFalse);
+    });
+
+    test('« Modifier l\'apport » garde tout le reste', () {
+      final c = MealComponent.fromMap({
+        'role': 'accompagnement',
+        'label': 'Poêlée',
+        'justification': 'Choisi à la main.',
+        'futur': 1,
+      });
+      final edited = c.withProvides(const ['legume']);
+      expect(edited.toMap(), {
+        'futur': 1,
+        'role': 'accompagnement',
+        'label': 'Poêlée',
+        'justification': 'Choisi à la main.',
+        'provides': ['legume'],
+      });
     });
   });
 }

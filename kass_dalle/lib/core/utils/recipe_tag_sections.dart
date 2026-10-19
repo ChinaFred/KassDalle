@@ -59,6 +59,19 @@ List<RecipeTagSection> buildRecipeTagSections(RecipeTags tags) {
         ),
       );
     }
+    // Ce que la recette apporte : « Apporte : Protéine, Légume ». Le planning
+    // propose un accompagnement pour ce qui manque.
+    final contains = orderedMealContains(
+      tags.contains.map((c) => c.trim()).where((c) => c.isNotEmpty),
+    );
+    if (contains.isNotEmpty) {
+      sections.add(
+        RecipeTagSection(
+          label: 'Apporte',
+          values: [for (final c in contains) mealContainsLabel(c)],
+        ),
+      );
+    }
   }
   return sections;
 }

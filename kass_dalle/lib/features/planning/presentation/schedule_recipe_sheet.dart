@@ -5,12 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../recipes/domain/recipe.dart';
 import '../domain/calendar_event_description.dart';
+import '../domain/meal_component.dart';
+import '../domain/side_chooser.dart';
 import '../domain/meal_recipe_location.dart';
 import '../domain/meal_choice_source.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_target.dart';
 import '../services/calendar_service.dart';
+import 'meal_composer.dart';
+import 'meal_staples_providers.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/duration_format.dart';
@@ -27,6 +31,7 @@ Future<void> showScheduleRecipeSheet(
   required int? cookTimeMin,
   required List<RecipeIngredient> ingredients,
   int? portions,
+  Recipe? recipe,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -42,6 +47,7 @@ Future<void> showScheduleRecipeSheet(
       cookTimeMin: cookTimeMin,
       ingredients: ingredients,
       portions: portions,
+      recipe: recipe,
     ),
   );
 }
@@ -59,6 +65,10 @@ class _ScheduleSheet extends ConsumerStatefulWidget {
   /// recalculent des parts de la recette vers celles du groupe.
   final int? portions;
 
+  /// La recette planifiée : le programme en tire ses accompagnements
+  /// (`chooseSides`). Absente, la ligne « Accompagnement » n'apparaît pas.
+  final Recipe? recipe;
+
   const _ScheduleSheet({
     required this.titre,
     this.recipeId,
@@ -66,6 +76,7 @@ class _ScheduleSheet extends ConsumerStatefulWidget {
     required this.cookTimeMin,
     required this.ingredients,
     this.portions,
+    this.recipe,
   });
 
   @override
@@ -81,6 +92,15 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   /// Le planning où le repas s'inscrit : « Mon planning » par défaut, ou un
   /// groupe dont l'utilisateur est le propriétaire.
   PlanningTarget _target = const PlanningTarget.personal();
+
+  /// Recettes d'accompagnement possibles : les recettes validées du compte,
+  /// lues à l'ouverture ; `null` tant qu'elles ne le sont pas.
+  List<Recipe>? _sideRecipes;
+
+  /// Les accompagnements du repas : choisis par le programme dès que
+  /// garnitures et recettes sont lues, puis changés dans « Composer le
+  /// repas ». `null` tant qu'ils ne sont pas calculés.
+  List<MealComponent>? _sides;
 
   /// Préférences de planning, ou les valeurs par défaut tant qu'elles chargent.
   PlanningPreferences get _prefs =>
@@ -98,6 +118,64 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     _reminderCtrl = TextEditingController(text: '${widget.prepTimeMin ?? 30}');
+    if (widget.recipe != null) _loadSideRecipes();
+  }
+
+  /// Lit les recettes validées du compte pour les accompagnements. Un échec
+  /// est signalé ; le programme choisit alors parmi les garnitures seules.
+  Future<void> _loadSideRecipes() async {
+    final repo = ref.read(planningRepositoryProvider);
+    List<Recipe> recipes = const [];
+    try {
+      recipes = await repo?.getValidatedRecipes() ?? const [];
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'scheduleRecipeSheet.loadSideRecipes',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+    if (mounted) setState(() => _sideRecipes = recipes);
+  }
+
+  /// Les accompagnements à afficher et à enregistrer : ceux déjà calculés ou
+  /// choisis, sinon ceux du programme dès que tout est lu.
+  List<MealComponent>? _currentSides() {
+    final current = _sides;
+    if (current != null) return current;
+    final recipe = widget.recipe;
+    final staples = ref.read(myStaplesProvider).value;
+    final recipes = _sideRecipes;
+    if (recipe == null || staples == null || recipes == null) return null;
+    final chosen = [
+      for (final c in chooseSides(
+        main: recipe,
+        candidates: sideCandidatesFrom(staples: staples, recipes: recipes),
+      ))
+        c.component,
+    ];
+    _sides = chosen;
+    return chosen;
+  }
+
+  /// « Changer » : l'éditeur « Composer le repas », sur ce repas pas encore
+  /// créé. Le plat ne change pas ; rien n'est écrit avant « Ajouter au
+  /// planning ».
+  Future<void> _changeSides() async {
+    final recipe = widget.recipe;
+    final sides = _currentSides();
+    if (recipe == null || sides == null) return;
+    await showMealComposer(
+      context,
+      load: () async =>
+          MealComposerData(main: recipe, recipes: _sideRecipes ?? const []),
+      sides: sides,
+      canChangeRecipe: false,
+      successMessage: null,
+      onSave: (composition) async {
+        if (mounted) setState(() => _sides = composition.sides);
+      },
+    );
   }
 
   @override
@@ -188,6 +266,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
                   group: group,
                 ),
           choiceSource: MealChoiceSource.manual,
+          components: _currentSides() ?? const [],
           createdAt: DateTime.now(),
         ),
       );
@@ -244,6 +323,23 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  Widget _buildSidesRow() {
+    // Abonné ici : les garnitures arrivent après l'ouverture.
+    ref.watch(myStaplesProvider);
+    final sides = _currentSides();
+    return _PickerRow(
+      icon: Icons.rice_bowl_outlined,
+      label: 'Accompagnement',
+      value: sides == null
+          ? 'Calcul…'
+          : sides.isEmpty
+          ? 'Aucun'
+          : componentsSummary(sides),
+      actionLabel: 'Changer',
+      onTap: sides == null || _loading ? null : _changeSides,
+    );
+  }
 
   String _buildDescription() {
     final lines = <String>[];
@@ -389,6 +485,12 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           ),
           const SizedBox(height: 4),
 
+          // Accompagnement : choisi par le programme, changé dans l'éditeur.
+          if (widget.recipe != null) ...[
+            _buildSidesRow(),
+            const SizedBox(height: 4),
+          ],
+
           // Durée (informative)
           if (_totalDurationMin > 0) ...[
             _InfoRow(
@@ -469,11 +571,15 @@ class _PickerRow extends StatelessWidget {
   /// Null quand un menu englobant reçoit l'appui (ligne « Planning »).
   final VoidCallback? onTap;
 
+  /// Libellé en bout de ligne à la place du chevron : « Changer ».
+  final String? actionLabel;
+
   const _PickerRow({
     required this.icon,
     required this.label,
     required this.value,
     this.onTap,
+    this.actionLabel,
   });
 
   @override
@@ -505,11 +611,21 @@ class _PickerRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          Icon(
-            Icons.chevron_right,
-            size: AppIconSize.small,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+          if (actionLabel != null)
+            Text(
+              actionLabel!,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: onTap == null
+                    ? theme.colorScheme.onSurfaceVariant
+                    : theme.colorScheme.primary,
+              ),
+            )
+          else
+            Icon(
+              Icons.chevron_right,
+              size: AppIconSize.small,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
         ],
       ),
     );

@@ -287,6 +287,12 @@ class RecipeTags {
   /// Ce que la recette apporte déjà : `proteine`, `feculent`, `legume`.
   final List<String> contains;
 
+  /// Vrai quand [contains] a été corrigé à la main dans « Catégorisation »
+  /// (`contains_manual`, booléen strict). Le modèle ne le réécrit plus : ni le
+  /// déclencheur, ni le backfill « Rôle des recettes », ni « Suggérer les
+  /// tags » (`mealContainsAfterSuggestion`).
+  final bool containsManual;
+
   /// Accompagnements classiques d'un plat qui manque de féculent ou de
   /// légume, nommés simplement. Vide pour tout autre rôle.
   final List<String> suggestedSides;
@@ -320,6 +326,7 @@ class RecipeTags {
     this.restTime,
     this.mealRole,
     this.contains = const [],
+    this.containsManual = false,
     this.suggestedSides = const [],
     this.mainProtein,
     this.mainStarch,
@@ -338,6 +345,7 @@ class RecipeTags {
       restTime: data['rest_time'] as int?,
       mealRole: data['meal_role'] as String?,
       contains: List<String>.from(data['contains'] as List? ?? []),
+      containsManual: data['contains_manual'] == true,
       suggestedSides: List<String>.from(data['suggested_sides'] as List? ?? []),
       // Lecture tolérante : un type inattendu vaut « non renseigné ».
       mainProtein: _stringOrNull(data['main_protein']),
@@ -375,6 +383,9 @@ class RecipeTags {
       if (mealRole != null) ...{
         'meal_role': mealRole,
         'contains': contains,
+        // Écrit seulement quand il vaut : une carte réécrite sans lui le
+        // retire, ce que fait « Non classé ».
+        if (containsManual) 'contains_manual': true,
         'suggested_sides': suggestedSides,
         // Même règle : écrits seulement quand ils sont connus. Une carte
         // réécrite en bloc depuis un objet lu en base les garde ; sans ces
@@ -416,6 +427,7 @@ class RecipeTags {
       restTime: restTime,
       mealRole: mealRole,
       contains: contains,
+      containsManual: containsManual,
       suggestedSides: suggestedSides,
       mainProtein: mainProtein,
       mainStarch: mainStarch,
@@ -434,6 +446,7 @@ class RecipeTags {
     int? restTime,
     String? mealRole,
     List<String>? contains,
+    bool? containsManual,
     List<String>? suggestedSides,
     String? mainProtein,
     String? mainStarch,
@@ -450,6 +463,7 @@ class RecipeTags {
       restTime: restTime ?? this.restTime,
       mealRole: mealRole ?? this.mealRole,
       contains: contains ?? this.contains,
+      containsManual: containsManual ?? this.containsManual,
       suggestedSides: suggestedSides ?? this.suggestedSides,
       mainProtein: mainProtein ?? this.mainProtein,
       mainStarch: mainStarch ?? this.mainStarch,

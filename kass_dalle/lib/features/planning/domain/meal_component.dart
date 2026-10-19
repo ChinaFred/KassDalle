@@ -98,6 +98,12 @@ class MealComponent {
   /// Pourquoi ce composant : « le plat n'apporte pas de féculent ».
   final String? justification;
 
+  /// Ce qu'apporte un texte libre, coché à la main : `feculent`, `legume`
+  /// (`provides`). Vide : « apport inconnu ». Une garniture dit son apport
+  /// par sa famille, une recette par son `contains` : le champ ne sert qu'au
+  /// texte libre. Une valeur inconnue est gardée telle quelle.
+  final List<String> provides;
+
   const MealComponent({
     required this.role,
     this.recipeId,
@@ -108,6 +114,7 @@ class MealComponent {
     this.shoppingProduct,
     this.note,
     this.justification,
+    this.provides = const [],
     this.roleKey,
     this.sideOf,
     this.extra = const {},
@@ -167,7 +174,31 @@ class MealComponent {
     String label, {
     MealComponentRole role = MealComponentRole.accompagnement,
     String? justification,
-  }) => MealComponent(role: role, label: label, justification: justification);
+    List<String> provides = const [],
+  }) => MealComponent(
+    role: role,
+    label: label,
+    justification: justification,
+    provides: provides,
+  );
+
+  /// Le même composant, avec un autre apport ([provides]) : « Modifier
+  /// l'apport » d'un texte libre.
+  MealComponent withProvides(List<String> provides) => MealComponent(
+    role: role,
+    roleKey: roleKey,
+    recipeId: recipeId,
+    stapleId: stapleId,
+    label: label,
+    quantityPerPortion: quantityPerPortion,
+    unit: unit,
+    shoppingProduct: shoppingProduct,
+    note: note,
+    justification: justification,
+    provides: provides,
+    sideOf: sideOf,
+    extra: extra,
+  );
 
   /// Ni recette ni garniture : un texte libre.
   bool get isFree => !isRecipe && !isStaple;
@@ -200,6 +231,7 @@ class MealComponent {
     'shopping_product',
     'note',
     'justification',
+    'provides',
     'side_of',
   };
 
@@ -219,6 +251,11 @@ class MealComponent {
       shoppingProduct: data['shopping_product'] as String?,
       note: data['note'] as String?,
       justification: data['justification'] as String?,
+      provides: [
+        if (data['provides'] is List)
+          for (final p in data['provides'] as List)
+            if (p is String && p.isNotEmpty) p,
+      ],
       sideOf: data['side_of'] as String?,
       extra: {
         for (final e in data.entries)
@@ -239,6 +276,7 @@ class MealComponent {
     if (note != null) 'note': note,
     if (justification != null && justification!.trim().isNotEmpty)
       'justification': justification!.trim(),
+    if (provides.isNotEmpty) 'provides': provides,
     if (sideOf != null && sideOf!.isNotEmpty) 'side_of': sideOf,
   };
 
@@ -262,6 +300,10 @@ String componentsSummary(Iterable<MealComponent> components) =>
 /// le dessert et les autres services d'un menu restent en place, dans leur
 /// ordre. Les nouveaux accompagnements prennent la place du premier retiré,
 /// sinon celle que leur donne [insertMainSide].
+///
+/// Un premier accompagnement rangé après un sorbet, un fromage ou un dessert
+/// — repas anciens `[entrée, dessert, salade]` — ne donne pas sa place : les
+/// nouveaux passent alors par [insertMainSide], avant le dessert.
 List<MealComponent> replaceMainSides(
   List<MealComponent> components,
   List<MealComponent> sides,
@@ -271,7 +313,11 @@ List<MealComponent> replaceMainSides(
     for (final c in components)
       if (!c.isMainSide) c,
   ];
-  if (at >= 0) return [...kept.take(at), ...sides, ...kept.skip(at)];
+  final afterCourseFirst =
+      at >= 0 && components.take(at).any((c) => c.role.isAfterMain);
+  if (at >= 0 && !afterCourseFirst) {
+    return [...kept.take(at), ...sides, ...kept.skip(at)];
+  }
   var result = kept;
   for (final s in sides) {
     result = insertMainSide(result, s);
@@ -300,32 +346,28 @@ List<MealComponent> insertMainSide(
 }
 
 /// Composants d'un repas déjà enregistré, réécrits par Nouveau planning, qui
-/// n'en montre que trois : la première entrée, le premier accompagnement du
-/// plat principal et le premier dessert.
+/// en montre la première entrée, tous les accompagnements du plat principal
+/// et le premier dessert.
 ///
-/// Chacun des trois est remplacé à sa place par la valeur du créneau, ou
-/// retiré quand elle est `null`. Tout le reste est gardé, dans l'ordre :
-/// deuxième entrée, sorbet, fromage, accompagnements de plus. Quand
-/// [mainChanged], le plat a changé : tous ses anciens accompagnements
-/// partent, et seul [side] le suit.
+/// L'entrée et le dessert sont remplacés à leur place par la valeur du
+/// créneau, ou retirés quand elle est `null`. Les accompagnements du plat
+/// principal sont remplacés par [sides] ([replaceMainSides]) : le créneau
+/// porte la liste complète, qu'il ait gardé ceux du repas ou que le plat ait
+/// changé. Tout le reste est gardé, dans l'ordre : deuxième entrée, sorbet,
+/// fromage, accompagnements d'un autre plat.
 List<MealComponent> mergeSlotComponents(
   List<MealComponent> original, {
   MealComponent? starter,
-  MealComponent? side,
+  List<MealComponent> sides = const [],
   MealComponent? dessert,
-  bool mainChanged = false,
 }) {
   final result = <MealComponent>[];
   var starterDone = false;
-  var sideDone = false;
   var dessertDone = false;
   for (final c in original) {
     if (!starterDone && c.role == MealComponentRole.entree) {
       starterDone = true;
       if (starter != null) result.add(starter);
-    } else if (c.isMainSide && (mainChanged || !sideDone)) {
-      if (!sideDone && side != null) result.add(side);
-      sideDone = true;
     } else if (!dessertDone && c.role == MealComponentRole.dessert) {
       dessertDone = true;
       if (dessert != null) result.add(dessert);
@@ -333,9 +375,8 @@ List<MealComponent> mergeSlotComponents(
       result.add(c);
     }
   }
-  var merged = result;
+  var merged = replaceMainSides(result, sides);
   if (!starterDone && starter != null) merged = [starter, ...merged];
-  if (!sideDone && side != null) merged = insertMainSide(merged, side);
   if (!dessertDone && dessert != null) merged = [...merged, dessert];
   return merged;
 }
