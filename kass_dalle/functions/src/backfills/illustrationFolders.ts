@@ -72,10 +72,14 @@ function objectPathInBuckets(
     const path = storageObjectPathOf(reference, {
       bucketName,
       allowEmulator: opts.allowEmulator,
+      silent: true,
     });
     if (path != null) return path;
   }
-  const anyBucket = storageObjectPathOf(reference, { allowEmulator: opts.allowEmulator });
+  const anyBucket = storageObjectPathOf(reference, {
+    allowEmulator: opts.allowEmulator,
+    silent: true,
+  });
   return anyBucket == null ? undefined : null;
 }
 
@@ -85,8 +89,8 @@ function objectPathInBuckets(
  * pour un autre hôte.
  */
 function publicUrlPath(reference: string): { bucket: string; path: string } | null | undefined {
-  // Une URL illisible sera refusée, et tracée, par `storageObjectPathOf` :
-  // ici, seule la forme publique est cherchée.
+  // Une URL illisible sera refusée par `storageObjectPathOf` (sans trace :
+  // `silent`) : ici, seule la forme publique est cherchée.
   if (!URL.canParse(reference)) return undefined;
   const parsed = new URL(reference);
   if (parsed.protocol !== "https:" || parsed.hostname !== PUBLIC_HOST || parsed.port !== "") {

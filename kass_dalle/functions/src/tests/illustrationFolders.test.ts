@@ -133,3 +133,28 @@ describe("summarizeIllustrationFolders", () => {
     assert.equal(s.toReview, 2);
   });
 });
+
+describe("journal des refus", () => {
+  test("URL illisible et chemin mal encodé : rien de la référence dans console.warn", () => {
+    const warned: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warned.push(args.map((a) => String(a)).join(" "));
+    };
+    try {
+      const unreadable =
+        "https://firebasestorage.googleapis.com:99999/v0/b/x/o/scans%2Fuid42%2Fp.jpg?token=secret1";
+      const badEncoding = `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/scans%2Fuid42%E0%A4%A?token=secret2`;
+      const badPublic = `https://storage.googleapis.com/${BUCKET}/scans/uid42%E0%A4%A`;
+      assert.equal(illustrationFolderIssue(unreadable, opts), "hors du stockage de l'application");
+      assert.equal(illustrationFolderIssue(badEncoding, opts), "hors du stockage de l'application");
+      assert.equal(illustrationFolderIssue(badPublic, opts), "hors du stockage de l'application");
+    } finally {
+      console.warn = original;
+    }
+    const all = warned.join("\n");
+    for (const fragment of ["secret1", "secret2", "uid42", "token=", "scans"]) {
+      assert.ok(!all.includes(fragment), `console.warn contient « ${fragment} »`);
+    }
+  });
+});
