@@ -10,6 +10,24 @@ import { estimateAiCostUsd, type AiModelPricing } from "../ai/pricing";
 import { textPart, type AiProvider, type ModelCallContext } from "../ai/types";
 import { logError, logInfo, logWarn } from "../logging";
 import { parseMainProtein, parseMainStarch, type MainProtein, type MainStarch } from "./mealRole";
+import {
+  EMPTY_CRITERIA,
+  checkExclusions,
+  checkPreferences,
+  criteriaIsEmpty,
+  describeCriteria,
+  emptyServiceDetail,
+  hasExclusions,
+  hasWantedPreferences,
+  mergeCriteria,
+  unmetDetail,
+  type CriteriaItem,
+  type CriterionKey,
+  type PlanningCriteria,
+  type UnmetCriterion,
+  type UnmetService,
+} from "./planningCriteria";
+import type { TextUnderstanding } from "./planningConstraints";
 
 export interface RecipeConceptInput {
   slotDate: string;
@@ -83,6 +101,13 @@ export interface PlanningRecipeSummary {
    * redimensionné (`resizeOf`) ; rien n'est écrit dans la recette.
    */
   portions?: number | null;
+  /**
+   * Champ `allergens` de la recette (`present`, `complete`), écrit par le
+   * serveur sur la recette et renvoyé tel quel par le client. Donnée non
+   * fiable : relue par `criteriaItemOf`. Absent : allergènes inconnus, une
+   * exclusion d'allergène n'est pas vérifiée.
+   */
+  allergens?: { present?: unknown; complete?: unknown } | null;
 }
 
 /**
@@ -426,6 +451,12 @@ export interface PlanningSlotResult {
   source: "model" | "code";
   /** Vrai si la recette n'est là que par relâchement d'un filtre (petit corpus). */
   repeat?: boolean;
+  /**
+   * Critères que le repas ne tient pas, ou n'a pas pu vérifier : ceux du
+   * plat, de l'entrée et du dessert choisis, et les services restés vides par
+   * une exclusion. Absent quand tout est tenu.
+   */
+  unmet?: UnmetCriterion[];
 }
 
 /** Jour de semaine (1=lundi … 7=dimanche) d'une date ISO de slot. */
@@ -862,12 +893,29 @@ export interface SlotContext {
   weekday: number;
   kind: "batch" | "reheat" | "regular";
   format: MealFormatSpec;
+  /**
+   * Préparation maximale : la plus courte de la contrainte « Prépa max » et
+   * de la durée comprise dans les textes. Une préférence : relâchée en
+   * dernier, faute d'autre choix (`max_duration`).
+   */
   maxPrepMinutes: number | null;
   targetPortions: number | null;
   dismissedIds: ReadonlySet<string>;
+  /**
+   * Critères compris dans les textes (préférences générales et note du
+   * jour), `maxDuration` réuni à `maxPrepMinutes`. Vide sans texte compris.
+   */
+  criteria: PlanningCriteria;
 }
 
-export function slotContexts(input: PlanningInput): SlotContext[] {
+/**
+ * Les créneaux, tels que la présélection les lit. [criteriaBySlot] : les
+ * critères compris des textes, par index de créneau (`slotCriteriaOf`).
+ */
+export function slotContexts(
+  input: PlanningInput,
+  criteriaBySlot?: ReadonlyArray<PlanningCriteria | undefined>,
+): SlotContext[] {
   return input.slotDates.map((raw, slot) => {
     const date = raw.slice(0, 10);
     const weekday = weekdayOfSlot(date);
@@ -875,21 +923,96 @@ export function slotContexts(input: PlanningInput): SlotContext[] {
     const maxPrep = constraint?.maxPrepMinutes ?? 0;
     const target = constraint?.targetPortions ?? 0;
     const dismissed = input.slotDismissed?.[slot];
+    const criteria = mergeCriteria([
+      criteriaBySlot?.[slot] ?? EMPTY_CRITERIA,
+      { ...EMPTY_CRITERIA, maxDuration: maxPrep > 0 ? maxPrep : null },
+    ]);
     return {
       slot,
       date,
       weekday,
       kind: slotKind(weekday, !!constraint?.isBatchCooking, input.batchCookingDay),
       format: mealFormatOf(constraint?.mealFormat),
-      maxPrepMinutes: maxPrep > 0 ? maxPrep : null,
+      maxPrepMinutes: criteria.maxDuration,
       targetPortions: target > 0 ? target : null,
       dismissedIds: new Set(Array.isArray(dismissed) ? dismissed : []),
+      criteria,
     };
   });
 }
 
+/**
+ * Les critères compris de chaque créneau : ceux des préférences générales et
+ * ceux de la note du jour, quand le texte a été compris. Un texte non compris
+ * (modèle en échec, mode sans modèle) n'en apporte aucun : il part au prompt
+ * tel quel.
+ */
+export function slotCriteriaOf(
+  input: PlanningInput,
+  understood: ReadonlyMap<string, TextUnderstanding>,
+): PlanningCriteria[] {
+  const global = understood.get(input.globalConstraints.trim())?.criteria ?? EMPTY_CRITERIA;
+  return input.slotDates.map((_, slot) => {
+    const notes = constraintForSlot(input, slot)?.notes;
+    const day = typeof notes === "string" ? understood.get(notes.trim())?.criteria : undefined;
+    return mergeCriteria([global, day ?? EMPTY_CRITERIA]);
+  });
+}
+
+/** Les textes d'une génération : préférences générales et notes des créneaux. */
+export function planningTexts(input: PlanningInput): string[] {
+  const texts = [input.globalConstraints];
+  input.slotDates.forEach((_, slot) => {
+    const notes = constraintForSlot(input, slot)?.notes;
+    if (typeof notes === "string") texts.push(notes);
+  });
+  return [...new Set(texts.map((t) => t.trim()).filter((t) => t.length > 0))];
+}
+
+const LIGHT_MARKERS = ["soupe", "salade", "veloute", "bouillon", "leger", "legere", "potage"];
+
+/**
+ * Une recette est-elle légère ? Une entrée ou un en-cas l'est ; un plat
+ * l'est si ses types ou ses thèmes, posés par le modèle, disent soupe,
+ * salade, velouté, bouillon ou léger ; un autre plat ne l'est pas. Sans rôle
+ * connu : on ne sait pas.
+ */
+export function isLightRecipe(r: PlanningRecipeSummary): boolean | null {
+  const role = r.mealRole;
+  if (role === "entree" || role === "snack") return true;
+  const bag = normalize([...(r.dishTypes ?? []), ...(r.themes ?? [])].join(" | "));
+  if (LIGHT_MARKERS.some((m) => bag.includes(m))) return true;
+  if (role === "plat") return false;
+  return null;
+}
+
+/** Ce que le prédicat des critères sait d'une recette du corpus. */
+export function criteriaItemOf(r: PlanningRecipeSummary): CriteriaItem {
+  const a = r.allergens;
+  const present =
+    a != null && typeof a === "object" && Array.isArray(a.present)
+      ? a.present.filter((k): k is string => typeof k === "string")
+      : null;
+  return {
+    allergens: present == null ? null : { present, complete: a?.complete === true },
+    mainProtein: typeof r.mainProtein === "string" ? r.mainProtein : null,
+    mainStarch: typeof r.mainStarch === "string" ? r.mainStarch : null,
+    prepMinutes: typeof r.prepTime === "number" && Number.isFinite(r.prepTime) ? r.prepTime : null,
+    light: isLightRecipe(r),
+  };
+}
+
 export type CandidateRole = "main" | "starter" | "dessert";
-export type HardFilterReason = "role" | "prep" | "rest" | "rating" | "dismissed" | "in_cycle";
+export type HardFilterReason =
+  | "role"
+  | "excluded"
+  | "prep"
+  | "rest"
+  | "rating"
+  | "dismissed"
+  | "in_cycle"
+  | "unverified"
+  | "preference";
 
 /** Le rôle de la recette convient-il à cette place du repas ? */
 export function roleFits(
@@ -919,6 +1042,13 @@ function isLowRated(rating: number | null | undefined): boolean {
  * Pourquoi une recette ne peut pas aller sur ce créneau, ou `null`.
  *
  * L'ordre des tests est celui du type : le premier qui échoue est rendu.
+ *
+ * Les critères compris (`ctx.criteria`) : une exclusion violée (`excluded`)
+ * ne se relâche jamais ; une exclusion non vérifiable (`unverified`) n'écarte
+ * que si [opts.requireVerified] ; une préférence de texte non tenue
+ * (`preference` : protéine, féculent, léger) et la durée (`prep`) se
+ * relâchent par [opts.applyWanted] et [opts.applyDuration]. Les préférences
+ * et la durée ne bornent que le plat.
  */
 export function hardFilterReason(
   r: PlanningRecipeSummary,
@@ -928,13 +1058,28 @@ export function hardFilterReason(
     inCycle: ReadonlySet<string>;
     today: string;
     ratings?: ReadonlyMap<string, number>;
+    /** Faux : les exclusions ne comptent pas (mesure d'un service vidé par elles). */
+    applyExclusions?: boolean;
+    /** Vrai : une exclusion non vérifiable écarte la recette. */
+    requireVerified?: boolean;
+    /** Faux : les préférences de texte sont relâchées. */
+    applyWanted?: boolean;
+    /** Faux : la durée maximale est relâchée. */
+    applyDuration?: boolean;
   },
 ): HardFilterReason | null {
   if (!roleFits(r, ctx.format, role)) return "role";
+  const criteria = ctx.criteria ?? EMPTY_CRITERIA;
+  const exclusions =
+    opts.applyExclusions !== false && hasExclusions(criteria)
+      ? checkExclusions(criteria, criteriaItemOf(r))
+      : [];
+  if (exclusions.some((c) => c.verdict === "violates")) return "excluded";
   // La préparation maximale borne le plat : une entrée ou un dessert se
   // préparent souvent à l'avance, et les borner viderait leurs listes.
   if (
     role === "main" &&
+    opts.applyDuration !== false &&
     ctx.maxPrepMinutes != null &&
     typeof r.prepTime === "number" &&
     r.prepTime > ctx.maxPrepMinutes
@@ -948,7 +1093,59 @@ export function hardFilterReason(
   if (isLowRated(opts.ratings?.get(r.id))) return "rating";
   if (ctx.dismissedIds.has(r.id)) return "dismissed";
   if (opts.inCycle.has(r.id)) return "in_cycle";
+  if (opts.requireVerified && exclusions.some((c) => c.verdict === "unknown")) return "unverified";
+  if (role === "main" && opts.applyWanted !== false && hasWantedPreferences(criteria)) {
+    const prefs = checkPreferences({ ...criteria, maxDuration: null }, criteriaItemOf(r));
+    if (prefs.some((c) => c.verdict === "violates")) return "preference";
+  }
   return null;
+}
+
+/** Le service d'un rôle de candidat. */
+function serviceOf(role: CandidateRole): UnmetService {
+  return role === "main" ? "plat" : role === "starter" ? "entree" : "dessert";
+}
+
+/**
+ * Ce qu'un candidat ne tient pas : préférences non tenues (plat seulement),
+ * exclusions non vérifiables. Vide quand tout est tenu ou vérifié.
+ */
+export function candidateUnmet(
+  r: PlanningRecipeSummary,
+  ctx: Pick<SlotContext, "criteria" | "maxPrepMinutes">,
+  role: CandidateRole,
+): UnmetCriterion[] {
+  const criteria: PlanningCriteria = {
+    ...(ctx.criteria ?? EMPTY_CRITERIA),
+    maxDuration: ctx.maxPrepMinutes,
+  };
+  if (criteriaIsEmpty(criteria)) return [];
+  const item = criteriaItemOf(r);
+  const service = serviceOf(role);
+  const out: UnmetCriterion[] = [];
+  for (const c of checkExclusions(criteria, item)) {
+    if (c.verdict !== "unknown") continue;
+    out.push({
+      key: c.key,
+      regime: c.regime,
+      status: "unverified",
+      service,
+      detail: unmetDetail(c, criteria, item),
+    });
+  }
+  if (role === "main") {
+    for (const c of checkPreferences(criteria, item)) {
+      if (c.verdict !== "violates") continue;
+      out.push({
+        key: c.key,
+        regime: c.regime,
+        status: "relaxed",
+        service,
+        detail: unmetDetail(c, criteria, item),
+      });
+    }
+  }
+  return out;
 }
 
 /** 1 si pas servie dans la fenêtre ; sinon jours / 90, entre 0,1 et 1. */
@@ -1176,9 +1373,24 @@ export interface RankedCandidate {
   repeat?: boolean;
   /** « Écrite pour 4 parts, servie pour 6. » quand les parts diffèrent. */
   resizeReason?: string;
+  /** Critères que ce candidat ne tient pas, ou n'a pas pu vérifier (`candidateUnmet`). */
+  unmet?: UnmetCriterion[];
 }
 
-export type RelaxedFilter = "rating" | "in_cycle" | "variety_window";
+/**
+ * Filtres relâchés, dans l'ordre : la note (seulement si tout est mal noté),
+ * les préférences de texte (`wanted_proteins`, `wanted_starches`, `light`),
+ * « déjà au cycle », la fenêtre de variété, puis la durée maximale
+ * (`max_duration`). Une exclusion ne se relâche jamais.
+ */
+export type RelaxedFilter =
+  | "rating"
+  | "wanted_proteins"
+  | "wanted_starches"
+  | "light"
+  | "in_cycle"
+  | "variety_window"
+  | "max_duration";
 
 export interface SlotRanking {
   slot: number;
@@ -1191,6 +1403,11 @@ export interface SlotRanking {
   sent: { plats: number; entrees: number; desserts: number };
   /** Filtres relâchés pour les plats de ce créneau, dans l'ordre. */
   relaxed: RelaxedFilter[];
+  /**
+   * Services restés vides par une exclusion (`status: empty`) : « Aucun
+   * dessert sans fruits à coque. » Vide ou absent sinon.
+   */
+  unmet?: UnmetCriterion[];
   /** Jour de préparation d'un créneau de réchauffage (YYYY-MM-DD). */
   prepDate?: string;
 }
@@ -1214,6 +1431,8 @@ export interface PreselectArgs {
   /** YYYY-MM-DD */
   today: string;
   rng: Rng;
+  /** Critères compris des textes, par index de créneau (`slotCriteriaOf`). */
+  criteriaBySlot?: ReadonlyArray<PlanningCriteria | undefined>;
 }
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -1247,7 +1466,7 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
     if (p !== "inconnue") proteinCounts.set(p, (proteinCounts.get(p) ?? 0) + 1);
   }
   const reserved = new Set<string>();
-  const allContexts = slotContexts(input);
+  const allContexts = slotContexts(input, args.criteriaBySlot);
   // Féculents posés par date : les recettes déjà assignées, puis le premier
   // plat classé de chaque créneau traité. Lus la veille et le lendemain.
   const starchesByDate = new Map<string, Array<MainStarch | null>>();
@@ -1297,26 +1516,115 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
     role: CandidateRole,
     headSize: number,
     depth: number,
-  ): { list: RankedCandidate[]; sent: number; relaxed: RelaxedFilter[] } => {
-    const relaxed: RelaxedFilter[] = [];
+  ): {
+    list: RankedCandidate[];
+    sent: number;
+    relaxed: RelaxedFilter[];
+    unmet: UnmetCriterion[];
+  } => {
     const ofRole = [...candidates, ...recentExcluded].filter((r) => roleFits(r, ctx.format, role));
     const ratingRelaxed = ofRole.length > 0 && ofRole.every((r) => isLowRated(ratings.get(r.id)));
-    if (ratingRelaxed) relaxed.push("rating");
     const ratingsUsed = ratingRelaxed ? NO_RATINGS : ratings;
-    const admit = (pool: PlanningRecipeSummary[], cycle: ReadonlySet<string>) =>
-      pool.filter(
-        (r) =>
-          hardFilterReason(r, ctx, role, { inCycle: cycle, today, ratings: ratingsUsed }) == null,
-      );
+    const criteria = ctx.criteria ?? EMPTY_CRITERIA;
+    const wantedKeys: RelaxedFilter[] =
+      role === "main"
+        ? [
+            ...(criteria.wantedProteins.length > 0 ? (["wanted_proteins"] as const) : []),
+            ...(criteria.wantedStarches.length > 0 ? (["wanted_starches"] as const) : []),
+            ...(criteria.light ? (["light"] as const) : []),
+          ]
+        : [];
+    const exclusionsActive = hasExclusions(criteria);
 
-    let admissible = admit(candidates, inCycle);
-    if (admissible.length === 0) {
-      relaxed.push("in_cycle");
-      admissible = admit(candidates, NO_IDS);
-    }
-    if (admissible.length === 0) {
-      relaxed.push("variety_window");
-      admissible = admit([...candidates, ...recentExcluded], NO_IDS);
+    // Une passe de relâchements : préférences de texte, « déjà au cycle »,
+    // fenêtre de variété, puis durée. [requireVerified] : seules les recettes
+    // dont les exclusions sont vérifiées sont admises.
+    const relaxPass = (requireVerified: boolean) => {
+      const relaxed: RelaxedFilter[] = ratingRelaxed ? ["rating"] : [];
+      let wanted = true;
+      let duration = true;
+      const admit = (pool: PlanningRecipeSummary[], cycle: ReadonlySet<string>) =>
+        pool.filter(
+          (r) =>
+            hardFilterReason(r, ctx, role, {
+              inCycle: cycle,
+              today,
+              ratings: ratingsUsed,
+              requireVerified,
+              applyWanted: wanted,
+              applyDuration: duration,
+            }) == null,
+        );
+      let admissible = admit(candidates, inCycle);
+      if (admissible.length === 0 && wantedKeys.length > 0) {
+        relaxed.push(...wantedKeys);
+        wanted = false;
+        admissible = admit(candidates, inCycle);
+      }
+      if (admissible.length === 0) {
+        relaxed.push("in_cycle");
+        admissible = admit(candidates, NO_IDS);
+      }
+      if (admissible.length === 0) {
+        relaxed.push("variety_window");
+        admissible = admit([...candidates, ...recentExcluded], NO_IDS);
+      }
+      if (admissible.length === 0 && role === "main" && ctx.maxPrepMinutes != null) {
+        relaxed.push("max_duration");
+        duration = false;
+        admissible = admit([...candidates, ...recentExcluded], NO_IDS);
+      }
+      return { admissible, relaxed };
+    };
+
+    // Les recettes vérifiées d'abord : une exclusion d'allergène ne se tient
+    // sur une recette aux allergènes inconnus que faute de mieux, et l'écart
+    // est dit (`unverified`).
+    let pass = relaxPass(exclusionsActive);
+    if (pass.admissible.length === 0 && exclusionsActive) pass = relaxPass(false);
+    const { admissible, relaxed } = pass;
+
+    // Un service vide alors que, sans les exclusions, une recette aurait
+    // passé : l'exclusion l'a vidé, et l'écran le dit.
+    const unmet: UnmetCriterion[] = [];
+    if (admissible.length === 0 && exclusionsActive) {
+      const withoutExclusions = [...candidates, ...recentExcluded].filter(
+        (r) =>
+          hardFilterReason(r, ctx, role, {
+            inCycle: NO_IDS,
+            today,
+            ratings: ratingsUsed,
+            applyExclusions: false,
+            applyWanted: false,
+            applyDuration: false,
+          }) == null,
+      );
+      // Seules les exclusions qui ont écarté une recette sont nommées : un
+      // dessert vidé par les fruits à coque ne dit pas « sans porc ».
+      const violated = new Set<CriterionKey>();
+      for (const r of withoutExclusions) {
+        for (const c of checkExclusions(criteria, criteriaItemOf(r))) {
+          if (c.verdict === "violates") violated.add(c.key);
+        }
+      }
+      const key = (["excluded_allergens", "excluded_proteins", "excluded_starches"] as const).find(
+        (k) => violated.has(k),
+      );
+      if (key) {
+        const named: PlanningCriteria = {
+          ...EMPTY_CRITERIA,
+          excludedAllergens: violated.has("excluded_allergens") ? criteria.excludedAllergens : [],
+          excludedProteins: violated.has("excluded_proteins") ? criteria.excludedProteins : [],
+          excludedStarches: violated.has("excluded_starches") ? criteria.excludedStarches : [],
+        };
+        unmet.push({
+          key,
+          regime: "exclusion",
+          status: "empty",
+          service: serviceOf(role),
+          detail: emptyServiceDetail(serviceOf(role), named),
+        });
+      }
     }
     const isRepeat = (r: PlanningRecipeSummary) =>
       inCycle.has(r.id) || recentIds.has(r.id) || (ratingRelaxed && isLowRated(ratings.get(r.id)));
@@ -1359,6 +1667,7 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
       list: list.slice(0, Math.max(depth, headSize)).map((r) => {
         const repeat = isRepeat(r);
         const resize = role === "main" ? resizeOf(r, ctx) : { resized: false };
+        const candidateGaps = candidateUnmet(r, ctx, role);
         return {
           recipeId: r.id,
           why: codeJustification(r, ctx, {
@@ -1370,21 +1679,24 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
           }),
           ...(repeat ? { repeat: true } : {}),
           ...(resize.resizeReason ? { resizeReason: resize.resizeReason } : {}),
+          ...(candidateGaps.length > 0 ? { unmet: candidateGaps } : {}),
         };
       }),
       sent: head.length,
       relaxed,
+      unmet,
     };
   };
 
   return contexts.map((ctx) => {
     const plats = rank(ctx, "main", policy.platsPerSlot, policy.rankedDepth);
+    const none = { list: [], sent: 0, relaxed: [], unmet: [] };
     const entrees = ctx.format.wantsStarter
       ? rank(ctx, "starter", policy.startersPerSlot, policy.startersPerSlot)
-      : { list: [], sent: 0, relaxed: [] };
+      : none;
     const desserts = ctx.format.wantsDessert
       ? rank(ctx, "dessert", policy.dessertsPerSlot, policy.dessertsPerSlot)
-      : { list: [], sent: 0, relaxed: [] };
+      : none;
     const prepDate =
       ctx.kind === "reheat" && input.batchCookingDay != null
         ? computePrepDate(ctx.date, input.batchCookingDay)
@@ -1396,6 +1708,7 @@ export function preselect(args: PreselectArgs): SlotRanking[] {
       desserts: desserts.list,
       sent: { plats: plats.sent, entrees: entrees.sent, desserts: desserts.sent },
       relaxed: plats.relaxed,
+      unmet: [...plats.unmet, ...entrees.unmet, ...desserts.unmet],
       ...(prepDate ? { prepDate } : {}),
     };
   });
@@ -1512,12 +1825,14 @@ export function validateModelChoices(args: ValidateArgs): {
     used.add(main.candidate.recipeId);
     noteProtein(ctx.date, proteinById(main.candidate.recipeId));
 
+    const unmet: UnmetCriterion[] = [...(main.candidate.unmet ?? [])];
     let starterId: string | undefined;
     if (ctx.format.wantsStarter && ranking.entrees.length > 0) {
       const s = pick(ranking.entrees, ranking.sent.entrees, asId(e?.starter_id), []);
       if (s.candidate) {
         starterId = s.candidate.recipeId;
         used.add(starterId);
+        unmet.push(...(s.candidate.unmet ?? []));
         if (sent && !s.fromModel) rejected++;
       }
     }
@@ -1527,9 +1842,12 @@ export function validateModelChoices(args: ValidateArgs): {
       if (d.candidate) {
         dessertId = d.candidate.recipeId;
         used.add(dessertId);
+        unmet.push(...(d.candidate.unmet ?? []));
         if (sent && !d.fromModel) rejected++;
       }
     }
+    // Une entrée ou un dessert resté vide par une exclusion suit le repas.
+    unmet.push(...(ranking.unmet ?? []).filter((u) => u.service !== "plat"));
 
     const recipe = corpusById.get(main.candidate.recipeId);
     const resize = recipe ? resizeOf(recipe, ctx) : { resized: false };
@@ -1548,6 +1866,7 @@ export function validateModelChoices(args: ValidateArgs): {
       ...(prepDate ? { prepDate } : {}),
       source: main.fromModel ? "model" : "code",
       ...(main.candidate.repeat ? { repeat: true } : {}),
+      ...(unmet.length > 0 ? { unmet } : {}),
     });
   }
   results.sort((a, b) => a.slot - b.slot);
@@ -1708,8 +2027,15 @@ export function buildPlanningPrompt(args: {
   sentSlots: ReadonlySet<number>;
   corpusById: ReadonlyMap<string, PlanningRecipeSummary>;
   rng: Rng;
+  /**
+   * Textes compris (`understandPlanningTexts`) : leurs critères sont déjà
+   * appliqués aux candidats, le prompt les cite et ne transmet que ce qui n'a
+   * pas été traduit. Un texte absent part tel quel.
+   */
+  understood?: ReadonlyMap<string, TextUnderstanding>;
 }): { prompt: string; candidateIds: string[] } {
   const { input, rankings, sentSlots, corpusById, rng } = args;
+  const understood = args.understood ?? new Map<string, TextUnderstanding>();
   const contexts = slotContexts(input);
   const shuffle = (ids: string[]) => weightedOrder(ids, () => 1, rng);
   const sent = rankings.filter((r) => sentSlots.has(r.slot));
@@ -1731,7 +2057,7 @@ export function buildPlanningPrompt(args: {
     "Tu composes un planning de repas. Pour chaque créneau ci-dessous, choisis une recette parmi les identifiants listés pour CE créneau, et aucun autre.",
   );
   lines.push(
-    "Les candidats respectent déjà le rôle, la durée de préparation et la variété récente. Ton travail : varier les protéines et les féculents d'un jour à l'autre, et suivre les préférences.",
+    "Les candidats respectent déjà le rôle, la durée de préparation, la variété récente et les critères vérifiés. Ton travail : varier les protéines et les féculents d'un jour à l'autre, et suivre les préférences.",
   );
   lines.push("");
   lines.push("=== RECETTES (id | titre | détails) ===");
@@ -1741,9 +2067,17 @@ export function buildPlanningPrompt(args: {
   }
   lines.push("");
 
-  if (input.globalConstraints.trim()) {
+  const globalText = input.globalConstraints.trim();
+  const globalUnderstood = understood.get(globalText);
+  if (globalUnderstood && !criteriaIsEmpty(globalUnderstood.criteria)) {
+    lines.push("=== CRITÈRES VÉRIFIÉS (déjà appliqués aux candidats) ===");
+    lines.push(describeCriteria(globalUnderstood.criteria));
+    lines.push("");
+  }
+  const globalRest = globalUnderstood ? globalUnderstood.untranslated.trim() : globalText;
+  if (globalRest) {
     lines.push("=== PRÉFÉRENCES GÉNÉRALES ===");
-    lines.push(input.globalConstraints.trim());
+    lines.push(globalRest);
     lines.push("");
   }
 
@@ -1801,7 +2135,12 @@ export function buildPlanningPrompt(args: {
     if (ctx.kind === "reheat") tags.push("RÉCHAUFFAGE");
     let line = `Slot ${r.slot} — ${ctx.date} (${WEEKDAY_NAMES[ctx.weekday - 1]}) [${tags.join(" + ")}]`;
     const notes = constraintForSlot(input, r.slot)?.notes?.trim();
-    if (notes) line += ` [PRÉFÉRENCES DU JOUR : ${notes}]`;
+    const notesUnderstood = notes ? understood.get(notes) : undefined;
+    if (notesUnderstood && !criteriaIsEmpty(notesUnderstood.criteria)) {
+      line += ` [CRITÈRES VÉRIFIÉS DU JOUR : ${describeCriteria(notesUnderstood.criteria)}]`;
+    }
+    const notesRest = notesUnderstood ? notesUnderstood.untranslated.trim() : notes;
+    if (notesRest) line += ` [PRÉFÉRENCES DU JOUR : ${notesRest}]`;
     lines.push(line);
     lines.push(`  PLATS : ${shuffle(headIds(r.plats, r.sent.plats)).join(", ")}`);
     if (r.sent.entrees > 0) {
@@ -1870,6 +2209,11 @@ export interface PlanningDeps {
   costCapUsd: number | null;
   /** Coût plafond de l'appel pour ce prompt ; `null` si la grille est illisible. */
   estimateCeilingUsd: (promptChars: number) => Promise<number | null>;
+  /**
+   * Textes compris (`understandPlanningTexts`), par texte sans espaces en
+   * bord. Absent : aucun critère vérifié, les textes partent au prompt.
+   */
+  understood?: ReadonlyMap<string, TextUnderstanding>;
 }
 
 /**
@@ -1898,6 +2242,8 @@ export async function suggestMealPlan(
     slotsToFill,
   );
   const excluded = new Set(excludedIds);
+  const understood = deps.understood ?? new Map<string, TextUnderstanding>();
+  const criteriaBySlot = slotCriteriaOf(input, understood);
   const rankings =
     input.recipes.length === 0
       ? []
@@ -1913,6 +2259,7 @@ export async function suggestMealPlan(
           policy: deps.policy,
           today: deps.today,
           rng: deps.rng,
+          criteriaBySlot,
         });
   const sentSlots = new Set(rankings.filter(needsModel).map((r) => r.slot));
 
@@ -1936,6 +2283,7 @@ export async function suggestMealPlan(
       sentSlots,
       corpusById,
       rng: deps.rng,
+      understood,
     });
     candidatesSent = candidateIds.length;
     const ceiling = await deps.estimateCeilingUsd(prompt.length);

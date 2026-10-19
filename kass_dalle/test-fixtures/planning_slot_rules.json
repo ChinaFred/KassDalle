@@ -577,7 +577,7 @@
       "why": "une salade ne se réchauffe pas"
     }
   ],
-  "_hard_filter_comment": "Filtres durs d'une recette pour un créneau, dans l'ordre : role, prep (plat seulement), rest (créneau d'aujourd'hui ou passé), rating (note personnelle <= 3), dismissed, in_cycle. null : la recette passe.",
+  "_hard_filter_comment": "Filtres d'une recette pour un créneau, dans l'ordre : role, excluded (une exclusion comprise des textes est violée — allergène, protéine ou féculent principal ; plat, entrée et dessert ; jamais relâchée), prep (durée maximale, plat seulement ; relâchée en dernier, max_duration), rest (créneau d'aujourd'hui ou passé), rating (note personnelle <= 3), dismissed, in_cycle, unverified (exclusion non vérifiable, seulement quand les recettes vérifiées sont exigées), preference (protéine ou féculent voulus, léger : plat seulement, relâchée). slot.criteria : les critères compris des textes (planning_criteria.json). null : la recette passe.",
   "hard_filter": [
     {
       "recipe": { "id": "r", "prep": 45 },
@@ -710,6 +710,102 @@
       "in_cycle": ["r"],
       "expected": "in_cycle",
       "why": "déjà posée dans le cycle"
+    },
+    {
+      "recipe": { "id": "r", "main_protein": "porc" },
+      "slot": { "date": "2026-10-14", "criteria": { "excluded_proteins": ["porc"] } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "excluded",
+      "why": "protéine principale exclue : jamais proposée"
+    },
+    {
+      "recipe": {
+        "id": "r",
+        "meal_role": "dessert",
+        "allergens": { "present": ["fruits_a_coque", "lait"], "complete": true }
+      },
+      "slot": {
+        "date": "2026-10-14",
+        "format": "plat_dessert",
+        "criteria": { "excluded_allergens": ["fruits_a_coque"] }
+      },
+      "role": "dessert",
+      "today": "2026-10-10",
+      "expected": "excluded",
+      "why": "une exclusion borne aussi le dessert"
+    },
+    {
+      "recipe": { "id": "r", "main_protein": "porc", "prep": 90 },
+      "slot": {
+        "date": "2026-10-14",
+        "max_prep": 30,
+        "criteria": { "excluded_proteins": ["porc"] }
+      },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "excluded",
+      "why": "l'exclusion se dit avant la durée"
+    },
+    {
+      "recipe": { "id": "r", "prep": 45 },
+      "slot": { "date": "2026-10-14", "criteria": { "max_duration": 30 } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "prep",
+      "why": "« 30 min max » compris dans une note : même borne que Prépa max"
+    },
+    {
+      "recipe": { "id": "r", "prep": 45 },
+      "slot": { "date": "2026-10-14", "max_prep": 60, "criteria": { "max_duration": 30 } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "prep",
+      "why": "Prépa max et note : la plus courte l'emporte"
+    },
+    {
+      "recipe": { "id": "r", "main_protein": "boeuf" },
+      "slot": { "date": "2026-10-14", "criteria": { "wanted_proteins": ["poisson"] } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "preference",
+      "why": "poisson voulu, bœuf proposé : écarté tant qu'un poisson existe"
+    },
+    {
+      "recipe": { "id": "r" },
+      "slot": { "date": "2026-10-14", "criteria": { "wanted_proteins": ["poisson"] } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "protéine inconnue : passe, faute de preuve contraire"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "plat", "dish_types": ["Plat mijoté"] },
+      "slot": { "date": "2026-10-14", "criteria": { "light": true } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "preference",
+      "why": "léger demandé : un plat mijoté n'est pas léger"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "plat", "dish_types": ["Soupe"] },
+      "slot": { "date": "2026-10-14", "criteria": { "light": true } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "léger demandé : une soupe l'est"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "dessert", "main_protein": "boeuf" },
+      "slot": {
+        "date": "2026-10-14",
+        "format": "plat_dessert",
+        "criteria": { "wanted_proteins": ["poisson"], "light": true }
+      },
+      "role": "dessert",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "les préférences ne bornent que le plat"
     }
   ],
   "freshness": [
@@ -992,10 +1088,16 @@
       "today": "2026-10-10",
       "expected": {
         "slots": [
-          { "slot": 0, "plats": [], "repeat": [], "relaxed": ["in_cycle", "variety_window"] }
+          {
+            "slot": 0,
+            "plats": ["p2"],
+            "repeat": [],
+            "relaxed": ["in_cycle", "variety_window", "max_duration"],
+            "plat_unmet": { "p2": [{ "key": "max_duration", "status": "relaxed" }] }
+          }
         ]
       },
-      "why": "un plat reste au corpus sans être mal noté : la note ne se relâche pas, le créneau reste sans candidat"
+      "why": "un plat reste au corpus sans être mal noté : la note ne se relâche pas ; la durée se relâche en dernier, et le plat trop long revient, l'écart dit"
     },
     {
       "slots": [{ "date": "2026-10-12" }],
@@ -1075,6 +1177,134 @@
       "today": "2026-10-10",
       "expected": { "slots": [{ "slot": 0, "plats": ["e1", "s1"], "repeat": [], "relaxed": [] }] },
       "why": "repas léger : l'entrée et l'en-cas servent de plat, jamais le dessert"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "criteria": { "excluded_proteins": ["porc"] } }],
+      "recipes": [{ "id": "p1", "main_protein": "porc" }],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          {
+            "slot": 0,
+            "plats": [],
+            "repeat": [],
+            "relaxed": ["in_cycle", "variety_window"],
+            "unmet": [{ "service": "plat", "key": "excluded_proteins", "status": "empty" }]
+          }
+        ]
+      },
+      "why": "une exclusion ne se relâche jamais : le créneau reste vide, et la raison est dite"
+    },
+    {
+      "slots": [
+        {
+          "date": "2026-10-12",
+          "format": "plat_dessert",
+          "criteria": { "excluded_allergens": ["fruits_a_coque"] }
+        }
+      ],
+      "recipes": [
+        { "id": "p1", "allergens": { "present": [], "complete": true } },
+        {
+          "id": "d1",
+          "meal_role": "dessert",
+          "allergens": { "present": ["fruits_a_coque"], "complete": true }
+        }
+      ],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          {
+            "slot": 0,
+            "plats": ["p1"],
+            "desserts": [],
+            "repeat": [],
+            "relaxed": [],
+            "unmet": [{ "service": "dessert", "key": "excluded_allergens", "status": "empty" }]
+          }
+        ]
+      },
+      "why": "le seul dessert contient des fruits à coque : le dessert reste à choisir, le plat est posé"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "criteria": { "excluded_allergens": ["gluten"] } }],
+      "recipes": [
+        { "id": "p1", "allergens": { "present": [], "complete": true } },
+        { "id": "p2" },
+        { "id": "p3", "allergens": { "present": [], "complete": false } }
+      ],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": { "slots": [{ "slot": 0, "plats": ["p1"], "repeat": [], "relaxed": [] }] },
+      "why": "sans gluten : les recettes vérifiées d'abord, les allergènes inconnus faute de mieux"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "criteria": { "excluded_allergens": ["gluten"] } }],
+      "recipes": [{ "id": "p2" }],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          {
+            "slot": 0,
+            "plats": ["p2"],
+            "repeat": [],
+            "relaxed": [],
+            "plat_unmet": { "p2": [{ "key": "excluded_allergens", "status": "unverified" }] }
+          }
+        ]
+      },
+      "why": "aucune recette vérifiée : celle aux allergènes inconnus est proposée, marquée non vérifiée"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "criteria": { "max_duration": 30 } }],
+      "recipes": [
+        { "id": "p1", "prep": 60 },
+        { "id": "p2", "prep": 20 }
+      ],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": { "slots": [{ "slot": 0, "plats": ["p2"], "repeat": [], "relaxed": [] }] },
+      "why": "« 30 min max » compris dans une note : le plat trop long n'est pas proposé"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "criteria": { "wanted_proteins": ["poisson"] } }],
+      "recipes": [{ "id": "p1", "main_protein": "boeuf" }],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": {
+        "slots": [
+          {
+            "slot": 0,
+            "plats": ["p1"],
+            "repeat": [],
+            "relaxed": ["wanted_proteins"],
+            "plat_unmet": { "p1": [{ "key": "wanted_proteins", "status": "relaxed" }] }
+          }
+        ]
+      },
+      "why": "poisson voulu, aucun poisson : la préférence se relâche avant tout autre filtre, l'écart dit"
+    },
+    {
+      "slots": [{ "date": "2026-10-12", "criteria": { "wanted_proteins": ["poisson"] } }],
+      "recipes": [
+        { "id": "p1", "main_protein": "boeuf" },
+        { "id": "p2", "main_protein": "poisson" }
+      ],
+      "already_assigned": [],
+      "policy": {},
+      "seed": 1,
+      "today": "2026-10-10",
+      "expected": { "slots": [{ "slot": 0, "plats": ["p2"], "repeat": [], "relaxed": [] }] },
+      "why": "poisson voulu : seul le poisson est proposé"
     }
   ],
   "_validate_choice_comment": "Lecture de la réponse du modèle contre les listes envoyées. Un identifiant hors de la tête du créneau, ou déjà pris, est remplacé par le premier candidat libre (source code). Un créneau absent de la réponse aussi.",

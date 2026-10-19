@@ -22,6 +22,7 @@ import '../domain/meal_component.dart';
 import '../domain/meal_composition.dart';
 import '../domain/meal_kind.dart';
 import '../domain/planned_meal.dart';
+import '../domain/planning_criteria.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_reach.dart';
 import '../domain/planning_refusals.dart';
@@ -60,6 +61,34 @@ class PlanningRepository {
       .doc(_uid)
       .collection('preferences')
       .doc('recipe_search_scope');
+
+  /// Préférences comprises par le modèle, par texte — écrites par le serveur
+  /// seul (`suggestMealPlanFn`), lues ici pour « Compris : … ».
+  DocumentReference<Map<String, dynamic>> get _constraintTranslationsDoc => _db
+      .collection('users')
+      .doc(_uid)
+      .collection('preferences')
+      .doc('planning_constraints');
+
+  /// Ce que le serveur a compris des textes de l'utilisateur, en direct.
+  ///
+  /// Une lecture en échec est remontée au rapport ; le flux continue sans
+  /// rien rendre de plus : l'écran dit alors que le texte sera lu au
+  /// prochain « Planifier avec l'IA », ce qui reste vrai.
+  Stream<Map<String, ConstraintTranslation>> watchConstraintTranslations() =>
+      _constraintTranslationsDoc
+          .snapshots()
+          .map((snap) => readConstraintTranslations(snap.data()))
+          .handleError((Object e, StackTrace st) {
+            unawaited(
+              _errorReportService.reportError(
+                feature: 'planning_constraint_translations',
+                error: e,
+                stackTrace: st,
+                context: {'uid': _uid},
+              ),
+            );
+          });
 
   // ── Repas planifiés ─────────────────────────────────────────────────────────
 
@@ -364,6 +393,10 @@ class PlanningRepository {
     /// Écrits avec l'origine : un autre plat choisi sans relâchement les
     /// retire.
     List<String> relaxedCriteria = const [],
+
+    /// Écarts aux critères compris (`unmet_criteria`), écrits avec l'origine
+    /// comme [relaxedCriteria].
+    List<UnmetCriterion> unmetCriteria = const [],
     bool clearChoice = false,
 
     /// Plat ou menu (`meal_kind`) ; `null` le laisse tel quel.
@@ -396,6 +429,10 @@ class PlanningRepository {
         'relaxed_criteria': relaxedCriteria.isEmpty
             ? FieldValue.delete()
             : relaxedCriteria,
+      if (choiceSource != null)
+        'unmet_criteria': unmetCriteria.isEmpty
+            ? FieldValue.delete()
+            : [for (final u in unmetCriteria) u.toMap()],
     };
     // La recette remplacée reste écartée de ce repas : le prochain
     // « Suggérer » ne la verra pas dans ses candidats.
@@ -409,6 +446,7 @@ class PlanningRepository {
       payload['choice_source'] = FieldValue.delete();
       payload['justification'] = FieldValue.delete();
       payload['relaxed_criteria'] = FieldValue.delete();
+      payload['unmet_criteria'] = FieldValue.delete();
     }
     if (clearPortions) {
       payload['base_portions'] = FieldValue.delete();
@@ -969,6 +1007,15 @@ final planningPreferencesOnceProvider =
       final repo = ref.watch(planningRepositoryProvider);
       if (repo == null) return const PlanningPreferences();
       return repo.loadPreferences();
+    });
+
+/// Ce que le serveur a compris des préférences de l'utilisateur, par texte
+/// (`users/{uid}/preferences/planning_constraints`). Vide sans compte.
+final planningConstraintTranslationsProvider =
+    StreamProvider.autoDispose<Map<String, ConstraintTranslation>>((ref) {
+      final repo = ref.watch(planningRepositoryProvider);
+      if (repo == null) return Stream.value(const {});
+      return repo.watchConstraintTranslations();
     });
 
 final planningAiServiceProvider = Provider<PlanningAiService>((ref) {

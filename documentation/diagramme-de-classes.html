@@ -853,6 +853,7 @@ classDiagram
     +MealKind? mealKind
     +MealChoiceSource? choiceSource
     +List~String~ relaxedCriteria
+    +List~UnmetCriterion~ unmetCriteria
     +DateTime createdAt
     +Map extra
     +MealKind kind()
@@ -1440,6 +1441,7 @@ classDiagram
     +int sortOrder
     +bool active
     +String source
+    +List~String~? allergens
   }
 
   class StapleOverride {
@@ -1451,6 +1453,7 @@ classDiagram
     +String? unit
     +String? note
     +String? shoppingProduct
+    +List~String~? allergens
   }
 
   class UserStaple {
@@ -1528,8 +1531,71 @@ classDiagram
     inCycle
     varietyWindow
     rating
+    wantedProteins
+    wantedStarches
+    light
+    maxDuration
     +String key
     +String phrase
+  }
+
+  class PlanningCriteria {
+    +List~String~ excludedAllergens
+    +List~String~ excludedProteins
+    +List~String~ excludedStarches
+    +List~String~ wantedProteins
+    +List~String~ wantedStarches
+    +int? maxDuration
+    +bool light
+    +bool hasExclusions
+    +List~String~ labels
+    +fromMap(raw) PlanningCriteria$
+    +merge(parts) PlanningCriteria$
+  }
+
+  class CriterionKey {
+    &lt;&lt;enumeration&gt;&gt;
+    excludedAllergens
+    excludedProteins
+    excludedStarches
+    wantedProteins
+    wantedStarches
+    maxDuration
+    light
+    +String key
+    +CriterionRegime regime
+  }
+
+  class CriterionRegime {
+    &lt;&lt;enumeration&gt;&gt;
+    exclusion
+    preference
+  }
+
+  class CriteriaItem {
+    +Map? allergens
+    +String? mainProtein
+    +String? mainStarch
+    +ofRecipe(recipe) CriteriaItem$
+    +ofStaple(staple) CriteriaItem$
+  }
+
+  class ConstraintTranslation {
+    &lt;&lt;users/uid/preferences/planning_constraints&gt;&gt;
+    +String text
+    +PlanningCriteria criteria
+    +String untranslated
+    +bool translated
+    +fromMap(raw) ConstraintTranslation$
+  }
+
+  class UnmetCriterion {
+    +String key
+    +CriterionRegime regime
+    +String status
+    +String service
+    +String detail
+    +listFrom(raw) List$
   }
 
   class MealComposition {
@@ -1573,6 +1639,7 @@ classDiagram
     +String why
     +bool repeat
     +String? resizeReason
+    +List~UnmetCriterion~ unmet
   }
 
   class SlotRanking {
@@ -1581,6 +1648,7 @@ classDiagram
     +List~RankedCandidate~ desserts
     +DateTime? prepDate
     +List~String~ relaxed
+    +List~UnmetCriterion~ unmet
     +fromMap(raw) SlotRanking$
   }
 
@@ -1659,6 +1727,17 @@ classDiagram
   DishSideStatus --> SideNeed : ce qui manque
   SlotRanking ..> RelaxedCriterion : relaxed, filtres relâchés par le serveur
   PlannedMeal ..> RelaxedCriterion : relaxedCriteria, ligne d'origine
+  PlannedMeal "1" *-- "0..*" UnmetCriterion : unmetCriteria, ligne d'origine
+  SlotRanking "1" *-- "0..*" UnmetCriterion : unmet, services vidés par une exclusion
+  RankedCandidate "1" *-- "0..*" UnmetCriterion : unmet, préférence relâchée ou non vérifiée
+  UnmetCriterion --> CriterionRegime : exclusion jamais relâchée, préférence relâchée
+  ConstraintTranslation --> PlanningCriteria : criteria, compris par le modèle
+  PlanningCriteria ..> CriterionKey : vocabulaire de planning_criteria.json
+  CriterionKey --> CriterionRegime : régime
+  PlanningCriteria ..> CriteriaItem : checkExclusions, même prédicat que le serveur
+  CriteriaItem ..> MealStaple : allergens saisis, féculent lu dans le nom
+  CriteriaItem ..> Recipe : allergens, mainProtein, mainStarch
+  SideCandidate ..> PlanningCriteria : chooseSides écarte une exclusion violée
   MealComposerResult --> MealComposition : « Composer le repas », une écriture à Enregistrer
   MealComposition "1" *-- "1..10" MealCourse : services ordonnés, un seul plat principal
   MealComposition --> MealKind : plat ou menu

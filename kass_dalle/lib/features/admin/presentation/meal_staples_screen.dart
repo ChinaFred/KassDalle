@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'admin_providers.dart';
 import '../../planning/domain/meal_staple.dart';
 import '../../planning/presentation/meal_staples_providers.dart';
+import '../../planning/presentation/staple_allergens_field.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -358,6 +359,10 @@ class _StapleCard extends StatelessWidget {
                             staple.effectiveShoppingProduct,
                           ),
                         _Info(Icons.sort, 'rang ${staple.sortOrder}'),
+                        _Info(
+                          Icons.health_and_safety_outlined,
+                          stapleAllergensSummary(staple.allergens),
+                        ),
                       ],
                     ),
                   ],
@@ -449,6 +454,7 @@ class _StapleEditorDialogState extends State<_StapleEditorDialog> {
   late StapleCategory _category;
   late String _unit;
   late bool _active;
+  List<String>? _allergens;
 
   bool get _isCreate => widget.existing == null;
 
@@ -467,6 +473,7 @@ class _StapleEditorDialogState extends State<_StapleEditorDialog> {
     _category = e?.category ?? StapleCategory.feculent;
     _unit = e?.unit ?? 'g';
     _active = e?.active ?? true;
+    _allergens = e?.allergens;
   }
 
   @override
@@ -619,6 +626,11 @@ class _StapleEditorDialogState extends State<_StapleEditorDialog> {
                   value: _active,
                   onChanged: (v) => setState(() => _active = v),
                 ),
+                const SizedBox(height: 8),
+                StapleAllergensField(
+                  value: _allergens,
+                  onChanged: (v) => setState(() => _allergens = v),
+                ),
               ],
             ),
           ),
@@ -666,6 +678,7 @@ class _StapleEditorDialogState extends State<_StapleEditorDialog> {
         sortOrder: int.tryParse(_sortCtrl.text.trim()) ?? 0,
         active: _active,
         source: widget.existing?.source ?? 'admin',
+        allergens: _allergens,
       ),
     );
   }

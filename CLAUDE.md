@@ -601,7 +601,7 @@ Cinq logiques métier existent en double, plus deux résidus : parseur CookLang
 quantité, conversion d'unités en grammes, normalisation des noms d'ingrédients,
 regroupement des lignes de courses.
 S'y ajoutent l'arithmétique de la **grille tarifaire** — dont les prix, eux, ne
-sont plus qu'à un endroit —, deux **seuils d'hygiène** du planning, le **statut
+sont plus qu'à un endroit —, deux **seuils d'hygiène** du planning, les **critères vérifiés** du planning (exclusions et préférences), le **statut
 effectif d'une invitation par e-mail**, les **décisions de l'administrateur
 sur un ticket** et la
 **géométrie du redressement** : le client redresse à la main dans l'atelier de
@@ -620,6 +620,7 @@ affiche, la tâche planifiée les applique.
 | `ai_pricing.json` | résolution d'un modèle et coût d'un appel — jetons, images, recherche Google ancrée ; **plus aucun prix en double** | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
 | `planning_slot_rules.json` | format du repas (entrée, dessert, léger), rôle d'une recette, dessert en repli, nature du créneau, jour de préparation, fenêtre de variété, présélection — **serveur seul**, sauf les constantes et le prédicat d'activité de la mémoire des refus (21 jours, 300 entrées, un jour de tolérance dans le futur), que le client rejoue | `features/planning/domain/planning_refusals.dart` (constantes et prédicat d'activité) | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
+| `planning_criteria.json` | critères vérifiés du planning : vocabulaire et régimes (exclusion jamais relâchée, préférence relâchée), lecture d'un objet de critères en liste blanche, réunion des critères d'un créneau (union, durée la plus courte), prédicat d'exclusion (allergènes sur `allergens.present`/`complete`, protéine et féculent principaux ; donnée absente = non vérifiée) — le serveur l'applique au plat, à l'entrée et au dessert, le client aux accompagnements et aux choix à la main ; section `preference_cases` : serveur seul | `features/planning/domain/planning_criteria.dart` | `gemini/planningCriteria.ts` |
 | `image_moderation_rules.json` | verdict d'une image, projection des paliers Vision — **serveur seul** | — | `moderation/decision.ts`, `moderation/vision.ts` |
 | `page_homography.json` | redressement d'une page : taille de sortie et homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
 | `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines, des féculents principaux et de ce que la recette apporte (`contains`) — valeurs seules ; la liste et l'affichage côté client, la lecture du modèle côté serveur (section `unsafe_keys` : serveur seul) ; section `contains_manual_cases` : un `contains` corrigé à la main (`contains_manual` booléen strict) n'est jamais réécrit par le modèle | `features/recipes/domain/meal_role.dart` (`kMealContains`, `mealContainsAfterSuggestion`) | `gemini/mealRole.ts` (`MEAL_COMPONENTS`, `isContainsManual`, `containsPatch`) |

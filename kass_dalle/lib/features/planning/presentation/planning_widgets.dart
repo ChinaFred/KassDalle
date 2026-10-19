@@ -409,6 +409,7 @@ class PlanningMealTile extends StatelessWidget {
       source: source,
       facts: facts,
       relaxed: meal.relaxedCriteria,
+      unmet: meal.unmetCriteria,
     );
     if (line == null) return null;
     return Padding(padding: const EdgeInsets.only(top: 4), child: line);

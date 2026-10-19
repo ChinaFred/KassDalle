@@ -3,7 +3,9 @@
 /// La présélection (`gemini/planning.ts`, `RelaxedFilter`) relâche ses filtres
 /// un par un quand aucune recette ne passe : la note personnelle, le « pas
 /// deux fois dans le cycle », puis la fenêtre de variété. Elle le dit dans
-/// `relaxed` de chaque liste classée. Le repas garde ces clés
+/// `relaxed` de chaque liste classée — et depuis la v0.24.17 les préférences
+/// comprises des textes (`wanted_proteins`, `wanted_starches`, `light`) et
+/// la durée maximale (`max_duration`). Le repas garde ces clés
 /// (`relaxed_criteria`) pour que l'écart reste lisible après la validation,
 /// dans la ligne d'origine du choix.
 library;
@@ -12,7 +14,20 @@ library;
 enum RelaxedCriterion {
   inCycle('in_cycle', 'déjà servi dans ce cycle, faute d\'autre choix'),
   varietyWindow('variety_window', 'servi il y a peu, faute d\'autre choix'),
-  rating('rating', 'aucune recette assez bien notée : critère de note relâché');
+  rating('rating', 'aucune recette assez bien notée : critère de note relâché'),
+  wantedProteins(
+    'wanted_proteins',
+    'protéine souhaitée introuvable, faute d\'autre choix',
+  ),
+  wantedStarches(
+    'wanted_starches',
+    'féculent souhaité introuvable, faute d\'autre choix',
+  ),
+  light('light', 'aucun plat léger possible, faute d\'autre choix'),
+  maxDuration(
+    'max_duration',
+    'plus long que la durée demandée, faute d\'autre choix',
+  );
 
   /// Clé écrite par le serveur et stockée sur le repas.
   final String key;

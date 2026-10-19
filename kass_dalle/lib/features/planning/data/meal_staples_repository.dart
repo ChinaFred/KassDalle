@@ -59,9 +59,13 @@ class MealStaplesRepository {
   }
 
   /// Met à jour une garniture de base, sans toucher à sa date de création.
+  ///
+  /// Des allergènes rendus à « non renseignés » retirent le champ : sans
+  /// cela, la mise à jour laissait l'ancienne liste en place.
   Future<void> updateBase(MealStaple staple) async {
     await _base.doc(staple.id).update({
       ...staple.toFirestore(),
+      if (staple.allergens == null) 'allergens': FieldValue.delete(),
       'updated_at': FieldValue.serverTimestamp(),
     });
   }

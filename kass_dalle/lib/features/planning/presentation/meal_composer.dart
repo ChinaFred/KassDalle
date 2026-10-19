@@ -19,6 +19,7 @@ import '../domain/meal_component.dart';
 import '../domain/meal_composition.dart';
 import '../domain/meal_kind.dart';
 import '../domain/meal_staple.dart';
+import '../domain/planning_criteria.dart';
 import '../domain/side_chooser.dart';
 import 'meal_course_style.dart';
 import 'meal_staples_providers.dart';
@@ -107,6 +108,7 @@ Future<void> showMealComposer(
   Set<String> dismissedRecipeIds = const {},
   String? successMessage = 'Repas enregistré.',
   ErrorReportService? errorReporter,
+  PlanningCriteria criteria = PlanningCriteria.empty,
 }) {
   final messenger = ScaffoldMessenger.maybeOf(context);
   final scheme = Theme.of(context).colorScheme;
@@ -123,6 +125,7 @@ Future<void> showMealComposer(
     canChangeRecipe: canChangeRecipe,
     dismissedRecipeIds: dismissedRecipeIds,
     errorReporter: errorReporter,
+    criteria: criteria,
     onSaved: successMessage == null
         ? null
         : () => messenger?.showSuccessMessage(successMessage, scheme: scheme),
@@ -178,6 +181,11 @@ class MealComposerSheet extends ConsumerStatefulWidget {
   /// Pour les tests : le service qui reçoit les échecs.
   final ErrorReportService? errorReporter;
 
+  /// Les critères compris des préférences du jour du repas : le programme
+  /// n'y propose aucun accompagnement qui viole une exclusion, et les
+  /// feuilles de choix le signalent (« contient : gluten »).
+  final PlanningCriteria criteria;
+
   const MealComposerSheet({
     super.key,
     required this.load,
@@ -191,6 +199,7 @@ class MealComposerSheet extends ConsumerStatefulWidget {
     this.dismissedRecipeIds = const {},
     this.onSaved,
     this.errorReporter,
+    this.criteria = PlanningCriteria.empty,
   });
 
   @override
@@ -397,6 +406,7 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
         for (final c in chooseSides(
           main: picked,
           candidates: _sideCandidates(staples),
+          criteria: widget.criteria,
         ))
           c.component,
       ]);
@@ -422,6 +432,7 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
         main: recipe,
         candidates: _sideCandidates(staples),
         initialNeed: need,
+        criteria: widget.criteria,
       ),
     );
     final component = result?.toComponent(justification: 'Choisi à la main.');
@@ -520,6 +531,7 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
             staples: staples,
             recipes: data.recipes,
           ),
+          criteria: widget.criteria,
         ),
       );
       content = result?.toComponent(role: course.role);
@@ -852,6 +864,7 @@ class _MealComposerSheetState extends ConsumerState<MealComposerSheet> {
             candidates: _sideCandidates(staples),
             needs: status.missing,
             takenIds: {for (final s in sides) s.sourceId},
+            criteria: widget.criteria,
           );
     // Un plat secondaire reçoit ses accompagnements une fois choisi.
     final canAdd = course.isMain ? recipe != null : !course.isEmpty;

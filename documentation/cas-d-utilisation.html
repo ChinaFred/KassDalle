@@ -338,6 +338,8 @@ flowchart LR
     i16(["Recalculer qui lit quel planning"])
     i17(["Choisir Ajouter ou Remplacer&lt;br/&gt;si ma liste n'est pas vide"])
     i18(["Supprimer les suggestions&lt;br/&gt;d'un membre sorti ou d'un groupe supprimé"])
+    i19(["Traduire les textes modifiés&lt;br/&gt;en critères vérifiés"])
+    i20(["Écarter ce qu'une exclusion interdit&lt;br/&gt;relâcher une préférence, le dire"])
   end
 
   LEC --- a1
@@ -419,6 +421,9 @@ flowchart LR
   a33 -.->|"inclut"| i3
   a9 -.->|"inclut"| i4
   a12 -.->|"inclut"| i4
+  a12 -.->|"« Planifier avec l'IA », textes modifiés seuls"| i19
+  i19 -.->|"« Compris : … »"| a13
+  i4 -.->|"inclut"| i20
   a27 -.->|"liste classée"| i4
   a6 -.->|"ma note"| i4
   a12 -.->|"sous 0,50 €"| i9
@@ -440,6 +445,7 @@ flowchart LR
   i1 --- GEM
   i3 --- GEM
   i9 --- GEM
+  i19 --- GEM
   i5 --- GEM
   i6 --- GEM
   i7 --- GEM
@@ -549,6 +555,17 @@ flowchart LR
         appel d'IA. Un plat porte six accompagnements au plus. Une carte dit « Il manque un
         légume. » avec « Choisir », et une ligne par critère que Kass'Dalle a dû relâcher
         (« Déjà servi dans ce cycle, faute d'autre choix ») ; ces écarts restent sur le repas.
+        <b>Les critères écrits en texte libre sont vérifiés</b> : au clic sur « Planifier avec
+        l'IA », l'IA traduit une fois les textes modifiés (préférences générales, contrainte
+        d'un jour) en critères — allergène, protéine ou féculent exclus, protéine ou féculent
+        souhaités, durée maximale, léger — et Kass'Dalle les vérifie lui-même. Sous chaque champ,
+        « Compris : sans porc · 30 min max », puis « Transmis à l'IA, non vérifié : « pas trop
+        gras » ». Une exclusion ne se relâche jamais : « Dessert : à choisir. Aucun dessert sans
+        fruits à coque. » avec « Choisir ». Une préférence se relâche et la carte le dit :
+        « 1 h 10, au-delà des 45 min demandées : peu d'autres choix ». Un avis compte les
+        créneaux concernés et mène au premier. Un accompagnement qui contient un allergène exclu
+        n'est jamais proposé par le programme ; choisi à la main, il est signalé « contient :
+        gluten ».
         <b>Composer le repas</b> (menu ⋮ d'un repas) montre la recette avec « Changer », ce
         qu'elle apporte, ce qui manque ou « Plat complet », les accompagnements et une
         suggestion par besoin non couvert ; rien n'est écrit avant « Enregistrer ».
@@ -582,7 +599,8 @@ flowchart LR
         remplace pas la lecture des emballages. » Tous les rôles voient le même bloc ; aucun ne le
         modifie depuis la fiche.
         Les garnitures d'un éditeur sont sa copie du référentiel : les modifier ne
-        change rien pour les autres membres.
+        change rien pour les autres membres. Chaque garniture porte ses allergènes majeurs,
+        saisis à la main ; sans saisie, elle est « allergènes non renseignés ».
         <b>Planifier est réservé à l'éditeur et à l'administrateur</b> : repas, cycle,
         préférences, garnitures et conseil de conservation.
         Le lecteur ne voit pas ces gestes ; ses anciens repas restent sous « Mon planning »,
@@ -1088,7 +1106,8 @@ flowchart LR
         autre invitation de retour encore active l'est aussi quand une invitation acceptée a
         rétabli le compte (« Accès rétabli par une autre invitation : invitation sans objet. »).
         <b>Les garnitures simples</b> se créent, se modifient, se désactivent et se suppriment
-        dans Référentiels ; chaque éditeur en garde sa copie dans ses préférences.
+        dans Référentiels, allergènes majeurs compris (une pastille par allergène, et
+        « Aucun ») ; chaque éditeur en garde sa copie dans ses préférences.
         <span class="expect warn">
           <b>Le bac à sable ne figure pas ici, et c'est voulu.</b>
           <span class="path">/admin/sandbox</span> existe et n'est ouvert qu'aux administrateurs,

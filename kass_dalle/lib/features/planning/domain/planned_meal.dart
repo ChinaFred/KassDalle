@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'meal_choice_source.dart';
 import 'meal_component.dart';
 import 'meal_kind.dart';
+import 'planning_criteria.dart';
 import 'relaxed_criteria.dart';
 
 /// Repas planifié, stocké dans Firestore sous `planned_meals/{id}`.
@@ -89,6 +90,14 @@ class PlannedMeal {
   /// quand le plat change à la main. Une clé inconnue est gardée telle quelle.
   final List<String> relaxedCriteria;
 
+  /// Critères que le repas ne tient pas, ou n'a pas pu vérifier
+  /// (`unmet_criteria`, v0.24.17) : préférence relâchée (« 1 h 10, au-delà
+  /// des 45 min demandées »), exclusion sans candidat (« Aucun dessert sans
+  /// fruits à coque. »), allergènes non vérifiés. Phrases du serveur, posées
+  /// par Nouveau planning et « Autre suggestion », retirées avec le plat
+  /// changé à la main. Une entrée illisible est ignorée.
+  final List<UnmetCriterion> unmetCriteria;
+
   final DateTime createdAt;
 
   /// Champs lus en base que cette version ne connaît pas. Une valeur de
@@ -117,6 +126,7 @@ class PlannedMeal {
     this.mealKind,
     this.choiceSource,
     this.relaxedCriteria = const [],
+    this.unmetCriteria = const [],
     required this.createdAt,
     this.extra = const {},
   });
@@ -139,6 +149,7 @@ class PlannedMeal {
     'meal_kind',
     'choice_source',
     'relaxed_criteria',
+    'unmet_criteria',
     'created_at',
   };
 
@@ -176,6 +187,7 @@ class PlannedMeal {
       mealKind: MealKind.fromKey(data['meal_kind']),
       choiceSource: MealChoiceSource.fromValue(data['choice_source']),
       relaxedCriteria: relaxedKeysFrom(data['relaxed_criteria']),
+      unmetCriteria: UnmetCriterion.listFrom(data['unmet_criteria']),
       createdAt: (data['created_at'] as Timestamp).toDate(),
       extra: {
         for (final e in data.entries)
@@ -217,6 +229,8 @@ class PlannedMeal {
     if (mealKind != null) 'meal_kind': mealKind!.key,
     if (choiceSource != null) 'choice_source': choiceSource!.value,
     if (relaxedCriteria.isNotEmpty) 'relaxed_criteria': relaxedCriteria,
+    if (unmetCriteria.isNotEmpty)
+      'unmet_criteria': [for (final u in unmetCriteria) u.toMap()],
     'created_at': Timestamp.fromDate(createdAt),
   };
 }

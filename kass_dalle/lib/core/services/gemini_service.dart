@@ -835,6 +835,10 @@ typedef MealPlanSlotDto = ({
   String? prepDate,
   String source,
   bool repeat,
+
+  /// Écarts aux critères compris, bruts : `{key, regime, status, service,
+  /// detail}` (v0.24.17). Lus par la feature planning.
+  List<Map<dynamic, dynamic>> unmet,
 });
 
 /// Réponse de `suggestMealPlanFn`.
@@ -861,6 +865,10 @@ class MealPlanResponse {
   /// Conceptions encore permises pour cette génération.
   final int conceptsRemaining;
 
+  /// Ce que le serveur a compris de chaque texte, brut : `{text, criteria,
+  /// untranslated, status}` (v0.24.17).
+  final List<Map<dynamic, dynamic>> constraintTranslations;
+
   const MealPlanResponse({
     required this.suggestions,
     required this.excludedRecentIds,
@@ -869,6 +877,7 @@ class MealPlanResponse {
     this.notice,
     this.rankedCandidates = const [],
     this.conceptsRemaining = 0,
+    this.constraintTranslations = const [],
   });
 
   factory MealPlanResponse.fromMap(Map<dynamic, dynamic> data) {
@@ -890,6 +899,9 @@ class MealPlanResponse {
         prepDate: str(item['prepDate']),
         source: str(item['source']) ?? 'model',
         repeat: item['repeat'] == true,
+        unmet: (item['unmet'] as List? ?? const [])
+            .whereType<Map<dynamic, dynamic>>()
+            .toList(growable: false),
       ));
     }
     final remaining = data['conceptsRemaining'];
@@ -905,6 +917,10 @@ class MealPlanResponse {
           .whereType<Map<dynamic, dynamic>>()
           .toList(growable: false),
       conceptsRemaining: remaining is num ? remaining.toInt() : 0,
+      constraintTranslations:
+          (data['constraintTranslations'] as List? ?? const [])
+              .whereType<Map<dynamic, dynamic>>()
+              .toList(growable: false),
     );
   }
 }

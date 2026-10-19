@@ -7,6 +7,7 @@
 /// sortie du corpus.
 library;
 
+import 'planning_criteria.dart';
 import 'relaxed_criteria.dart';
 
 /// Un candidat d'un créneau, avec les faits qui le justifient.
@@ -22,11 +23,16 @@ class RankedCandidate {
   /// « Écrite pour 4 parts, servie pour 6. », calculé par le serveur.
   final String? resizeReason;
 
+  /// Critères que ce plat ne tient pas, ou n'a pas pu vérifier : durée
+  /// relâchée, allergènes non vérifiés (v0.24.17).
+  final List<UnmetCriterion> unmet;
+
   const RankedCandidate({
     required this.recipeId,
     this.why = '',
     this.repeat = false,
     this.resizeReason,
+    this.unmet = const [],
   });
 
   /// Lecture tolérante d'un élément de la réponse ; `null` sans identifiant.
@@ -41,6 +47,7 @@ class RankedCandidate {
       why: why is String ? why : '',
       repeat: raw['repeat'] == true,
       resizeReason: resize is String && resize.isNotEmpty ? resize : null,
+      unmet: UnmetCriterion.listFrom(raw['unmet']),
     );
   }
 }
@@ -58,12 +65,17 @@ class SlotRanking {
   /// (`rating`, `in_cycle`, `variety_window`) : voir [RelaxedCriterion].
   final List<String> relaxed;
 
+  /// Services restés vides par une exclusion : « Aucun dessert sans fruits à
+  /// coque. » (v0.24.17).
+  final List<UnmetCriterion> unmet;
+
   const SlotRanking({
     this.plats = const [],
     this.entrees = const [],
     this.desserts = const [],
     this.prepDate,
     this.relaxed = const [],
+    this.unmet = const [],
   });
 
   static List<RankedCandidate> _list(Object? raw) => [
@@ -79,6 +91,7 @@ class SlotRanking {
       desserts: _list(raw['desserts']),
       prepDate: prep is String ? DateTime.tryParse(prep) : null,
       relaxed: relaxedKeysFrom(raw['relaxed']),
+      unmet: UnmetCriterion.listFrom(raw['unmet']),
     );
   }
 }

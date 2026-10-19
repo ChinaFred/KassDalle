@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../auth/presentation/auth_providers.dart';
+import '../../recipes/domain/allergens.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../../groups/presentation/group_providers.dart';
@@ -16,6 +17,7 @@ import '../domain/meal_candidates.dart';
 import '../domain/meal_choice_source.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_history.dart';
+import '../domain/planning_criteria.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_refusals.dart';
 import '../domain/planning_target.dart';
@@ -31,6 +33,7 @@ import '../domain/side_chooser.dart';
 import '../services/calendar_service.dart';
 import '../services/planning_ai_service.dart';
 import 'batch_planning_widgets.dart';
+import 'constraint_understanding.dart';
 import 'meal_composer.dart';
 import 'planning_providers.dart';
 import 'recipe_picker_sheet.dart';
@@ -157,6 +160,20 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // sur le repas (`relaxed_criteria`). Retirés quand le plat est choisi à
   // la main.
   Map<int, List<String>> _slotRelaxed = {};
+  // Critères que le repas de chaque créneau ne tient pas, ou n'a pas pu
+  // vérifier (`unmet` du serveur) : une ligne par écart sur la carte, puis
+  // stockés sur le repas (`unmet_criteria`). Retirés avec le plat choisi à
+  // la main ; une entrée ou un dessert choisis à la main retirent les leurs.
+  Map<int, List<UnmetCriterion>> _slotUnmet = {};
+  // Ce que le serveur a compris des textes à la dernière génération. Prime
+  // sur le cache lu en direct ; une traduction en échec n'y est jamais
+  // écrite, seule cette carte la connaît.
+  final Map<String, ConstraintTranslation> _translationOverrides = {};
+  // L'avis « N créneaux ne tiennent pas tous les critères » a été fermé.
+  bool _criteriaNoticeClosed = false;
+  // Les cartes, par date : « Voir le premier » y fait défiler la liste.
+  final Map<DateTime, GlobalKey> _slotKeys = {};
+  final ScrollController _slotListCtrl = ScrollController();
   // L'entrée et le dessert d'un créneau dont le format en demande : posés par
   // la suggestion, changés ou retirés à la main.
   Map<int, MealComponent?> _slotStarters = {};
@@ -229,7 +246,59 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     final guard = _leaveGuard;
     Future.microtask(() => notifier.clearIf(guard));
     _globalConstraintsCtrl.dispose();
+    _slotListCtrl.dispose();
     super.dispose();
+  }
+
+  /// Ce que le serveur a compris des textes : le cache en direct, puis ce que
+  /// la dernière génération a rendu.
+  Map<String, ConstraintTranslation> get _translations => {
+    ...?ref.read(planningConstraintTranslationsProvider).value,
+    ..._translationOverrides,
+  };
+
+  /// Les critères compris du créneau [i] : les consignes du cycle et sa
+  /// contrainte spécifique, quand le serveur les a traduites.
+  PlanningCriteria _criteriaForSlot(int i) => criteriaForTexts(_translations, [
+    _globalConstraintsCtrl.text,
+    (_slotConstraints[i] ?? const DayConstraint()).notes,
+  ]);
+
+  /// Les écarts du créneau [i] ; aucun quand la liste est vide.
+  void _setSlotUnmet(int i, List<UnmetCriterion> unmet) {
+    if (unmet.isEmpty) {
+      _slotUnmet.remove(i);
+    } else {
+      _slotUnmet[i] = unmet;
+    }
+  }
+
+  /// Retire les écarts d'un service choisi à la main.
+  void _dropUnmet(int i, String service) => _setSlotUnmet(i, [
+    for (final u in _slotUnmet[i] ?? const <UnmetCriterion>[])
+      if (u.service != service) u,
+  ]);
+
+  /// Fait défiler jusqu'à la carte du créneau [index]. Sur téléphone, la
+  /// liste ne construit que les cartes proches : elle s'en approche d'abord.
+  Future<void> _showSlot(int index) async {
+    if (index < 0 || index >= _slotDates.length) return;
+    final key = _slotKeys[_slotDates[index]];
+    if (key?.currentContext == null && _slotListCtrl.hasClients) {
+      final position = _slotListCtrl.position;
+      final ratio = (index + 1) / (_slotDates.length + 2);
+      _slotListCtrl.jumpTo(
+        (position.maxScrollExtent * ratio).clamp(0.0, position.maxScrollExtent),
+      );
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    final target = key?.currentContext;
+    if (target == null || !target.mounted) return;
+    await Scrollable.ensureVisible(
+      target,
+      duration: const Duration(milliseconds: 300),
+      alignment: 0.1,
+    );
   }
 
   Future<void> _init() async {
@@ -463,6 +532,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (meal.relaxedCriteria.isNotEmpty) {
       _slotRelaxed[i] = meal.relaxedCriteria;
     }
+    if (meal.unmetCriteria.isNotEmpty) _slotUnmet[i] = meal.unmetCriteria;
     _slotStarters[i] = starter;
     _slotDesserts[i] = dessert;
     // Sa composition est décidée : le programme ne la recalcule pas.
@@ -687,6 +757,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     _slots[i] = null;
     _slotSides.remove(i);
     _slotRelaxed.remove(i);
+    _slotUnmet.remove(i);
     _slotSideManual.remove(i);
     _slotStarters.remove(i);
     _slotDesserts.remove(i);
@@ -738,6 +809,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotSides.clear();
         _slotSideManual.clear();
         _slotRelaxed.clear();
+        _slotUnmet.clear();
         _slotStarters.clear();
         _slotDesserts.clear();
         _slotComposed.clear();
@@ -791,6 +863,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _runId = suggestion.runId;
         _conceptsRemaining = suggestion.conceptsRemaining;
         _slotRankings = {..._slotRankings, ...suggestion.rankings};
+        // Ce que le serveur a compris des textes : « Compris : … » sous les
+        // champs, et les critères des accompagnements.
+        _translationOverrides.addAll({
+          for (final t in suggestion.translations) t.text: t,
+        });
+        _criteriaNoticeClosed = false;
         if (suggestion.modelUnavailable) {
           _notice = suggestion.notice;
           _noticeRetry = suggestion.modelStatus == 'failed';
@@ -798,12 +876,22 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         final suggestions = suggestion.slots;
         for (int i = 0; i < suggestions.length; i++) {
           final s = suggestions[i];
+          // Un créneau resté vide par une exclusion le dit : « Plat : à
+          // choisir. Aucun plat sans porc. »
+          if (_slots[i] == null && s.recipe == null) {
+            _setSlotUnmet(i, [
+              for (final u
+                  in suggestion.rankings[i]?.unmet ?? const <UnmetCriterion>[])
+                if (u.service == 'plat') u,
+            ]);
+          }
           // Un créneau déjà rempli n'est pas écrasé : il a été envoyé comme
           // « déjà assigné », le remplacer effacerait un choix manuel.
           if (_slots[i] != null || s.recipe == null) continue;
           _slots[i] = s.recipe;
           _setSlotFacts(i, s);
           _setSlotRelaxed(i, suggestion.rankings[i]?.relaxed);
+          _setSlotUnmet(i, s.unmet);
           // L'entrée et le dessert du même appel, quand le format du
           // créneau en demandait : le serveur ne les rend que dans ce cas.
           _slotStarters[i] = s.starter == null
@@ -963,6 +1051,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotJustifications.remove(slotIndex);
         _slotSources[slotIndex] = MealChoiceSource.manual;
         _slotRelaxed.remove(slotIndex);
+        _slotUnmet.remove(slotIndex);
         _slotWasResized[slotIndex] = false;
         _slotResizeReasons.remove(slotIndex);
         _slotPrepDates.remove(slotIndex);
@@ -1083,6 +1172,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       justification: _slotJustifications[i],
       choiceSource: _slotSources[i],
       relaxedCriteria: _slotRelaxed[i] ?? const [],
+      // Les écarts suivent le repas, sauf « aucun plat » : le plat est posé.
+      unmetCriteria: [
+        for (final u in _slotUnmet[i] ?? const <UnmetCriterion>[])
+          if (!(u.service == 'plat' && u.isEmptyService)) u,
+      ],
       components: components,
       // Plat ou menu, écrit à la validation.
       mealKind: effectiveMealKind(
@@ -1385,6 +1479,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotRankings = _shiftAfterInsert(_slotRankings, gapIdx);
         _slotSides = _shiftAfterInsert(_slotSides, gapIdx);
         _slotRelaxed = _shiftAfterInsert(_slotRelaxed, gapIdx);
+        _slotUnmet = _shiftAfterInsert(_slotUnmet, gapIdx);
         _slotStarters = _shiftAfterInsert(_slotStarters, gapIdx);
         _slotDesserts = _shiftAfterInsert(_slotDesserts, gapIdx);
         _slotComposed = _shiftAfterInsert(_slotComposed, gapIdx);
@@ -1500,6 +1595,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _slotRankings = _shiftAfterRemove(_slotRankings, index);
       _slotSides = _shiftAfterRemove(_slotSides, index);
       _slotRelaxed = _shiftAfterRemove(_slotRelaxed, index);
+      _slotUnmet = _shiftAfterRemove(_slotUnmet, index);
       _slotStarters = _shiftAfterRemove(_slotStarters, index);
       _slotDesserts = _shiftAfterRemove(_slotDesserts, index);
       _slotComposed = _shiftAfterRemove(_slotComposed, index);
@@ -1582,6 +1678,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           prepDate: ranking?.prepDate,
           source: MealChoiceSource.rules,
           repeat: local.repeat,
+          // Les écarts du plat suivant ; ceux de l'entrée et du dessert
+          // restent ceux de la liste.
+          unmet: [
+            ...local.unmet,
+            for (final u in _slotUnmet[slotIndex] ?? const <UnmetCriterion>[])
+              if (u.service != 'plat') u,
+          ],
         ),
       );
       return;
@@ -1649,6 +1752,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _slots[slotIndex] = suggestion.recipe;
       _setSlotFacts(slotIndex, suggestion);
       _setSlotRelaxed(slotIndex, _slotRankings[slotIndex]?.relaxed);
+      _setSlotUnmet(slotIndex, suggestion.unmet);
       _slotSideManual.remove(slotIndex);
       _recomputeSides(only: {slotIndex});
     });
@@ -1836,8 +1940,23 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _constraintsLocked = true;
       _slots[slotIndex] = finalRecipe;
       _setSlotFacts(slotIndex, suggestion);
-      // Une recette conçue n'a pas été choisie dans une liste classée.
+      // Une recette conçue n'a pas été choisie dans une liste classée. Ses
+      // allergènes ne sont pas encore calculés : une exclusion d'allergène
+      // n'y est pas vérifiée, et la carte le dit.
       _slotRelaxed.remove(slotIndex);
+      final excluded = _criteriaForSlot(slotIndex).excludedAllergens;
+      _setSlotUnmet(slotIndex, [
+        if (suggestion.isGenerated && excluded.isNotEmpty)
+          UnmetCriterion(
+            key: CriterionKey.excludedAllergens.key,
+            regime: CriterionRegime.exclusion,
+            status: 'unverified',
+            service: 'plat',
+            detail:
+                'Allergènes non vérifiés : '
+                '${excluded.map((a) => allergenLabel(a).toLowerCase()).join(', ')}',
+          ),
+      ]);
       _slotSideManual.remove(slotIndex);
       _recomputeSides(only: {slotIndex});
       // L'entrée et le dessert rendus avec le plat, quand le format en
@@ -2122,6 +2241,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         candidates: candidates,
         avoidIds: avoid,
         usedInCycleIds: used,
+        criteria: _criteriaForSlot(i),
       );
       next[i] = [for (final c in choices) c.component];
       used.addAll(next[i]!.map((c) => c.sourceId));
@@ -2144,6 +2264,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         main: recipe,
         candidates: _sideCandidates,
         initialNeed: need,
+        criteria: _criteriaForSlot(index),
       ),
     );
     final component = result?.toComponent(justification: 'Choisi à la main.');
@@ -2242,6 +2363,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       } else {
         _slotDesserts[index] = component;
       }
+      // Un choix à la main : l'écart du serveur sur ce service ne vaut plus.
+      _dropUnmet(
+        index,
+        role == MealComponentRole.entree ? 'entree' : 'dessert',
+      );
     });
   }
 
@@ -2340,6 +2466,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             staples: _staples,
             recipes: _allRecipes,
           ),
+          criteria: _criteriaForSlot(slot),
         ),
       );
       content = result?.toComponent(role: course.role);
@@ -2372,6 +2499,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       fallbackTitle: recipe.titre,
       canChangeRecipe: false,
       successMessage: null,
+      criteria: _criteriaForSlot(index),
       onSave: (result) async {
         if (mounted) {
           setState(() => _adoptSlotComposition(index, result.composition));
@@ -2542,6 +2670,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Gardé ouvert tant que l'écran vit : « Compris : … » et les critères des
+    // accompagnements le relisent.
+    ref.watch(planningConstraintTranslationsProvider);
     final groupId = widget.groupId;
     if (groupId != null) {
       // Le planning d'un groupe ne s'ouvre qu'à son propriétaire : la cible
@@ -2677,6 +2808,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               children: [
                 _buildCycleBanner(assignedCount, totalSlots),
                 ?_buildNotice(),
+                ?_buildCriteriaNotice(),
                 Expanded(child: _buildSlotList(effectivePrefs)),
               ],
             ),
@@ -2820,6 +2952,27 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     );
   }
 
+  /// « 3 créneaux ne tiennent pas tous les critères. » avec « Voir le
+  /// premier » : les écarts sont sur les cartes, l'avis dit où.
+  Widget? _buildCriteriaNotice() {
+    if (_criteriaNoticeClosed) return null;
+    final slots = [
+      for (var i = 0; i < _slotDates.length; i++)
+        if ((_slotUnmet[i] ?? const <UnmetCriterion>[]).isNotEmpty) i,
+    ];
+    if (slots.isEmpty) return null;
+    final n = slots.length;
+    return PlanningNoticeBanner(
+      key: const ValueKey('criteria-notice'),
+      message: n == 1
+          ? '1 créneau ne tient pas tous les critères.'
+          : '$n créneaux ne tiennent pas tous les critères.',
+      actionLabel: 'Voir le premier',
+      onAction: () => unawaited(_showSlot(slots.first)),
+      onClose: () => setState(() => _criteriaNoticeClosed = true),
+    );
+  }
+
   Widget? _buildNotice() {
     if (_notice == null) return null;
     return PlanningNoticeBanner(
@@ -2835,15 +2988,30 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
   /// Le champ des consignes du cycle, partagé par les deux dispositions.
   Widget _buildGlobalConstraintsField({required int minLines}) {
-    return StylusPadTextField(
-      controller: _globalConstraintsCtrl,
-      minLines: minLines,
-      maxLines: 8,
-      decoration: const InputDecoration(
-        labelText: 'Consignes du cycle',
-        hintText: 'Ex: pas de dessert, varier protéines, utiliser les restes',
-        border: OutlineInputBorder(),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        StylusPadTextField(
+          controller: _globalConstraintsCtrl,
+          minLines: minLines,
+          maxLines: 8,
+          decoration: const InputDecoration(
+            labelText: 'Consignes du cycle',
+            hintText:
+                'Ex: pas de dessert, varier protéines, utiliser les restes',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        // Ce que Kass'Dalle a compris du texte, relu à chaque frappe dans la
+        // traduction déjà faite : aucune traduction ne part d'ici.
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _globalConstraintsCtrl,
+          builder: (context, value, _) => ConstraintUnderstandingLines(
+            text: value.text,
+            translation: _translations[value.text.trim()],
+          ),
+        ),
+      ],
     );
   }
 
@@ -2883,6 +3051,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                 children: [
                   _buildCycleBanner(assignedCount, totalSlots),
                   ?_buildNotice(),
+                  ?_buildCriteriaNotice(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     child: _buildGlobalConstraintsField(minLines: 3),
@@ -2956,6 +3125,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     return ListView.separated(
+      controller: _slotListCtrl,
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
       // +1 pour les consignes, +1 pour « Ajouter un jour ».
       itemCount: _slotDates.length + 2,
@@ -3028,9 +3198,17 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   }
 
   Widget _buildSlotTile(int index, PlanningPreferences effectivePrefs) {
+    // La date identifie le créneau : supprimer un jour ne fait pas passer
+    // l'état d'une carte (pli ouvert) à sa voisine. La clé globale sert
+    // « Voir le premier ».
+    return KeyedSubtree(
+      key: _slotKeys.putIfAbsent(_slotDates[index], GlobalKey.new),
+      child: _buildSlotCard(index, effectivePrefs),
+    );
+  }
+
+  Widget _buildSlotCard(int index, PlanningPreferences effectivePrefs) {
     return BatchSlotTile(
-      // La date identifie le créneau : supprimer un jour ne fait pas passer
-      // l'état d'une carte (pli ouvert) à sa voisine.
       key: ValueKey(_slotDates[index]),
       index: index,
       date: _slotDates[index],
@@ -3073,6 +3251,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           _slotSides.remove(index);
           _slotSideManual.remove(index);
           _slotRelaxed.remove(index);
+          _slotUnmet.remove(index);
           _slotStarters.remove(index);
           _slotDesserts.remove(index);
           _slotComposed.remove(index);
@@ -3128,6 +3307,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       sideStatus: _sideStatusFor(index),
       needsWithoutCandidate: _needsWithoutCandidate,
       relaxed: _slotRelaxed[index] ?? const [],
+      unmet: _slotUnmet[index] ?? const [],
+      understandingOf: (text) => _translations[text.trim()],
       noStarterCandidate: _noRecipeWithRole('entree'),
       noDessertCandidate: _noRecipeWithRole('dessert'),
       starter: _slotStarters[index],

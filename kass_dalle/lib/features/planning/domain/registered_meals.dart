@@ -53,6 +53,7 @@ String plannedMealContentKey(PlannedMeal meal) => jsonEncode([
   meal.mealKind?.key,
   meal.choiceSource?.value,
   meal.relaxedCriteria,
+  [for (final u in meal.unmetCriteria) u.toMap()],
   // Un champ inconnu d'une version plus récente peut porter une date : il
   // entre dans la clé sous sa forme texte, sans faire échouer l'encodage.
 ], toEncodable: (o) => o.toString());

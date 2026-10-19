@@ -14,6 +14,7 @@ library;
 import '../../recipes/domain/recipe.dart';
 import 'meal_component.dart';
 import 'meal_staple.dart';
+import 'planning_criteria.dart';
 
 /// Accompagnements au plus pour un plat : au-delà, l'éditeur ne propose plus
 /// d'en ajouter (« 6 accompagnements au plus »).
@@ -60,6 +61,12 @@ class SideCandidate {
   String get id => staple?.id ?? recipe!.id;
   String get name => staple?.name ?? recipe!.titre;
   int get sortOrder => staple?.sortOrder ?? 0;
+
+  /// Ce que le prédicat des critères sait de ce candidat : allergènes saisis
+  /// d'une garniture, allergènes calculés d'une recette.
+  CriteriaItem get criteriaItem => staple != null
+      ? CriteriaItem.ofStaple(staple!)
+      : CriteriaItem.ofRecipe(recipe!);
 
   /// Vrai si ce candidat apporte ce qui manque.
   bool provides(SideNeed need) {
@@ -236,6 +243,11 @@ class SideChoice {
 ///
 /// [needs] remplace ce qui manque au plat seul : l'éditeur du repas ne
 /// propose que pour ce que ses accompagnements ne couvrent pas encore.
+///
+/// [criteria] : les critères compris des préférences du jour. Un candidat qui
+/// viole une exclusion (« contient : gluten ») n'est jamais proposé ; parmi
+/// les autres, ceux dont les exclusions sont vérifiées passent avant ceux
+/// aux allergènes non renseignés, dont la justification le dit.
 List<SideChoice> chooseSides({
   required Recipe main,
   required List<SideCandidate> candidates,
@@ -243,9 +255,18 @@ List<SideChoice> chooseSides({
   Set<String> usedInCycleIds = const {},
   Set<String> takenIds = const {},
   List<SideNeed>? needs,
+  PlanningCriteria criteria = PlanningCriteria.empty,
 }) {
   final wanted = needs ?? sideNeedsFor(main.tags);
+  if (criteria.hasExclusions) {
+    candidates = [
+      for (final c in candidates)
+        if (!violatesExclusion(criteria, c.criteriaItem)) c,
+    ];
+  }
   if (wanted.isEmpty || candidates.isEmpty) return const [];
+  bool verified(SideCandidate c) =>
+      !criteria.hasExclusions || exclusionsVerified(criteria, c.criteriaItem);
   final suggested = suggestedCandidatesFor(main, candidates);
   final taken = {...takenIds};
   final out = <SideChoice>[];
@@ -267,11 +288,12 @@ List<SideChoice> chooseSides({
     for (final c in fallback) {
       if (seen.add(c.id)) ordered.add(c);
     }
-    final free = [
+    final open = [
       for (final c in ordered)
         if (!taken.contains(c.id)) c,
     ];
-    if (free.isEmpty) continue;
+    if (open.isEmpty) continue;
+    final free = [...open.where(verified), ...open.where((c) => !verified(c))];
 
     SideCandidate? pick;
     for (final c in free) {
@@ -288,11 +310,12 @@ List<SideChoice> chooseSides({
 
     taken.add(pick.id);
     final fromSuggestion = ordered.indexOf(pick) < suggestedCount;
+    final unverified = verified(pick) ? '' : ' Allergènes non renseignés.';
     final justification = fromSuggestion
         ? 'Le plat n\'apporte pas de ${need.label} : ${pick.name}, '
-              'accompagnement classique.'
+              'accompagnement classique.$unverified'
         : 'Le plat n\'apporte pas de ${need.label} : ${pick.name}, faute '
-              'd\'accompagnement classique disponible.';
+              'd\'accompagnement classique disponible.$unverified';
     out.add(
       SideChoice(
         component: pick.toComponent(justification: justification),

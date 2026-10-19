@@ -9,10 +9,12 @@ import '../../../core/presentation/leave_guard.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../groups/domain/family_group.dart';
 import '../../groups/presentation/group_providers.dart';
+import '../domain/planning_criteria.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_refusals.dart';
 import '../services/calendar_service.dart';
+import 'constraint_understanding.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
@@ -347,6 +349,12 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
   }
 
   Widget _buildForm() {
+    // Ce que le serveur a compris de chaque texte : « Compris : … » sous les
+    // champs. Rien ne se traduit ici ; la traduction part au clic sur
+    // « Planifier avec l'IA ».
+    final translations =
+        ref.watch(planningConstraintTranslationsProvider).value ??
+        const <String, ConstraintTranslation>{};
     return Scaffold(
       appBar: AppBar(
         title: const Text('Préférences du planning'),
@@ -405,6 +413,14 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _globalConstraintsCtrl,
+                    builder: (context, value, _) =>
+                        ConstraintUnderstandingLines(
+                          text: value.text,
+                          translation: translations[value.text.trim()],
+                        ),
+                  ),
                 ],
               ),
             ),
@@ -461,6 +477,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                       constraint:
                           _prefs!.dailyConstraints[d] ?? const DayConstraint(),
                       notesCtrl: _notesControllers[d]!,
+                      translations: translations,
                       maxPrepCtrl: _maxPrepControllers[d]!,
                       targetPortionsCtrl: _targetPortionsControllers[d]!,
                       onBatchCookingChanged: (v) =>
@@ -1069,6 +1086,9 @@ class _DayConstraintTile extends StatelessWidget {
   final int weekday;
   final DayConstraint constraint;
   final TextEditingController notesCtrl;
+
+  /// Ce que le serveur a compris des textes, pour la contrainte spécifique.
+  final Map<String, ConstraintTranslation> translations;
   final TextEditingController maxPrepCtrl;
   final TextEditingController targetPortionsCtrl;
   final ValueChanged<bool> onBatchCookingChanged;
@@ -1087,6 +1107,7 @@ class _DayConstraintTile extends StatelessWidget {
     required this.weekday,
     required this.constraint,
     required this.notesCtrl,
+    this.translations = const {},
     required this.maxPrepCtrl,
     required this.targetPortionsCtrl,
     required this.onBatchCookingChanged,
@@ -1250,6 +1271,13 @@ class _DayConstraintTile extends StatelessWidget {
                     filled: true,
                     fillColor: Theme.of(context).colorScheme.surface,
                     border: const OutlineInputBorder(),
+                  ),
+                ),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: notesCtrl,
+                  builder: (context, value, _) => ConstraintUnderstandingLines(
+                    text: value.text,
+                    translation: translations[value.text.trim()],
                   ),
                 ),
               ],

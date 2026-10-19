@@ -191,6 +191,7 @@
       <li value="47"><a href="#notification-version">Notifier les administrateurs d'un nouvel APK</a></li>
       <li value="48"><a href="#doublon-import">Trancher un doublon possible à l'import</a></li>
       <li value="49"><a href="#ticket-clore">Clore un ticket depuis l'application</a></li>
+      <li value="50"><a href="#criteres-verifies">Critères vérifiés : traduire les préférences, tenir les exclusions</a></li>
     </ol>
   </nav>
 
@@ -1935,11 +1936,12 @@ sequenceDiagram
   Note over SP: requireEditor (v0.23.47) : le lecteur ne planifie pas
   SP->>FS: app_config/planning_policy · planned_meals 90 j (appelant)<br/>· recipe_ratings et preferences/planning_refusals (appelant seul)
   FS-->>SP: politique, dernière date servie par recette, notes, refus de moins de 21 j
-  SP->>PL: applyRecentlyServed puis preselect
-  PL->>PL: filtres durs : rôle, prépa max, repos, note ≤ 3, écartées, déjà au cycle
+  SP->>SP: textes compris (v0.24.17, diagramme 50) :<br/>cache, puis un appel planning_constraints pour les textes modifiés
+  SP->>PL: applyRecentlyServed puis preselect (critères de chaque créneau)
+  PL->>PL: filtres : rôle, exclusion comprise (jamais relâchée), prépa max,<br/>repos, note ≤ 3, écartées, déjà au cycle, préférence comprise
   PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note × refus<br/>× féculent d'un créneau voisin (×0,5) × protéine d'un créneau voisin (×0,5)<br/>× cuisine étrangère déjà au cycle (×0,5 par répétition, française jamais)<br/>(refus : ×0,5 sur 21 j, ×0,25 dès 3 refus, jamais exclue)<br/>protéine : main_protein, sinon dish_types<br/>tirage pondéré, 3 protéines en tête, relâchement si vide
   PL-->>SP: listes classées par créneau (5 plats, 3 entrées, 3 desserts en tête, 15 plats gardés)
-  SP->>PL: buildPlanningPrompt — chaque candidat décrit une fois, listes mélangées
+  SP->>PL: buildPlanningPrompt — chaque candidat décrit une fois, listes mélangées ;<br/>critères vérifiés en clair, reste non traduit des textes
   SP->>SP: coût plafond (grille en vigueur, taux de la facture)
   alt estimation au-delà de 0,50 € ou plafond du jour atteint
     SP->>PL: codeFill — premier candidat libre, aucun appel
@@ -1955,8 +1957,8 @@ sequenceDiagram
     end
   end
   SP->>FS: users/{uid}/planning_runs/{runId} — propositions, statut,<br/>concepts_max (borné par les créneaux vides), coût
-  SP-->>B: suggestions (faits du code, source model | code), rankedCandidates,<br/>runId, conceptsRemaining, notice
-  B->>B: ligne d'origine : Choisie par l'IA · Choisie par Kass'Dalle ;<br/>bandeau si notice, « Réessayer avec l'IA » après une panne
+  SP-->>B: suggestions (faits du code, source model | code, unmet), rankedCandidates (unmet),<br/>runId, conceptsRemaining, notice, constraintTranslations
+  B->>B: ligne d'origine : Choisie par l'IA · Choisie par Kass'Dalle ;<br/>bandeau si notice, « Réessayer avec l'IA » après une panne,<br/>une ligne par écart, « N créneaux ne tiennent pas tous les critères »
 
   opt créneaux restés vides, conception IA cochée
     loop tant que conceptsRemaining > 0
@@ -1986,7 +1988,7 @@ sequenceDiagram
     B->>B: recette posée, « Choisie par Kass'Dalle », l'ancienne écartée<br/>(refus retenu si elle avait été proposée)
   end
   U->>B: Valider le planning
-  B->>FS: planned_meals — recette, justification, choice_source
+  B->>FS: planned_meals — recette, justification, choice_source,<br/>relaxed_criteria, unmet_criteria
   B->>FS: transaction preferences/planning_refusals — refus de la session,<br/>expirés retirés, count +1 ou remis à 1 (best-effort)
 </pre>
       </div>
@@ -4790,6 +4792,92 @@ sequenceDiagram
         relecture horaire lisent ensuite une Issue fermée portant <code>statut:clos</code> : ils
         retrouvent « Clos » (sans cette étiquette, la fermeture donne Livré ou Refusé). Un ticket
         Clos est final : validation, refus, réponse et lancements sont refusés.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="criteres-verifies"><span class="n">50</span>Critères vérifiés : traduire les préférences, tenir les exclusions</h2>
+    <p class="sec-note">
+      Les textes libres des préférences — préférences générales, contrainte d'un jour — sont
+      traduits par le modèle en critères d'un vocabulaire fermé, une fois par texte modifié ;
+      le programme les vérifie. Une exclusion ne se relâche jamais, une préférence se relâche
+      et l'écran le dit. Rien ne part à la frappe.
+      <span class="path">batch_planning_screen.dart → suggestMealPlanFn →
+      gemini/planningConstraintsStore.ts (understandPlanningTexts) → gemini/planningConstraints.ts
+      (translateConstraintTexts, poste planning_constraints) → users/{uid}/preferences/planning_constraints ·
+      gemini/planningCriteria.ts ↔ planning_criteria.dart (fixture planning_criteria.json) ·
+      side_chooser.dart · side_picker_sheet.dart</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Éditeur
+  participant B as Nouveau planning
+  participant SP as suggestMealPlanFn
+  participant FS as Firestore
+  participant M as Moteur d'IA
+  participant PL as gemini/planning.ts
+
+  U->>B: écrit « Pas de porc, 30 min max, pas trop gras »
+  B->>B: sous le champ : « Sera lu au prochain « Planifier avec l'IA ». »
+  U->>B: Planifier avec l'IA
+  B->>SP: résumés (allergens compris), globalConstraints, notes des créneaux
+  SP->>FS: users/{uid}/preferences/planning_constraints
+  FS-->>SP: entrées par empreinte SHA-256 du texte
+  alt tous les textes en cache, ou mode code
+    Note over SP: aucun appel de modèle
+  else textes modifiés (16 au plus, 2 000 car.)
+    SP->>M: askJson(planning_constraints, maxTokens 3 000)
+    alt réponse lisible
+      M-->>SP: textes : exclus, voulus, préparation max, léger, non_traduit
+      SP->>SP: parseConstraintsAnswer — valeurs hors vocabulaire écartées
+      SP->>FS: écrit les traductions réussies (40 entrées au plus)
+    else panne, réponse illisible, plafond du jour
+      Note over SP: logError ou logWarn — le texte part au prompt tel quel, « non vérifié »
+    end
+  end
+  SP->>PL: preselect avec les critères de chaque créneau (générales + note du jour)
+  PL->>PL: exclusion violée : jamais candidate, plat, entrée, dessert
+  PL->>PL: recettes vérifiées d'abord, puis aux allergènes inconnus faute de mieux : « non vérifiés »
+  PL->>PL: préférence non tenue : écartée, puis relâchée (wanted, in_cycle,<br/>variety_window, max_duration en dernier)
+  alt service sans candidat par une exclusion
+    PL-->>SP: unmet status empty : « Aucun dessert sans fruits à coque. »
+  end
+  SP->>M: callModel(planning) — critères vérifiés en clair, reste non traduit
+  SP-->>B: suggestions (unmet), rankedCandidates (unmet), constraintTranslations
+  B->>B: « Compris : sans porc · 30 min max »<br/>« Transmis à l'IA, non vérifié : « pas trop gras » »
+  B->>B: carte : « 1 h 10, au-delà des 45 min demandées : peu d'autres choix »<br/>« Dessert : à choisir. Aucun dessert sans fruits à coque. » [Choisir]
+  B->>B: avis : « 3 créneaux ne tiennent pas tous les critères. » [Voir le premier]
+  B->>B: chooseSides — accompagnement qui viole une exclusion jamais proposé,<br/>vérifié avant non renseigné
+  U->>B: ajoute un accompagnement à la main
+  B->>U: SidePickerSheet — tout reste choisissable,<br/>« contient : gluten », « allergènes non renseignés »
+  U->>B: Valider le planning
+  B->>FS: planned_meals.unmet_criteria — lu par la ligne d'origine du planning
+</pre>
+      </div>
+      <figcaption>
+        <b>Au modèle la reconnaissance, au programme la vérification.</b> Le modèle ne décide
+        d'aucun plat ici : il traduit un texte en valeurs d'une liste fermée, une fois. Le
+        programme filtre chaque candidat avec le même prédicat des deux côtés.
+        <span class="expect">
+          <b><code>planning_criteria.json</code> verrouille le vocabulaire, la lecture, la
+          réunion et le prédicat d'exclusion</b>, rejoués par <code>planningCriteria.ts</code> et
+          <code>planning_criteria.dart</code>. Le prédicat des préférences est serveur seul.
+        </span>
+        <span class="expect">
+          <b>Une donnée absente ne prouve rien.</b> Une recette aux allergènes absents ou
+          incomplets, une garniture sans allergènes saisis, une protéine inconnue ne sont pas
+          comptées comme « sans » : elles sont proposées à défaut de mieux, et l'écran dit
+          « non vérifié ».
+        </span>
+        <span class="expect warn">
+          <b>La protéine exclue ne porte que sur la protéine principale.</b> Un poulet aux
+          lardons passe « sans porc » ; un ingrédient précis et la cuisine restent transmis à
+          l'IA, non vérifiés.
+        </span>
       </figcaption>
     </figure>
   </section>

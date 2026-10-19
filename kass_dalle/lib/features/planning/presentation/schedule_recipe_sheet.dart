@@ -10,6 +10,7 @@ import '../domain/side_chooser.dart';
 import '../domain/meal_recipe_location.dart';
 import '../domain/meal_choice_source.dart';
 import '../domain/planned_meal.dart';
+import '../domain/planning_criteria.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_target.dart';
 import '../services/calendar_service.dart';
@@ -191,12 +192,24 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
       for (final c in chooseSides(
         main: recipe,
         candidates: sideCandidatesFrom(staples: staples, recipes: recipes),
+        criteria: _criteria,
       ))
         c.component,
     ];
     _sides = chosen;
     return chosen;
   }
+
+  /// Les critères compris des préférences du jour choisi : un
+  /// accompagnement qui viole une exclusion n'est pas proposé.
+  PlanningCriteria get _criteria => criteriaForDay(
+    prefs:
+        ref.read(planningPreferencesProvider).value ??
+        const PlanningPreferences(),
+    translations:
+        ref.read(planningConstraintTranslationsProvider).value ?? const {},
+    date: _selectedDate,
+  );
 
   /// « Changer » : l'éditeur « Composer le repas », sur ce repas pas encore
   /// créé. Le plat ne change pas ; rien n'est écrit avant « Ajouter au
@@ -216,6 +229,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
       mealDate: _selectedDate,
       canChangeRecipe: false,
       successMessage: null,
+      criteria: _criteria,
       onSave: (composition) async {
         if (mounted) setState(() => _sides = composition.sides);
       },
@@ -371,6 +385,8 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   Widget _buildSidesRow() {
     // Abonné ici : les garnitures arrivent après l'ouverture.
     final staples = ref.watch(myStaplesProvider);
+    // Lu par les accompagnements proposés : gardé ouvert avec la feuille.
+    ref.watch(planningConstraintTranslationsProvider);
     final sides = _currentSides();
     // Garnitures illisibles : le repas s'ajoute quand même, sans
     // accompagnement. Le flux ne remonte pas son erreur : on la signale ici,

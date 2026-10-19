@@ -32,6 +32,7 @@ le fichier TypeScript. Les suites qui la rejouent :
 | `ai_pricing.json` | `ai_pricing_test.dart` | `sharedFixtures.test.ts` |
 | `page_homography.json` | `page_homography_test.dart` | `sharedFixtures.test.ts` |
 | `meal_roles.json` | `meal_role_test.dart` | `mealRole.test.ts` |
+| `planning_criteria.json` | `planning_criteria_test.dart` | `planningCriteria.test.ts` |
 | `meal_storage_rules.json` | `meal_storage_rules_test.dart` | `mealStorageRules.test.ts` |
 | `shopping_products.json` | `shopping_products_test.dart` | `shoppingProducts.test.ts` |
 | `allergens.json` | `allergens_test.dart` | `allergens.test.ts` |

@@ -4,6 +4,7 @@ import '../../recipes/domain/recipe.dart';
 import '../domain/meal_choice_source.dart';
 import '../domain/meal_idea.dart';
 import '../domain/planning_history.dart';
+import '../domain/planning_criteria.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/ranked_candidates.dart';
 
@@ -41,6 +42,11 @@ class SlotSuggestion {
   /// Vrai si la recette n'est proposée que faute d'autre choix.
   final bool repeat;
 
+  /// Critères que le repas ne tient pas, ou n'a pas pu vérifier : ceux du
+  /// plat, de l'entrée et du dessert, et les services restés vides par une
+  /// exclusion. Phrases du serveur.
+  final List<UnmetCriterion> unmet;
+
   const SlotSuggestion({
     this.recipe,
     this.justification,
@@ -52,6 +58,7 @@ class SlotSuggestion {
     this.dessert,
     this.source = MealChoiceSource.ai,
     this.repeat = false,
+    this.unmet = const [],
   });
 }
 
@@ -79,6 +86,11 @@ class MealPlanSuggestion {
   /// Conceptions encore permises pour cette génération.
   final int conceptsRemaining;
 
+  /// Ce que le serveur a compris des textes de la demande : préférences
+  /// générales et notes du jour. Une traduction en échec garde tout le texte
+  /// non vérifié.
+  final List<ConstraintTranslation> translations;
+
   const MealPlanSuggestion({
     required this.slots,
     required this.excludedRecentCount,
@@ -87,6 +99,7 @@ class MealPlanSuggestion {
     this.notice,
     this.rankings = const {},
     this.conceptsRemaining = 0,
+    this.translations = const [],
   });
 
   /// Le modèle n'a pas choisi : panne ou plafond. L'écran affiche [notice].
@@ -118,6 +131,13 @@ Map<String, dynamic> planningRecipeSummary(Recipe r) => {
   },
   // Les parts de la recette : le serveur dit si le repas sera redimensionné.
   if (r.portions != null && r.portions! > 0) 'portions': r.portions,
+  // Les allergènes calculés par le serveur : une exclusion d'allergène se
+  // vérifie sur eux. Absents, elle n'est pas vérifiée, et l'écran le dit.
+  if (r.allergens != null)
+    'allergens': {
+      'present': r.allergens!.present,
+      'complete': r.allergens!.complete,
+    },
 };
 
 /// Service d'IA pour la génération de planning de repas via Gemini.
@@ -240,6 +260,7 @@ class PlanningAiService {
         dessert: s.dessertId == null ? null : recipeById[s.dessertId!],
         source: MealChoiceSource.fromServer(s.source),
         repeat: s.repeat,
+        unmet: UnmetCriterion.listFrom(s.unmet),
       );
     }
 
@@ -260,6 +281,10 @@ class PlanningAiService {
       notice: response.notice,
       rankings: rankings,
       conceptsRemaining: response.conceptsRemaining,
+      translations: [
+        for (final raw in response.constraintTranslations)
+          ?ConstraintTranslation.fromMap(raw),
+      ],
     );
   }
 

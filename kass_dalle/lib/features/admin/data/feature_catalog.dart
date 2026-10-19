@@ -64,6 +64,7 @@ const kFeatureProcess = <String, String>{
   'planning': 'Planning et courses',
   'planning_concept': 'Planning et courses',
   'planning_meal_ideas': 'Planning et courses',
+  'planning_constraints': 'Planning et courses',
   'storage_advice': 'Planning et courses',
   'shopping_list': 'Planning et courses',
   'shopping_products_refresh': 'Planning et courses',
@@ -370,6 +371,15 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         "Génère un concept de recette personnalisé pour combler un slot "
         'du planning quand aucune recette existante ne correspond.',
+  ),
+  'planning_constraints': FeatureInfo(
+    label: 'Traduction des préférences du planning',
+    description:
+        'Lit le texte libre des préférences générales et des notes du jour '
+        '(« pas de porc », « 30 min max ») et le traduit en critères que le '
+        'programme vérifie. Un appel par « Planifier avec l\'IA », pour les '
+        'seuls textes modifiés depuis la dernière traduction ; un texte '
+        'inchangé est relu dans le cache, sans appel.',
   ),
   'planning_meal_ideas': FeatureInfo(
     label: 'Idées de repas (planning)',

@@ -35,6 +35,7 @@ import 'meal_composer.dart';
 import 'meal_staples_providers.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
+import '../domain/planning_criteria.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_reach.dart';
 import '../domain/planning_target.dart';
@@ -262,7 +263,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   ///
   /// Rien tant que les garnitures ne sont pas lues : mieux vaut un repas sans
   /// accompagnement qu'un accompagnement au hasard.
-  List<MealComponent> _composeComponents(Recipe recipe) {
+  ///
+  /// [date] : le jour du repas. Les critères compris de ses préférences
+  /// écartent un accompagnement qui viole une exclusion.
+  List<MealComponent> _composeComponents(Recipe recipe, {DateTime? date}) {
     final staples = ref.read(myStaplesProvider).value;
     if (staples == null) return const [];
     final choices = chooseSides(
@@ -271,9 +275,21 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         staples: staples,
         recipes: _availableRecipes,
       ),
+      criteria: date == null ? PlanningCriteria.empty : _criteriaForDate(date),
     );
     return [for (final c in choices) c.component];
   }
+
+  /// Les critères compris des préférences du jour [date] : préférences
+  /// générales et note de ce jour de semaine, quand le serveur les a lues.
+  PlanningCriteria _criteriaForDate(DateTime date) => criteriaForDay(
+    prefs:
+        ref.read(planningPreferencesProvider).value ??
+        const PlanningPreferences(),
+    translations:
+        ref.read(planningConstraintTranslationsProvider).value ?? const {},
+    date: date,
+  );
 
   /// Recette validée dont l'identifiant est [id], ou rien si elle n'est pas
   /// chargée — un repas peut pointer une recette de la famille, absente des
@@ -299,6 +315,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         mealDate: meal.plannedAt,
         fallbackTitle: meal.recipeTitre,
         dismissedRecipeIds: meal.dismissedRecipeIds.toSet(),
+        criteria: _criteriaForDate(meal.plannedAt),
         onSave: (result) => _saveComposition(meal, result),
       );
 
@@ -416,6 +433,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           ],
         ),
         initialNeed: need,
+        criteria: _criteriaForDate(meal.plannedAt),
       ),
     );
     final component = result?.toComponent(justification: 'Choisi à la main.');
@@ -695,6 +713,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
             staples: staples,
             recipes: recipes,
           ),
+          criteria: _criteriaForDate(meal.plannedAt),
         ),
       );
       content = result?.toComponent(role: course.role);
@@ -835,7 +854,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       targetPortions: meal.targetPortions ?? recipe.portions,
       dismissRecipeId: _oustedBy(meal, recipe.id),
       // Un autre plat, un autre accompagnement.
-      components: replaceMainSides(meal.components, _composeComponents(recipe)),
+      components: replaceMainSides(
+        meal.components,
+        _composeComponents(recipe, date: meal.plannedAt),
+      ),
       choiceSource: MealChoiceSource.manual,
     );
     _recordRefusal(meal, recipe.id.isEmpty ? null : recipe.id);
@@ -1327,13 +1349,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         dismissRecipeId: _oustedBy(meal, recipe.id),
         components: replaceMainSides(
           meal.components,
-          _composeComponents(recipe),
+          _composeComponents(recipe, date: meal.plannedAt),
         ),
         choiceSource: suggestion.source,
         justification: suggestion.justification,
         // Un écart de la présélection (déjà servi, note relâchée) reste
-        // lisible sur le repas.
+        // lisible sur le repas, comme les écarts aux critères compris.
         relaxedCriteria: result.rankings[0]?.relaxed ?? const [],
+        unmetCriteria: suggestion.unmet,
       );
       _recordRefusal(meal, recipe.id.isEmpty ? null : recipe.id);
       if (mounted) {
@@ -1436,7 +1459,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         dismissRecipeId: _oustedBy(meal, id),
         components: replaceMainSides(
           meal.components,
-          _composeComponents(recipe),
+          _composeComponents(recipe, date: meal.plannedAt),
         ),
         choiceSource: MealChoiceSource.concept,
         justification: suggestion.justification,
@@ -1579,6 +1602,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     // depuis ce que le compte a sous la main, lu ici pour être prêt. Le
     // lecteur ne planifie pas : il n'en a pas besoin.
     if (canPlan) ref.watch(myStaplesProvider);
+    // Ce que le serveur a compris des préférences : les accompagnements
+    // proposés écartent ce qu'une exclusion interdit.
+    if (canPlan) ref.watch(planningConstraintTranslationsProvider);
     ref.listen(planningReachProvider, _onReachChanged);
     final theme = Theme.of(context);
     final isWide =
@@ -2907,7 +2933,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           cookMinutes: cookMinutes,
           basePortions: recipe.portions,
           targetPortions: targetPortions,
-          components: _composeComponents(recipe),
+          components: _composeComponents(recipe, date: day),
           choiceSource: MealChoiceSource.manual,
           createdAt: DateTime.now(),
         ),

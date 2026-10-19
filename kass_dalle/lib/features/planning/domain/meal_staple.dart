@@ -12,6 +12,8 @@
 /// un seul document. Rien de personnel n'écrit dans le référentiel partagé.
 library;
 
+import '../../recipes/domain/allergens.dart';
+
 /// Famille d'une garniture : sert au tri, à l'affichage, et plus tard à la
 /// composition d'un repas (un plat sans féculent en reçoit un).
 enum StapleCategory {
@@ -69,6 +71,13 @@ class MealStaple {
   /// `builtin` (semée), `admin` (créée depuis Admin) ou `user` (à quelqu'un).
   final String source;
 
+  /// Allergènes majeurs de la garniture, clés de `allergens.dart`, saisis à
+  /// la main (`allergens`, v0.24.17). `null` : non renseignés — une
+  /// garniture ancienne, ou que personne n'a encore regardée. Une liste vide
+  /// dit « aucun allergène majeur ». Lus par le planning pour écarter un
+  /// accompagnement qui contient un allergène exclu.
+  final List<String>? allergens;
+
   const MealStaple({
     required this.id,
     required this.name,
@@ -80,6 +89,7 @@ class MealStaple {
     this.sortOrder = 0,
     this.active = true,
     this.source = 'builtin',
+    this.allergens,
   });
 
   String get effectiveShoppingProduct =>
@@ -101,6 +111,7 @@ class MealStaple {
         sortOrder: (data['sort_order'] as num?)?.toInt() ?? 0,
         active: data['active'] as bool? ?? true,
         source: data['source'] as String? ?? 'builtin',
+        allergens: stapleAllergensFrom(data['allergens']),
       );
 
   Map<String, dynamic> toFirestore() => {
@@ -113,6 +124,7 @@ class MealStaple {
     'sort_order': sortOrder,
     'active': active,
     'source': source,
+    if (allergens != null) 'allergens': allergens,
   };
 
   MealStaple copyWith({
@@ -125,6 +137,10 @@ class MealStaple {
     int? sortOrder,
     bool? active,
     String? source,
+    List<String>? allergens,
+
+    /// Rend la garniture à « allergènes non renseignés ».
+    bool clearAllergens = false,
   }) => MealStaple(
     id: id,
     name: name ?? this.name,
@@ -136,6 +152,7 @@ class MealStaple {
     sortOrder: sortOrder ?? this.sortOrder,
     active: active ?? this.active,
     source: source ?? this.source,
+    allergens: clearAllergens ? null : (allergens ?? this.allergens),
   );
 
   /// La garniture de base, retouchée par un utilisateur.
@@ -146,7 +163,19 @@ class MealStaple {
     unit: o.unit,
     note: o.note,
     shoppingProduct: o.shoppingProduct,
+    allergens: o.allergens,
   );
+}
+
+/// Lit le champ `allergens` d'une garniture : les clés connues, dans l'ordre
+/// du règlement ; `null` quand le champ manque ou n'est pas une liste.
+List<String>? stapleAllergensFrom(Object? raw) {
+  if (raw is! List) return null;
+  final keys = raw.whereType<String>().toSet();
+  return [
+    for (final k in kAllergenKeys)
+      if (keys.contains(k)) k,
+  ];
 }
 
 /// Écrit une quantité comme on la lit : « 125 g », « 1 pièce », « 2 pièces ».
@@ -176,6 +205,10 @@ class StapleOverride {
   final String? note;
   final String? shoppingProduct;
 
+  /// Allergènes retouchés, ou ceux d'une garniture à soi ; `null` : ceux du
+  /// référentiel, ou non renseignés pour une garniture à soi.
+  final List<String>? allergens;
+
   const StapleOverride({
     required this.id,
     this.isOwn = false,
@@ -186,6 +219,7 @@ class StapleOverride {
     this.unit,
     this.note,
     this.shoppingProduct,
+    this.allergens,
   });
 
   /// Vrai si une valeur du référentiel est remplacée.
@@ -195,7 +229,8 @@ class StapleOverride {
       quantityPerPortion != null ||
       unit != null ||
       note != null ||
-      shoppingProduct != null;
+      shoppingProduct != null ||
+      allergens != null;
 
   /// Vrai si l'entrée ne dit plus rien : à supprimer plutôt qu'à stocker.
   bool get isEmpty => !isOwn && !hidden && !changesFields;
@@ -213,6 +248,7 @@ class StapleOverride {
         unit: data['unit'] as String?,
         note: data['note'] as String?,
         shoppingProduct: data['shopping_product'] as String?,
+        allergens: stapleAllergensFrom(data['allergens']),
       );
 
   Map<String, dynamic> toMap() => {
@@ -224,6 +260,7 @@ class StapleOverride {
     if (unit != null) 'unit': unit,
     if (note != null) 'note': note,
     if (shoppingProduct != null) 'shopping_product': shoppingProduct,
+    if (allergens != null) 'allergens': allergens,
   };
 
   StapleOverride copyWith({bool? hidden}) => StapleOverride(
@@ -236,6 +273,7 @@ class StapleOverride {
     unit: unit,
     note: note,
     shoppingProduct: shoppingProduct,
+    allergens: allergens,
   );
 
   /// Une garniture propre à l'utilisateur, ou `null` si les champs manquent.
@@ -253,6 +291,7 @@ class StapleOverride {
       note: note ?? '',
       shoppingProduct: shoppingProduct ?? '',
       source: 'user',
+      allergens: allergens,
     );
   }
 }

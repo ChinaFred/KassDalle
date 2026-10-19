@@ -6,11 +6,13 @@ import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_advice_access.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../domain/meal_choice_source.dart';
+import '../domain/planning_criteria.dart';
 import '../domain/relaxed_criteria.dart';
 import '../domain/side_chooser.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_composition.dart';
 import '../domain/meal_storage_rules.dart';
+import 'constraint_understanding.dart';
 import 'meal_course_style.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/recipe_search_scope.dart';
@@ -37,6 +39,10 @@ class SlotConstraintsEditor extends StatefulWidget {
   /// Le format du repas sur ce créneau ; le plat seul remet au défaut.
   final ValueChanged<MealFormat> onFormatChanged;
 
+  /// Ce que le serveur a compris d'un texte, pour « Compris : … » sous la
+  /// contrainte spécifique ; absent : aucune ligne.
+  final ConstraintTranslation? Function(String text)? understandingOf;
+
   const SlotConstraintsEditor({
     super.key,
     required this.constraint,
@@ -45,6 +51,7 @@ class SlotConstraintsEditor extends StatefulWidget {
     required this.onReheatChanged,
     required this.onNotesChanged,
     required this.onFormatChanged,
+    this.understandingOf,
   });
 
   @override
@@ -165,17 +172,31 @@ class _SlotConstraintsEditorState extends State<SlotConstraintsEditor> {
         ),
         SizedBox(
           width: 340,
-          child: StylusPadTextField(
-            controller: _notesCtrl,
-            maxLines: 2,
-            minLines: 1,
-            decoration: const InputDecoration(
-              isDense: true,
-              labelText: 'Contrainte spécifique',
-              hintText: 'Ex: sport le soir, street food…',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: widget.onNotesChanged,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              StylusPadTextField(
+                controller: _notesCtrl,
+                maxLines: 2,
+                minLines: 1,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  labelText: 'Contrainte spécifique',
+                  hintText: 'Ex: sport le soir, street food…',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: widget.onNotesChanged,
+              ),
+              if (widget.understandingOf != null)
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _notesCtrl,
+                  builder: (context, value, _) => ConstraintUnderstandingLines(
+                    text: value.text,
+                    translation: widget.understandingOf!(value.text),
+                  ),
+                ),
+            ],
           ),
         ),
       ],
@@ -292,6 +313,15 @@ class BatchSlotTile extends StatefulWidget {
   /// (`in_cycle`, `variety_window`, `rating`) : une ligne par écart.
   final List<String> relaxed;
 
+  /// Critères que le repas ne tient pas, ou n'a pas pu vérifier : une ligne
+  /// par écart, hors du pli. Préférence relâchée et exclusion non vérifiée en
+  /// `info_outline` ; service vidé par une exclusion en couleur `error`,
+  /// avec « Choisir ».
+  final List<UnmetCriterion> unmet;
+
+  /// Ce que le serveur a compris d'un texte, pour la contrainte spécifique.
+  final ConstraintTranslation? Function(String text)? understandingOf;
+
   /// Aucune recette classée en entrée ou en dessert : la ligne « à choisir »
   /// le dit.
   final bool noStarterCandidate;
@@ -360,6 +390,8 @@ class BatchSlotTile extends StatefulWidget {
     this.sideStatus,
     this.needsWithoutCandidate = const {},
     this.relaxed = const [],
+    this.unmet = const [],
+    this.understandingOf,
     this.noStarterCandidate = false,
     this.noDessertCandidate = false,
     this.starter,
@@ -555,8 +587,15 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
     final noCandidate = role == MealComponentRole.entree
         ? widget.noStarterCandidate
         : widget.noDessertCandidate;
+    final service = role == MealComponentRole.entree ? 'entree' : 'dessert';
+    final emptied = widget.unmet
+        .where((u) => u.service == service && u.isEmptyService)
+        .map((u) => u.detail)
+        .firstOrNull;
     final text = missing
-        ? noCandidate
+        ? emptied != null
+              ? '${role.label} : à choisir. $emptied'
+              : noCandidate
               ? '${role.label} : à choisir. Aucune recette classée en '
                     '${role.label.toLowerCase()}.'
               : '${role.label} : à choisir'
@@ -770,6 +809,63 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
             child: const Text('Choisir'),
           ),
+      ],
+    );
+  }
+
+  /// Un écart à un critère compris : « 1 h 10, au-delà des 45 min
+  /// demandées : peu d'autres choix », « Dessert — Allergènes non vérifiés :
+  /// gluten ». Sans action ; un service vide a sa propre ligne.
+  Widget _buildUnmetLine(ThemeData theme, UnmetCriterion u) {
+    final color = theme.colorScheme.onSurfaceVariant;
+    final prefix = switch (u.service) {
+      'entree' => 'Entrée — ',
+      'dessert' => 'Dessert — ',
+      _ => '',
+    };
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.info_outline, size: AppIconSize.inline, color: color),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '$prefix${u.detail}',
+            style: theme.textTheme.bodySmall?.copyWith(color: color),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// « Plat : à choisir. Aucun plat sans porc. » avec « Choisir » : une
+  /// exclusion a vidé le créneau, et elle ne se relâche pas.
+  Widget _buildEmptyDishLine(ThemeData theme, UnmetCriterion u) {
+    final color = theme.colorScheme.error;
+    return Row(
+      children: [
+        Icon(
+          Icons.warning_amber_outlined,
+          size: AppIconSize.inline,
+          color: color,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            'Plat : à choisir. ${u.detail}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        TextButton(
+          onPressed: widget.onAssign,
+          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+          child: const Text('Choisir', semanticsLabel: 'Choisir le plat'),
+        ),
       ],
     );
   }
@@ -1110,6 +1206,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
           onReheatChanged: w.onReheatChanged,
           onNotesChanged: w.onNotesChanged,
           onFormatChanged: w.onFormatChanged,
+          understandingOf: w.understandingOf,
         ),
       if (w.recipe != null) ...[
         const SizedBox(height: 8),
@@ -1195,9 +1292,17 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
           null,
         ),
       for (final need in w.missingSides) _buildMissingSideLine(theme, need),
-      if (w.recipe != null)
+      if (w.recipe == null)
+        for (final u in w.unmet)
+          if (u.service == 'plat' && u.isEmptyService)
+            _buildEmptyDishLine(theme, u),
+      if (w.recipe != null) ...[
+        // Un critère relâché qui a sa phrase d'écart ne se dit qu'une fois.
         for (final c in RelaxedCriterion.listFrom(w.relaxed))
-          _buildRelaxedLine(theme, c),
+          if (!w.unmet.any((u) => u.key == c.key)) _buildRelaxedLine(theme, c),
+        for (final u in w.unmet)
+          if (!u.isEmptyService) _buildUnmetLine(theme, u),
+      ],
       if (prep != null) _buildComputedStorage(theme, prep),
     ];
 
@@ -1303,6 +1408,11 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+          if (widget.understandingOf != null)
+            ConstraintUnderstandingLines(
+              text: notes,
+              translation: widget.understandingOf!(notes),
+            ),
         ],
       ],
     );
@@ -1611,11 +1721,17 @@ class MealOriginLine extends StatelessWidget {
   /// choix ». Une clé inconnue ne s'affiche pas.
   final List<String> relaxed;
 
+  /// Écarts aux critères compris (`unmet_criteria`) : « 1 h 10, au-delà des
+  /// 45 min demandées : peu d'autres choix ». Un critère relâché qui a sa
+  /// phrase ici ne se dit qu'une fois.
+  final List<UnmetCriterion> unmet;
+
   const MealOriginLine({
     super.key,
     this.source,
     this.facts,
     this.relaxed = const [],
+    this.unmet = const [],
   });
 
   /// La ligne, ou `null` quand il n'y a rien à dire.
@@ -1623,14 +1739,38 @@ class MealOriginLine extends StatelessWidget {
     MealChoiceSource? source,
     String? facts,
     List<String> relaxed = const [],
+    List<UnmetCriterion> unmet = const [],
   }) {
     final text = facts?.trim() ?? '';
     if (source == null &&
         text.isEmpty &&
-        RelaxedCriterion.listFrom(relaxed).isEmpty) {
+        RelaxedCriterion.listFrom(relaxed).isEmpty &&
+        unmet.isEmpty) {
       return null;
     }
-    return MealOriginLine(source: source, facts: text, relaxed: relaxed);
+    return MealOriginLine(
+      source: source,
+      facts: text,
+      relaxed: relaxed,
+      unmet: unmet,
+    );
+  }
+
+  /// « dessert : aucun dessert sans fruits à coque », « 1 h 10, au-delà des
+  /// 45 min demandées : peu d'autres choix » — en minuscule, à la suite de
+  /// l'origine.
+  static String _unmetPhrase(UnmetCriterion u) {
+    final detail = u.detail.endsWith('.')
+        ? u.detail.substring(0, u.detail.length - 1)
+        : u.detail;
+    final lower = detail.isEmpty
+        ? detail
+        : detail[0].toLowerCase() + detail.substring(1);
+    return switch (u.service) {
+      'entree' => 'entrée : $lower',
+      'dessert' => 'dessert : $lower',
+      _ => lower,
+    };
   }
 
   static IconData iconFor(MealChoiceSource? source) => switch (source) {
@@ -1644,7 +1784,9 @@ class MealOriginLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final text = [
-      for (final c in RelaxedCriterion.listFrom(relaxed)) c.phrase,
+      for (final c in RelaxedCriterion.listFrom(relaxed))
+        if (!unmet.any((u) => u.key == c.key)) c.phrase,
+      for (final u in unmet) _unmetPhrase(u),
       if ((facts?.trim() ?? '').isNotEmpty) facts!.trim(),
     ].join(' · ');
     final label = source?.label;

@@ -84,6 +84,7 @@ import {
   type RefusalEntry,
   type SlotRanking,
 } from "../gemini/planning";
+import { readPlanningCriteria } from "../gemini/planningCriteria";
 
 const FIXTURE = path.join(__dirname, "..", "..", "..", "test-fixtures", "planning_slot_rules.json");
 
@@ -137,6 +138,7 @@ interface FxRecipe {
   main_starch?: string;
   portions?: number | null;
   rating?: number;
+  allergens?: { present: string[]; complete: boolean };
 }
 
 /** Créneau tel que la fixture l'écrit. */
@@ -146,6 +148,13 @@ interface FxSlot {
   format?: string;
   target?: number;
   dismissed?: string[];
+  /** Critères compris des textes, forme de `planning_criteria.json`. */
+  criteria?: Record<string, unknown>;
+}
+
+/** Les critères compris de chaque créneau de la fixture. */
+function criteriaOf(slots: FxSlot[]) {
+  return slots.map((s) => readPlanningCriteria(s.criteria ?? null));
 }
 
 interface FxRanking {
@@ -255,6 +264,10 @@ interface PreselectionFixture {
         repeat: string[];
         relaxed: string[];
         refused?: string[];
+        /** Services vidés par une exclusion. */
+        unmet?: Array<{ service: string; key: string; status: string }>;
+        /** Écarts par plat de la liste. */
+        plat_unmet?: Record<string, Array<{ key: string; status: string }>>;
       }>;
     };
     why: string;
@@ -461,6 +474,7 @@ function summaryOf(r: FxRecipe): PlanningRecipeSummary {
     ...(r.main_protein ? { mainProtein: r.main_protein } : {}),
     ...(r.main_starch ? { mainStarch: r.main_starch } : {}),
     ...(r.portions != null ? { portions: r.portions } : {}),
+    ...(r.allergens ? { allergens: r.allergens } : {}),
   };
 }
 
@@ -592,7 +606,7 @@ describe("présélection — filtres durs", () => {
   for (const c of fixture.hard_filter) {
     test(c.why, () => {
       const input = inputOf([c.slot], [summaryOf(c.recipe)]);
-      const ctx = slotContexts(input)[0];
+      const ctx = slotContexts(input, criteriaOf([c.slot]))[0];
       const ratings = new Map<string, number>(
         c.rating != null ? [[c.recipe.id as string, c.rating as number]] : [],
       );
@@ -777,6 +791,7 @@ describe("présélection — listes par créneau", () => {
         policy: readPlanningPolicy(c.policy),
         today: c.today,
         rng: seededRng(c.seed),
+        criteriaBySlot: criteriaOf(c.slots),
       });
       const head = (list: RankedCandidate[], n: number) =>
         list
@@ -806,6 +821,18 @@ describe("présélection — listes par créneau", () => {
           want.repeat,
         );
         assert.deepEqual(got.relaxed, want.relaxed);
+        assert.deepEqual(
+          (got.unmet ?? []).map((u) => ({ service: u.service, key: u.key, status: u.status })),
+          want.unmet ?? [],
+        );
+        for (const [id, gaps] of Object.entries(want.plat_unmet ?? {})) {
+          const plat: RankedCandidate | undefined = got.plats.find((p) => p.recipeId === id);
+          assert.ok(plat, `plat ${id} classé`);
+          assert.deepEqual(
+            (plat.unmet ?? []).map((u) => ({ key: u.key, status: u.status })),
+            gaps,
+          );
+        }
         if (want.refused) {
           assert.deepEqual(
             got.plats

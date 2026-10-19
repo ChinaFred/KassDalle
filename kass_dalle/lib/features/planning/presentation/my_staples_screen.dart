@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/meal_staple.dart';
 import 'meal_staples_providers.dart';
+import 'staple_allergens_field.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
@@ -201,6 +202,7 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
         unit: form.unit,
         note: form.note,
         shoppingProduct: form.shoppingProduct,
+        allergens: form.allergens,
       );
     } else {
       // Seuls les champs qui diffèrent de la base sont stockés : le reste
@@ -219,6 +221,13 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
         shoppingProduct: form.shoppingProduct != base.shoppingProduct
             ? form.shoppingProduct
             : null,
+        // Des allergènes retouchés ne se stockent que s'ils diffèrent ; un
+        // retour à « non renseignés » suit le référentiel.
+        allergens:
+            form.allergens != null &&
+                !_sameAllergens(form.allergens, base.allergens)
+            ? form.allergens
+            : null,
       );
     }
     await _run(
@@ -230,6 +239,11 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
           : '« ${form.name} » enregistrée pour vous.',
       context: {'id': u.staple.id},
     );
+  }
+
+  static bool _sameAllergens(List<String>? a, List<String>? b) {
+    if (a == null || b == null) return a == b;
+    return a.length == b.length && a.toSet().containsAll(b);
   }
 
   Future<void> _toggleHidden(UserStaple u) async {
@@ -332,6 +346,7 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
       unit: form.unit,
       note: form.note,
       shoppingProduct: form.shoppingProduct,
+      allergens: form.allergens,
     );
     await _run(
       'myStaplesScreen.addOwn',
@@ -389,7 +404,8 @@ class _UserStapleTile extends StatelessWidget {
           ],
         ),
         subtitle: Text(
-          '${s.quantityLabel} par part${note.isNotEmpty ? ' · $note' : ''}',
+          '${s.quantityLabel} par part${note.isNotEmpty ? ' · $note' : ''}'
+          ' · ${stapleAllergensSummary(s.allergens)}',
         ),
         trailing: PopupMenuButton<String>(
           onSelected: (action) {
@@ -450,6 +466,9 @@ class _StapleForm {
   final String note;
   final String shoppingProduct;
 
+  /// Allergènes saisis ; `null` : non renseignés.
+  final List<String>? allergens;
+
   const _StapleForm({
     required this.name,
     required this.category,
@@ -457,6 +476,7 @@ class _StapleForm {
     required this.unit,
     required this.note,
     required this.shoppingProduct,
+    this.allergens,
   });
 }
 
@@ -482,6 +502,7 @@ class _UserStapleDialogState extends State<_UserStapleDialog> {
   late final TextEditingController _shoppingCtrl;
   late StapleCategory _category;
   late String _unit;
+  List<String>? _allergens;
 
   @override
   void initState() {
@@ -495,6 +516,7 @@ class _UserStapleDialogState extends State<_UserStapleDialog> {
     _shoppingCtrl = TextEditingController(text: i?.shoppingProduct ?? '');
     _category = i?.category ?? StapleCategory.feculent;
     _unit = i?.unit ?? 'g';
+    _allergens = i?.allergens;
   }
 
   @override
@@ -613,6 +635,14 @@ class _UserStapleDialogState extends State<_UserStapleDialog> {
                     border: OutlineInputBorder(),
                   ),
                 ),
+                const SizedBox(height: 12),
+                StapleAllergensField(
+                  value: _allergens,
+                  onChanged: (v) => setState(() => _allergens = v),
+                  baseHint: base == null
+                      ? null
+                      : 'Référentiel : ${stapleAllergensSummary(base.allergens)}.',
+                ),
               ],
             ),
           ),
@@ -638,6 +668,7 @@ class _UserStapleDialogState extends State<_UserStapleDialog> {
         unit: _unit,
         note: _noteCtrl.text.trim(),
         shoppingProduct: _shoppingCtrl.text.trim(),
+        allergens: _allergens,
       ),
     );
   }

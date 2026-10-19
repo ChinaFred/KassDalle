@@ -5,6 +5,7 @@ import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_filter.dart';
 import '../domain/meal_component.dart';
 import '../domain/meal_staple.dart';
+import '../domain/planning_criteria.dart';
 import '../domain/side_chooser.dart';
 
 /// Longueur maximale d'un accompagnement saisi en texte libre.
@@ -164,6 +165,11 @@ bool _listEquals(List<String> a, List<String> b) {
 /// qu'accompagnement, [title] « Entrée », « Fromage »…) : ses candidats
 /// viennent de `courseCandidatesFor`, sans suggestions du plat, et un texte
 /// libre s'ajoute sans l'étape des apports.
+///
+/// [criteria] : les critères compris des préférences du jour. Un candidat
+/// qui viole une exclusion reste choisissable — c'est un choix à la main —
+/// mais sa ligne le dit : « contient : gluten ». Un allergène exclu que la
+/// garniture ne renseigne pas se dit aussi : « allergènes non renseignés ».
 class SidePickerSheet extends StatefulWidget {
   /// Le plat accompagné, pour ses suggestions ; `null` pour un service.
   final Recipe? main;
@@ -180,6 +186,9 @@ class SidePickerSheet extends StatefulWidget {
   /// Le rôle du composant choisi ; un accompagnement par défaut.
   final MealComponentRole role;
 
+  /// Les critères compris du jour ; vide : rien n'est signalé.
+  final PlanningCriteria criteria;
+
   const SidePickerSheet({
     super.key,
     this.main,
@@ -187,6 +196,7 @@ class SidePickerSheet extends StatefulWidget {
     this.initialNeed,
     this.title = 'Accompagnement',
     this.role = MealComponentRole.accompagnement,
+    this.criteria = PlanningCriteria.empty,
   });
 
   bool get _isSide => role == MealComponentRole.accompagnement;
@@ -539,12 +549,35 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
         : widget._isSide
         ? 'Recette d\'accompagnement'
         : 'Recette';
+    final warning = widget.criteria.hasExclusions
+        ? exclusionWarning(widget.criteria, c.criteriaItem)
+        : null;
+    final theme = Theme.of(context);
+    final violates = warning != null && warning.startsWith('contient');
     return ListTile(
       leading: Icon(
         c.isRecipe ? Icons.menu_book_outlined : Icons.rice_bowl_outlined,
       ),
       title: Text(c.name),
-      subtitle: Text(subtitle),
+      subtitle: warning == null
+          ? Text(subtitle)
+          : Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: subtitle),
+                  const TextSpan(text: ' · '),
+                  TextSpan(
+                    text: warning,
+                    style: TextStyle(
+                      color: violates
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.onSurfaceVariant,
+                      fontWeight: violates ? FontWeight.w600 : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
       onTap: () => Navigator.pop(context, SidePickerResult.pick(c)),
     );
   }

@@ -51,10 +51,12 @@ import {
   PLANNING_MAX_TOKENS,
   buildConceptPrompt,
   generateRecipeConcept,
+  planningTexts,
   seededRng,
   suggestMealPlan,
   type SlotRanking,
 } from "../gemini/planning";
+import { understandPlanningTexts } from "../gemini/planningConstraintsStore";
 import {
   PlanningRunDenied,
   addPlanningRunCost,
@@ -496,6 +498,9 @@ function rankedCandidatesPayload(rankings: SlotRanking[]) {
     entrees: r.entrees,
     desserts: r.desserts,
     relaxed: r.relaxed,
+    // Services restés vides par une exclusion : « Aucun dessert sans
+    // fruits à coque. »
+    unmet: r.unmet ?? [],
     ...(r.prepDate ? { prepDate: r.prepDate } : {}),
   }));
 }
@@ -535,6 +540,17 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
       readUserRatings({ uid: ctx.userId, correlationId: ctx.correlationId }),
       readUserRefusals({ uid: ctx.userId, nowMs, correlationId: ctx.correlationId }),
     ]);
+    // Les préférences en texte libre, comprises en critères vérifiés : le
+    // cache d'abord, un appel `planning_constraints` pour les seuls textes
+    // modifiés, jamais en mode « code ». Un échec laisse le texte partir au
+    // prompt tel quel ; il s'affiche « non vérifié ».
+    const understanding = await understandPlanningTexts({
+      uid: ctx.userId,
+      texts: planningTexts(input),
+      translate: mode === "model",
+      ctx: { ...ctx, feature: "planning_constraints", moduleType: "DESIGN" },
+      nowMs,
+    });
     // Le mode « code » n'appelle aucun modèle : pas de génération à journaliser.
     const runId = mode === "model" ? newPlanningRunId() : null;
     const costCapUsd = mode === "model" ? await generationCapUsd(policy) : null;
@@ -554,6 +570,7 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
         runId,
         costCapUsd,
         estimateCeilingUsd: ceilingEstimator("planning", PLANNING_MAX_TOKENS),
+        understood: understanding.understood,
       },
     );
     // Le nombre de conceptions automatiques ouvertes, borné par les créneaux
@@ -583,6 +600,9 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
       excludedRecentIds: data.excludedRecentIds,
       conceptsRemaining: conceptsMax ?? 0,
       stats: data.stats,
+      // Ce qui a été compris de chaque texte : « Compris : sans porc »,
+      // « Transmis à l'IA, non vérifié : … ».
+      constraintTranslations: understanding.outcomes,
     };
   } catch (e) {
     throw toHttpsError(e);

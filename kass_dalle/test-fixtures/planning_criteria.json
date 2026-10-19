@@ -1,0 +1,331 @@
+{
+  "_comment": "Critères structurés du planning (v0.24.17). Le texte libre des préférences générales et des notes du jour est traduit par le modèle (poste planning_constraints) en critères de ce vocabulaire ; le programme les vérifie. Décidés par functions/src/gemini/planningCriteria.ts, repris par lib/features/planning/domain/planning_criteria.dart. Le serveur applique le prédicat au plat, aux entrées et aux desserts ; le client l'applique aux accompagnements et aux choix faits à la main. Deux régimes : une exclusion ne se relâche jamais, une préférence se relâche, avec un message.",
+  "criteria": [
+    { "key": "excluded_allergens", "regime": "exclusion", "values": "allergens" },
+    { "key": "excluded_proteins", "regime": "exclusion", "values": "main_proteins" },
+    { "key": "excluded_starches", "regime": "exclusion", "values": "main_starches" },
+    { "key": "wanted_proteins", "regime": "preference", "values": "main_proteins" },
+    { "key": "wanted_starches", "regime": "preference", "values": "main_starches" },
+    { "key": "max_duration", "regime": "preference", "values": "minutes" },
+    { "key": "light", "regime": "preference", "values": "boolean" }
+  ],
+  "max_duration_bounds": { "min": 5, "max": 600 },
+  "_read_comment": "Lecture d'un objet de critères stocké (cache users/{uid}/preferences/planning_constraints) ou rendu par le modèle. Donnée non fiable : une valeur hors vocabulaire est écartée, une liste est dédoublonnée et rangée dans l'ordre du vocabulaire (règlement INCO pour les allergènes, meal_roles.json pour protéines et féculents). max_duration : entier de 5 à 600, sinon absent. light : booléen strict. Une valeur à la fois exclue et voulue quitte la liste voulue : l'exclusion l'emporte. expected : la forme canonique, les sept clés.",
+  "read_cases": [
+    {
+      "name": "objet complet",
+      "raw": {
+        "excluded_allergens": ["lait", "gluten"],
+        "excluded_proteins": ["porc"],
+        "excluded_starches": ["pates"],
+        "wanted_proteins": ["poisson"],
+        "wanted_starches": ["riz"],
+        "max_duration": 30,
+        "light": true
+      },
+      "expected": {
+        "excluded_allergens": ["gluten", "lait"],
+        "excluded_proteins": ["porc"],
+        "excluded_starches": ["pates"],
+        "wanted_proteins": ["poisson"],
+        "wanted_starches": ["riz"],
+        "max_duration": 30,
+        "light": true
+      }
+    },
+    {
+      "name": "valeurs hors vocabulaire et doublons écartés",
+      "raw": {
+        "excluded_allergens": ["lactose", "lait", "lait", 3, null],
+        "excluded_proteins": ["porc", "jambon"],
+        "wanted_starches": ["quinoa"]
+      },
+      "expected": {
+        "excluded_allergens": ["lait"],
+        "excluded_proteins": ["porc"],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": null,
+        "light": false
+      }
+    },
+    {
+      "name": "durée hors bornes ou non entière : absente",
+      "raw": { "max_duration": 2 },
+      "expected": {
+        "excluded_allergens": [],
+        "excluded_proteins": [],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": null,
+        "light": false
+      }
+    },
+    {
+      "name": "durée décimale : absente",
+      "raw": { "max_duration": 30.5 },
+      "expected": {
+        "excluded_allergens": [],
+        "excluded_proteins": [],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": null,
+        "light": false
+      }
+    },
+    {
+      "name": "durée au plafond : gardée",
+      "raw": { "max_duration": 600 },
+      "expected": {
+        "excluded_allergens": [],
+        "excluded_proteins": [],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": 600,
+        "light": false
+      }
+    },
+    {
+      "name": "light en texte : faux",
+      "raw": { "light": "true" },
+      "expected": {
+        "excluded_allergens": [],
+        "excluded_proteins": [],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": null,
+        "light": false
+      }
+    },
+    {
+      "name": "exclue et voulue : l'exclusion l'emporte",
+      "raw": {
+        "excluded_proteins": ["porc"],
+        "wanted_proteins": ["porc", "volaille"],
+        "excluded_starches": ["riz"],
+        "wanted_starches": ["riz"]
+      },
+      "expected": {
+        "excluded_allergens": [],
+        "excluded_proteins": ["porc"],
+        "excluded_starches": ["riz"],
+        "wanted_proteins": ["volaille"],
+        "wanted_starches": [],
+        "max_duration": null,
+        "light": false
+      }
+    },
+    {
+      "name": "pas un objet : aucun critère",
+      "raw": ["porc"],
+      "expected": {
+        "excluded_allergens": [],
+        "excluded_proteins": [],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": null,
+        "light": false
+      }
+    }
+  ],
+  "_merge_comment": "Critères d'un créneau : ceux des préférences générales et ceux de la note du jour, réunis. Listes : union, dans l'ordre du vocabulaire. max_duration : la plus petite. light : l'un ou l'autre. L'exclusion l'emporte encore sur le voulu.",
+  "merge_cases": [
+    {
+      "name": "union et durée la plus courte",
+      "parts": [
+        { "excluded_allergens": ["lait"], "max_duration": 45, "wanted_proteins": ["porc"] },
+        { "excluded_allergens": ["gluten"], "max_duration": 30, "excluded_proteins": ["porc"] }
+      ],
+      "expected": {
+        "excluded_allergens": ["gluten", "lait"],
+        "excluded_proteins": ["porc"],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": 30,
+        "light": false
+      }
+    },
+    {
+      "name": "une seule durée, léger d'un côté",
+      "parts": [{ "light": true }, { "max_duration": 20 }],
+      "expected": {
+        "excluded_allergens": [],
+        "excluded_proteins": [],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": 20,
+        "light": true
+      }
+    },
+    {
+      "name": "aucune partie",
+      "parts": [],
+      "expected": {
+        "excluded_allergens": [],
+        "excluded_proteins": [],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": null,
+        "light": false
+      }
+    }
+  ],
+  "_exclusion_comment": "Prédicat d'exclusion, rejoué par les deux côtés. Un résultat par critère d'exclusion actif, dans l'ordre du vocabulaire. verdict : violates (l'élément contient ce qui est exclu, values = ce qui est en cause), ok (vérifié), unknown (donnée absente ou incomplète : values = ce qui n'a pas pu être vérifié). Allergènes : une clé exclue présente dans allergens.present viole, même si complete est faux ; sinon, sans champ allergens ou avec complete faux, le verdict est unknown — une donnée absente ne prouve rien. Protéine et féculent : la valeur principale de l'élément (main_protein, main_starch) ; absente ou hors vocabulaire : unknown. La protéine exclue ne vérifie que la protéine principale.",
+  "exclusion_cases": [
+    {
+      "name": "allergène exclu présent : viole",
+      "criteria": { "excluded_allergens": ["fruits_a_coque", "gluten"] },
+      "item": { "allergens": { "present": ["fruits_a_coque", "lait"], "complete": true } },
+      "expected": [{ "key": "excluded_allergens", "verdict": "violates", "values": ["fruits_a_coque"] }]
+    },
+    {
+      "name": "allergène exclu présent, liste incomplète : viole quand même",
+      "criteria": { "excluded_allergens": ["gluten"] },
+      "item": { "allergens": { "present": ["gluten"], "complete": false } },
+      "expected": [{ "key": "excluded_allergens", "verdict": "violates", "values": ["gluten"] }]
+    },
+    {
+      "name": "allergène absent d'une liste complète : vérifié",
+      "criteria": { "excluded_allergens": ["gluten"] },
+      "item": { "allergens": { "present": ["lait"], "complete": true } },
+      "expected": [{ "key": "excluded_allergens", "verdict": "ok", "values": [] }]
+    },
+    {
+      "name": "allergène absent d'une liste incomplète : non vérifié",
+      "criteria": { "excluded_allergens": ["gluten", "lait"] },
+      "item": { "allergens": { "present": [], "complete": false } },
+      "expected": [
+        { "key": "excluded_allergens", "verdict": "unknown", "values": ["gluten", "lait"] }
+      ]
+    },
+    {
+      "name": "allergènes non renseignés : non vérifié",
+      "criteria": { "excluded_allergens": ["sesame"] },
+      "item": { "allergens": null },
+      "expected": [{ "key": "excluded_allergens", "verdict": "unknown", "values": ["sesame"] }]
+    },
+    {
+      "name": "protéine principale exclue : viole",
+      "criteria": { "excluded_proteins": ["porc", "boeuf"] },
+      "item": { "main_protein": "porc" },
+      "expected": [{ "key": "excluded_proteins", "verdict": "violates", "values": ["porc"] }]
+    },
+    {
+      "name": "autre protéine principale : vérifié",
+      "criteria": { "excluded_proteins": ["porc"] },
+      "item": { "main_protein": "volaille" },
+      "expected": [{ "key": "excluded_proteins", "verdict": "ok", "values": [] }]
+    },
+    {
+      "name": "protéine inconnue ou hors liste : non vérifié",
+      "criteria": { "excluded_proteins": ["porc"] },
+      "item": { "main_protein": "viande" },
+      "expected": [{ "key": "excluded_proteins", "verdict": "unknown", "values": ["porc"] }]
+    },
+    {
+      "name": "plat sans féculent, pâtes exclues : vérifié",
+      "criteria": { "excluded_starches": ["pates"] },
+      "item": { "main_starch": "aucun" },
+      "expected": [{ "key": "excluded_starches", "verdict": "ok", "values": [] }]
+    },
+    {
+      "name": "féculent principal exclu : viole",
+      "criteria": { "excluded_starches": ["pates", "riz"] },
+      "item": { "main_starch": "pates" },
+      "expected": [{ "key": "excluded_starches", "verdict": "violates", "values": ["pates"] }]
+    },
+    {
+      "name": "trois exclusions, dans l'ordre du vocabulaire",
+      "criteria": {
+        "excluded_starches": ["riz"],
+        "excluded_proteins": ["porc"],
+        "excluded_allergens": ["lait"]
+      },
+      "item": {
+        "allergens": { "present": [], "complete": true },
+        "main_protein": "porc"
+      },
+      "expected": [
+        { "key": "excluded_allergens", "verdict": "ok", "values": [] },
+        { "key": "excluded_proteins", "verdict": "violates", "values": ["porc"] },
+        { "key": "excluded_starches", "verdict": "unknown", "values": ["riz"] }
+      ]
+    },
+    {
+      "name": "aucune exclusion : aucun résultat",
+      "criteria": { "wanted_proteins": ["poisson"], "max_duration": 30 },
+      "item": { "main_protein": "porc", "prep_minutes": 60 },
+      "expected": []
+    }
+  ],
+  "_preference_comment": "Prédicat des préférences — serveur seul : le client n'applique que les exclusions. verdict : violates (préférence non tenue, values = ce que l'élément porte), ok, unknown (donnée absente : l'élément passe, faute de preuve contraire). max_duration compare prep_minutes, la préparation, comme la contrainte « Prépa max ». light : l'élément dit s'il est léger (true, false ou absent).",
+  "preference_cases": [
+    {
+      "name": "protéine voulue : tenue",
+      "criteria": { "wanted_proteins": ["poisson", "fruits_de_mer"] },
+      "item": { "main_protein": "poisson" },
+      "expected": [{ "key": "wanted_proteins", "verdict": "ok", "values": [] }]
+    },
+    {
+      "name": "protéine voulue : non tenue",
+      "criteria": { "wanted_proteins": ["poisson"] },
+      "item": { "main_protein": "boeuf" },
+      "expected": [{ "key": "wanted_proteins", "verdict": "violates", "values": ["boeuf"] }]
+    },
+    {
+      "name": "féculent voulu, féculent inconnu : passe",
+      "criteria": { "wanted_starches": ["riz"] },
+      "item": {},
+      "expected": [{ "key": "wanted_starches", "verdict": "unknown", "values": [] }]
+    },
+    {
+      "name": "durée au-delà : non tenue",
+      "criteria": { "max_duration": 45 },
+      "item": { "prep_minutes": 70 },
+      "expected": [{ "key": "max_duration", "verdict": "violates", "values": ["70"] }]
+    },
+    {
+      "name": "durée à la borne : tenue",
+      "criteria": { "max_duration": 45 },
+      "item": { "prep_minutes": 45 },
+      "expected": [{ "key": "max_duration", "verdict": "ok", "values": [] }]
+    },
+    {
+      "name": "durée absente : passe",
+      "criteria": { "max_duration": 45 },
+      "item": {},
+      "expected": [{ "key": "max_duration", "verdict": "unknown", "values": [] }]
+    },
+    {
+      "name": "léger demandé, plat copieux : non tenu",
+      "criteria": { "light": true },
+      "item": { "light": false },
+      "expected": [{ "key": "light", "verdict": "violates", "values": [] }]
+    },
+    {
+      "name": "quatre préférences, dans l'ordre du vocabulaire",
+      "criteria": {
+        "light": true,
+        "max_duration": 30,
+        "wanted_starches": ["riz"],
+        "wanted_proteins": ["volaille"]
+      },
+      "item": { "main_protein": "volaille", "main_starch": "pates", "prep_minutes": 20, "light": true },
+      "expected": [
+        { "key": "wanted_proteins", "verdict": "ok", "values": [] },
+        { "key": "wanted_starches", "verdict": "violates", "values": ["pates"] },
+        { "key": "max_duration", "verdict": "ok", "values": [] },
+        { "key": "light", "verdict": "ok", "values": [] }
+      ]
+    }
+  ]
+}
