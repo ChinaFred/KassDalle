@@ -934,7 +934,9 @@ sequenceDiagram
       <code>looksFried()</code> cherche des mots entiers dans <code>raw_cooklang</code> et dans les
       noms d'ingrédients. Le verdict est conservé avec sa signature (<code>fry_verdict</code>,
       <code>fry_signature</code>) et n'est redemandé que si la liste d'ingrédients ou le texte
-      changent.
+      changent. Un appel en échec laisse <code>fry_signature</code> vide : le calcul suivant
+      le refait. L'appel est imputé au propriétaire de la recette
+      (<code>recipeBudgetUserId(created_by)</code>).
     </span>
   </section>
 

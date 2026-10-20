@@ -100,7 +100,10 @@ export const ORPHAN_RECIPE_USER_ID = "system_recipe_without_owner";
  * `ORPHAN_RECIPE_USER_ID` (×1). L'enrichissement des référentiels
  * (`nutrition/aiEnrichment.ts`, `nutrition/fryAbsorption.ts`) remplace un uid
  * absent par la chaîne littérale `"system"` : ce compte-là est un compte
- * ordinaire pour le plafond (×1), distinct de `UNATTRIBUTED`.
+ * ordinaire pour le plafond (×1), distinct de `UNATTRIBUTED`. Tous leurs
+ * appelants transmettent un uid — l'appelant authentifié, le job d'import, ou
+ * `recipeBudgetUserId` pour le déclencheur et le calcul de la nutrition (huile
+ * de friture comprise) : `"system"` ne sert que si un appelant l'oublie.
  *
  * Plafonné quand même — deux cents euros et quarante mille appels par jour
  * avec les défauts : une boucle s'arrête aussi.

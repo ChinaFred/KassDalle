@@ -171,16 +171,67 @@ export interface FryAbsorptionVerdict {
   friedIndices: number[];
   /** Part du poids de ces ingrédients absorbée en huile, entre 0 et 0,3. */
   absorptionRatio: number;
+  /**
+   * L'appel au modèle a échoué (erreur, délai, plafond atteint, réponse
+   * illisible). Le verdict vaut alors « rien n'est frit » pour ce calcul-ci,
+   * mais il ne doit pas être mémorisé : voir `fryFieldsToPersist`.
+   */
+  failed?: true;
 }
 
 export const NO_FRY_ABSORPTION: FryAbsorptionVerdict = { friedIndices: [], absorptionRatio: 0 };
 
+/** Verdict d'un appel en échec : rien d'absorbé, et rien à mémoriser. */
+export const FAILED_FRY_ABSORPTION: FryAbsorptionVerdict = {
+  friedIndices: [],
+  absorptionRatio: 0,
+  failed: true,
+};
+
+/**
+ * Les deux champs du snapshot qui mémorisent le verdict de friture.
+ *
+ * Un verdict en échec n'est pas mémorisé : `fry_signature` reste vide, et le
+ * calcul suivant redemande l'appel. Mémoriser la signature avec
+ * `fry_verdict: null` laissait la recette sans huile absorbée jusqu'à ce que
+ * son texte change, puisque la signature identique dispensait de rappeler.
+ *
+ * Aucune boucle de déclencheurs : `fry_signature` n'est pas une entrée de
+ * `onRecipeWritten` (`recipeTriggerInputsFingerprint`), l'écriture du snapshot
+ * n'y relance pas la nutrition. Le prochain essai attend un calcul demandé par
+ * ailleurs : une entrée modifiée, ou un recalcul manuel. Le rattrapage nocturne
+ * ne le redemande pas : `catchUpDecision` ignore une recette dont
+ * `nutritionIsIncomplete` est faux, et un verdict en échec ne rend pas la
+ * nutrition incomplète. Il ne le refait qu'en passant, sur une recette reprise
+ * pour une autre lacune.
+ */
+export function fryFieldsToPersist(
+  verdict: FryAbsorptionVerdict,
+  signature: string,
+): {
+  fry_verdict: { fried_indices: number[]; absorption_ratio: number } | null;
+  fry_signature: string;
+} {
+  if (verdict.failed) return { fry_verdict: null, fry_signature: "" };
+  return {
+    fry_verdict:
+      verdict.friedIndices.length > 0
+        ? { fried_indices: verdict.friedIndices, absorption_ratio: verdict.absorptionRatio }
+        : null,
+    fry_signature: signature,
+  };
+}
+
 /**
  * Demande au moteur ce qui est frit et combien d'huile cela absorbe.
  *
- * Best-effort : un échec rend « rien n'est frit » plutôt que d'empêcher le
- * calcul nutritionnel de la recette. L'erreur reste tracée — sans quoi une
- * recette cesserait silencieusement de compter son huile.
+ * Best-effort : un échec rend « rien n'est frit » (`FAILED_FRY_ABSORPTION`,
+ * marqué `failed`) plutôt que d'empêcher le calcul nutritionnel de la recette.
+ * L'erreur reste tracée, et le verdict n'est pas mémorisé.
+ *
+ * `userId` : le compte auquel s'impute l'appel et son plafond quotidien — le
+ * propriétaire de la recette (`recipeBudgetUserId`). `"system"` ne reste que
+ * pour un appel sans recette ni propriétaire.
  */
 export async function estimateFryAbsorptionWithAI(args: {
   ingredients: Array<{ name: string; qty: string; unit: string }>;
@@ -272,8 +323,8 @@ Format strict : {"frits":[{"id":"0"}],"absorption_pct":10}`;
     await logError({
       message: "estimateFryAbsorptionWithAI: échec, la recette est calculée sans huile absorbée",
       errorDescription: err instanceof Error ? err.message : String(err),
-      extra: { recipeId: args.recipeId },
+      extra: { recipeId: args.recipeId, userId: args.userId ?? null },
     });
-    return NO_FRY_ABSORPTION;
+    return FAILED_FRY_ABSORPTION;
   }
 }

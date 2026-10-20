@@ -23,6 +23,7 @@ import {
   DEFAULT_FRY_OIL_PER100G,
   computeAbsorbedOilGrams,
   estimateFryAbsorptionWithAI,
+  fryFieldsToPersist,
   fryingSignature,
   looksFried,
   NO_FRY_ABSORPTION,
@@ -39,6 +40,7 @@ import {
 } from "./quantityConversion";
 import { asPositiveNumber, roundValue } from "./unitDisplay";
 import { isExcludedAfterFailures } from "../backfills/failureMemory";
+import { recipeBudgetUserId } from "../ai/budget";
 
 interface IngredientInput {
   name?: unknown;
@@ -693,6 +695,10 @@ export async function computeAndPersistRecipeNutrition(args: {
       })),
       rawCooklang,
       recipeId: args.recipeId,
+      // Le propriétaire de la recette, ou le compte des recettes orphelines :
+      // sans lui, l'appel tombait sur `"system"`, un seul plafond de membre
+      // partagé par toute la famille.
+      userId: recipeBudgetUserId(recipe.created_by),
     });
   }
 
@@ -854,14 +860,8 @@ export async function computeAndPersistRecipeNutrition(args: {
     // matière grasse réellement mangée. Le verdict qui l'a produite est gardé à
     // part, pour survivre à un calcul où aucun ingrédient frit n'avait de poids.
     absorbed_oil: absorbedOil,
-    fry_verdict:
-      fryVerdict.friedIndices.length > 0
-        ? {
-            fried_indices: fryVerdict.friedIndices,
-            absorption_ratio: fryVerdict.absorptionRatio,
-          }
-        : null,
-    fry_signature: frySignature,
+    // Un appel en échec laisse la signature vide : le calcul suivant le refait.
+    ...fryFieldsToPersist(fryVerdict, frySignature),
     policy_version: policy.version,
     computed_at: FieldValue.serverTimestamp(),
     fallback_policy: policy.fallback_policy,

@@ -36,6 +36,20 @@ const READER = PERSONAS.reader.uid;
 const OTHER = PERSONAS.otherReader.uid;
 const EDITOR = PERSONAS.editor.uid;
 
+// Les champs obligatoires d'un compte neuf, typés comme `AppUser.toFirestore`
+// les écrit : `AppUser.fromFirestore` lève une exception sans eux.
+const ACCOUNT_DATES = {
+  created_at: new Date("2026-10-20T08:00:00Z"),
+  last_seen_at: new Date("2026-10-20T08:00:00Z"),
+};
+const NEW_ACCOUNT = {
+  role: "pending",
+  is_revoked: false,
+  email: "new@example.com",
+  display_name: "Nouveau",
+  ...ACCOUNT_DATES,
+};
+
 before(async () => {
   env = await createEnv();
 });
@@ -370,7 +384,7 @@ describe("users — création de compte", () => {
     await assertFails(
       fresh({ email: "new@example.com", email_verified: false })
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -378,7 +392,7 @@ describe("users — création de compte", () => {
     await assertFails(
       fresh({ email: "new@example.com" })
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -386,7 +400,7 @@ describe("users — création de compte", () => {
     await assertSucceeds(
       fresh({ email: "new@example.com", email_verified: true })
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -394,7 +408,7 @@ describe("users — création de compte", () => {
     await assertSucceeds(
       fresh()
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -417,8 +431,7 @@ describe("users — création de compte", () => {
   it("refuse une adresse différente de celle du jeton", async () => {
     await assertFails(
       fresh().doc("users/newcomer").set({
-        role: "pending",
-        is_revoked: false,
+        ...NEW_ACCOUNT,
         email: "china.fred.75@gmail.com",
       }),
     );
@@ -428,7 +441,7 @@ describe("users — création de compte", () => {
     await assertFails(
       fresh()
         .doc("users/someone-else")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -436,7 +449,7 @@ describe("users — création de compte", () => {
     await assertFails(
       db("anonymous")
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -445,9 +458,7 @@ describe("users — création de compte", () => {
       fresh()
         .doc("users/newcomer")
         .set({
-          role: "pending",
-          is_revoked: false,
-          email: "new@example.com",
+          ...NEW_ACCOUNT,
           display_name: "a".repeat(61),
         }),
     );
@@ -458,9 +469,7 @@ describe("users — création de compte", () => {
       fresh()
         .doc("users/newcomer")
         .set({
-          role: "pending",
-          is_revoked: false,
-          email: "new@example.com",
+          ...NEW_ACCOUNT,
           display_name: "a".repeat(60),
         }),
     );
@@ -474,9 +483,7 @@ describe("users — création de compte", () => {
       fresh()
         .doc("users/newcomer")
         .set({
-          role: "pending",
-          is_revoked: false,
-          email: "new@example.com",
+          ...NEW_ACCOUNT,
           display_name: "😀".repeat(30),
         }),
     );
@@ -487,9 +494,7 @@ describe("users — création de compte", () => {
       fresh()
         .doc("users/newcomer")
         .set({
-          role: "pending",
-          is_revoked: false,
-          email: "new@example.com",
+          ...NEW_ACCOUNT,
           display_name: "😀".repeat(31),
         }),
     );
@@ -816,11 +821,7 @@ describe("users — couverture « Recette libre »", () => {
         email_verified: true,
       })
       .firestore();
-    const base = {
-      role: "pending",
-      is_revoked: false,
-      email: "new@example.com",
-    };
+    const base = { ...NEW_ACCOUNT };
     await assertFails(
       ctx
         .doc("users/newcomer")
@@ -876,6 +877,275 @@ describe("users — adresse immuable", () => {
     );
     await assertFails(
       db("admin").doc("users/legacy").update({ email: FOUNDER_EMAIL }),
+    );
+  });
+});
+
+// Ticket #162 : le champ `uid` d'un document `users` désignait le compte
+// sur lequel l'écran Admin agissait. Il est figé à l'uid du document.
+describe("users — champ uid et champs permis", () => {
+  const fresh = () =>
+    env
+      .authenticatedContext("newcomer", {
+        email: "new@example.com",
+        email_verified: true,
+      })
+      .firestore();
+  const base = { ...NEW_ACCOUNT };
+
+  it("un compte en attente ne crée pas son document avec l'uid d'un éditeur", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(`users/${PERSONAS.pending.uid}`).delete();
+    });
+    const ctx = env
+      .authenticatedContext(PERSONAS.pending.uid, {
+        ...PERSONAS.pending.claims,
+        email_verified: true,
+      })
+      .firestore();
+    const ref = ctx.doc(`users/${PERSONAS.pending.uid}`);
+    const doc = { ...PERSONAS.pending.doc, ...ACCOUNT_DATES, display_name: "P" };
+    await assertFails(ref.set({ ...doc, uid: EDITOR }));
+    await assertSucceeds(ref.set({ ...doc, uid: PERSONAS.pending.uid }));
+  });
+
+  it("un compte neuf crée son document avec son propre uid", async () => {
+    await assertSucceeds(
+      fresh().doc("users/newcomer").set({ ...base, uid: "newcomer" }),
+    );
+  });
+
+  // La forme exacte de `AppUser.toFirestore`, écrite par `_upsertUser`.
+  it("la création du client (AppUser.toFirestore) est acceptée", async () => {
+    const now = new Date("2026-10-20T08:00:00Z");
+    await assertSucceeds(
+      fresh().doc("users/newcomer").set({
+        ...base,
+        uid: "newcomer",
+        display_name: "Nouveau",
+        preferred_name: null,
+        photo_url: "https://lh3.googleusercontent.com/a/photo",
+        free_recipe_cover_url: null,
+        created_at: now,
+        last_seen_at: now,
+      }),
+    );
+  });
+
+  it("un compte neuf ne crée pas de champ hors liste", async () => {
+    await assertFails(fresh().doc("users/newcomer").set({ ...base, foo: "x" }));
+  });
+
+  // Relecture sécurité : un champ absent ou mal typé fait lever
+  // `AppUser.fromFirestore`, et Admin › Comptes tombait pour tous.
+  it("un compte en attente ne crée pas son document avec created_at: \"x\"", async () => {
+    await assertFails(
+      fresh().doc("users/newcomer").set({ ...base, created_at: "x" }),
+    );
+  });
+
+  it("un compte en attente ne crée pas son document sans created_at", async () => {
+    const { created_at: _omitted, ...withoutCreatedAt } = base;
+    await assertFails(fresh().doc("users/newcomer").set(withoutCreatedAt));
+  });
+
+  it("un compte neuf ne crée pas son document sans last_seen_at ni display_name", async () => {
+    const { last_seen_at: _a, ...withoutLastSeen } = base;
+    const { display_name: _b, ...withoutName } = base;
+    await assertFails(fresh().doc("users/newcomer").set(withoutLastSeen));
+    await assertFails(fresh().doc("users/newcomer").set(withoutName));
+    await assertFails(
+      fresh().doc("users/newcomer").set({ ...base, display_name: null }),
+    );
+  });
+
+  it("le titulaire ne pose pas last_seen_at: \"x\"", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ last_seen_at: "x" }),
+    );
+  });
+
+  it("le titulaire ne pose pas display_name: null", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ display_name: null }),
+    );
+  });
+
+  it("le titulaire ne retire pas last_seen_at", async () => {
+    await seedDocs(env, {
+      [`users/${READER}`]: { ...PERSONAS.reader.doc, ...ACCOUNT_DATES },
+    });
+    await assertFails(
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ last_seen_at: deleteField() }),
+    );
+  });
+
+  it("un administrateur ne pose pas un rôle ou une révocation d'un autre type", async () => {
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ role: 3 }),
+    );
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ is_revoked: "oui" }),
+    );
+  });
+
+  it("le titulaire ne change pas son champ uid", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ uid: OTHER }),
+    );
+  });
+
+  it("le titulaire n'ajoute pas de champ hors liste", async () => {
+    await assertFails(db("reader").doc(`users/${READER}`).update({ foo: "x" }));
+  });
+
+  it("le titulaire écrit sa connexion et ses préférences", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({
+          last_seen_at: new Date("2026-10-20T08:00:00Z"),
+          photo_url: "https://lh3.googleusercontent.com/a/photo",
+          display_name: "Lou",
+        }),
+    );
+    await assertSucceeds(
+      db("reader")
+        .doc(`users/${READER}`)
+        .set({ import_illustrations: false }, { merge: true }),
+    );
+  });
+
+  it("une photo de 3000 caractères est refusée", async () => {
+    await assertFails(
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ photo_url: "https://x.example/" + "a".repeat(2982) }),
+    );
+    await assertFails(
+      fresh()
+        .doc("users/newcomer")
+        .set({ ...base, photo_url: "h".repeat(3000) }),
+    );
+  });
+
+  it("une photo nulle reste permise", async () => {
+    await assertSucceeds(
+      db("reader").doc(`users/${READER}`).update({ photo_url: null }),
+    );
+  });
+
+  it("un administrateur ne change pas le champ uid d'un autre compte", async () => {
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ uid: EDITOR }),
+    );
+  });
+
+  it("un administrateur ne touche pas aux champs du titulaire d'un autre compte", async () => {
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ display_name: "Lou" }),
+    );
+    await assertFails(
+      db("admin")
+        .doc(`users/${READER}`)
+        .update({ photo_url: "https://x.example/p" }),
+    );
+  });
+
+  it("un administrateur change le rôle, la révocation et le nom préféré", async () => {
+    await assertSucceeds(
+      db("admin")
+        .doc(`users/${READER}`)
+        .update({ role: "editor", is_revoked: true, preferred_name: "Lou" }),
+    );
+  });
+
+  it("un administrateur écrit sa propre connexion", async () => {
+    await assertSucceeds(
+      db("admin")
+        .doc(`users/${PERSONAS.admin.uid}`)
+        .update({ last_seen_at: new Date("2026-10-20T08:00:00Z") }),
+    );
+  });
+});
+
+// Ticket #162 : le rôle se lit sur le document, le jeton n'est qu'un repli.
+describe("users — rôle lu sur le document", () => {
+  it("un administrateur rétrogradé ne se renomme pas administrateur", async () => {
+    await assertFails(
+      db("demotedAdmin")
+        .doc(`users/${PERSONAS.demotedAdmin.uid}`)
+        .update({ role: "admin" }),
+    );
+  });
+
+  it("un administrateur rétrogradé ne lit plus la configuration réservée", async () => {
+    await seedDocs(env, {
+      "app_config/nutrition_source_policy": { mode: "strict" },
+    });
+    await assertFails(
+      db("demotedAdmin").doc("app_config/nutrition_source_policy").get(),
+    );
+    await assertSucceeds(
+      db("admin").doc("app_config/nutrition_source_policy").get(),
+    );
+  });
+
+  it("un administrateur rétrogradé ne lit plus le compte d'un autre", async () => {
+    await assertFails(db("demotedAdmin").doc(`users/${READER}`).get());
+  });
+
+  it("un administrateur rétrogradé garde ses droits d'éditeur", async () => {
+    await assertSucceeds(
+      db("demotedAdmin")
+        .doc("groups/new")
+        .set({
+          name: "Famille",
+          owner_id: PERSONAS.demotedAdmin.uid,
+          member_ids: [PERSONAS.demotedAdmin.uid],
+        }),
+    );
+  });
+
+  // `books/public` ne se lit que par les membres d'un groupe de son auteur ;
+  // `app_config/usage` se lit par tout compte approuvé (`isApproved`).
+  it("un compte nommé lit ce qu'un lecteur lit avant que son jeton ne suive", async () => {
+    await assertSucceeds(db("promotedReader").doc("app_config/usage").get());
+    await assertFails(db("pending").doc("app_config/usage").get());
+  });
+
+  it("un document sans rôle se replie sur le claim du jeton", async () => {
+    await seedDocs(env, {
+      "users/legacy-reader": { is_revoked: false, email: "legacy@example.com" },
+    });
+    const ctx = env
+      .authenticatedContext("legacy-reader", {
+        role: "reader",
+        revoked: false,
+        email: "legacy@example.com",
+      })
+      .firestore();
+    await assertSucceeds(ctx.doc("app_config/usage").get());
+  });
+
+  it("sans document, un jeton administrateur n'ouvre rien", async () => {
+    const ctx = env
+      .authenticatedContext("no-doc", {
+        role: "admin",
+        revoked: false,
+        email: "nodoc@example.com",
+      })
+      .firestore();
+    await assertFails(ctx.doc("app_config/usage").get());
+    await assertFails(ctx.doc("app_config/nutrition_policy").get());
+  });
+
+  it("le fondateur reste administrateur", async () => {
+    await assertSucceeds(db("founder").doc(`users/${READER}`).get());
+    await assertSucceeds(
+      db("founder").doc("users/founder").update({ role: "admin" }),
     );
   });
 });
@@ -2203,6 +2473,33 @@ describe("champs propriétaire", () => {
       db("editor")
         .doc("groups/new")
         .set({ name: "Famille", owner_id: EDITOR, member_ids: [EDITOR] }),
+    );
+  });
+
+  // La forme exacte de `GroupRepository.createGroup`.
+  it("un groupe se crée sous la forme du client (createGroup)", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("groups/new")
+        .set({
+          name: "Famille",
+          owner_id: EDITOR,
+          member_ids: [EDITOR],
+          created_at: new Date("2026-10-20T08:00:00Z"),
+        }),
+    );
+  });
+
+  it("un groupe ne se crée pas avec un champ hors liste (description)", async () => {
+    await assertFails(
+      db("editor")
+        .doc("groups/new")
+        .set({
+          name: "Famille",
+          owner_id: EDITOR,
+          member_ids: [EDITOR],
+          description: "texte libre",
+        }),
     );
   });
 

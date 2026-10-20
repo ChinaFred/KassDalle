@@ -20,6 +20,42 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.30 — technique
+
+Règles Firestore des comptes et des groupes, lot 9 de l'audit #151 (ticket #162). Le rôle se
+lit désormais sur le document `users/{uid}`, et le claim du jeton seulement si le document n'a
+pas de champ `role` : un administrateur rétrogradé gardait le claim `admin` jusqu'au
+renouvellement de son jeton (une heure au plus) et pouvait se renommer administrateur. Un
+compte nommé accède aussi sans attendre son jeton. Storage reste lié au jeton, écart décrit au
+§4 de `TechnicalRequirements.md`.
+
+Le champ `uid` d'un document `users` est absent ou égal à l'uid du document, et ne change plus
+après la création. L'écran Admin › Comptes lit l'uid sur l'identifiant du document
+(`watchAllUsers`, et `watchAppUser` pour le compte connecté) : un compte en attente qui
+portait l'uid d'un éditeur faisait révoquer l'éditeur par un clic sur sa propre ligne. Les
+champs écrits sont listés (`hasOnly`) : création d'un compte (`AppUser.toFirestore`), mise à
+jour par le titulaire, mise à jour par un administrateur (`role`, `is_revoked`,
+`preferred_name`), création d'un groupe (`createGroup`). `photo_url` est bornée à 2048
+caractères. Les types que lit `AppUser.fromFirestore` sont contrôlés : `created_at`,
+`last_seen_at` (horodatages) et `display_name` (chaîne) sont obligatoires à la création, et
+`last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type à la mise à jour. Un
+compte en attente qui créait son document sans `created_at`, ou un titulaire qui posait
+`last_seen_at: "x"`, faisait échouer Admin › Comptes pour tous les administrateurs.
+`watchAllUsers` saute aussi un document illisible, le signale une fois
+(`admin.watchAllUsers`) et affiche les autres comptes. 30 tests de règles ajoutés (personas
+`demotedAdmin` et `promotedReader`), deux tests Dart sur `watchAllUsers`.
+
+Imputation de l'huile absorbée, lot 9 de l'audit #151 (ticket #163). L'estimation de l'huile
+absorbée à la friture (`estimate_fry_absorption`) est imputée au propriétaire de la recette
+(`recipeBudgetUserId(created_by)`). Avant, elle tombait sur le compte `system`, dont le plafond
+d'un seul membre (2 € et 400 appels par jour) servait à toute la famille. Un appel en échec ne
+mémorise plus sa signature : `fry_signature` reste vide, et le verdict est redemandé au
+prochain calcul, déclenché par une entrée modifiée ou par un recalcul manuel. Le rattrapage
+nocturne ne le redemande pas : `catchUpDecision` ignore une recette dont `nutritionIsIncomplete`
+est faux. Avant, la recette restait sans huile absorbée jusqu'à ce que son texte change.
+L'écriture de ce champ ne relance pas `onRecipeWritten`, dont la garde ne lit que les entrées de
+la recette.
+
 ### v0.24.29 — fonctionnel
 
 Ranger des brouillons dans un livre en lot (ticket #197).
