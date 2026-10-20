@@ -90,8 +90,10 @@ class _NutritionIngredientsScreenState
                   '« Recalculer les produits d\'achat » pour les recettes.',
       );
     } catch (e) {
+      // Signalée au rapport d'erreurs par
+      // NutritionIngredientsRepository.setShoppingProduct.
       if (!mounted) return;
-      context.showErrorSnackBar('Enregistrement impossible : $e');
+      context.showFailureSnackBar('Produit acheté non enregistré', e);
     }
   }
 
@@ -164,8 +166,10 @@ class _NutritionIngredientsScreenState
         'ingrédients et des recettes » pour les recettes.',
       );
     } catch (e) {
+      // Signalée au rapport d'erreurs par
+      // NutritionIngredientsRepository.setAllergens.
       if (!mounted) return;
-      context.showErrorSnackBar('Enregistrement impossible : $e');
+      context.showFailureSnackBar('Allergènes non enregistrés', e);
     }
   }
 
@@ -215,9 +219,21 @@ class _NutritionIngredientsScreenState
                           .toList(growable: false);
 
                 if (filtered.isEmpty) {
-                  return const Center(
-                    child: Text('Aucun ingrédient nutrition trouvé.'),
-                  );
+                  return items.isEmpty
+                      ? const AppEmptyState(
+                          icon: Icons.eco_outlined,
+                          title: 'Aucun ingrédient nutrition',
+                          message:
+                              'La liste se remplit quand la nutrition d\'une '
+                              'recette est calculée. Lancez « Reprendre '
+                              'la nutrition » dans Admin › Backfills pour les '
+                              'recettes existantes.',
+                        )
+                      : const AppEmptyState(
+                          icon: Icons.search_off,
+                          title: 'Aucun ingrédient ne correspond',
+                          message: 'Modifiez ou effacez la recherche.',
+                        );
                 }
 
                 return ListView.builder(

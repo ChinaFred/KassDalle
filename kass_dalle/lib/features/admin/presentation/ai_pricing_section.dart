@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/error_message.dart';
 import '../data/ai_pricing.dart';
 import '../data/ai_pricing_repository.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -117,7 +118,14 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
         error: error,
         stackTrace: stackTrace,
       );
-      if (mounted) context.showErrorSnackBar('Erreur : $error');
+      if (mounted) {
+        context.showFailureSnackBar(
+          pricing == null
+              ? 'Tarif de « $model » non revenu à la valeur du code'
+              : 'Tarif de « $model » non enregistré',
+          error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -130,6 +138,21 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
     );
     if (result == null || !mounted) return;
     await _save(result.model, result.pricing);
+  }
+
+  /// La cause de la panne, lisible : celle de la lecture quand elle a
+  /// échoué (« Connexion perdue. »), sinon le constat posé par le dépôt sur
+  /// la grille lue (« Grille absente. »). Le texte brut reste au rapport
+  /// d'erreurs.
+  static String _pricingErrorText(Object error) {
+    if (error is AiPricingUnavailable && error.source == null) {
+      final cause = error.cause;
+      return cause.isEmpty
+          ? '${describeError(error).title}.'
+          : '${cause[0].toUpperCase()}${cause.substring(1)}.';
+    }
+    final source = error is AiPricingUnavailable ? error.source : error;
+    return '${describeError(source).title}.';
   }
 
   @override
@@ -197,7 +220,7 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
                     'illisible : montrer les tarifs du code à la place donnerait '
                     'des prix périmés présentés comme exacts. Les appels passés '
                     'pendant ce temps sont enregistrés sans montant et comptés '
-                    'à part.\n\n$_error',
+                    'à part.\n\n${_pricingErrorText(_error!)}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onErrorContainer,
                     ),

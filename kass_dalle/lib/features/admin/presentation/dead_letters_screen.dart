@@ -9,6 +9,7 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/theme/app_icon_size.dart';
+import 'admin_server_message.dart';
 
 /// Provider du repo (singleton).
 final deadLetterRepositoryProvider = Provider<DeadLetterRepository>(
@@ -48,14 +49,13 @@ class DeadLettersScreen extends ConsumerWidget {
         ),
         data: (items) {
           if (items.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Aucun job en échec. La file est saine.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
+            return const AppEmptyState(
+              icon: Icons.task_alt,
+              title: 'Aucun job en échec',
+              message:
+                  'La file est saine. Un import qui échoue après toutes ses '
+                  'tentatives apparaîtra ici, avec « Relancer » et '
+                  '« Supprimer ».',
             );
           }
           return ListView.separated(
@@ -252,7 +252,16 @@ class _DeadLetterTile extends ConsumerWidget {
         stackTrace: stackTrace,
       );
       if (!context.mounted) return;
-      context.showErrorSnackBar('Échec de la relance : $e');
+      // `failed-precondition` : `relaunchDeadLetterFn` dit que le job
+      // original a été supprimé (« Job original supprimé, relance
+      // impossible. »).
+      context.showErrorSnackBar(
+        adminFailureMessage(
+          'Job non relancé',
+          e,
+          codes: const {'failed-precondition'},
+        ),
+      );
     }
   }
 
@@ -292,7 +301,7 @@ class _DeadLetterTile extends ConsumerWidget {
         stackTrace: stackTrace,
       );
       if (!context.mounted) return;
-      context.showErrorSnackBar('Échec de la suppression : $e');
+      context.showFailureSnackBar('Entrée non supprimée', e);
     }
   }
 }

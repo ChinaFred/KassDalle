@@ -20,6 +20,78 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.28 — fonctionnel
+
+Messages d'erreur de l'administration et de la modération, quatrième et dernier sous-lot du
+lot 8 de l'audit #151 (tickets #170 et #171).
+
+Un échec s'affiche en deux phrases, comme dans les recettes, le planning et les livres : ce
+qui n'a pas eu lieu, puis la cause lisible. Exemples : « Politique de routage non enregistrée.
+Connexion perdue. », « Tarif de « gemini-2.5-flash » non enregistré. Accès refusé. », « Plafonds non
+enregistrés. », « Politique App Check non modifiée. », « Job non relancé. », « Entrée non
+supprimée. », « Agrégats non reconstruits. », « Unité non créée. », « Garniture non mise à
+jour. », « Produit acheté non enregistré. », « Allergènes non enregistrés. », « Rôle non
+modifié. », « Accès non révoqué. », « Image non publiée. », « Image non refusée. »,
+« Images non relancées. ». « Relancer les images sans verdict » s'affiche en succès quand
+toutes les images ont reçu un verdict. Les invitations par e-mail passent de « Invitation non envoyée :
+Connexion perdue » ou « Action impossible : … » à la même forme : « Invitation non envoyée. »,
+« Invitation non renvoyée. », « Invitation non annulée. », « Lien non copié. ». Le texte technique de l'exception (« Erreur : [firebase_functions/
+internal]… », « Enregistrement impossible : … ») n'apparaît plus ; il reste dans les rapports
+d'erreurs.
+
+Un message écrit par le serveur pour l'administrateur reste affiché, en seconde phrase, pour
+les seuls codes dont le texte a été relu : « Image non publiée. Cette image n'attend pas de
+décision. », « Politique App Check non modifiée. Cet appel n'est pas lui-même attesté… »,
+« Job non relancé. Job original supprimé, relance impossible. », « « Rapide » non
+enregistrée. Une configuration porte déjà le nom « Rapide ». ». Une erreur interne ou réseau
+n'est jamais recopiée.
+
+Les succès et les échecs qui s'affichaient sur fond neutre prennent leur couleur : « Image
+publiée. », « Image refusée. », « Unité créée. », « Garniture supprimée. », « 12 mois
+reconstruits ✓ » et le compte rendu de l'initialisation des unités en succès ; l'échec de la
+reconstruction des agrégats, de « Relire ce mois chez Anthropic » et de la déduction d'un
+identifiant de garniture (« Identifiant non déduit de ce nom. Saisissez-le à la main. ») en
+erreur.
+
+Le routage de l'IA, l'attestation de l'application et la politique nutrition affichent « Routage
+non chargé », « Politique App Check non chargée » ou « Politique nutrition non chargée » avec
+« Réessayer » et, pour l'administrateur, « Détails », au lieu du texte de l'exception. Leur
+chargement, et celui du journal de modération, montre un libellé (« Chargement du
+routage… »). L'encart « Tarifs en panne » dit la cause lisible (« Connexion perdue. »,
+« Grille absente. ») ; l'encart de la dépense par utilisateur s'intitule « Dépenses non
+chargées ». L'aperçu d'une image du journal de modération dit « Image non chargée. Accès
+refusé. ». Une lecture refusée du rapport de coûts Anthropic n'affiche plus le corps de la
+réponse : « Anthropic refuse la clé d'administration (HTTP 401). Vérifiez le secret
+ANTHROPIC_ADMIN_KEY… », ou « Rapport de coûts Anthropic non lu (HTTP 500). Le détail est
+dans Admin › Journaux… ».
+
+Le journal de modération affiche « Journal de modération non chargé » quand sa lecture
+échoue. La politique nutrition, la qualité des données et les indicateurs des référentiels
+n'offrent plus « Réessayer » sur un refus de droits. Une liste d'unités vide renvoie à
+« Nouvelle unité ».
+
+Les listes vides des rapports d'erreurs, des unités, de la Dead Letter Queue, des comptes, des
+garnitures, des ingrédients nutrition, de Cloud Logging et du journal de modération affichent
+une icône, un titre et la suite à donner (« Aucun job en échec », « Aucune unité ne
+correspond. Modifiez ou effacez la recherche. »…).
+
+### v0.24.28 — technique
+
+`test/error_text_guard_test.dart` lit les `.dart` de `lib/features/**/presentation` et de
+`lib/core/presentation`. Il échoue si l'argument d'un `show…SnackBar(` ou d'un `…Text(`
+interpole `$e`, `${e}`, `$error`, `${error}` ou `$_error`, ou appelle `e.toString()`. Sa liste
+d'exceptions (fichier, motif, raison) est vide : après ce sous-lot, aucun appel ne relève de
+la garde. Une exception qui ne sert plus fait échouer le test.
+
+`adminFailureMessage` (`features/admin/presentation/admin_server_message.dart`) écrit l'échec
+d'une action d'administration : le message de la callable pour une liste blanche de codes
+passée par l'appelant, jamais `internal`, `unknown`, `unavailable` ni `deadline-exceeded`,
+sinon `failureMessage`. Une `CallableFailure` y est lue par son code, et `readableError` la ramène au code de la
+callable avant `AppErrorState`. `AiPricingUnavailable`
+porte l'exception d'origine (`source`) pour que l'encart en tire un titre lisible. Les widgets
+d'erreur privés de `app_check_screen.dart`, `nutrition_policy_screen.dart` et
+`ai_routing_screen.dart` sont retirés au profit d'`AppErrorState`.
+
 ### v0.24.27 — technique
 
 Le scan d'une couverture de livre passe dans sa propre file Cloud Tasks (ticket #193).
@@ -8529,7 +8601,6 @@ aurait relancé la salve à lui seul.
 - **Bottom sheet de planification** : un appui sur le bouton Planifier ouvre un bottom sheet permettant de : choisir la date (sélecteur de date, par défaut aujourd'hui), choisir l'heure (sélecteur d'heure, par défaut 19h00), configurer le rappel en minutes (pré-rempli avec le temps de préparation de la recette). La durée est calculée automatiquement à partir des champs `prepTime` et `cookTime` de la recette. Un bouton "Ajouter à Google Calendar" déclenche la création de l'événement.
 - **Intégration Google Calendar (API REST OAuth)** : la planification crée un événement "Préparer : [titre]" dans le calendrier Google principal de l'utilisateur, avec description contenant les ingrédients, les temps de préparation/cuisson et un rappel popup configurable. Sur web : OAuth via `FirebaseAuth.signInWithPopup` avec le scope `calendar.events`. Sur mobile/desktop : via `GoogleSignIn.instance.authorizationClient`.
 
-
 - **Filtre par livre dans la page Brouillons** : dans l'écran "Brouillons", une barre de filtres défilable horizontalement apparaît lorsque les brouillons appartiennent à plusieurs livres différents. Les chips disponibles sont : "Tous" (vue par défaut), "Sans livre" (brouillons non rattachés à un livre), et un chip par livre distinct présent dans la liste. La barre est masquée si tous les brouillons appartiennent au même contexte (zéro ou un seul livre distinct). La sélection d'un chip filtre immédiatement la liste affichée.
 - **Suppression d'un livre depuis la liste de ses recettes** : dans l'AppBar de l'écran "Recettes d'un livre", un bouton poubelle apparaît pour les Editors et Admins. Il déclenche un dialogue de confirmation à trois options : Annuler, "Détacher les recettes" (supprime le livre mais conserve toutes les recettes, qui deviennent des recettes libres), "Supprimer aussi les recettes" (supprime le livre ET toutes ses recettes de façon irréversible). Après suppression, l'utilisateur est redirigé vers l'écran d'accueil avec un message de confirmation.
 
@@ -8551,8 +8622,6 @@ aurait relancé la salve à lui seul.
 - **`recipe_detail_screen.dart`** : passe `onSchedule:` et `recipeId:` à `CooklangPreview` et `showScheduleRecipeSheet`.
 
 - **Dépendances ajoutées** : `http: ^1.2.0` (POST Calendar API).
-
-
 
 - **`DraftListScreen` — filtre par livre** :
   - Nouveau champ `String? _bookFilter` : `null` = tous, `''` = sans livre, sinon `bookId`.

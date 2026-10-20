@@ -7,7 +7,8 @@ import '../../../core/utils/context_extensions.dart';
 import '../data/ai_routing_repository.dart';
 import '../domain/ai_routing_diff.dart';
 import 'ai_console_links.dart';
-import '../../../core/widgets/error_message.dart';
+import '../../../core/widgets/app_states.dart';
+import 'admin_server_message.dart';
 import '../../../core/theme/app_icon_size.dart';
 
 final aiRoutingRepositoryProvider = Provider<AiRoutingRepository>((ref) {
@@ -102,7 +103,18 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Enregistrement impossible : $error');
+      // `invalid-argument` : refus de `setAiRoutingPolicyFn`, écrit par
+      // `readRoutingPolicy` (« Poste inconnu : … », « Fournisseur invalide
+      // pour … »). Il écrit aussi « policy est requis. » et
+      // « defaultProvider doit valoir … », que cet écran ne provoque pas : il
+      // envoie toujours une politique complète. Écart accepté.
+      context.showErrorSnackBar(
+        adminFailureMessage(
+          'Politique de routage non enregistrée',
+          error,
+          codes: const {'invalid-argument'},
+        ),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -271,6 +283,7 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
             .read(aiRoutingRepositoryProvider)
             .updatePreset(id: existing.id, policy: draft),
         success: '« ${existing.name} » mise à jour.',
+        failure: '« ${existing.name} » non mise à jour',
         selectId: existing.id,
       );
       return;
@@ -281,6 +294,7 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
           .read(aiRoutingRepositoryProvider)
           .createPreset(name: name, policy: draft),
       success: '« $name » enregistrée.',
+      failure: '« $name » non enregistrée',
       selectName: name,
     );
   }
@@ -306,6 +320,7 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
           .read(aiRoutingRepositoryProvider)
           .updatePreset(id: preset.id, policy: draft),
       success: '« ${preset.name} » mise à jour.',
+      failure: '« ${preset.name} » non mise à jour',
       selectId: preset.id,
     );
   }
@@ -325,6 +340,7 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
           .read(aiRoutingRepositoryProvider)
           .renamePreset(id: preset.id, name: name),
       success: 'Configuration renommée en « $name ».',
+      failure: 'Configuration non renommée',
       selectId: preset.id,
     );
   }
@@ -346,6 +362,7 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     await _runPresetAction(
       () => ref.read(aiRoutingRepositoryProvider).deletePreset(preset.id),
       success: '« ${preset.name} » supprimée.',
+      failure: '« ${preset.name} » non supprimée',
     );
   }
 
@@ -356,6 +373,7 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
   Future<void> _runPresetAction(
     Future<List<AiRoutingPreset>> Function() action, {
     required String success,
+    required String failure,
     String? selectId,
     String? selectName,
   }) async {
@@ -387,8 +405,17 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
+      // Textes lus dans `aiRoutingPresetsFn` : `already-exists` (« Une
+      // configuration porte déjà le nom … ») et `not-found` (« Cette
+      // configuration n'existe plus. »). `invalid-argument` reste écarté :
+      // la fonction y écrit aussi des textes de développeur (« id est
+      // requis. », « policy est requis. »).
       context.showErrorSnackBar(
-        'Action impossible — ${shortErrorMessage(error)}',
+        adminFailureMessage(
+          failure,
+          error,
+          codes: const {'already-exists', 'not-found'},
+        ),
       );
     } finally {
       if (mounted) setState(() => _presetBusy = false);
@@ -792,9 +819,13 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
         ],
       ),
       body: _loadError != null
-          ? _ErrorState(error: _loadError!, onRetry: _load)
+          ? AppErrorState(
+              error: _loadError,
+              title: 'Routage non chargé',
+              onRetry: _load,
+            )
           : (snapshot == null || draft == null)
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoadingState(label: 'Chargement du routage…')
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -1298,32 +1329,6 @@ class _ProviderToggle extends StatelessWidget {
       selected: {value},
       showSelectedIcon: false,
       onSelectionChanged: (selection) => onChanged(selection.first),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final Object error;
-  final VoidCallback onRetry;
-
-  const _ErrorState({required this.error, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Politique de routage illisible — ${shortErrorMessage(error)}',
-            ),
-            const SizedBox(height: 12),
-            FilledButton(onPressed: onRetry, child: const Text('Réessayer')),
-          ],
-        ),
-      ),
     );
   }
 }

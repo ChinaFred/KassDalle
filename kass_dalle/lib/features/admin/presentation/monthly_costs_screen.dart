@@ -4,8 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
 
+import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
-import '../../../core/widgets/error_message.dart';
 import '../data/monthly_costs_repository.dart';
 import 'ai_console_links.dart';
 import 'ai_services_tab.dart';
@@ -339,14 +339,11 @@ class _HeaderState extends ConsumerState<_Header> {
           .rebuild(months: widget.depth ?? 24, recomputeCosts: recompute);
       if (!mounted) return;
       ref.invalidate(costsReportProvider);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$count mois reconstruits ✓')));
+      context.showSuccessSnackBar('$count mois reconstruits ✓');
     } catch (error) {
+      // Signalée au rapport d'erreurs par MonthlyCostsRepository.rebuild.
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(shortErrorMessage(error))));
+      context.showFailureSnackBar('Agrégats non reconstruits', error);
     } finally {
       if (mounted) setState(() => _rebuilding = false);
     }
@@ -841,7 +838,19 @@ String? _anthropicNote(MonthlyCostsReport report) {
   }
 
   if (error != null) {
-    return 'La lecture du rapport de coûts Anthropic a échoué : $error';
+    // `error` est le texte brut de l'échec (« HTTP 401 — {corps de la
+    // réponse} », ou le message d'une erreur réseau) : seul son statut HTTP
+    // est affiché. Le texte complet est au journal du serveur.
+    final status = RegExp(r'HTTP (\d{3})').firstMatch(error)?.group(1);
+    if (status == '401' || status == '403') {
+      return 'Anthropic refuse la clé d\'administration (HTTP $status). '
+          'Vérifiez le secret ANTHROPIC_ADMIN_KEY dans Secret Manager et la '
+          'clé dans la console Anthropic. L\'estimation reste affichée.';
+    }
+    return 'Rapport de coûts Anthropic non lu'
+        '${status == null ? '' : ' (HTTP $status)'}. Le détail est dans Admin '
+        '› Journaux, sous « fetchAnthropicMonthlyCosts: lecture interrompue ». '
+        'L\'estimation reste affichée.';
   }
 
   if (report.anthropicPartial) {
@@ -1096,10 +1105,12 @@ class _RefreshBilledButtonState extends ConsumerState<_RefreshBilledButton> {
       if (!mounted) return;
       ref.invalidate(costsReportProvider);
     } catch (error) {
+      // Signalée au rapport d'erreurs par MonthlyCostsRepository.fetch.
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(shortErrorMessage(error))));
+      context.showFailureSnackBar(
+        'Mois non relu chez ${widget.billedBy}',
+        error,
+      );
     } finally {
       if (mounted) setState(() => _running = false);
     }

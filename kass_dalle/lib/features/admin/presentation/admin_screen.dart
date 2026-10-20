@@ -108,7 +108,11 @@ class _AccountsTab extends ConsumerWidget {
           DateTime.now(),
         );
         if (users.isEmpty && invited.isEmpty) {
-          return const Center(child: Text('Aucun utilisateur.'));
+          return const AppEmptyState(
+            icon: Icons.people_outline,
+            title: 'Aucun utilisateur',
+            message: 'Invitez un membre avec « Inviter par e-mail ».',
+          );
         }
         final pending = users.where((u) => u.isPending).length;
         return Column(
@@ -427,7 +431,14 @@ class _UserActionsMenu extends ConsumerWidget {
         );
       }
       if (context.mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        context.showFailureSnackBar(switch (action) {
+          _Action.setPreferredName => 'Nom préféré non enregistré',
+          _Action.setReader ||
+          _Action.setEditor ||
+          _Action.setAdmin => 'Rôle non modifié',
+          _Action.revoke => 'Accès non révoqué',
+          _Action.unrevoke => 'Accès non rétabli',
+        }, e);
       }
     }
   }

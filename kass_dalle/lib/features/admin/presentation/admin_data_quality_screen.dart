@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'admin_server_message.dart';
 import 'billing_providers.dart';
 import '../domain/data_quality_report.dart';
 import '../../../core/router/app_router.dart';
@@ -32,9 +33,17 @@ class AdminDataQualityScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: reportAsync.render(
-        loadingLabel: 'Scan des référentiels en cours...',
-        onRetry: () => ref.invalidate(dataQualityReportProvider),
+      // `when` plutôt que `render` : l'erreur est une `CallableFailure`,
+      // ramenée au code de la callable pour que le conseil et « Réessayer »
+      // (absent pour un refus de droits) en dépendent.
+      body: reportAsync.when(
+        skipLoadingOnRefresh: false,
+        loading: () =>
+            const AppLoadingState(label: 'Scan des référentiels en cours...'),
+        error: (error, _) => AppErrorState(
+          error: readableError(error),
+          onRetry: () => ref.invalidate(dataQualityReportProvider),
+        ),
         data: (report) => _DataQualityBody(report: report),
       ),
     );
