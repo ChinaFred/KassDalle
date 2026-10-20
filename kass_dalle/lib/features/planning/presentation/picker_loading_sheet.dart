@@ -62,11 +62,32 @@ class _PickerLoadingSheetState extends ConsumerState<PickerLoadingSheet> {
   late Future<List<Recipe>> _recipes;
   bool _staplesErrorReported = false;
 
+  /// « Réessayer » sur les garnitures relance leur lecture. Riverpod garde
+  /// l'erreur précédente pendant la relecture : sans ce drapeau, l'écran
+  /// resterait sur l'erreur sans montrer qu'il relit.
+  bool _staplesReloading = false;
+
+  /// La valeur affichée au moment de « Réessayer » ; toute autre valeur ou
+  /// erreur qui arrive ensuite met fin à la relecture.
+  AsyncValue<List<UserStaple>>? _staplesAtRetry;
+
   @override
   void initState() {
     super.initState();
     final initial = widget.initialRecipes;
     _recipes = initial != null ? Future.value(initial) : widget.loadRecipes();
+    if (widget.needsStaples) {
+      ref.listenManual(myStaplesProvider, (_, next) {
+        if (!_staplesReloading || next == _staplesAtRetry) return;
+        if (!next.hasValue && !next.hasError) return;
+        setState(() {
+          _staplesReloading = false;
+          _staplesAtRetry = null;
+          // Une nouvelle erreur après « Réessayer » se signale à son tour.
+          _staplesErrorReported = false;
+        });
+      });
+    }
   }
 
   void _retryRecipes() {
@@ -76,7 +97,10 @@ class _PickerLoadingSheetState extends ConsumerState<PickerLoadingSheet> {
   }
 
   void _retryStaples() {
-    _staplesErrorReported = false;
+    setState(() {
+      _staplesReloading = true;
+      _staplesAtRetry = ref.read(myStaplesProvider);
+    });
     ref.invalidate(baseMealStaplesProvider);
     ref.invalidate(myStapleOverridesProvider);
   }
@@ -86,55 +110,60 @@ class _PickerLoadingSheetState extends ConsumerState<PickerLoadingSheet> {
     final staplesAsync = widget.needsStaples
         ? ref.watch(myStaplesProvider)
         : const AsyncValue<List<UserStaple>>.data([]);
-    return FutureBuilder<List<Recipe>>(
-      future: _recipes,
-      initialData: widget.initialRecipes,
-      builder: (context, snap) {
-        // L'erreur est déjà signalée par la fonction de lecture.
-        if (snap.hasError) {
-          return _frame(
-            AppErrorState(
-              error: snap.error,
-              title: 'Les recettes n\'ont pas pu être lues.',
-              onRetry: _retryRecipes,
-              compact: true,
-            ),
-          );
-        }
-        if (staplesAsync.hasError) {
-          if (!_staplesErrorReported) {
-            _staplesErrorReported = true;
-            reportUnexpectedError(
-              feature: 'planningScreen.pickerSheet.loadStaples',
-              userId: ref.read(appUserProvider).value?.uid,
-              error: staplesAsync.error!,
-              stackTrace: staplesAsync.stackTrace,
-              service: widget.errorReporter,
+    // Le passage du chargement (240 px) à la feuille de choix (jusqu'à 80 %
+    // de l'écran) s'anime au lieu de sauter.
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      alignment: Alignment.bottomCenter,
+      child: FutureBuilder<List<Recipe>>(
+        future: _recipes,
+        initialData: widget.initialRecipes,
+        builder: (context, snap) {
+          // L'erreur est déjà signalée par la fonction de lecture.
+          if (snap.hasError) {
+            return _frame(
+              AppErrorState(
+                error: snap.error,
+                title: 'Les recettes n\'ont pas pu être lues.',
+                onRetry: _retryRecipes,
+                compact: true,
+              ),
             );
           }
-          return _frame(
-            AppErrorState(
-              error: staplesAsync.error,
-              title: 'Vos garnitures n\'ont pas pu être lues.',
-              onRetry: _retryStaples,
-              compact: true,
-            ),
-          );
-        }
-        final recipes = snap.data;
-        final staples = staplesAsync.value;
-        if (recipes == null || staples == null) {
-          return const SizedBox(
-            height: kPickerLoadingSheetHeight,
-            child: AppLoadingState(
-              label: 'Lecture des recettes et des garnitures…',
-            ),
-          );
-        }
-        return widget.builder(context, recipes, staples);
-      },
+          if (_staplesReloading) return _loading;
+          if (staplesAsync.hasError) {
+            if (!_staplesErrorReported) {
+              _staplesErrorReported = true;
+              reportUnexpectedError(
+                feature: 'planningScreen.pickerSheet.loadStaples',
+                userId: ref.read(appUserProvider).value?.uid,
+                error: staplesAsync.error!,
+                stackTrace: staplesAsync.stackTrace,
+                service: widget.errorReporter,
+              );
+            }
+            return _frame(
+              AppErrorState(
+                error: staplesAsync.error,
+                title: 'Vos garnitures n\'ont pas pu être lues.',
+                onRetry: _retryStaples,
+                compact: true,
+              ),
+            );
+          }
+          final recipes = snap.data;
+          final staples = staplesAsync.value;
+          if (recipes == null || staples == null) return _loading;
+          return widget.builder(context, recipes, staples);
+        },
+      ),
     );
   }
+
+  static const Widget _loading = SizedBox(
+    height: kPickerLoadingSheetHeight,
+    child: AppLoadingState(label: 'Lecture des recettes et des garnitures…'),
+  );
 
   /// Au moins la hauteur du chargement, défilable : le détail d'une erreur
   /// peut dépasser l'écran.

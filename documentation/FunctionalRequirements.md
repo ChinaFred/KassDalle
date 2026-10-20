@@ -394,7 +394,9 @@ Un import par lien se relance **deux fois au plus** : chaque relance refait des 
   le referme avec « Cette photo ne peut pas être ouverte. Choisissez-en une autre. ». Une correction
   qui échoue n'envoie rien : l'atelier reste ouvert avec ses réglages et affiche « La correction n'a
   pas pu être appliquée. » avec « Réessayer ». Un envoi qui échoue affiche « Envoi impossible : … »
-  avec « Réessayer », qui renvoie la photo déjà corrigée sans refaire la correction. Une rotation
+  avec « Réessayer », qui renvoie la photo déjà corrigée sans refaire la correction ; sans
+  « Réessayer » quand un nouvel essai ne peut pas aboutir (accès refusé, session expirée). Le
+  message se ferme dès qu'un réglage change. Une rotation
   qui échoue affiche « La photo n'a pas pu être pivotée. Réessayez. ».
 - **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages partent dans un **seul** appel multi-part, chez le moteur routé pour le poste. Un import compte **21 pages au plus** (la première et 20 pages supplémentaires) ; une recette part toujours en un seul import. Au-delà, la file reste telle quelle : le titre devient « Pages à analyser (25 sur 21 au plus) », une ligne en rouge dit « Retirez 4 pages pour lancer l'analyse. » (« Retirez 1 page… » au singulier), et « Analyser » est désactivé jusqu'à ce que la file revienne à 21 pages. Le serveur refuse aussi un import de plus de 200 Mo au total ; le job passe en erreur avec le message « Import refusé : … Mo au total, 200 Mo au plus par import. Réduisez la taille ou le nombre des pages. ».
 - **Extraction automatique d'illustrations** : l'IA identifie les photographies culinaires **sur chaque page** du scan, les découpe, et les propose comme illustrations de la recette.

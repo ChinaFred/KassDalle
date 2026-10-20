@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -130,6 +131,25 @@ void main() {
     expect(results, [corrigee]);
     expect(identical(results.single, corrigee), isTrue);
     expect(warps, 1);
+  });
+
+  testWidgets('envoi refusé (accès refusé) : pas de « Réessayer »', (
+    tester,
+  ) async {
+    await pumpEnhancer(
+      tester,
+      bytes: photo,
+      onResult: (_) async => throw FirebaseException(
+        plugin: 'firebase_storage',
+        code: 'permission-denied',
+      ),
+      warp: (_) async => corrigee,
+    );
+    await tester.tap(find.text('Enregistrer'));
+    await settleReal(tester);
+
+    expect(find.text('Envoi impossible : Accès refusé'), findsOneWidget);
+    expect(find.text('Réessayer'), findsNothing);
   });
 
   testWidgets('photo illisible : message sans texte d\'exception, puis '

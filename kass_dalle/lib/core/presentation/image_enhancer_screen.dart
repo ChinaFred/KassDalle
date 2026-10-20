@@ -102,6 +102,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   double _saturation = 1.0;
   bool _sharpen = false;
   bool _processing = false;
+
+  /// Le message « Envoi impossible » et son « Réessayer » sont affichés.
+  bool _deliveryErrorShown = false;
   String _processingMessage = 'Correction en cours…';
   bool _detecting = false;
   bool _showOriginalPreview = false;
@@ -440,6 +443,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   );
 
   void _pushHistory() {
+    _dismissDeliveryError();
     _undoStack.add(_snapshot());
     if (_undoStack.length > 40) {
       _undoStack.removeAt(0);
@@ -448,6 +452,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   }
 
   Future<void> _restoreSnapshot(_EnhancerSnapshot s) async {
+    _dismissDeliveryError();
     final codec = await ui.instantiateImageCodec(s.bytes);
     final frame = await codec.getNextFrame();
     if (!mounted) return;
@@ -612,6 +617,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   }
 
   Future<void> _confirm() async {
+    _dismissDeliveryError();
     setState(() {
       _processing = true;
       _processingMessage = 'Correction en cours…';
@@ -746,16 +752,31 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       );
       if (!mounted) return;
       setState(() => _processing = false);
+      // « Réessayer » seulement quand un nouvel essai peut aboutir.
+      final retryable = describeError(error).retryable;
+      _deliveryErrorShown = true;
       context.showErrorSnackBar(
         'Envoi impossible : ${shortErrorMessage(error)}',
-        action: SnackBarAction(
-          label: 'Réessayer',
-          onPressed: () {
-            if (mounted && !_processing) _deliver(result);
-          },
-        ),
+        action: retryable
+            ? SnackBarAction(
+                label: 'Réessayer',
+                onPressed: () {
+                  _deliveryErrorShown = false;
+                  if (mounted && !_processing) _deliver(result);
+                },
+              )
+            : null,
       );
     }
+  }
+
+  /// Un réglage change : le message « Envoi impossible » se ferme, pour que
+  /// son « Réessayer » n'envoie pas une photo corrigée avec les anciens
+  /// réglages.
+  void _dismissDeliveryError() {
+    if (!_deliveryErrorShown) return;
+    _deliveryErrorShown = false;
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
   }
 
   /// De combien les quatre coins s'écartent du cadre entier, en fraction de
@@ -1071,6 +1092,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                   label: const Text('Cadre'),
                   selected: _activePanel == _EnhancerPanel.frame,
                   onSelected: (choisi) => setState(() {
+                    _dismissDeliveryError();
                     _activePanel = choisi ? _EnhancerPanel.frame : null;
                     _cropArmed = choisi;
                   }),
@@ -1178,7 +1200,10 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                         // ferait douter qu'ils font la même chose.
                         if (isCropOnly)
                           TextButton.icon(
-                            onPressed: () => setState(() => _cropArmed = false),
+                            onPressed: () => setState(() {
+                              _dismissDeliveryError();
+                              _cropArmed = false;
+                            }),
                             icon: const Icon(
                               Icons.crop_free,
                               color: Colors.white70,
@@ -1198,7 +1223,10 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                   : isCropOnly
                   ? OutlinedButton.icon(
                       onPressed: canInteract
-                          ? () => setState(() => _cropArmed = true)
+                          ? () => setState(() {
+                              _dismissDeliveryError();
+                              _cropArmed = true;
+                            })
                           : null,
                       icon: const Icon(
                         Icons.crop,

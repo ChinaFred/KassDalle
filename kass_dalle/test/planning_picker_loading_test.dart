@@ -57,6 +57,23 @@ class _SlowPlanningRepository extends PlanningRepository {
   }
 }
 
+/// Les garnitures que le test fait changer à la main.
+class _FakeStaples extends Notifier<AsyncValue<List<UserStaple>>> {
+  _FakeStaples(this._initial);
+
+  final AsyncValue<List<UserStaple>> _initial;
+
+  @override
+  AsyncValue<List<UserStaple>> build() => _initial;
+
+  void set(AsyncValue<List<UserStaple>> value) => state = value;
+}
+
+final _fakeStaplesProvider =
+    NotifierProvider<_FakeStaples, AsyncValue<List<UserStaple>>>(
+      () => _FakeStaples(const AsyncValue.loading()),
+    );
+
 const _loadingLabel = 'Lecture des recettes et des garnitures…';
 
 Recipe _recipe(
@@ -117,7 +134,10 @@ void main() {
         ProviderScope(
           overrides: [
             appUserProvider.overrideWith((ref) => Stream.value(testUser())),
-            myStaplesProvider.overrideWithValue(staples),
+            _fakeStaplesProvider.overrideWith(() => _FakeStaples(staples)),
+            myStaplesProvider.overrideWith(
+              (ref) => ref.watch(_fakeStaplesProvider),
+            ),
           ],
           child: MaterialApp(
             home: Scaffold(
@@ -201,7 +221,8 @@ void main() {
         findsOneWidget,
       );
       await tester.tap(find.text('Réessayer'));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(calls, 2);
       expect(find.byType(SidePickerSheet), findsOneWidget);
     });
@@ -222,6 +243,82 @@ void main() {
       expect(find.text('Réessayer'), findsOneWidget);
       expect(find.textContaining('Aucune garniture'), findsNothing);
       expect(reporter.features, ['planningScreen.pickerSheet.loadStaples']);
+    });
+
+    void setStaples(WidgetTester tester, AsyncValue<List<UserStaple>> value) =>
+        ProviderScope.containerOf(
+          tester.element(find.byType(MaterialApp)),
+        ).read(_fakeStaplesProvider.notifier).set(value);
+
+    testWidgets('garnitures illisibles : une erreur qui se répète sans '
+        'nouvel appui n\'est signalée qu\'une fois', (tester) async {
+      await pumpSheet(
+        tester,
+        loadRecipes: () async => const [],
+        staples: AsyncValue.error(StateError('réseau'), StackTrace.empty),
+      );
+      await tester.pumpAndSettle();
+      setStaples(
+        tester,
+        AsyncValue.error(StateError('toujours le réseau'), StackTrace.empty),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Vos garnitures n\'ont pas pu être lues.'),
+        findsOneWidget,
+      );
+      expect(reporter.features, ['planningScreen.pickerSheet.loadStaples']);
+    });
+
+    testWidgets('garnitures illisibles, « Réessayer » : le chargement, puis '
+        'la feuille à l\'arrivée des garnitures', (tester) async {
+      await pumpSheet(
+        tester,
+        loadRecipes: () async => const [],
+        staples: AsyncValue.error(StateError('réseau'), StackTrace.empty),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Réessayer'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text(_loadingLabel), findsOneWidget);
+      expect(
+        find.text('Vos garnitures n\'ont pas pu être lues.'),
+        findsNothing,
+      );
+
+      setStaples(tester, AsyncValue.data(_staples));
+      await tester.pumpAndSettle();
+      expect(find.text(_loadingLabel), findsNothing);
+      expect(find.byType(SidePickerSheet), findsOneWidget);
+      expect(find.text('Haricots verts'), findsOneWidget);
+      expect(reporter.features, ['planningScreen.pickerSheet.loadStaples']);
+    });
+
+    testWidgets('« Réessayer » puis nouvelle erreur : de nouveau le titre, '
+        'signalé une seconde fois', (tester) async {
+      await pumpSheet(
+        tester,
+        loadRecipes: () async => const [],
+        staples: AsyncValue.error(StateError('réseau'), StackTrace.empty),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Réessayer'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      setStaples(
+        tester,
+        AsyncValue.error(StateError('encore'), StackTrace.empty),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Vos garnitures n\'ont pas pu être lues.'),
+        findsOneWidget,
+      );
+      expect(reporter.features, [
+        'planningScreen.pickerSheet.loadStaples',
+        'planningScreen.pickerSheet.loadStaples',
+      ]);
     });
   });
 
