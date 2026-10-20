@@ -90,11 +90,11 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
         _searchedQuery = q;
         _searching = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted || _searchController.text.trim() != q) return;
       setState(() => _searching = false);
       // Signalée au rapport d'erreurs par GroupRepository.
-      context.showErrorSnackBar('Recherche impossible. Réessayez.');
+      context.showFailureSnackBar('Membres non trouvés', e);
     }
   }
 
@@ -172,11 +172,12 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
       if (!mounted) return;
       _clearSearch();
       context.showSuccessSnackBar('Invitation envoyée à ${user.displayedName}');
-    } catch (_) {
+    } catch (e) {
       // Signalée au rapport d'erreurs par GroupRepository.
       if (!mounted) return;
-      context.showErrorSnackBar(
-        'Impossible d\'envoyer l\'invitation. Réessayez.',
+      context.showFailureSnackBar(
+        'Invitation non envoyée à ${user.displayedName}',
+        e,
       );
     }
   }
@@ -191,12 +192,10 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
       await ref.read(groupRepositoryProvider).withdrawInvitation(group.id, uid);
       if (!mounted) return;
       context.showSuccessSnackBar('Invitation de $name annulée');
-    } catch (_) {
+    } catch (e) {
       // Signalée au rapport d'erreurs par GroupRepository.
       if (!mounted) return;
-      context.showErrorSnackBar(
-        'Impossible d\'annuler l\'invitation. Réessayez.',
-      );
+      context.showFailureSnackBar('Invitation de $name non annulée', e);
     }
   }
 
@@ -224,10 +223,10 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
     if (confirmed != true || !mounted) return;
     try {
       await ref.read(groupRepositoryProvider).removeMember(group.id, uid);
-    } catch (_) {
+    } catch (e) {
       // Signalée au rapport d'erreurs par GroupRepository.
       if (!mounted) return;
-      context.showErrorSnackBar('Retrait impossible. Réessayez.');
+      context.showFailureSnackBar('$name non retiré du groupe', e);
     }
   }
 

@@ -97,7 +97,8 @@ class ImageNotPublished implements Exception {
 
   /// Une phrase, pas un identifiant.
   ///
-  /// Les écrans affichent `'Erreur upload : $e'`. Rendre
+  /// Admin › Modération affiche ce texte ; le membre lit
+  /// [memberImageRefusal]. Rendre
   /// `ImageNotPublished(pending/engine_unavailable)` ferait lire à
   /// l'utilisateur une clé technique là où il attend de savoir ce qui arrive à
   /// sa photo — et lui ferait croire à une panne alors que l'image est
@@ -108,6 +109,32 @@ class ImageNotPublished implements Exception {
     outcome.reason.isEmpty ? null : outcome.reason,
   );
 }
+
+/// Le message d'une image non publiée, pour le membre qui l'a envoyée : deux
+/// phrases, ce qui n'a pas eu lieu ([what], « Photo non enregistrée »,
+/// « Couverture non enregistrée ») puis la cause.
+///
+/// `toString()` rend le motif tel que l'administrateur le lit dans Admin ›
+/// Modération (« — » pour un motif vide) : il ne s'adresse pas au membre.
+/// Une image retenue n'est pas une panne : l'appelant l'affiche sans rapport
+/// d'erreur.
+String memberImageRefusal(
+  ImageNotPublished error, {
+  String what = 'Photo non enregistrée',
+}) {
+  final outcome = error.outcome;
+  final cause = outcome.isRejected
+      ? 'Elle a été refusée par la modération.'
+      : outcome.isHeld
+      ? 'Elle attend la vérification d\'un administrateur. Elle ne sera pas '
+            'ajoutée d\'elle-même.'
+      : 'Elle n\'a pas été publiée.';
+  return '$what. $cause';
+}
+
+/// Message d'un format refusé avant l'envoi, sans le nom du fichier.
+String memberUnsupportedFormat({String what = 'Photo non enregistrée'}) =>
+    '$what. Format non pris en charge : choisissez une photo JPEG ou PNG.';
 
 /// Levée quand le format d'une image n'est pas transportable.
 ///

@@ -41,7 +41,7 @@ class _PreferencesScreenState extends ConsumerState<PreferencesScreen> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Enregistrement impossible : $error');
+      context.showFailureSnackBar('Préférence non enregistrée', error);
     } finally {
       if (mounted) setState(() => _saving = false);
     }

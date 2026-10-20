@@ -198,7 +198,7 @@ Future<void> _exportMyBooksAsZip({
       stackTrace: stackTrace,
     );
     if (!context.mounted) return;
-    context.showErrorSnackBar('L\'archive n\'a pas pu être enregistrée.');
+    context.showFailureSnackBar('Archive non enregistrée', e);
   }
 }
 

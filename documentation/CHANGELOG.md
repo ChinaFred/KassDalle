@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
-### v0.24.26 — technique
+### v0.24.27 — technique
 
 Le scan d'une couverture de livre passe dans sa propre file Cloud Tasks (ticket #193).
 Cloud Tasks n'a pas de priorité : une couverture attendait derrière toutes les tranches d'un
@@ -29,6 +29,52 @@ import de livre. `jobDispatcher` choisit la fonction de file selon le type du jo
 reste. Le traitement est partagé (`processJob`) : mêmes secrets, délai de 540 s et reprises.
 `coverProcessor` garde 2 Gio de mémoire, traite 3 jobs en parallèle et 1 par seconde. Une tâche de couverture déjà dans
 l'ancienne file au déploiement reste traitée par `recipeProcessor`. Aucun écran ne change.
+
+### v0.24.26 — fonctionnel
+
+Messages d'erreur des livres, des groupes, de l'Explorer, du compte et de l'atelier de
+retouche, troisième sous-lot du lot 8 de l'audit #151 (tickets #170 et #171).
+
+Un échec s'affiche en deux phrases, comme dans les recettes (v0.24.23) et le planning
+(v0.24.24) : ce qui n'a pas eu lieu, puis la cause lisible. Exemples : « Livre non ajouté.
+Connexion perdue. », « Groupe non créé. Accès refusé. », « Recette non améliorée. Limite du
+jour atteinte. », « Nom préféré non enregistré. Connexion perdue. ». Le texte technique de
+l'exception (« Erreur : [cloud_firestore/unavailable]… », « Création impossible :
+Exception… ») n'apparaît plus ; il reste dans les rapports d'erreurs. Sont concernés le
+formulaire, la liste et la validation des livres, les groupes (quitter, supprimer, créer,
+renommer), la recette générée de l'Explorer et ses illustrations, les préférences, le nom
+préféré, la déconnexion, l'export de mes livres et l'atelier de retouche (« Photo non
+ouverte. Choisissez-en une autre. », « Correction non appliquée. », « Photo non envoyée. »,
+« Photo non pivotée. »). Dans les groupes, l'acceptation et le refus d'une invitation, et
+dans la gestion des membres, la recherche par nom, l'envoi et l'annulation d'une invitation
+et le retrait d'un membre prennent la même forme (« Invitation non acceptée. », « Invitation
+de Zoé non annulée. »…). « Image générée par l'IA ✓ », dans l'Explorer, prend la couleur
+d'un succès ; « Lien non copié. » remplace « Impossible de copier le lien. » ; la validation
+d'un livre dit « « Titre » validé », sans point d'exclamation ; une illustration sans
+consigne demande « Décrivez ce que l'image doit montrer. ».
+
+Une photo retenue par la modération n'affiche plus le motif écrit pour l'administrateur
+(un tiret quand il est vide, ou une clé technique). Le membre lit « Photo non enregistrée. »
+ou « Couverture non enregistrée. », puis « Elle a été refusée par la modération. » ou « Elle
+attend la vérification d'un administrateur. Elle ne sera pas ajoutée d'elle-même. ». Ce message reste en erreur : une couverture
+de livre ou une illustration de l'Explorer approuvée plus tard n'est pas rattachée d'elle-même
+(seul l'import par lien pose `attach_on_approval`). Un format refusé dit « Format non pris en
+charge : choisissez une photo JPEG ou PNG. », sans le nom du fichier. À la création d'un
+livre, une couverture qui ne part pas n'est plus masquée par le succès : « Livre ajouté.
+Couverture non enregistrée. Connexion perdue. », en erreur.
+
+Une adresse qui ne mène à aucune page affiche « Page introuvable », une phrase
+d'explication et « Retour à la bibliothèque », au lieu du message anglais du routeur.
+L'écran « Profil et compte » affiche « Profil non chargé » et « Réessayer » quand la lecture
+du profil échoue ; il restait jusqu'ici sur son indicateur de chargement. Un refus d'accès y
+conseille de se déconnecter puis de se reconnecter.
+
+Le dialogue « Nom préféré » libérait son champ de saisie pendant son animation de fermeture,
+ce qui levait une erreur en mode debug. Le champ appartient maintenant au dialogue, qui le
+libère à sa fermeture.
+
+Le message d'erreur de la connexion, cité dans l'audit, avait déjà quitté le texte technique
+en v0.24.20.
 
 ### v0.24.25 — fonctionnel
 

@@ -271,7 +271,10 @@ class _GroupTile extends ConsumerWidget {
     try {
       await ref.read(groupRepositoryProvider).removeMember(group.id, myUid);
     } catch (e) {
-      if (context.mounted) context.showErrorSnackBar('Sortie impossible : $e');
+      // Signalée au rapport d'erreurs par GroupRepository.
+      if (context.mounted) {
+        context.showFailureSnackBar('Groupe « ${group.name} » non quitté', e);
+      }
     }
   }
 
@@ -306,8 +309,9 @@ class _GroupTile extends ConsumerWidget {
     try {
       await ref.read(groupRepositoryProvider).deleteGroup(group.id);
     } catch (e) {
+      // Signalée au rapport d'erreurs par GroupRepository.
       if (context.mounted) {
-        context.showErrorSnackBar('Suppression impossible : $e');
+        context.showFailureSnackBar('Groupe « ${group.name} » non supprimé', e);
       }
     }
   }
@@ -360,10 +364,11 @@ class _InvitationCardState extends ConsumerState<_InvitationCard> {
       await write();
       if (!mounted) return;
       context.showSuccessSnackBar(success);
-    } catch (_) {
-      // Signalée au rapport d'erreurs par GroupRepository.
+    } catch (e) {
+      // Signalée au rapport d'erreurs par GroupRepository : un second rapport
+      // ferait doublon.
       if (!mounted) return;
-      context.showErrorSnackBar(failure);
+      context.showFailureSnackBar(failure, e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -393,7 +398,7 @@ class _InvitationCardState extends ConsumerState<_InvitationCard> {
           .read(groupRepositoryProvider)
           .acceptInvitation(group.id, widget.myUid),
       success: 'Vous avez rejoint « ${group.name} »',
-      failure: 'Impossible de rejoindre le groupe. Réessayez.',
+      failure: 'Invitation non acceptée',
     );
   }
 
@@ -402,7 +407,7 @@ class _InvitationCardState extends ConsumerState<_InvitationCard> {
         .read(groupRepositoryProvider)
         .withdrawInvitation(group.id, widget.myUid),
     success: 'Invitation refusée',
-    failure: 'Impossible de refuser l\'invitation. Réessayez.',
+    failure: 'Invitation non refusée',
   );
 
   @override
@@ -512,8 +517,9 @@ class _CreateGroupDialogState extends ConsumerState<_CreateGroupDialog> {
       await ref.read(groupRepositoryProvider).createGroup(name, myUid);
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
+      // Signalée au rapport d'erreurs par GroupRepository.
       if (context.mounted) {
-        context.showErrorSnackBar('Création impossible : $e');
+        context.showFailureSnackBar('Groupe non créé', e);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -583,8 +589,9 @@ class _RenameGroupDialogState extends ConsumerState<_RenameGroupDialog> {
           .renameGroup(widget.group.id, name);
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
+      // Signalée au rapport d'erreurs par GroupRepository.
       if (context.mounted) {
-        context.showErrorSnackBar('Renommage impossible : $e');
+        context.showFailureSnackBar('Groupe non renommé', e);
       }
     } finally {
       if (mounted) setState(() => _saving = false);

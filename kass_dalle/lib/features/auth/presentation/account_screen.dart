@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,19 +10,41 @@ import 'auth_providers.dart';
 import 'preferred_name_dialog.dart';
 import '../../../core/theme/app_icon_size.dart';
 
+/// Conseil d'un refus de lecture de son propre profil.
+const kProfileDeniedAdvice =
+    'Déconnectez-vous puis reconnectez-vous. Si le problème persiste, '
+    'signalez-le depuis le menu du compte.';
+
+bool _isPermissionDenied(Object? error) =>
+    error is FirebaseException && error.code == 'permission-denied';
+
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(appUserProvider).value;
+    final userAsync = ref.watch(appUserProvider);
+    final user = userAsync.value;
     final isAdmin = ref.watch(isAdminProvider);
     final hasPhoto = (user?.photoUrl ?? '').isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profil et compte')),
       body: user == null
-          ? const AppLoadingState(label: 'Chargement du profil…')
+          // Une lecture du profil en échec ne laisse plus la roue tourner :
+          // l'erreur s'affiche, avec « Réessayer ».
+          ? (userAsync.hasError
+                ? AppErrorState(
+                    error: userAsync.error,
+                    title: 'Profil non chargé',
+                    // Le conseil par défaut d'un refus parle d'un livre : pour
+                    // son propre profil, c'est la session qu'il faut refaire.
+                    advice: _isPermissionDenied(userAsync.error)
+                        ? kProfileDeniedAdvice
+                        : null,
+                    onRetry: () => ref.invalidate(appUserProvider),
+                  )
+                : const AppLoadingState(label: 'Chargement du profil…'))
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [

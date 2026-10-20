@@ -20,60 +20,15 @@ Future<void> showPreferredNameDialog(
   WidgetRef ref,
   AppUser user,
 ) async {
-  // Un nom enregistré avant la borne de 60 caractères se pré-remplit coupé :
-  // les règles refuseraient sinon de l'enregistrer tel quel.
-  final controller = TextEditingController(
-    text: UserProfile.truncateName(user.preferredName ?? ''),
-  );
-  final fallback = AppUser.defaultPreferredName(user.displayName, user.email);
-
-  final confirmed = await showDialog<bool>(
+  // Le dialogue rend la saisie, ou null s'il est annulé. Son contrôleur vit
+  // dans son état et n'est libéré qu'à son démontage, après l'animation de
+  // fermeture : libéré au retour de `showDialog`, il était encore lu par le
+  // champ qui disparaissait.
+  final value = await showDialog<String>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Nom préféré'),
-      content: SizedBox(
-        width: 360,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Le nom qui désigne cette personne et sa bibliothèque auprès du '
-              'reste de la famille.',
-              style: Theme.of(ctx).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              maxLength: UserProfile.maxNameLength,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(
-                labelText: 'Nom préféré',
-                hintText: fallback,
-                helperText: 'Vide : le prénom du compte Google ($fallback).',
-              ),
-              onSubmitted: (_) => Navigator.pop(ctx, true),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Annuler'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Enregistrer'),
-        ),
-      ],
-    ),
+    builder: (_) => _PreferredNameDialog(user: user),
   );
-
-  final value = controller.text;
-  controller.dispose();
-  if (confirmed != true) return;
+  if (value == null) return;
 
   try {
     await ref.read(authRepositoryProvider).updatePreferredName(user.uid, value);
@@ -88,7 +43,76 @@ Future<void> showPreferredNameDialog(
     // Le repository a déjà rapporté l'erreur et l'a relancée : un second
     // rapport ferait doublon. Ce qui manquait, c'est de le dire à l'écran.
     if (context.mounted) {
-      context.showErrorSnackBar('Enregistrement impossible : $e');
+      context.showFailureSnackBar('Nom préféré non enregistré', e);
     }
+  }
+}
+
+class _PreferredNameDialog extends StatefulWidget {
+  final AppUser user;
+  const _PreferredNameDialog({required this.user});
+
+  @override
+  State<_PreferredNameDialog> createState() => _PreferredNameDialogState();
+}
+
+class _PreferredNameDialogState extends State<_PreferredNameDialog> {
+  // Un nom enregistré avant la borne de 60 caractères se pré-remplit coupé :
+  // les règles refuseraient sinon de l'enregistrer tel quel.
+  late final TextEditingController _controller = TextEditingController(
+    text: UserProfile.truncateName(widget.user.preferredName ?? ''),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.pop(context, _controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = AppUser.defaultPreferredName(
+      widget.user.displayName,
+      widget.user.email,
+    );
+    return AlertDialog(
+      title: const Text('Nom préféré'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Le nom qui désigne cette personne et sa bibliothèque auprès du '
+              'reste de la famille.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              maxLength: UserProfile.maxNameLength,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: 'Nom préféré',
+                hintText: fallback,
+                helperText: 'Vide : le prénom du compte Google ($fallback).',
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Enregistrer')),
+      ],
+    );
   }
 }
