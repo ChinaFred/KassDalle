@@ -38,7 +38,11 @@ export type ModerationReason =
   | "unreadable_signal"
   | "engine_unavailable"
   | "manual_approved"
-  | "manual_rejected";
+  | "manual_rejected"
+  // Image déjà affichée hors des dossiers modérés, rangée sous `recipes/{id}/`
+  // par le backfill « Ranger les illustrations » après validation de
+  // l'administrateur : pas d'analyse (`illustrationFoldersMoveBackfillCallable.ts`).
+  | "manual_folder_move";
 
 /** Un label rendu par le moteur, avec sa confiance. */
 export interface ModerationLabel {

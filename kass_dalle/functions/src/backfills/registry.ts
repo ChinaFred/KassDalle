@@ -16,8 +16,13 @@
  * — mêmes clés, même classement. Un backfill ajouté à l'écran s'ajoute aux deux.
  *
  * Retirés en v0.23.52, une fois terminés en production : `recipe_protein`,
- * `estimated_times` et `planning_defaults`. Leurs documents
- * `app_config/backfill_run_<clé>` restent en base ; plus rien ne les lit.
+ * `estimated_times` et `planning_defaults`.
+ * Retirés en v0.24.33, une fois terminés en production : `system_books`,
+ * `group_planning_reach`, `ticket_analyses`, `ticket_delivered_pr`,
+ * `recipe_title_keys` et `invitation_group_owner`.
+ * Leurs documents `app_config/backfill_run_<clé>` restent en base ; plus rien
+ * ne les lit. La liste complète, avec les versions : skill `backfill`,
+ * « Backfills retirés ».
  */
 
 export type BackfillKind = "ponctuel" | "recurrent";
@@ -29,14 +34,9 @@ export const BACKFILL_KEYS = [
   "recipe_roles",
   "shopping_products",
   "refresh_sodium",
-  "system_books",
-  "group_planning_reach",
   "move_meals_to_group",
-  "ticket_analyses",
-  "ticket_delivered_pr",
-  "recipe_title_keys",
-  "invitation_group_owner",
   "illustration_folders",
+  "illustration_folders_move",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -108,20 +108,6 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     usesAi: true,
     defaultSchedule: null,
   },
-  {
-    key: "system_books",
-    kind: "ponctuel",
-    title: "Livres système des comptes",
-    usesAi: false,
-    defaultSchedule: null,
-  },
-  {
-    key: "group_planning_reach",
-    kind: "ponctuel",
-    title: "Portée des groupes et des plannings",
-    usesAi: false,
-    defaultSchedule: null,
-  },
   // Paramétré (groupe, période) et réutilisable : jamais marqué terminé
   // tout seul (`summarizeMoveMealsToGroup` rend un reste inconnu).
   {
@@ -131,40 +117,23 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     usesAi: false,
     defaultSchedule: null,
   },
-  {
-    key: "ticket_analyses",
-    kind: "ponctuel",
-    title: "Analyses des tickets",
-    usesAi: false,
-    defaultSchedule: null,
-  },
-  {
-    key: "ticket_delivered_pr",
-    kind: "ponctuel",
-    title: "PR des tickets livrés",
-    usesAi: false,
-    defaultSchedule: null,
-  },
-  {
-    key: "recipe_title_keys",
-    kind: "ponctuel",
-    title: "Clé de titre des recettes",
-    usesAi: false,
-    defaultSchedule: null,
-  },
-  {
-    key: "invitation_group_owner",
-    kind: "ponctuel",
-    title: "Propriétaire du groupe des invitations",
-    usesAi: false,
-    defaultSchedule: null,
-  },
   // Contrôle en lecture seule : n'écrit rien dans les recettes, liste dans
   // « À revoir » celles dont une illustration est hors des dossiers modérés.
   {
     key: "illustration_folders",
     kind: "ponctuel",
     title: "Dossiers des illustrations",
+    usesAi: false,
+    defaultSchedule: null,
+  },
+  // Range sous `recipes/{id}/` les illustrations que le contrôle précédent
+  // liste, validées telles quelles par l'administrateur : copie, ligne de
+  // modération « décision d'un administrateur », URL réécrite, ancien fichier
+  // supprimé quand plus rien ne le cite. Aucun appel de modèle.
+  {
+    key: "illustration_folders_move",
+    kind: "ponctuel",
+    title: "Ranger les illustrations",
     usesAi: false,
     defaultSchedule: null,
   },
@@ -185,13 +154,13 @@ export function recurrentKeys(): BackfillKey[] {
  * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
  * ensemble : l'enrichissement des référentiels et la réparation du sel
  * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est
- * refusé pendant que l'autre tient son verrou. De même, la portée des
- * groupes et le déplacement de repas vers un groupe écrivent tous deux
- * `planned_meals.group_id`.
+ * refusé pendant que l'autre tient son verrou. De même, le contrôle des
+ * dossiers des illustrations ne part pas pendant leur rangement : il
+ * compterait une recette à demi réécrite.
  */
 const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
   ["enrich_referentials", "refresh_sodium"],
-  ["group_planning_reach", "move_meals_to_group"],
+  ["illustration_folders", "illustration_folders_move"],
 ];
 
 /** Les autres backfills dont le verrou bloque [key]. */

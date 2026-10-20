@@ -429,33 +429,16 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
     case BackfillKeys.refreshSodium:
       return '${_count(n('refreshedIngredients'), 'ingrédient repris', 'ingrédients repris')}, '
           '${_count(n('failedIngredients'), 'échec', 'échecs')}';
-    case BackfillKeys.systemBooks:
-      return '${_count(n('livresCrees'), 'livre créé', 'livres créés')}, '
-          '${_count(n('restants'), 'compte restant', 'comptes restants')}';
-    case BackfillKeys.groupPlanningReach:
-      return '${_count(n('ecrits'), 'compte réécrit', 'comptes réécrits')}, '
-          '${_count(n('repasMarques'), 'repas marqué', 'repas marqués')}, '
-          // Repas restants inconnus (décompte en échec) : le total aussi.
-          '${report['repasRestants'] is num ? _count(n('restants') + n('repasRestants'), 'restant', 'restants') : 'reste inconnu'}';
-    case BackfillKeys.ticketAnalyses:
-      return '${_count(n('ecrits'), 'ticket relevé', 'tickets relevés')}, '
-          '${_count(n('analyses'), 'analyse', 'analyses')}, '
-          '${_count(n('restants'), 'ticket restant', 'tickets restants')}';
-    case BackfillKeys.ticketDeliveredPr:
-      return '${_count(n('ecrits'), 'ticket repris', 'tickets repris')}, '
-          '${_count(n('sansPr'), 'sans PR', 'sans PR')}, '
-          '${_count(n('restants'), 'ticket restant', 'tickets restants')}';
-    case BackfillKeys.recipeTitleKeys:
-      return '${_count(n('posees'), 'clé posée', 'clés posées')}, '
-          '${_count(n('echouees'), 'échec', 'échecs')}';
-    case BackfillKeys.invitationGroupOwner:
-      return '${_count(n('posees'), 'invitation reprise', 'invitations reprises')}, '
-          '${_count(n('sansGroupe'), 'à revoir', 'à revoir')}, '
-          '${_count(n('echouees'), 'échec', 'échecs')}';
     case BackfillKeys.illustrationFolders:
       return '${_count(n('examinees'), 'recette examinée', 'recettes examinées')}, '
           '${_count(n('conformes'), 'conforme', 'conformes')}, '
           '${_count(n('horsDossiers') + n('echouees'), 'à revoir', 'à revoir')}';
+    case BackfillKeys.illustrationFoldersMove:
+      return '${_count(n('rangees'), 'recette rangée', 'recettes rangées')}, '
+          '${_count(n('restantes'), 'restante', 'restantes')}, '
+          '${_count(n('anciensSupprimes'), 'ancien fichier supprimé', 'anciens fichiers supprimés')}'
+          '${siPositif('anciensConservesCites', 'conservé car encore cité', 'conservés car encore cités')}'
+          '${siPositif('anciensEnAttente', 'en attente de vérification', 'en attente de vérification')}';
     case BackfillKeys.moveMealsToGroup:
       final from = _isoDayOrNull(report['du']);
       final to = _isoDayOrNull(report['au']);
@@ -572,6 +555,47 @@ String backfillDoneLine(BackfillRunState state) {
       ? '(marqué à la main)'
       : '(automatique)';
   return 'Terminé$date$version — à retirer du code $by';
+}
+
+/// Texte de « Copier la liste » des ponctuels terminés : une ligne par
+/// backfill, dans l'ordre de l'écran — clé technique, titre, date et version
+/// de fin, manuel ou automatique, dernier compte rendu et éléments à revoir.
+///
+/// La session qui retire un ponctuel du code le demande à l'administrateur
+/// (skill `backfill`, « Retrait ») : il dit ce qui a tourné, sans capture.
+String backfillDoneListText(
+  List<BackfillDefinition> done,
+  Map<String, BackfillRunState> states,
+) {
+  final lines = <String>[];
+  for (final def in done) {
+    final state = states[def.key];
+    final at = state?.termineLe;
+    final known = [
+      if (at != null) 'le ${formatParisDate(at)}',
+      if (state?.termineVersion != null) 'en v${state!.termineVersion}',
+    ];
+    final missing = [
+      if (at == null) 'date inconnue',
+      if (state?.termineVersion == null) 'version inconnue',
+    ];
+    final end = [
+      'terminé',
+      ...known,
+      if (missing.isNotEmpty) '(${missing.join(', ')})',
+    ].join(' ');
+    final by = state?.terminePar == 'manuel'
+        ? 'marqué à la main'
+        : 'automatique';
+    final summary = backfillReportSummary(def.key, state?.lastReport);
+    final report = summary.isEmpty ? 'absent' : summary;
+    final toReview = state?.failures?.total ?? 0;
+    lines.add(
+      '${def.key} — ${def.title} — $end — $by — '
+      'dernier compte rendu : $report — à revoir : $toReview',
+    );
+  }
+  return lines.join('\n');
 }
 
 // ── Rangement ───────────────────────────────────────────────────────────────

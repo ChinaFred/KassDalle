@@ -4,8 +4,8 @@
  * Le client les crée à l'ouverture de la bibliothèque (`ensureSystemBooks`,
  * `book_repository.dart`), pour un éditeur ou un administrateur seulement.
  * Le serveur les crée pour tout compte approuvé, lecteurs compris : à
- * l'approbation du compte (`syncUserClaims`), et pour les comptes existants
- * par le backfill `system_books` (`systemBooksBackfillCallable.ts`).
+ * l'approbation du compte (`syncUserClaims`). Les comptes antérieurs les ont
+ * reçus du backfill `system_books`, passé en production et retiré en v0.24.33.
  *
  * Un livre est reconnu à son tag interne, quel que soit son titre : un livre
  * renommé n'est pas recréé. Un livre créé depuis la v0.23.50 porte un

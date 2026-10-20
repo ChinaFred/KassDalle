@@ -347,7 +347,7 @@ Les cinq skills de Kass'Dalle, à prendre comme modèles :
 |---|---|
 | `nouveau-poste-ia` | inscrire un poste de coût d'IA aux trois endroits (imputation, routage, catalogue comptable) |
 | `logique-dupliquee` | changer une logique écrite deux fois (Dart et TypeScript) : fixture partagée d'abord, puis les deux côtés |
-| `backfill` | écrire une reprise de données lancée depuis l'écran d'administration |
+| `backfill` | écrire une reprise de données lancée depuis l'écran d'administration ; la retirer du code une fois terminée, d'après le texte « Copier la liste » des ponctuels terminés que l'utilisateur colle à la session, et tenir la liste des backfills retirés avec leur version |
 | `experience-sandbox` | ajouter ou porter une expérience du bac à sable |
 | `steward` | suivre une PR jusqu'à sa fusion et son déploiement : CI rouge, fusion de `master` (jamais de rebase), collision de version, relecture, fusion, suivi du workflow « Déploiement » |
 

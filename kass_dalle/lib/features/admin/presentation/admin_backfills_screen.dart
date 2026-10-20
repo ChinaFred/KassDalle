@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -143,23 +144,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'sodium.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
-      case BackfillKeys.systemBooks:
-        return 'Crée, pour chaque compte lecteur, éditeur ou administrateur, '
-            'ceux des quatre livres système qui lui manquent : « Mes '
-            'créations Kass\'Dalle », « Mes recettes libres », « Mes Recettes '
-            'Secrètes » et « Mes recettes du web ». Les comptes en attente ou '
-            'révoqués sont sautés. Un livre déjà présent, même renommé, '
-            'n\'est pas recréé.\n\n'
-            'Aucun appel d\'IA.';
-      case BackfillKeys.groupPlanningReach:
-        return 'Recalcule, pour chaque membre d\'un groupe familial, ce qu\'il '
-            'peut lire : le planning des groupes dont il est membre, et les '
-            'livres que ses groupes lui ouvrent. Un groupe dont le propriétaire '
-            'n\'est plus éditeur est masqué, sans rien effacer. Puis marque '
-            'chaque repas planifié antérieur comme personnel, pour que les '
-            'plannings partagés le retrouvent. Ce qui est déjà à jour n\'est '
-            'pas réécrit ; on peut relancer.\n\n'
-            'Aucun appel d\'IA.';
       case BackfillKeys.moveMealsToGroup:
         return 'Vos repas de « Mon planning » sur cette période passent dans '
             'le planning du groupe : ses membres les voient, et ils quittent '
@@ -167,42 +151,28 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'événements déjà exportés vers l\'agenda ne changent pas. Un repas '
             'déjà dans un groupe est laissé tel quel ; on peut relancer.\n\n'
             'Aucun appel d\'IA.';
-      case BackfillKeys.ticketAnalyses:
-        return 'Relit sur GitHub les commentaires de l\'Issue de chaque ticket '
-            'et range ses analyses (« ## Analyse… » publiées par le '
-            'mainteneur) à côté du ticket, lisibles par l\'administrateur '
-            'seul. Un ticket déjà relevé est sauté ; on peut relancer.\n\n'
-            'Aucun appel d\'IA. Un appel GitHub par ticket, deux cents tickets '
-            'par passage.';
-      case BackfillKeys.ticketDeliveredPr:
-        return 'Pour chaque ticket livré sans PR ou sans version connue, relit sur '
-            'GitHub la PR fusionnée qui a fermé l\'Issue et range son numéro, '
-            'son adresse et la version de l\'application à sa fusion sur le '
-            'ticket : le membre et l\'administrateur lisent '
-            '« Livré en vX.Y.Z par la PR #N ». Un ticket fermé à la main, sans PR, est '
-            'listé dans « À revoir ». On peut relancer.\n\n'
-            'Aucun appel d\'IA. Deux à trois appels GitHub par ticket, cent '
-            'tickets par passage.';
-      case BackfillKeys.recipeTitleKeys:
-        return 'Pose sur chaque recette la clé de titre (titre en minuscules, '
-            'sans accents ni ponctuation) que l\'import compare pour signaler '
-            'une page déjà présente dans le livre. Une recette déjà à jour '
-            'n\'est pas réécrite ; on peut relancer.\n\n'
-            'Aucun appel d\'IA. Deux mille recettes au plus par passage.';
-      case BackfillKeys.invitationGroupOwner:
-        return 'Recopie sur chaque invitation par e-mail le propriétaire de son '
-            'groupe : seul ce compte, et l\'administrateur, la lisent. Une '
-            'invitation dont le groupe a été supprimé, ou dont l\'administrateur '
-            'qui l\'a envoyée n\'est pas le propriétaire du groupe, n\'est pas '
-            'modifiée : elle est listée dans « À revoir ». Une invitation déjà à jour n\'est '
-            'pas réécrite ; on peut relancer.\n\n'
-            'Aucun appel d\'IA. Deux mille invitations au plus par passage.';
       case BackfillKeys.illustrationFolders:
         return 'Contrôle chaque recette, sans rien y modifier : une illustration '
             'ou une vignette rangée ailleurs que dans les dossiers des images '
             'modérées (« illustrations » et « recipes ») place la recette dans '
-            '« À revoir », avec le dossier trouvé. On peut relancer.\n\n'
+            '« À revoir », avec le dossier trouvé. Un parcours complet '
+            'enregistre la liste des images signalées : c\'est elle, et elle '
+            'seule, que « Ranger les illustrations » range. On peut '
+            'relancer.\n\n'
             'Aucun appel d\'IA. Deux mille recettes au plus par passage.';
+      case BackfillKeys.illustrationFoldersMove:
+        return 'Range ce que le dernier contrôle « Dossiers des illustrations » '
+            'a listé, et rien d\'autre : pour chaque illustration ou vignette '
+            'de cette liste, copie le fichier dans le dossier de la recette, l\'inscrit comme publié par '
+            'décision d\'un administrateur et réécrit la recette. Les images '
+            'restent celles que vous avez vues. L\'ancien fichier n\'est '
+            'supprimé que si plus aucune recette, aucun brouillon, aucun '
+            'import, aucun compte et aucune sauvegarde ne le cite. On peut '
+            'relancer. Une image ajoutée depuis le contrôle n\'est pas rangée ; '
+            'sans contrôle complet préalable, le passage ne fait rien.\n\n'
+            'Aucun appel d\'IA. Cent recettes au plus par passage. Relancez '
+            'ensuite « Dossiers des illustrations » : il doit rendre 0 à '
+            'revoir.';
       default:
         return '';
     }
@@ -319,28 +289,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
-      case BackfillKeys.systemBooks:
-        final r = await _repo.backfillSystemBooks();
-        return _fromCounts(
-          r,
-          'Comptes : examinés=${r['examines']}, complétés=${r['completes']} '
-          '(livres créés=${r['livresCrees']}), déjà à jour=${r['dejaAJour']}, '
-          'en attente ou révoqués=${r['ignores']}, '
-          'échecs=${r['echoues']}, restants=${r['restants']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
-        );
-      case BackfillKeys.groupPlanningReach:
-        final r = await _repo.backfillGroupPlanningReach();
-        return _fromCounts(
-          r,
-          'Groupes lus=${r['groupes']} | Comptes : examinés=${r['examines']}, '
-          'réécrits=${r['ecrits']}, déjà à jour=${r['dejaAJour']}, '
-          'échecs=${r['echoues']}, restants=${r['restants']} | '
-          'Repas : examinés=${r['repasExamines']}, '
-          'marqués personnels=${r['repasMarques']}, '
-          'échecs=${r['repasEchoues']}, restants=${r['repasRestants'] ?? '?'}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}',
-        );
       case BackfillKeys.moveMealsToGroup:
         if (move == null) throw StateError('Paramètres manquants : ${def.key}');
         final r = await _repo.backfillMoveMealsToGroup(move);
@@ -356,54 +304,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
-      case BackfillKeys.ticketAnalyses:
-        final r = await _repo.backfillTicketAnalyses();
-        return _fromCounts(
-          r,
-          'Tickets : examinés=${r['examines']}, relevés=${r['ecrits']} '
-          '(analyses=${r['analyses']}), déjà relevés=${r['dejaAJour']}, '
-          'sans Issue=${r['sansIssue']}, échecs=${r['echoues']}, '
-          'restants=${r['restants']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
-          '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreur GitHub : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.ticketDeliveredPr:
-        final r = await _repo.backfillTicketDeliveredPr();
-        return _fromCounts(
-          r,
-          'Tickets livrés : examinés=${r['examines']}, repris=${r['ecrits']}, '
-          'déjà à jour=${r['dejaAJour']}, sans PR=${r['sansPr']}, '
-          'échecs=${r['echoues']}, restants=${r['restants']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
-          '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreur GitHub : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.recipeTitleKeys:
-        final r = await _repo.backfillTitleKeys();
-        return _fromCounts(
-          r,
-          'Recettes : examinées=${r['examinees']}, clés posées=${r['posees']}, '
-          'déjà à jour=${r['identiques']}, échecs=${r['echouees']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
-          '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreurs d\'écriture : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.invitationGroupOwner:
-        final r = await _repo.backfillInvitationGroupOwner();
-        return _fromCounts(
-          r,
-          'Invitations : examinées=${r['examinees']}, propriétaire posé=${r['posees']}, '
-          'déjà à jour=${r['dejaAJour']}, à revoir=${r['sansGroupe']}, '
-          'échecs=${r['echouees']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
-          '${_flag(r, 'stoppedByErrors', ' (arrêt sur erreurs d\'écriture : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
       case BackfillKeys.illustrationFolders:
         final r = await _repo.backfillIllustrationFolders();
         return _fromCounts(
@@ -413,6 +313,32 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${(r['completed'] ?? 0) == 1 ? ' — parcours terminé' : ' — incomplet, relancer'}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois recettes illisibles de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.illustrationFoldersMove:
+        final r = await _repo.backfillIllustrationFoldersMove();
+        if ((r['listeAbsente'] ?? 0) == 1) {
+          return _fromCounts(
+            r,
+            'Rien n\'a été rangé : aucune liste du contrôle. Lancez d\'abord '
+            '« Dossiers des illustrations » jusqu\'au bout, puis relancez.',
+          );
+        }
+        return _fromCounts(
+          r,
+          'Recettes : examinées=${r['examinees']}, à ranger=${r['aRanger']}, '
+          'rangées=${r['rangees']}, impossibles à ranger=${r['nonDeplacables']}, '
+          'en erreur=${r['echouees']}, restantes=${r['restantes']} | '
+          'Images : copiées=${r['imagesCopiees']}, '
+          'copies d\'un passage interrompu=${r['copiesRetrouvees']} | '
+          'Anciens fichiers : supprimés=${r['anciensSupprimes']}, '
+          'conservés car encore cités=${r['anciensConservesCites']}, '
+          'en attente de vérification=${r['anciensEnAttente']}, '
+          'anciens fichiers déjà supprimés=${r['anciensIntrouvables']}'
+          '${(r['completed'] ?? 0) == 1 && (r['restantes'] ?? 0) + (r['anciensEnAttente'] ?? 0) == 0 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${(r['indexComplet'] ?? 0) == 1 ? '' : ' (références pas toutes lues : aucun ancien fichier supprimé)'}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois recettes en échec de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
       default:
@@ -429,6 +355,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(title),
+        scrollable: true,
         content: Text(content),
         actions: [
           TextButton(
@@ -660,6 +587,29 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     }
   }
 
+  // ── Liste des ponctuels terminés ──────────────────────────────────────────
+
+  Future<void> _copyDoneList(
+    List<BackfillDefinition> done,
+    Map<String, BackfillRunState> states,
+  ) async {
+    try {
+      await Clipboard.setData(
+        ClipboardData(text: backfillDoneListText(done, states)),
+      );
+      if (!mounted) return;
+      context.showSuccessSnackBar('Liste des ponctuels terminés copiée.');
+    } catch (e, st) {
+      await _report(
+        feature: 'admin_backfill_copy_done_list',
+        error: e,
+        stackTrace: st,
+      );
+      if (!mounted) return;
+      context.showErrorSnackBar('La liste n\'a pas pu être copiée.');
+    }
+  }
+
   // ── Programmation ─────────────────────────────────────────────────────────
 
   Future<void> _editSchedule(
@@ -830,6 +780,21 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                           () => _termineesExpanded = !_termineesExpanded,
                         ),
                       ),
+                      // Le texte que la session de retrait demande : une
+                      // ligne par ponctuel terminé, sans capture d'écran.
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                          ),
+                          icon: const Icon(Icons.copy_outlined),
+                          label: const Text('Copier la liste'),
+                          onPressed: () =>
+                              _copyDoneList(sections.ponctuelsTermines, states),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       if (_termineesExpanded) grid(sections.ponctuelsTermines),
                     ],
                   ],
@@ -842,7 +807,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  // Douze opérations ont quitté cet écran, et le code derrière elles avec.
+  // Dix-huit opérations ont quitté cet écran, et le code derrière elles avec.
   //
   // « Amorcer les droits utilisateurs » rattrapait les comptes créés avant que
   // le déclencheur `syncUserClaims` n'existe. Ce déclencheur écrit désormais les
@@ -915,6 +880,35 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   //
   // Leurs documents `app_config/backfill_run_<clé>` et leurs curseurs restent
   // en base : l'écran ignore une clé absente du registre.
+  //
+  // Six ponctuels, menés au bout et marqués terminés en production, sont
+  // retirés en v0.24.33 (20 octobre 2026) :
+  //
+  // « Livres système des comptes » (`backfillSystemBooksFn`, terminé le 13/10
+  // en v0.23.51) a créé les livres système manquants des comptes approuvés.
+  // `syncUserClaims` les crée à l'approbation d'un compte.
+  //
+  // « Portée des groupes et des plannings » (`backfillGroupPlanningReachFn`,
+  // terminé le 13/10 en v0.23.58) a recalculé `group_reach` et
+  // `planning_reach` des membres et marqué personnels les repas antérieurs.
+  // `syncGroupReach` et `syncPlanningReachOnRole` les tiennent à jour.
+  //
+  // « Analyses des tickets » (`backfillTicketAnalysesFn`, terminé le 14/10 en
+  // v0.23.63) a relevé sur GitHub les analyses déjà publiées. Le webhook et la
+  // tâche horaire des tickets les relisent.
+  //
+  // « Clé de titre des recettes » (`backfillTitleKeysFn`, terminé le 17/10 en
+  // v0.23.97) a posé `titre_key` sur les recettes antérieures. L'import et
+  // `onRecipeWritten` la posent sur toute recette écrite.
+  //
+  // « PR des tickets livrés » (`backfillTicketDeliveredPrFn`, terminé le
+  // 17/10 en v0.23.99) a retrouvé la PR de chaque ticket déjà livré. Le
+  // webhook et la tâche horaire l'enregistrent à la livraison.
+  //
+  // « Propriétaire du groupe des invitations »
+  // (`backfillInvitationGroupOwnerFn`, terminé le 19/10 en v0.24.14) a posé
+  // `group_owner_id` sur les invitations par e-mail antérieures.
+  // `manageInvitationFn` l'écrit à la création et au renvoi.
   //
   // Depuis v0.23.45, chaque backfill est classé ponctuel ou récurrent
   // (`backfill_registry.dart`, `functions/src/backfills/registry.ts`). Un
@@ -1068,14 +1062,9 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.recipeRoles: Icons.restaurant_outlined,
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
-    BackfillKeys.systemBooks: Icons.library_books_outlined,
-    BackfillKeys.groupPlanningReach: Icons.groups_outlined,
     BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
-    BackfillKeys.ticketAnalyses: Icons.manage_search,
-    BackfillKeys.ticketDeliveredPr: Icons.merge_type,
-    BackfillKeys.recipeTitleKeys: Icons.content_copy_outlined,
-    BackfillKeys.invitationGroupOwner: Icons.forward_to_inbox_outlined,
     BackfillKeys.illustrationFolders: Icons.folder_open_outlined,
+    BackfillKeys.illustrationFoldersMove: Icons.drive_file_move_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

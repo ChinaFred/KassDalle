@@ -529,18 +529,6 @@ export async function updateValidatedAt(
 }
 
 /**
- * Relit les commentaires d'une Issue et réécrit les analyses du ticket.
- * Lève une `GithubError` ou une erreur Firestore ; l'appelant journalise.
- */
-export async function refreshTicketAnalyses(
-  token: string,
-  ticketId: string,
-  issueNumber: number,
-): Promise<number> {
-  return writeTicketAnalyses(ticketId, await listIssueComments(token, issueNumber));
-}
-
-/**
  * Relit les commentaires d'une Issue et réécrit, depuis la même lecture, les
  * analyses (`admin/analysis`) et les comptes rendus de livraison
  * (`admin/delivery.reports`, qui peuvent libérer le verrou des livraisons).

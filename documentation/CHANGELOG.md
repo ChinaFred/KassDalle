@@ -20,6 +20,73 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.33 — fonctionnel
+
+Nouveau backfill ponctuel « Ranger les illustrations » dans Admin › Backfills
+(`illustration_folders_move`, `backfillIllustrationFoldersMoveFn`), sans appel d'IA. Le contrôle
+« Dossiers des illustrations » a trouvé en production 21 recettes sur 616 dont une illustration
+ou une vignette est rangée sous `scans/` (3) ou `users/` (18), hors des dossiers des images
+modérées. L'administrateur a regardé ces images et les garde. Un parcours complet du contrôle enregistre
+désormais la liste de ce qu'il signale (`signalees`, recette et `bucket/chemin`) dans son état
+`app_config/backfill_run_illustration_folders`, écrit par le serveur seul. Le rangement ne porte
+que sur cette liste : une image ajoutée à une recette après le contrôle n'a été vue par
+personne et part dans « À revoir » ; sans liste, le passage ne fait rien. Le backfill copie chaque image
+sous `recipes/{recipeId}/illus_moved_{empreinte}.{ext}`, avec son type, le cache d'une
+illustration publiée et un nouveau jeton, écrit une ligne `image_moderation` approuvée par
+décision de l'administrateur (motif `manual_folder_move`, aucune analyse Cloud Vision, rien de
+facturé), puis réécrit dans une transaction chaque champ de la recette qui cite le fichier, sauf
+les champs du fichier importé. L'ancien fichier n'est supprimé que si plus aucun document ne le
+cite : recettes et brouillons, jobs d'import, livres, comptes, profils, modération, sauvegardes,
+annotations et textes d'origine. Sinon il reste, et le compte rendu le compte. Seules deux sources
+se rangent : une page d'import sous `scans/{uid}/` et une couverture « Recette libre »
+`users/{uid}/free_recipe_cover_{horodatage}.{ext}`. Une image sous `quarantine/` (pas encore
+modérée), `rejected/` (refusée), `tickets/`, `covers/`, ailleurs sous `users/`, à la racine ou
+dans un autre stockage ne se range pas et figure dans « À revoir » : un éditeur peut écrire
+n'importe quelle URL du bucket dans sa recette, et la copier la publierait comme approuvée.
+Juste avant de supprimer un ancien fichier, le passage relit les recettes qui le citent dans
+`image_urls` ou `thumbnail_urls`, sous toutes ses formes d'URL (URL lues, URL de chaque jeton de
+téléchargement, URL publique, chemin, `gs://`) ; une citation, ou une relecture en échec, le garde. Les
+messages d'erreur du journal et de « À revoir » ne contiennent ni URL ni chemin. Le journal de modération affiche
+le nouveau motif : « Publiée par décision d'un administrateur, sans analyse : image déjà
+affichée, rangée dans le dossier des illustrations de la recette. »
+
+La section « Ponctuels terminés » d'Admin › Backfills a un bouton « Copier la liste ». Il copie
+une ligne par ponctuel terminé : clé technique, titre, date et version de fin, automatique ou
+marqué à la main, dernier compte rendu et nombre d'éléments à revoir. L'administrateur colle ce
+texte à la session qui retire ces backfills du code, au lieu d'une capture d'écran.
+
+Après le déploiement : relancer d'abord *Admin › Backfills › Dossiers des illustrations*
+jusqu'au bout (le passage de production antérieur n'a pas enregistré de liste), vérifier que
+« À revoir » nomme les mêmes 21 recettes, puis lancer *Ranger les illustrations* une fois, et
+relancer *Dossiers des illustrations*, qui doit rendre 0 à revoir et se marquer terminé. « Dossiers des illustrations » reste dans le code pour ce
+contrôle ; il sera retiré ensuite.
+
+### v0.24.33 — technique
+
+Six backfills ponctuels, marqués terminés en production, quittent le code : « Livres système des
+comptes » (`system_books`, terminé le 13/10 en v0.23.51), « Portée des groupes et des
+plannings » (`group_planning_reach`, 13/10, v0.23.58), « Analyses des tickets »
+(`ticket_analyses`, 14/10, v0.23.63), « Clé de titre des recettes » (`recipe_title_keys`, 17/10,
+v0.23.97), « PR des tickets livrés » (`ticket_delivered_pr`, 17/10, v0.23.99) et « Propriétaire
+du groupe des invitations » (`invitation_group_owner`, 19/10, v0.24.14). Retirés : leurs six
+callables (`backfillSystemBooksFn`, `backfillGroupPlanningReachFn`, `backfillTicketAnalysesFn`,
+`backfillTicketDeliveredPrFn`, `backfillTitleKeysFn`, `backfillInvitationGroupOwnerFn`) et leurs
+exports, les entrées des deux registres et de la fixture `backfill_schedule.json`, les tuiles,
+les méthodes du repository, les résumés de tuile, le test `invitationOwnerBackfill.test.ts` et
+les cas de test qui ne portaient que sur ces callables. `refreshTicketAnalyses`
+(`tickets/service.ts`), que seul le backfill des analyses appelait, est supprimé. La logique
+partagée reste : `ensureSystemBooksFor` (`syncUserClaims`), `syncReachFor` et
+`syncPlanningReachFor` (`syncGroupReach`), `writeTicketAnalyses` et `recordDeliveredPr` (webhook
+et tâche horaire des tickets), `titleKeyUpdate` (`onRecipeWritten`). Le test des livres
+système devient `systemBooks.test.ts`. Les libellés de journal restent, et les documents
+`app_config/backfill_run_<clé>` et les points de reprise restent en base, plus lus. Le verrou
+commun `group_planning_reach` / `move_meals_to_group` disparaît avec le premier ; un verrou
+commun relie désormais `illustration_folders` et `illustration_folders_move`.
+
+Le skill `backfill` dit de demander le texte « Copier la liste » avant tout retrait, et tient
+le tableau « Backfills retirés » (clé, titre, callable, fin en production, version de retrait).
+Nouveau motif de modération `manual_folder_move` (`decision.ts`, `moderation_labels.dart`).
+
 ### v0.24.32 — technique
 
 Storage et hygiène serveur, lot 9 de l'audit #151 (tickets #162 et #163). Un lecteur ne

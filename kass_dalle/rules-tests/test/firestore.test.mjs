@@ -2863,10 +2863,11 @@ describe("plannings partagés — lecture", () => {
     );
   });
 
-  // Un repas antérieur sans le champ ne se lit plus par le partage — ni un
-  // par un, ni par la requête `group_id == null` — tant que le backfill
-  // « Portée des groupes et des plannings » n'y a pas posé `group_id: null`.
-  // Son propriétaire le relit toujours.
+  // Un repas antérieur sans le champ ne se lit pas par le partage — ni un
+  // par un, ni par la requête `group_id == null`. Le backfill « Portée des
+  // groupes et des plannings », terminé et retiré en v0.24.33, a posé
+  // `group_id: null` sur les repas antérieurs ; un repas resté sans le champ
+  // reste illisible par le partage. Son propriétaire le relit toujours.
   it("un repas antérieur sans group_id attend le backfill pour être partagé", async () => {
     await seedDocs(env, {
       "planned_meals/m-old": { uid: EDITOR, date: "2026-10-01" },

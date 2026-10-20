@@ -131,8 +131,8 @@ export { listFamilyPrivateTitlesFn } from "./callable/privateTitlesCallable";
 // ── Tickets (bugs, idées, questions → Issues GitHub) ─────────────────────────
 // Création par un membre approuvé, capture jointe par l'auteur, relance,
 // validation, refus et réponse à une analyse par l'administrateur. GITHUB_TICKETS_TOKEN est monté par
-// ces callables (sauf la capture), la tâche horaire, le webhook (relecture des
-// analyses) et le backfill des analyses ; le webhook seul monte
+// ces callables (sauf la capture), la tâche horaire et le webhook (relecture des
+// analyses) ; le webhook seul monte
 // GITHUB_WEBHOOK_SECRET. Les trois lancements de session (routines Claude Code :
 // analyse, développement, livraison) montent l'identifiant et le jeton de leur
 // routine ; la livraison prend ceux du développement. Aucun appel d'IA facturé
@@ -169,15 +169,10 @@ export { scheduledBackfills } from "./scheduled/backfillSchedule";
 export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdminCallable";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
-export { backfillTitleKeysFn } from "./callable/titleKeysBackfillCallable";
-export { backfillInvitationGroupOwnerFn } from "./callable/invitationOwnerBackfillCallable";
 export { backfillIllustrationFoldersFn } from "./callable/illustrationFoldersBackfillCallable";
+export { backfillIllustrationFoldersMoveFn } from "./callable/illustrationFoldersMoveBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
-export { backfillSystemBooksFn } from "./callable/systemBooksBackfillCallable";
-export { backfillGroupPlanningReachFn } from "./callable/groupPlanningReachBackfillCallable";
 export { backfillMoveMealsToGroupFn } from "./callable/moveMealsToGroupBackfillCallable";
-export { backfillTicketAnalysesFn } from "./callable/ticketAnalysesBackfillCallable";
-export { backfillTicketDeliveredPrFn } from "./callable/ticketDeliveredPrBackfillCallable";
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en
 // v0.23.23 : lancés en production, leur travail est fait. Les déclencheurs `syncUserClaims`
 // et `syncGroupReach` tiennent profils et portée à jour.
@@ -185,6 +180,13 @@ export { backfillTicketDeliveredPrFn } from "./callable/ticketDeliveredPrBackfil
 // `backfillEstimatedTimesFn` (v0.23.38) sont retirés en v0.23.52 : lancés en production et marqués
 // terminés, leur travail est fait. `onRecipeWritten` tient protéine, féculent et durées
 // estimées à jour ; un compte sans contraintes enregistrées lit celles par défaut.
+// `backfillSystemBooksFn` (v0.23.51), `backfillGroupPlanningReachFn` (v0.23.58),
+// `backfillTicketAnalysesFn` (v0.23.63), `backfillTitleKeysFn` (v0.23.97),
+// `backfillTicketDeliveredPrFn` (v0.23.99) et `backfillInvitationGroupOwnerFn` (v0.24.14) sont
+// retirés en v0.24.33 : marqués terminés en production, leur travail est fait. `syncUserClaims`
+// crée les livres système d'un compte approuvé, `syncGroupReach` tient la portée des groupes et
+// des plannings, la tâche horaire et le webhook des tickets relisent analyses et PR livrées,
+// `onRecipeWritten` pose `titre_key`, et `manageInvitationFn` écrit `group_owner_id`.
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //
