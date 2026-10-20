@@ -168,6 +168,14 @@ const STEP_ORDER: PipelineStep[] = [
   "done",
 ];
 
+/**
+ * Message d'un échec générique (`pipeline_error`) sur le job, lu par le membre.
+ * Le message de l'exception n'y est pas recopié : c'est souvent un texte gRPC
+ * ou SDK, sans sens pour lui.
+ */
+export const PIPELINE_ERROR_MESSAGE =
+  "L'import n'a pas abouti après plusieurs essais. Relancez-le, ou supprimez-le s'il échoue de nouveau.";
+
 function stepIndex(step: PipelineStep): number {
   return STEP_ORDER.indexOf(step);
 }
@@ -982,7 +990,8 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
     // Le livre d'un autre le restera à chaque tentative.
     const isForeignBook = err instanceof TargetBookNotOwned;
     // Un propriétaire qui n'est plus éditeur ne le redeviendra pas d'ici le
-    // prochain essai ; un administrateur relancera le dead letter au besoin.
+    // prochain essai. Sa dead letter ne se relance pas non plus
+    // (`relaunchDenial`) : une fois son droit rendu, il importe de nouveau.
     const isOwnerNotEditor = err instanceof JobOwnerNotEditor;
     // Un fichier source hors du dossier du propriétaire le restera.
     const isForbiddenSource = err instanceof StoragePathRefusedError;
@@ -1056,33 +1065,34 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
       isTooLarge ||
       isFinalUrlError
     ) {
+      const failureReason = isBudget
+        ? "budget_exceeded"
+        : isUnreadableBook
+          ? "book_file_unreadable"
+          : isTruncatedTagging
+            ? "tagging_truncated"
+            : isForeignBook
+              ? "foreign_book"
+              : isOwnerNotEditor
+                ? OWNER_NOT_EDITOR_CODE
+                : isForbiddenSource
+                  ? "forbidden_source_path"
+                  : isZipLimit
+                    ? "archive_limit_exceeded"
+                    : isTooManyPages
+                      ? "too_many_pages"
+                      : isTooLarge
+                        ? "too_large"
+                        : urlError
+                          ? `url_${urlError.code}`
+                          : isQuota
+                            ? "quota_exceeded"
+                            : "pipeline_error";
       await moveToDeadLetter({
         jobId,
         userId,
         correlationId,
-        failureReason: isBudget
-          ? "budget_exceeded"
-          : isUnreadableBook
-            ? "book_file_unreadable"
-            : isTruncatedTagging
-              ? "tagging_truncated"
-              : isForeignBook
-                ? "foreign_book"
-                : isOwnerNotEditor
-                  ? OWNER_NOT_EDITOR_CODE
-                  : isForbiddenSource
-                    ? "forbidden_source_path"
-                    : isZipLimit
-                      ? "archive_limit_exceeded"
-                      : isTooManyPages
-                        ? "too_many_pages"
-                        : isTooLarge
-                          ? "too_large"
-                          : urlError
-                            ? `url_${urlError.code}`
-                            : isQuota
-                              ? "quota_exceeded"
-                              : "pipeline_error",
+        failureReason,
         lastError: message,
         retryCount: attempt + 1,
         filePath:
@@ -1093,11 +1103,16 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
         // Un import par lien porte un message lisible et son code : la tuile
         // du client choisit ses actions sur le code. Un propriétaire refusé
         // aussi (`owner_not_editor`), quel que soit le type du job.
+        // Un échec générique (`pipeline_error`) porte un message fixe : le
+        // texte de l'exception (gRPC, SDK) reste dans `last_error` de la dead
+        // letter et dans le `logError` ci-dessus, lus par l'administrateur.
         error_message: isOwnerNotEditor
           ? OWNER_NOT_EDITOR_MESSAGE
           : urlError
             ? URL_IMPORT_MESSAGES[urlError.code]
-            : message,
+            : failureReason === "pipeline_error"
+              ? PIPELINE_ERROR_MESSAGE
+              : message,
         ...(isOwnerNotEditor
           ? { error_code: OWNER_NOT_EDITOR_CODE, current_step: null }
           : urlError

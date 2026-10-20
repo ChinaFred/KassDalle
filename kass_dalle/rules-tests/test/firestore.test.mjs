@@ -3229,6 +3229,8 @@ describe("app_config", () => {
     "image_moderation",
     "currency_rate",
     "anthropic_costs",
+    "planning_policy",
+    "ai_budget_alert",
     "nutrition_catch_up_checkpoint",
     "recipe_roles_backfill_checkpoint",
     "backfill_cursor_refresh_sodium_ingredients",
@@ -4018,10 +4020,56 @@ describe("processing_jobs", () => {
     await assertSucceeds(db("admin").collection("processing_jobs").get());
   });
 
-  it("seul un administrateur supprime un job, hors attente de doublon", async () => {
-    await assertFails(db("editor").doc("processing_jobs/job-editor").delete());
+  it("un administrateur supprime le job d'un autre", async () => {
     await assertSucceeds(
       db("admin").doc("processing_jobs/job-editor").delete(),
+    );
+  });
+
+  // Un job en erreur se supprime par son propriétaire actif, quel que soit son
+  // rôle : un job `owner_not_editor` n'a pas d'autre sortie (#163).
+  it("un éditeur supprime son job en erreur", async () => {
+    await assertSucceeds(
+      db("editor").doc("processing_jobs/job-editor").delete(),
+    );
+  });
+
+  it("un lecteur supprime son job en erreur", async () => {
+    await seedDocs(env, {
+      "processing_jobs/err-reader": {
+        created_by: READER,
+        status: "error",
+        error_code: "owner_not_editor",
+      },
+    });
+    await assertSucceeds(
+      db("reader").doc("processing_jobs/err-reader").delete(),
+    );
+  });
+
+  it("un lecteur ne supprime pas son job en file ou en cours", async () => {
+    await seedDocs(env, {
+      "processing_jobs/queued-reader": { created_by: READER, status: "queued" },
+    });
+    await assertFails(
+      db("reader").doc("processing_jobs/queued-reader").delete(),
+    );
+    await assertFails(db("reader").doc("processing_jobs/job-reader").delete());
+  });
+
+  it("un lecteur ne supprime pas le job en erreur d'un autre", async () => {
+    await assertFails(db("reader").doc("processing_jobs/job-editor").delete());
+  });
+
+  it("un compte révoqué ne supprime pas son job en erreur", async () => {
+    await seedDocs(env, {
+      "processing_jobs/err-revoked": {
+        created_by: PERSONAS.revoked.uid,
+        status: "error",
+      },
+    });
+    await assertFails(
+      db("revoked").doc("processing_jobs/err-revoked").delete(),
     );
   });
 

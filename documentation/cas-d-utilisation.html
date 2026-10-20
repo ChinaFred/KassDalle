@@ -892,7 +892,13 @@ flowchart LR
         brouillon marqué : la validation en lot l'écarte, la relecture le valide et efface la
         marque. La file montre une pastille « Doublon possible » sur ce brouillon, et aussi sur deux
         brouillons de même titre dans un même livre (rapprochés à l'affichage par la clé de titre
-        du serveur, pages non contradictoires) : l'action du menu y est « Relire ». En mode nouveau livre, l'écran de confirmation d'un import de livre signale un
+        du serveur, pages non contradictoires) : l'action du menu y est « Relire ».
+        <b>Un traitement arrêté faute de droit.</b> Le serveur relit le compte du propriétaire à
+        chaque essai : révoqué, passé <code>reader</code> ou en attente, le traitement s'arrête sans
+        appel d'IA (<code>owner_not_editor</code>). La tuile dit « Import arrêté : votre compte n'a
+        plus le droit d'importer des recettes. … » et ne propose que « Supprimer » ; la relance,
+        y compris celle d'un administrateur depuis la file d'échecs, est refusée. Un membre
+        actif, quel que soit son rôle, supprime ses propres traitements en erreur. En mode nouveau livre, l'écran de confirmation d'un import de livre signale un
         livre déjà en bibliothèque et propose « Importer dans ce livre » ou « Créer un nouveau
         livre quand même ».
         <span class="expect">

@@ -17,8 +17,8 @@ export const OWNER_NOT_EDITOR_CODE = "owner_not_editor";
 
 /** Message écrit dans `error_message` du job refusé, lu par le membre. */
 export const OWNER_NOT_EDITOR_MESSAGE =
-  "Import arrêté : le compte qui l'a lancé n'a plus le rôle éditeur ou a été révoqué. " +
-  "Aucun appel d'IA n'a été fait pour cette tentative.";
+  "Import arrêté : votre compte n'a plus le droit d'importer des recettes. " +
+  "Demandez à un administrateur de vous le rendre, puis importez de nouveau.";
 
 /** Refus du propriétaire : le job part en dead letter sans nouvel essai. */
 export class JobOwnerNotEditor extends Error {

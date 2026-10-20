@@ -28,7 +28,8 @@ administrateur pouvait écrire directement tout document de `app_config` hors de
 contournait sa validation (`readPolicyOrThrow`, garde-fou `enforce` d'App Check), sa trace
 d'audit et App Check. `isServerOnlyConfig` couvre désormais `ai_pricing`,
 `ai_routing_policy`, `ai_budget_policy`, `app_check_policy`, `nutrition_source_policy`,
-`image_moderation`, `currency_rate`, `anthropic_costs`, et les points de reprise des
+`image_moderation`, `currency_rate`, `anthropic_costs`, `planning_policy`, `ai_budget_alert`,
+et les points de reprise des
 backfills (`*_checkpoint`, `backfill_cursor_*`). Aucun code client n'écrit ces documents ; il
 les lit toujours. `tickets` et `usage` restent écrits par l'administrateur. Les tests des
 règles vérifient le refus de `set`, `update` et `delete` sur chacun, la lecture
@@ -39,7 +40,10 @@ Pipeline d'import, lot 9 de l'audit #151 (ticket #163). Le pipeline relit le com
 propriétaire d'un job à chaque tentative (`assertJobOwnerEditor`), avec la même décision que
 `requireEditor`. Un compte révoqué, lecteur, en attente ou supprimé voit son job passer en
 `error_code: owner_not_editor`, puis en dead letter, sans appel de modèle ; la file l'affiche sans
-proposer « Relancer ». Les nouveaux essais de Cloud Tasks, les tranches d'un livre et les
+proposer « Relancer », et cette dead letter ne se relance pas. Les règles laissent désormais le
+propriétaire actif (approuvé, non révoqué), quel que soit son rôle, supprimer son job en
+`error` : un tel job restait sinon dans la file. Un échec générique (`pipeline_error`) écrit un
+message fixe sur le job ; le texte de l'exception reste dans la dead letter et le journal. Les nouveaux essais de Cloud Tasks, les tranches d'un livre et les
 relances de dead letter n'avaient aucun contrôle de rôle. `relaunchDeadLetterFn` valide son
 identifiant et fait tenir la relance dans une transaction : une seule relance par dead letter,
 la seconde reçoit « Ce job a déjà été relancé. ». Un `scanId` venu du client doit avoir la forme

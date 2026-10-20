@@ -19,6 +19,7 @@ import { REGION, COLL_DEAD_LETTERS, COLL_PROCESSING_JOBS, MAX_CALLABLE_INSTANCES
 import { requireAdmin } from "../callable/_auth";
 import { logInfo } from "../logging";
 import { isValidDocumentId } from "../moderation/promote";
+import { OWNER_NOT_EDITOR_CODE } from "./jobOwner";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -29,6 +30,9 @@ const adminOpts = { region: REGION, cors: ALLOWED_ORIGINS, maxInstances: MAX_CAL
 
 export const ALREADY_RELAUNCHED_MESSAGE = "Ce job a déjà été relancé.";
 const ORIGINAL_DELETED_MESSAGE = "Job original supprimé, relance impossible.";
+export const OWNER_NOT_EDITOR_RELAUNCH_MESSAGE =
+  "Le compte qui a lancé cet import n'a plus le droit d'importer. " +
+  "Rendez-lui ce droit, puis demandez-lui d'importer de nouveau.";
 
 /**
  * Refus de relancer un dead letter, ou `null` si permis. Pure et exportée pour
@@ -37,7 +41,9 @@ const ORIGINAL_DELETED_MESSAGE = "Job original supprimé, relance impossible.";
  * `dlq` nul : le document n'existe pas. `relaunched_at` non nul : une relance a
  * déjà eu lieu — un double appui, ou deux onglets ouverts sur l'écran, créaient
  * deux jobs, donc deux imports facturés. `originalExists` faux : le job
- * d'origine a été supprimé, ou son identifiant est illisible.
+ * d'origine a été supprimé, ou son identifiant est illisible. `failure_reason`
+ * (ou `error_code`) `owner_not_editor` : le propriétaire n'avait plus le droit
+ * d'importer, la relance échouerait de nouveau.
  */
 export function relaunchDenial(args: {
   dlq: Record<string, unknown> | null;
@@ -46,6 +52,14 @@ export function relaunchDenial(args: {
   if (args.dlq == null) return { code: "not-found", message: "Dead letter introuvable." };
   if (args.dlq.relaunched_at != null) {
     return { code: "failed-precondition", message: ALREADY_RELAUNCHED_MESSAGE };
+  }
+  // Propriétaire qui n'est plus éditeur : la relance rejouerait le même refus
+  // (`assertJobOwnerEditor`), et l'imputerait encore à son compte.
+  if (
+    args.dlq.failure_reason === OWNER_NOT_EDITOR_CODE ||
+    args.dlq.error_code === OWNER_NOT_EDITOR_CODE
+  ) {
+    return { code: "failed-precondition", message: OWNER_NOT_EDITOR_RELAUNCH_MESSAGE };
   }
   if (!args.originalExists) {
     return { code: "failed-precondition", message: ORIGINAL_DELETED_MESSAGE };

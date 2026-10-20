@@ -254,9 +254,11 @@ class _DeadLetterTile extends ConsumerWidget {
       if (!context.mounted) return;
       // `failed-precondition` : `relaunchDeadLetterFn` dit que le job
       // original a été supprimé (« Job original supprimé, relance
-      // impossible. »), ou que ce dead letter a déjà été relancé, par un
+      // impossible. »), que ce dead letter a déjà été relancé, par un
       // double appui ou depuis un autre onglet (« Ce job a déjà été
-      // relancé. »).
+      // relancé. »), ou que le compte qui a lancé l'import n'a plus le droit
+      // d'importer (`owner_not_editor`, « Le compte qui a lancé cet import
+      // n'a plus le droit d'importer. … »).
       context.showErrorSnackBar(
         adminFailureMessage(
           'Job non relancé',

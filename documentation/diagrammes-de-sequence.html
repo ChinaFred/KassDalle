@@ -2460,6 +2460,8 @@ sequenceDiagram
   RH->>DL: lit la dead letter et relaunched_at
   alt déjà relancée (double appui, deux onglets)
     RH-->>A: failed-precondition « Ce job a déjà été relancé. »
+  else failure_reason owner_not_editor
+    RH-->>A: failed-precondition « Le compte qui a lancé cet import n'a plus le droit d'importer. … »
   else job d'origine supprimé
     RH-->>A: failed-precondition « Job original supprimé, relance impossible. »
   else relance permise

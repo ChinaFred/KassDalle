@@ -335,6 +335,7 @@ web en grand écran, il l'a, et Entrée envoie.
 - **Le lien est refusé** (adresse non publique). Aucune action.
 - **Délai dépassé.** La tuile propose « Relancer ». Après deux relances, la tuile le dit et propose « Ouvrir la page » et « Coller le texte » à la place.
 - **Incident sans cause précise.** La tuile affiche le message d'erreur et propose « Ouvrir la page » et « Relancer ». Après deux relances, « Coller le texte » remplace « Relancer ».
+- **Le compte qui a lancé l'import n'a plus le droit d'importer** (révoqué, passé lecteur ou en attente). Vaut pour tout traitement, pas seulement un import par lien. La tuile affiche « Import arrêté : votre compte n'a plus le droit d'importer des recettes. Demandez à un administrateur de vous le rendre, puis importez de nouveau. » Aucune action, sauf « Supprimer » ; aucun appel d'IA n'a eu lieu. Hors import par lien, l'icône de copie porte l'infobulle « Copier le message ».
 
 Un import par lien se relance **deux fois au plus** : chaque relance refait des appels d'IA facturés, hors du plafond quotidien d'imports.
 
@@ -526,10 +527,12 @@ privait le titre de la place dont il manquait.
   affiché. En vue Groupe familial ou Tous les utilisateurs, la case d'une section coche les
   éléments d'une personne ; une section repliée sort de la sélection. Une barre en bas propose
   trois actions, avec le nombre d'éléments que chacune touche : **Valider** (les brouillons
-  cochés), **Relancer** (les traitements cochés en erreur ou rejetés), **Supprimer** (tout ce qui
+  cochés), **Relancer** (les traitements cochés en erreur ou rejetés, sauf ceux arrêtés parce
+  que leur propriétaire n'a plus le droit d'importer), **Supprimer** (tout ce qui
   est coché). Les trois demandent confirmation ; Relancer le rappelle parce que chaque import
   relancé est facturé à nouveau. Le lot avance élément par élément avec une barre de progression.
-  Un échec n'arrête pas les suivants : il est compté dans le compte rendu. Une ligne « Doublon
+  Un échec n'arrête pas les suivants : il est compté dans le compte rendu. Un membre supprime
+  ses propres traitements en erreur, quel que soit son rôle, tant que son compte est actif. Une ligne « Doublon
   possible » n'entre que dans **Supprimer** : ce n'est pas un brouillon, et la relancer referait
   la comparaison. En mode sélection, ses boutons sont masqués et ses liens ne s'ouvrent pas.
 - **Ranger des brouillons dans un livre en lot.** Dès qu'un brouillon est coché, la barre propose

@@ -7,7 +7,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { jobOwnerDenial } from "../pipeline/jobOwner";
+import { OWNER_NOT_EDITOR_MESSAGE, jobOwnerDenial } from "../pipeline/jobOwner";
 
 describe("jobOwnerDenial", () => {
   test("éditeur : accepté", () => {
@@ -42,5 +42,15 @@ describe("jobOwnerDenial", () => {
   test("rôle absent ou inconnu : refusé", () => {
     assert.notEqual(jobOwnerDenial({ role: null, revoked: false }), null);
     assert.notEqual(jobOwnerDenial({ role: "superuser", revoked: false }), null);
+  });
+});
+
+describe("OWNER_NOT_EDITOR_MESSAGE", () => {
+  test("tient le libellé validé, repris en repli par la tuile du client", () => {
+    assert.equal(
+      OWNER_NOT_EDITOR_MESSAGE,
+      "Import arrêté : votre compte n'a plus le droit d'importer des recettes. " +
+        "Demandez à un administrateur de vous le rendre, puis importez de nouveau.",
+    );
   });
 });

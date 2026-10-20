@@ -497,6 +497,12 @@ class QueueJobTile extends StatelessWidget {
               onRetry: onRetry,
               showActions: !isSelecting,
             )
+          else if (job.ownerNotEditor)
+            // Un arrêt, pas un rejet : l'infobulle reste neutre.
+            _ErrorBadge(
+              errorMessage: _ownerNotEditorMessage(job),
+              copyTooltip: 'Copier le message',
+            )
           else if (hasError)
             _ErrorBadge(errorMessage: job.errorMessage!),
           if (job.status == ProcessingJobStatus.done &&
@@ -1360,10 +1366,15 @@ UrlImportFailure? urlImportFailureFor(ProcessingJob job) {
 }
 
 /// Le message d'un job arrêté parce que son propriétaire n'est plus éditeur.
+///
+/// Le repli reprend mot pour mot `OWNER_NOT_EDITOR_MESSAGE`
+/// (`functions/src/pipeline/jobOwner.ts`).
 String _ownerNotEditorMessage(ProcessingJob job) =>
     (job.errorMessage ?? '').isNotEmpty
     ? job.errorMessage!
-    : 'Import arrêté : le compte qui l\'a lancé n\'a plus le rôle éditeur.';
+    : 'Import arrêté : votre compte n\'a plus le droit d\'importer des '
+          'recettes. Demandez à un administrateur de vous le rendre, puis '
+          'importez de nouveau.';
 
 /// Le message d'échec d'un import par lien et ses actions.
 ///
@@ -1437,7 +1448,13 @@ class UrlImportFailurePanel extends StatelessWidget {
 
 class _ErrorBadge extends StatelessWidget {
   final String errorMessage;
-  const _ErrorBadge({required this.errorMessage});
+
+  /// Infobulle de l'icône de copie.
+  final String copyTooltip;
+  const _ErrorBadge({
+    required this.errorMessage,
+    this.copyTooltip = 'Copier le motif de rejet',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1461,7 +1478,7 @@ class _ErrorBadge extends StatelessWidget {
           ),
         ),
         IconButton(
-          tooltip: 'Copier le motif de rejet',
+          tooltip: copyTooltip,
           visualDensity: VisualDensity.compact,
           iconSize: AppIconSize.inline,
           onPressed: () => _showErrorDialog(context, errorMessage),

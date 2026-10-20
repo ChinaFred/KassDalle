@@ -6,7 +6,11 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ALREADY_RELAUNCHED_MESSAGE, relaunchDenial } from "../pipeline/deadLetterHandler";
+import {
+  ALREADY_RELAUNCHED_MESSAGE,
+  OWNER_NOT_EDITOR_RELAUNCH_MESSAGE,
+  relaunchDenial,
+} from "../pipeline/deadLetterHandler";
 
 describe("relaunchDenial", () => {
   const dlq = { original_job_id: "job1", relaunched_at: null };
@@ -47,5 +51,22 @@ describe("relaunchDenial", () => {
 
   test("dead letter absent : not-found", () => {
     assert.equal(relaunchDenial({ dlq: null, originalExists: false })?.code, "not-found");
+  });
+
+  test("propriétaire qui n'est plus éditeur : failed-precondition, relance refusée", () => {
+    for (const extra of [
+      { failure_reason: "owner_not_editor" },
+      { error_code: "owner_not_editor" },
+    ]) {
+      const denial = relaunchDenial({ dlq: { ...dlq, ...extra }, originalExists: true });
+      assert.deepEqual(denial, {
+        code: "failed-precondition",
+        message: OWNER_NOT_EDITOR_RELAUNCH_MESSAGE,
+      });
+    }
+    assert.equal(
+      relaunchDenial({ dlq: { ...dlq, failure_reason: "pipeline_error" }, originalExists: true }),
+      null,
+    );
   });
 });

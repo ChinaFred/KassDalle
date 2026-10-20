@@ -1005,7 +1005,10 @@ service cloud.firestore {
     // directe contournait la validation (`readPolicyOrThrow`, le garde-fou
     // `enforce` d'App Check), la trace d'audit et App Check.
     // `image_moderation`, `currency_rate` et `anthropic_costs` ne sont
-    // écrits que par le serveur. Les points de reprise des backfills
+    // écrits que par le serveur. `planning_policy` (réglages de la
+    // présélection, lus par `gemini/planningStore.ts`) et `ai_budget_alert`
+    // (dernière alerte envoyée, `scheduled/aiBudgetAlertSchedule.ts`) non plus :
+    // aucun écran ne les écrit. Les points de reprise des backfills
     // (`*_checkpoint`, `backfill_cursor_*`) aussi : un curseur réécrit à la
     // main fait sauter ou rejouer des documents.
     // Restent écrits par l'administrateur : `tickets` (plafonds, aucune
@@ -1017,6 +1020,7 @@ service cloud.firestore {
         || docId == 'ai_budget_policy' || docId == 'app_check_policy'
         || docId == 'nutrition_source_policy' || docId == 'image_moderation'
         || docId == 'currency_rate' || docId == 'anthropic_costs'
+        || docId == 'planning_policy' || docId == 'ai_budget_alert'
         || docId.matches('.*_checkpoint') || docId.matches('backfill_cursor_.*');
     }
 
@@ -1191,8 +1195,15 @@ service cloud.firestore {
       // n'y tourne, et la ligne n'a pas d'autre sortie que la reprise. Un
       // statut 'duplicate' n'est posé que par le pipeline : la relance
       // ci-dessus n'admet que 'queued' ou 'error'.
+      // Un job en 'error' se supprime par son propriétaire actif (approuvé, non
+      // révoqué), quel que soit son rôle : un job arrêté parce que son
+      // propriétaire n'est plus éditeur (`owner_not_editor`) n'a pas d'autre
+      // sortie, et restait sinon dans la file pour toujours. Rien ne tourne sur
+      // un job en erreur ; le fichier `scans/`, `scan_spend` et la dead letter
+      // restent, la relance d'une dead letter dont le job a disparu est refusée.
       allow delete: if isAdmin()
-                    || (isJobOwner() && isEditor() && resource.data.get('status', '') == 'duplicate');
+                    || (isJobOwner() && isEditor() && resource.data.get('status', '') == 'duplicate')
+                    || (isJobOwner() && isApproved() && resource.data.get('status', '') == 'error');
     }
 
     // Suivi de l'usage des tokens IA

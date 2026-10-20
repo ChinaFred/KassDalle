@@ -208,7 +208,12 @@ void main() {
         expect(failure.retryable, isFalse);
         expect(failure.offerOpenPage, isFalse);
         expect(failure.offerPasteText, isFalse);
-        expect(failure.message, startsWith('Import arrêté'));
+        expect(
+          failure.message,
+          'Import arrêté : votre compte n\'a plus le droit d\'importer des '
+          'recettes. Demandez à un administrateur de vous le rendre, puis '
+          'importez de nouveau.',
+        );
         expect(job(errorCode: 'timeout').ownerNotEditor, isFalse);
       },
     );
