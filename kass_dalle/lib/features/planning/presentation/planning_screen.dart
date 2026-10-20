@@ -59,6 +59,7 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_service.dart'
     show GeminiCallableException;
 import '../../../core/widgets/app_states.dart';
+import '../domain/calendar_export_messages.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
 
@@ -925,7 +926,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showSnackBar('Autorisation Calendar refusée : $e');
+        context.showFailureSnackBar(kCalendarAccessNotGranted, e);
       }
       return;
     }
@@ -953,8 +954,21 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         );
       }
     }
-    if (mounted) {
-      context.showSnackBar('$exported repas exportés vers le calendrier ✓');
+    if (!mounted) return;
+    if (exported < futureMeals.length) {
+      // Chaque événement manqué est déjà dans le rapport d'erreur ; l'écran
+      // dit combien manquent. Pas de « Réessayer » : il doublerait dans
+      // l'agenda les événements déjà posés.
+      context.showErrorSnackBar(
+        calendarExportMissed(
+          exported: exported,
+          total: futureMeals.length,
+          participle: 'exporté',
+          place: 'vers le calendrier',
+        ),
+      );
+    } else {
+      context.showSuccessSnackBar(calendarExportSuccess(exported));
     }
   }
 
@@ -972,7 +986,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         calendarId: calendarId,
       );
       if (mounted) {
-        context.showSnackBar('Repas ajouté au calendrier ✓');
+        context.showSuccessSnackBar('Repas ajouté au calendrier ✓');
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -981,7 +995,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showSnackBar('Erreur : $e');
+        context.showFailureSnackBar('Repas non ajouté au calendrier', e);
       }
     }
   }
@@ -1561,7 +1575,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur conservation : $e');
+        context.showFailureSnackBar('Conservation non obtenue', e);
       }
     } finally {
       if (mounted) setState(() => _storageLoadingIds.remove(meal.id));
@@ -2952,7 +2966,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         context: {'group_id': ?target.groupId},
       );
       if (showError && mounted) {
-        context.showErrorSnackBar('Repas non enregistré : $e');
+        context.showFailureSnackBar('Repas non enregistré', e);
       }
       return null;
     }
@@ -3210,7 +3224,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Historique du mois illisible : $e');
+        context.showFailureSnackBar('Historique du mois non chargé', e);
       }
     } finally {
       _archiveLoading.remove(key);

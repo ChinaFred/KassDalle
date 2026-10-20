@@ -1613,14 +1613,27 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     return _serverWrittenMessage(error) ?? failureMessage(fallback, error);
   }
 
-  /// Message d'une erreur callable que le serveur écrit lui-même pour
-  /// l'utilisateur. Un `internal` ou un `unknown` recopie le texte brut de
-  /// l'exception (Storage, Firestore, SDK du modèle) : il n'est pas affiché.
+  /// Message d'une erreur callable que le serveur d'import écrit lui-même
+  /// pour l'utilisateur, ou null.
+  ///
+  /// Liste blanche, d'après `scanAndPromoteUploadFn` et `analyzeBookFileFn` :
+  /// `resource-exhausted` (plafond, budget), `failed-precondition` (fichier
+  /// bloqué, livre illisible : `BookFileError`) et `permission-denied` (rôle,
+  /// chemin refusé) portent une phrase en français écrite pour l'écran. Tout
+  /// autre code est écarté : `invalid-argument` (« storagePath est requis. »)
+  /// est un texte de développeur, `internal` et `unknown` recopient
+  /// l'exception brute, et sur mobile `unavailable` et `deadline-exceeded`
+  /// arrivent avec le texte anglais du SDK.
   String? _serverWrittenMessage(Object error) {
     if (error is! GeminiCallableException) return null;
     if (error.message.isEmpty) return null;
-    if (error.code == 'internal' || error.code == 'unknown') return null;
-    return error.message;
+    const userFacing = {
+      'resource-exhausted',
+      'failed-precondition',
+      'permission-denied',
+    };
+    final code = error.code.toLowerCase().replaceAll('_', '-');
+    return userFacing.contains(code) ? error.message : null;
   }
 
   /// Vrai si l'erreur correspond à un rejet par le scan de sécurité

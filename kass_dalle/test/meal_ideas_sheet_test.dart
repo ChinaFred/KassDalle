@@ -3,14 +3,18 @@
 /// Ce que ces tests gardent : l'idée retenue sort en repas libre avec ses
 /// durées, la relance transporte tous les titres déjà affichés — pas seulement
 /// le dernier lot —, et un générateur qui échoue laisse un message, pas un
-/// écran figé.
+/// écran figé. Le message d'échec tient en deux phrases lisibles (« Idées non
+/// proposées. Connexion perdue. ») : le texte brut de l'exception n'y figure
+/// pas, sauf le message qu'un callable écrit pour l'écran.
 library;
 
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/services/error_report_service.dart';
+import 'package:kass_dalle/core/services/gemini_service.dart';
 import 'package:kass_dalle/features/planning/domain/meal_idea.dart';
 import 'package:kass_dalle/features/planning/presentation/meal_ideas_sheet.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
@@ -218,7 +222,11 @@ void main() {
       await tester.tap(find.text('Soupe de courge'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('rédaction impossible'), findsOneWidget);
+      expect(
+        find.text('Recette non rédigée. Une erreur inattendue est survenue.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('rédaction impossible'), findsNothing);
       expect(errors.features, ['mealIdeasSheet.conceive']);
       // Les idées restent, et se retiennent encore.
       expect(find.text('Dahl de lentilles corail'), findsOneWidget);
@@ -331,10 +339,126 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('moteur indisponible'), findsOneWidget);
+      expect(
+        find.text('Idées non proposées. Une erreur inattendue est survenue.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('moteur indisponible'), findsNothing);
       expect(errors.features, ['mealIdeasSheet.generate']);
       final button = find.widgetWithText(FilledButton, 'Proposer trois idées');
       expect(tester.widget<FilledButton>(button).onPressed, isNotNull);
+    });
+
+    /// Ouvre la feuille avec un générateur qui lève [error], et demande des
+    /// idées.
+    Future<void> generateFailing(WidgetTester tester, Object error) async {
+      await _pumpHost(tester, ({
+        required prompt,
+        required previousTitles,
+      }) async {
+        throw error;
+      }, errors: _RecordingErrorReportService());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'des pâtes');
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Proposer trois idées'),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    /// Tout le texte affiché, pour vérifier qu'aucun fragment technique n'y
+    /// reste.
+    String shownText(WidgetTester tester) => tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.data ?? '')
+        .join(' ');
+
+    testWidgets('une connexion perdue s\'affiche en deux phrases, sans texte '
+        'technique', (tester) async {
+      await generateFailing(
+        tester,
+        FirebaseException(
+          plugin: 'cloud_functions',
+          code: 'unavailable',
+          message: 'The service is currently unavailable.',
+        ),
+      );
+
+      expect(
+        find.text('Idées non proposées. Connexion perdue.'),
+        findsOneWidget,
+      );
+      final text = shownText(tester);
+      expect(text, isNot(contains('[')));
+      expect(text, isNot(contains('Exception')));
+      expect(text.toLowerCase(), isNot(contains('firebase')));
+    });
+
+    testWidgets('le message que le serveur écrit pour l\'écran est gardé', (
+      tester,
+    ) async {
+      await generateFailing(
+        tester,
+        GeminiCallableException(
+          'resource-exhausted',
+          'Plafond du jour atteint : revenez demain.',
+          null,
+        ),
+      );
+
+      expect(
+        find.text('Plafond du jour atteint : revenez demain.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('le texte anglais du SDK sur mobile n\'est pas recopié', (
+      tester,
+    ) async {
+      await generateFailing(
+        tester,
+        GeminiCallableException('unavailable', 'UNAVAILABLE', null),
+      );
+
+      expect(
+        find.text('Idées non proposées. Connexion perdue.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('UNAVAILABLE'), findsNothing);
+    });
+
+    testWidgets('un invalid-argument du serveur n\'est pas recopié', (
+      tester,
+    ) async {
+      await generateFailing(
+        tester,
+        GeminiCallableException('invalid-argument', 'prompt est requis.', null),
+      );
+
+      expect(find.textContaining('prompt est requis'), findsNothing);
+      expect(find.textContaining('Idées non proposées.'), findsOneWidget);
+    });
+
+    testWidgets('une erreur interne du serveur n\'est pas recopiée', (
+      tester,
+    ) async {
+      await generateFailing(
+        tester,
+        GeminiCallableException(
+          'internal',
+          'TypeError: Cannot read properties of undefined',
+          null,
+        ),
+      );
+
+      expect(
+        find.text('Idées non proposées. Une erreur inattendue est survenue.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('TypeError'), findsNothing);
     });
   });
 }

@@ -168,6 +168,7 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
     String feature,
     Future<void> Function(String uid) action, {
     required String success,
+    required String failure,
     Map<String, dynamic> context = const {},
   }) async {
     final uid = _uid;
@@ -187,7 +188,7 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
         stackTrace: stackTrace,
         context: context,
       );
-      if (mounted) this.context.showErrorSnackBar('Erreur : $e');
+      if (mounted) this.context.showFailureSnackBar(failure, e);
     }
   }
 
@@ -250,6 +251,7 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
       success: override.isEmpty
           ? '« ${form.name} » suit à nouveau le référentiel.'
           : '« ${form.name} » enregistrée pour vous.',
+      failure: '« ${form.name} » non enregistrée',
       context: {'id': u.staple.id},
     );
   }
@@ -270,6 +272,9 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
       success: u.hidden
           ? '« ${u.staple.name} » à nouveau proposée.'
           : '« ${u.staple.name} » masquée : elle ne vous sera plus proposée.',
+      failure: u.hidden
+          ? '« ${u.staple.name} » non proposée à nouveau'
+          : '« ${u.staple.name} » non masquée',
       context: {'id': u.staple.id, 'hidden': !u.hidden},
     );
   }
@@ -291,6 +296,8 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
                 .removeOverride(uid, u.staple.id),
       success:
           '« ${u.base?.name ?? u.staple.name} » revient à la valeur de base.',
+      failure:
+          '« ${u.base?.name ?? u.staple.name} » non remise à la valeur de base',
       context: {'id': u.staple.id},
     );
   }
@@ -323,6 +330,7 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
           .read(mealStaplesRepositoryProvider)
           .removeOverride(uid, u.staple.id),
       success: '« ${u.staple.name} » supprimée.',
+      failure: '« ${u.staple.name} » non supprimée',
       context: {'id': u.staple.id},
     );
   }
@@ -366,6 +374,7 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
       (uid) =>
           ref.read(mealStaplesRepositoryProvider).saveOverride(uid, override),
       success: '« ${form.name} » ajoutée à vos garnitures.',
+      failure: '« ${form.name} » non ajoutée à vos garnitures',
       context: {'id': id},
     );
   }
