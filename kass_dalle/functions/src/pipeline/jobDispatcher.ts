@@ -23,7 +23,7 @@ import {
   COLL_PROCESSING_JOBS,
   COLL_SCAN_SPEND,
   PROJECT_ID,
-  TASK_QUEUE_FUNCTION,
+  taskQueueFunctionFor,
 } from "../config";
 import { raiseImportCeiling, scanOwnerConflict } from "../ai/importBudget";
 import { logInfo, logError, newCorrelationId, newScanId, qualify } from "../logging";
@@ -166,7 +166,7 @@ export const jobDispatcher = onDocumentWritten(
 
       // Nom de ressource complet requis : sans cela, Cloud Tasks cherche
       // la queue dans us-central1 et renvoie "Queue does not exist".
-      const queueResource = `projects/${PROJECT_ID}/locations/${REGION}/functions/${TASK_QUEUE_FUNCTION}`;
+      const queueResource = `projects/${PROJECT_ID}/locations/${REGION}/functions/${taskQueueFunctionFor(job.type)}`;
       const queue = getFunctions().taskQueue(queueResource);
       await queue.enqueue(
         { jobId, userId, correlationId, scanId },

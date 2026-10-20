@@ -5918,6 +5918,17 @@ réenfilait le job. `dispatchDeadlineSeconds: 540`.
 | `MAX_CONCURRENT_DISPATCHES` | 5 |
 | `MAX_DISPATCHES_PER_SECOND` | 2 |
 
+**Seconde file pour les couvertures.** Cloud Tasks n'a pas de priorité : une couverture
+(`bookCoverScan`, « Scanner la couverture ») mise dans `recipe-processing-queue` attendait
+derrière les tranches d'un import de livre. `jobDispatcher` choisit la fonction de file selon le
+type du job (`taskQueueFunctionFor`, `config.ts`) : `coverProcessor` pour `bookCoverScan`,
+`recipeProcessor` pour tout autre type. Les deux fonctions appellent le même traitement
+(`processJob`, `recipeProcessor.ts`) avec les mêmes secrets, le même délai de 540 s et les mêmes
+reprises. `coverProcessor` a sa propre limite (`COVER_MAX_CONCURRENT_DISPATCHES` 3,
+`COVER_MAX_DISPATCHES_PER_SECOND` 1) et garde les 2 Gio : le traitement commun télécharge aussi
+les pages supplémentaires du job avant la branche couverture. Une tâche `bookCoverScan` déjà dans l'ancienne file au déploiement reste traitée par
+`recipeProcessor`, qui accepte tous les types.
+
 Le rang de la tentative arrive dans `req.retryCount` et est écrit sur le job
 (`attempt_count`).
 
@@ -7387,7 +7398,7 @@ functions/src/
 ├── invitations/   # invitations par e-mail : règles pures (clé d'adresse, statut, e-mail), envoi SMTP
 ├── moderation/    # décision pure, moteur Cloud Vision, promotion
 ├── nutrition/     # per100g, conversions, référentiels, huile de friture
-├── pipeline/      # jobDispatcher, recipeProcessor, deadLetterHandler
+├── pipeline/      # jobDispatcher, recipeProcessor + coverProcessor, deadLetterHandler
 ├── sandbox/       # une seule fonction déployée, sandboxFn, qui aiguille
 ├── scheduled/     # réconciliation mensuelle, alerte de budget, rattrapage nutrition
 ├── security/      # App Check

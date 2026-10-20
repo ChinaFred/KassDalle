@@ -14,7 +14,7 @@
  *   [jobDispatcher] ── enqueue ──▶ Cloud Tasks (recipe-processing-queue)
  *                                          │ max 5 // 2/s, 3 retries
  *                                          ▼
- *                                  [recipeProcessor]
+ *                                  [recipeProcessor]   (les couvertures : [coverProcessor], file à part)
  *                                          │   pipeline IMPORT → DECODE → GEMINI → SAVE
  *                                          ▼
  *                                  Firestore (recipes/, processing_jobs/)
@@ -34,7 +34,7 @@ initializeApp();
 // ── Async pipeline (Cloud Tasks) ─────────────────────────────────────────────
 
 export { jobDispatcher } from "./pipeline/jobDispatcher";
-export { recipeProcessor } from "./pipeline/recipeProcessor";
+export { recipeProcessor, coverProcessor } from "./pipeline/recipeProcessor";
 export { relaunchDeadLetterFn, deleteDeadLetterFn } from "./pipeline/deadLetterHandler";
 
 // ── Sync callable functions (Gemini wrappers) ────────────────────────────────
