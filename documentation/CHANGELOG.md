@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
-### v0.24.32 — fonctionnel
+### v0.24.33 — fonctionnel
 
 Nouveau backfill ponctuel « Ranger les illustrations » dans Admin › Backfills
 (`illustration_folders_move`, `backfillIllustrationFoldersMoveFn`), sans appel d'IA. Le contrôle
@@ -61,7 +61,7 @@ jusqu'au bout (le passage de production antérieur n'a pas enregistré de liste)
 relancer *Dossiers des illustrations*, qui doit rendre 0 à revoir et se marquer terminé. « Dossiers des illustrations » reste dans le code pour ce
 contrôle ; il sera retiré ensuite.
 
-### v0.24.32 — technique
+### v0.24.33 — technique
 
 Six backfills ponctuels, marqués terminés en production, quittent le code : « Livres système des
 comptes » (`system_books`, terminé le 13/10 en v0.23.51), « Portée des groupes et des
@@ -86,6 +86,68 @@ commun relie désormais `illustration_folders` et `illustration_folders_move`.
 Le skill `backfill` dit de demander le texte « Copier la liste » avant tout retrait, et tient
 le tableau « Backfills retirés » (clé, titre, callable, fin en production, version de retrait).
 Nouveau motif de modération `manual_folder_move` (`decision.ts`, `moderation_labels.dart`).
+
+### v0.24.32 — technique
+
+Storage et hygiène serveur, lot 9 de l'audit #151 (tickets #162 et #163). Un lecteur ne
+dépose plus dans `quarantine/{uid}/` que des photos JPEG ou PNG, hors de `livres/` : la
+couverture « Recette libre » et l'illustration d'une de ses recettes. Il déposait aussi des
+PDF, des documents Word et du texte jusqu'à 50 Mo, et des livres jusqu'à 300 Mo sous
+`livres/`, alors que l'import lui est refusé (`requireEditor`, `isEditor()` sur les jobs).
+`quarantine/{uid}/livres/` est réservé aux éditeurs et aux administrateurs, qui gardent la
+liste complète des types.
+
+Le rôle d'un compte se lit à l'identique : `pending`, `reader`, `editor` ou `admin`. Les
+règles refusent toute autre valeur à l'écriture d'un administrateur, et le serveur
+(`readRole`, `security/roles.ts`) la lit comme « aucun rôle », dans les claims
+(`syncUserClaims`), dans les gardes des callables et dans les contrôles des invitations, des
+groupes, des profils publics et des livres système. Les lectures retiraient les espaces : un
+`"admin "` y devenait administrateur alors que les règles le refusaient. `requireAuth` ne se
+replie sur le rôle du jeton que si le document n'a pas de champ `role`, comme `roleOf()` dans
+les règles : un rôle présent mais inconnu est refusé, même avec un jeton encore valide.
+
+`queryLogsFn` n'accepte plus que `DEBUG`, `INFO`, `WARNING` ou `ERROR` comme sévérité
+(`severityClause`) : la valeur reçue était recopiée dans le filtre Cloud Logging. `sandboxFn`
+refuse une image de plus de 20 Mo décodés (`readSandboxImage`, plafond
+`PAGE_IMAGE_MAX_BYTES`). Un refus d'accès d'`ensureAdminWithAudit` (écrans de facturation et
+de qualité des données) s'écrit en `WARNING` avec l'uid et l'opération ; une autre erreur de
+la garde reste en `ERROR`. `TRANSCRIPTION_PROMPT`, `TEXT_TRANSCRIPTION_PREAMBLE` et
+`TAGGING_PROMPT` disent en tête que le texte reçu est une donnée : une consigne qu'il contient
+se recopie si elle fait partie de la recette, et ne s'exécute jamais. Aucun poste d'IA
+nouveau. Tests : `rules-tests` (quarantaine par rôle, rôles écrits par un administrateur),
+`userClaims.test.ts`, `logsFilter.test.ts`, `promptInjectionGuard.test.ts`,
+`sandboxGuard.test.ts`, `authGuards.test.ts`.
+
+### v0.24.31 — technique
+
+Règles Firestore de `app_config`, lot 9 de l'audit #151 (ticket #162, point 4). Un
+administrateur pouvait écrire directement tout document de `app_config` hors des quatre de
+`isServerOnlyConfig`. Les écrans passent pourtant par une callable : une écriture directe
+contournait sa validation (`readPolicyOrThrow`, garde-fou `enforce` d'App Check), sa trace
+d'audit et App Check. `isServerOnlyConfig` couvre désormais `ai_pricing`,
+`ai_routing_policy`, `ai_budget_policy`, `app_check_policy`, `nutrition_source_policy`,
+`image_moderation`, `currency_rate`, `anthropic_costs`, `planning_policy`, `ai_budget_alert`,
+et les points de reprise des
+backfills (`*_checkpoint`, `backfill_cursor_*`). Aucun code client n'écrit ces documents ; il
+les lit toujours. `tickets` et `usage` restent écrits par l'administrateur. Les tests des
+règles vérifient le refus de `set`, `update` et `delete` sur chacun, la lecture
+administrateur, et l'écriture de `app_config/tickets` ; le test qui visait
+`app_config/nutrition_policy`, identifiant inexistant, vise `nutrition_source_policy`.
+
+Pipeline d'import, lot 9 de l'audit #151 (ticket #163). Le pipeline relit le compte du
+propriétaire d'un job à chaque tentative (`assertJobOwnerEditor`), avec la même décision que
+`requireEditor`. Un compte révoqué, lecteur, en attente ou supprimé voit son job passer en
+`error_code: owner_not_editor`, puis en dead letter, sans appel de modèle ; la file l'affiche sans
+proposer « Relancer », et cette dead letter ne se relance pas. Les règles laissent désormais le
+propriétaire actif (approuvé, non révoqué), quel que soit son rôle, supprimer son job en
+`error` : un tel job restait sinon dans la file. Un échec générique (`pipeline_error`) écrit un
+message fixe sur le job ; le texte de l'exception reste dans la dead letter et le journal. Les nouveaux essais de Cloud Tasks, les tranches d'un livre et les
+relances de dead letter n'avaient aucun contrôle de rôle. `relaunchDeadLetterFn` valide son
+identifiant et fait tenir la relance dans une transaction : une seule relance par dead letter,
+la seconde reçoit « Ce job a déjà été relancé. ». Un `scanId` venu du client doit avoir la forme
+`scan_<ms>_<suffixe>` (`isValidScanId`) ; il est écarté par `scanAndPromoteUploadFn` et remplacé
+par `jobDispatcher` s'il est mal formé ou si son compteur `scan_spend` appartient à un autre
+compte.
 
 ### v0.24.30 — technique
 

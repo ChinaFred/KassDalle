@@ -25,7 +25,7 @@ import {
   PROJECT_ID,
   taskQueueFunctionFor,
 } from "../config";
-import { raiseImportCeiling, scanOwnerConflict } from "../ai/importBudget";
+import { isValidScanId, raiseImportCeiling, scanOwnerConflict } from "../ai/importBudget";
 import { logInfo, logError, newCorrelationId, newScanId, qualify } from "../logging";
 
 export const jobDispatcher = onDocumentWritten(
@@ -94,8 +94,9 @@ export const jobDispatcher = onDocumentWritten(
     if (!before) {
       const clientScanId = scanId;
       try {
+        // Un identifiant mal formé ne se lit pas : il est remplacé plus bas.
         const existingOwner =
-          job.type === "bookDocumentScan"
+          job.type === "bookDocumentScan" || !isValidScanId(clientScanId)
             ? null
             : (await getFirestore().collection(COLL_SCAN_SPEND).doc(clientScanId).get()).get(
                 "user_id",
@@ -213,7 +214,9 @@ export const jobDispatcher = onDocumentWritten(
  * Un import de livre (`bookDocumentScan`) reçoit toujours un identifiant neuf :
  * c'est lui qui pose un plafond. Un autre job garde l'identifiant du client —
  * il relie le contrôle du fichier, passé avant le job, à son import — sauf si
- * le compteur existant appartient à un autre compte.
+ * le compteur existant appartient à un autre compte, ou si l'identifiant n'a
+ * pas la forme `scan_<horodatage>_<suffixe>` (`isValidScanId`) : il nomme un
+ * document `scan_spend`, et le client l'écrit lui-même.
  */
 export function dispatchScanId(args: {
   clientScanId: string;
@@ -223,6 +226,7 @@ export function dispatchScanId(args: {
   generate: () => string;
 }): string {
   if (args.jobType === "bookDocumentScan") return args.generate();
+  if (!isValidScanId(args.clientScanId)) return args.generate();
   if (scanOwnerConflict(args.existingOwner, args.userId)) return args.generate();
   return args.clientScanId;
 }

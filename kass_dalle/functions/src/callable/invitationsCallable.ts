@@ -48,6 +48,7 @@ import {
   REGION,
 } from "../config";
 import { requireAdmin, type AuthContext } from "./_auth";
+import { readRole } from "../security/roles";
 import { spendDay } from "../ai/budget";
 import { logError, logInfo } from "../logging";
 import { FOUNDER_EMAIL, isFounderEmail } from "../triggers/founderRole";
@@ -203,7 +204,7 @@ async function existingAccountFor(
     return {
       uid: doc.id,
       account: {
-        role: typeof role === "string" && role.trim() ? role.trim() : null,
+        role: readRole(role),
         isRevoked: doc.get("is_revoked") === true,
         isFounder: isFounderEmail(typeof email === "string" ? email : null),
       },

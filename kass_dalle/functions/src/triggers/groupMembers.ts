@@ -7,6 +7,8 @@
  * l'autre.
  */
 
+import { readRole } from "../security/roles";
+
 /** Données brutes d'un groupe, telles que lues dans Firestore. */
 export type GroupData = Record<string, unknown> | undefined | null;
 
@@ -63,8 +65,8 @@ const PLANNER_ROLES = ["editor", "admin"];
  */
 export function isPlannerAccount(user: Record<string, unknown> | undefined | null): boolean {
   if (!user) return false;
-  const role = typeof user.role === "string" ? user.role.trim() : "";
-  return PLANNER_ROLES.includes(role) && user.is_revoked !== true;
+  const role = readRole(user.role);
+  return role !== null && PLANNER_ROLES.includes(role) && user.is_revoked !== true;
 }
 
 /**

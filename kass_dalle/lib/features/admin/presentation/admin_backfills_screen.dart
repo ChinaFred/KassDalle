@@ -882,7 +882,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // en base : l'écran ignore une clé absente du registre.
   //
   // Six ponctuels, menés au bout et marqués terminés en production, sont
-  // retirés en v0.24.32 (20 octobre 2026) :
+  // retirés en v0.24.33 (20 octobre 2026) :
   //
   // « Livres système des comptes » (`backfillSystemBooksFn`, terminé le 13/10
   // en v0.23.51) a créé les livres système manquants des comptes approuvés.

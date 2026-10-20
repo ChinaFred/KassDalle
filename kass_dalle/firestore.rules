@@ -273,12 +273,21 @@ service cloud.firestore {
       /// `display_name: null` faisaient tomber Admin › Comptes pour tous les
       /// administrateurs. Un retrait de champ échoue aussi : la valeur
       /// absente n'a pas le type demandé.
+      ///
+      /// Le rôle n'est pas seulement une chaîne : l'une des quatre valeurs
+      /// connues, écrite à l'identique (audit #151, ticket #163). Un
+      /// `superadmin` ou un `admin ` n'ouvrait rien ici, mais le serveur lisait
+      /// le second en retirant les espaces (`readRole`, `security/roles.ts`, lit
+      /// désormais à l'identique). Même liste que `KNOWN_ROLES` et que
+      /// l'énumération `UserRole` côté Dart.
       function updatedTypesOk() {
         return (!changes('last_seen_at')
                   || request.resource.data.get('last_seen_at', null) is timestamp)
           && (!changes('display_name')
                   || request.resource.data.get('display_name', null) is string)
-          && (!changes('role') || request.resource.data.get('role', null) is string)
+          && (!changes('role')
+                  || request.resource.data.get('role', null)
+                       in ['pending', 'reader', 'editor', 'admin'])
           && (!changes('is_revoked') || request.resource.data.get('is_revoked', null) is bool);
       }
 
@@ -966,7 +975,7 @@ service cloud.firestore {
     // `ai_pricing` se lit par tout utilisateur connecté : un prix public n'a
     // rien de confidentiel, et l'écran doit pouvoir annoncer ce que coûtera une
     // génération à celui qui la déclenche — pas seulement à un administrateur.
-    // Son écriture reste réservée aux administrateurs, via la Cloud Function.
+    // Son écriture passe par `setAiPricingFn` seule (`isServerOnlyConfig`).
     // Le client écrit toujours exactement trois champs sur `usage` :
     // `storage_bytes`, `updated_at`, et un compteur mensuel nommé
     // dynamiquement (`scans_2026_10`). Un `hasOnly()` ne peut lister un nom
@@ -995,9 +1004,33 @@ service cloud.firestore {
     // forme (`setBackfillScheduleFn`, `setBackfillDoneFn`, `runBackfillPass`).
     // Un administrateur qui les écrirait directement pourrait programmer un
     // passage imputé au plafond d'un autre compte, ou lever un verrou.
+    //
+    // Les politiques et caches lus par les Cloud Functions comme autorité
+    // suivent la même règle (audit #151, ticket #162). Chaque écran passe
+    // par sa callable : `setAiPricingFn` (`ai_pricing`),
+    // `setAiRoutingPolicyFn` (`ai_routing_policy`), `setAiBudgetFn`
+    // (`ai_budget_policy`), `setAppCheckPolicyFn` (`app_check_policy`),
+    // `setNutritionSourcePolicyFn` (`nutrition_source_policy`). Une écriture
+    // directe contournait la validation (`readPolicyOrThrow`, le garde-fou
+    // `enforce` d'App Check), la trace d'audit et App Check.
+    // `image_moderation`, `currency_rate` et `anthropic_costs` ne sont
+    // écrits que par le serveur. `planning_policy` (réglages de la
+    // présélection, lus par `gemini/planningStore.ts`) et `ai_budget_alert`
+    // (dernière alerte envoyée, `scheduled/aiBudgetAlertSchedule.ts`) non plus :
+    // aucun écran ne les écrit. Les points de reprise des backfills
+    // (`*_checkpoint`, `backfill_cursor_*`) aussi : un curseur réécrit à la
+    // main fait sauter ou rejouer des documents.
+    // Restent écrits par l'administrateur : `tickets` (plafonds, aucune
+    // callable) et `usage` (remise à zéro d'un compteur).
     function isServerOnlyConfig(docId) {
       return docId == 'backfill_schedules' || docId.matches('backfill_run_.*')
-        || docId == 'tickets_status' || docId == 'apk_notification';
+        || docId == 'tickets_status' || docId == 'apk_notification'
+        || docId == 'ai_pricing' || docId == 'ai_routing_policy'
+        || docId == 'ai_budget_policy' || docId == 'app_check_policy'
+        || docId == 'nutrition_source_policy' || docId == 'image_moderation'
+        || docId == 'currency_rate' || docId == 'anthropic_costs'
+        || docId == 'planning_policy' || docId == 'ai_budget_alert'
+        || docId.matches('.*_checkpoint') || docId.matches('backfill_cursor_.*');
     }
 
     match /app_config/{docId} {
@@ -1171,8 +1204,15 @@ service cloud.firestore {
       // n'y tourne, et la ligne n'a pas d'autre sortie que la reprise. Un
       // statut 'duplicate' n'est posé que par le pipeline : la relance
       // ci-dessus n'admet que 'queued' ou 'error'.
+      // Un job en 'error' se supprime par son propriétaire actif (approuvé, non
+      // révoqué), quel que soit son rôle : un job arrêté parce que son
+      // propriétaire n'est plus éditeur (`owner_not_editor`) n'a pas d'autre
+      // sortie, et restait sinon dans la file pour toujours. Rien ne tourne sur
+      // un job en erreur ; le fichier `scans/`, `scan_spend` et la dead letter
+      // restent, la relance d'une dead letter dont le job a disparu est refusée.
       allow delete: if isAdmin()
-                    || (isJobOwner() && isEditor() && resource.data.get('status', '') == 'duplicate');
+                    || (isJobOwner() && isEditor() && resource.data.get('status', '') == 'duplicate')
+                    || (isJobOwner() && isApproved() && resource.data.get('status', '') == 'error');
     }
 
     // Suivi de l'usage des tokens IA

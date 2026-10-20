@@ -5,7 +5,7 @@
  * lui, écrit des recettes sans elle (saisie, copie, correction du titre à la
  * relecture) : `onRecipeWritten` la recalcule donc à chaque écriture dont le
  * titre ne correspond plus à la clé. Les recettes antérieures l'ont reçue du
- * backfill « Clé de titre des recettes », retiré en v0.24.32.
+ * backfill « Clé de titre des recettes », retiré en v0.24.33.
  */
 
 import { isDeepStrictEqual } from "node:util";

@@ -58,7 +58,7 @@
  *     `syncPlanningReachOnRole` (`plannerRole.ts`), déclencheur dédié sur
  *     `users/{uid}`.
  * Le backfill « Portée des groupes et des plannings »
- * (`group_planning_reach`, retiré en v0.24.32) a écrit `group_ids` et
+ * (`group_planning_reach`, retiré en v0.24.33) a écrit `group_ids` et
  * `masked_group_ids` sur les comptes antérieurs.
  *
  * Aucun SDK lourd : `firebase-admin/firestore` est déjà chargé par toutes les

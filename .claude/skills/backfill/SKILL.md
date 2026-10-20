@@ -163,7 +163,7 @@ de journal reste.
 Avant de supprimer une fonction exportée par le callable, la chercher par son nom côté
 Functions et côté Dart, tests exclus : une logique partagée avec un déclencheur ou l'import
 reste (exemple : `titleKeyUpdate`, que `onRecipeWritten` appelle encore), une fonction que
-seul le callable appelait part avec lui (exemple : `refreshTicketAnalyses`, v0.24.32).
+seul le callable appelait part avec lui (exemple : `refreshTicketAnalyses`, v0.24.33).
 Compléter le commentaire « Retirés en … » de `registry.ts` et de `backfill_registry.dart`,
 et ajouter les clés au tableau ci-dessous, dans le même commit.
 
@@ -184,12 +184,12 @@ version d'ajout.
 | `recipe_protein` | Protéine et féculent des plats | `backfillRecipeProteinFn` | — | v0.23.52 |
 | `estimated_times` | Durées estimées | `backfillEstimatedTimesFn` | — | v0.23.52 |
 | `planning_defaults` | Contraintes de variété par défaut | `backfillPlanningDefaultsFn` | — | v0.23.52 |
-| `system_books` | Livres système des comptes | `backfillSystemBooksFn` | le 13/10/2026, v0.23.51 | v0.24.32 |
-| `group_planning_reach` | Portée des groupes et des plannings | `backfillGroupPlanningReachFn` | le 13/10/2026, v0.23.58 | v0.24.32 |
-| `ticket_analyses` | Analyses des tickets | `backfillTicketAnalysesFn` | le 14/10/2026, v0.23.63 | v0.24.32 |
-| `ticket_delivered_pr` | PR des tickets livrés | `backfillTicketDeliveredPrFn` | le 17/10/2026, v0.23.99 | v0.24.32 |
-| `recipe_title_keys` | Clé de titre des recettes | `backfillTitleKeysFn` | le 17/10/2026, v0.23.97 | v0.24.32 |
-| `invitation_group_owner` | Propriétaire du groupe des invitations | `backfillInvitationGroupOwnerFn` | le 19/10/2026, v0.24.14 | v0.24.32 |
+| `system_books` | Livres système des comptes | `backfillSystemBooksFn` | le 13/10/2026, v0.23.51 | v0.24.33 |
+| `group_planning_reach` | Portée des groupes et des plannings | `backfillGroupPlanningReachFn` | le 13/10/2026, v0.23.58 | v0.24.33 |
+| `ticket_analyses` | Analyses des tickets | `backfillTicketAnalysesFn` | le 14/10/2026, v0.23.63 | v0.24.33 |
+| `ticket_delivered_pr` | PR des tickets livrés | `backfillTicketDeliveredPrFn` | le 17/10/2026, v0.23.99 | v0.24.33 |
+| `recipe_title_keys` | Clé de titre des recettes | `backfillTitleKeysFn` | le 17/10/2026, v0.23.97 | v0.24.33 |
+| `invitation_group_owner` | Propriétaire du groupe des invitations | `backfillInvitationGroupOwnerFn` | le 19/10/2026, v0.24.14 | v0.24.33 |
 
 Un tiret signale une information que le dépôt ne garde pas. Les autres opérations retirées
 avant le registre (v0.23.45), sans version de retrait connue, sont décrites dans le

@@ -43,6 +43,7 @@ import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
 
 import { COLL_GROUPS, COLL_INVITATIONS, COLL_USERS, REGION } from "../config";
 import { accessDenial } from "../callable/_auth";
+import { readRole } from "../security/roles";
 import { logError, logInfo } from "../logging";
 import { isFounderEmail } from "./founderRole";
 import {
@@ -78,9 +79,12 @@ export function inviterUidOf(invitation: Record<string, unknown>): string | null
  */
 export function inviterStillAdmin(userData: Record<string, unknown> | undefined | null): boolean {
   if (!userData) return false;
-  const role =
-    typeof userData.role === "string" && userData.role.trim() ? userData.role.trim() : null;
-  return accessDenial({ role, revoked: userData.is_revoked === true }, "admin") === null;
+  return (
+    accessDenial(
+      { role: readRole(userData.role), revoked: userData.is_revoked === true },
+      "admin",
+    ) === null
+  );
 }
 
 export const applyEmailInvitation = onDocumentCreated(

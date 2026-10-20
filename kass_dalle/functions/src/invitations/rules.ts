@@ -364,7 +364,7 @@ export const GROUP_CHANGED_MESSAGE =
  * s'il vaut déjà le propriétaire relu (`keep`), refuser sinon (`refuse`,
  * raison `group_changed`) — le groupe a pu être recréé sous le même
  * identifiant par un autre compte. Même condition qu'appliquait le backfill
- * `invitation_group_owner` (retiré en v0.24.32) à une invitation sans le champ.
+ * `invitation_group_owner` (retiré en v0.24.33) à une invitation sans le champ.
  */
 export function resendGroupOwnerDecision(
   invitation: Record<string, unknown>,

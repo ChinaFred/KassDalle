@@ -60,6 +60,18 @@ service firebase.storage {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
+    /// Un éditeur ou un administrateur nommé, sur la foi du claim.
+    ///
+    /// Seuls ces deux rôles importent : `analyzeBookImport`, l'extraction de
+    /// texte et la création d'un job de traitement exigent `requireEditor`
+    /// (ou `isEditor()` côté Firestore). Un lecteur qui déposait un PDF ou un
+    /// livre de 300 Mo occupait le bucket sans qu'aucun traitement ne puisse
+    /// ensuite s'en servir (audit #151, ticket #162).
+    function isEditorToken() {
+      return isApprovedToken()
+        && request.auth.token.role in ['editor', 'admin'];
+    }
+
     /// Le type MIME sans ses paramètres : le texte collé s'envoie en
     /// `text/plain; charset=utf-8`, et une comparaison exacte le refuserait.
     function baseContentType() {
@@ -77,6 +89,9 @@ service firebase.storage {
     /// cinquante mégaoctets : le bucket servait d'hébergement gratuit à qui
     /// possédait un compte, et rien dans le suivi de stockage n'aurait
     /// distingué ces octets-là des recettes de la famille.
+    ///
+    /// Réservé aux éditeurs et aux administrateurs : voir [isReaderImageUnder]
+    /// pour le lecteur.
     function isImportableUnder(maxBytes) {
       return request.resource.size < maxBytes
         && baseContentType() in [
@@ -86,6 +101,22 @@ service firebase.storage {
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
              'text/plain'
            ];
+    }
+
+    /// Ce qu'un lecteur dépose : une photo, JPEG ou PNG, hors de `livres/`.
+    ///
+    /// Il ne dépose que des images à modérer — couverture « Recette libre »,
+    /// illustration d'une de ses recettes — et `ImageModerationService`
+    /// n'envoie que ces deux types canoniques. Le reste de la liste
+    /// d'[isImportableUnder] sert l'import, qui lui est refusé.
+    ///
+    /// `livres/` est exclu par le nom complet de l'objet : les deux blocs
+    /// `match` de la quarantaine se recouvrent, et sans ce test une photo d'un
+    /// lecteur passerait sous `livres/` par le bloc général.
+    function isReaderImageUnder(maxBytes) {
+      return request.resource.size < maxBytes
+        && baseContentType() in ['image/jpeg', 'image/png']
+        && !request.resource.name.matches('quarantine/[^/]+/livres/.*');
     }
 
     // Couvertures de livres — écrites par le serveur pour le créateur du livre
@@ -114,10 +145,14 @@ service firebase.storage {
     // chargé de trancher ne pouvait pas la voir — sauf s'il l'avait envoyée
     // lui-même — et devait donc décider à l'aveugle, sur des scores. Le seul
     // écran qui compte devenait inutilisable.
+    //
+    // Un lecteur n'y dépose que des photos (JPEG, PNG) ; un éditeur ou un
+    // administrateur, tous les types d'un import.
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
       allow write: if isOwner(uid) && isApprovedToken()
-        && isImportableUnder(50 * 1024 * 1024);
+        && ((isEditorToken() && isImportableUnder(50 * 1024 * 1024))
+            || isReaderImageUnder(50 * 1024 * 1024));
     }
 
     /// Un livre entier — PDF, EPUB ou Word — à découper en recettes.
@@ -130,9 +165,12 @@ service firebase.storage {
     ///
     /// Même liste de types que `scanUploadHead` (`functions/src/utils/uploadSecurity.ts`),
     /// même plafond que `MAX_BOOK_UPLOAD_SIZE_BYTES` : les trois bougent ensemble.
+    ///
+    /// Éditeurs et administrateurs seulement : `analyzeBookImport` exige
+    /// `requireEditor`, un livre déposé par un lecteur ne servait à rien.
     match /quarantine/{uid}/livres/{fileName} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid) && isApprovedToken()
+      allow write: if isOwner(uid) && isEditorToken()
         && request.resource.size < 300 * 1024 * 1024
         && baseContentType() in [
              'application/pdf',

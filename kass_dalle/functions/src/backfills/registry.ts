@@ -17,7 +17,7 @@
  *
  * Retirés en v0.23.52, une fois terminés en production : `recipe_protein`,
  * `estimated_times` et `planning_defaults`.
- * Retirés en v0.24.32, une fois terminés en production : `system_books`,
+ * Retirés en v0.24.33, une fois terminés en production : `system_books`,
  * `group_planning_reach`, `ticket_analyses`, `ticket_delivered_pr`,
  * `recipe_title_keys` et `invitation_group_owner`.
  * Leurs documents `app_config/backfill_run_<clé>` restent en base ; plus rien

@@ -183,7 +183,7 @@ export { backfillMoveMealsToGroupFn } from "./callable/moveMealsToGroupBackfillC
 // `backfillSystemBooksFn` (v0.23.51), `backfillGroupPlanningReachFn` (v0.23.58),
 // `backfillTicketAnalysesFn` (v0.23.63), `backfillTitleKeysFn` (v0.23.97),
 // `backfillTicketDeliveredPrFn` (v0.23.99) et `backfillInvitationGroupOwnerFn` (v0.24.14) sont
-// retirés en v0.24.32 : marqués terminés en production, leur travail est fait. `syncUserClaims`
+// retirés en v0.24.33 : marqués terminés en production, leur travail est fait. `syncUserClaims`
 // crée les livres système d'un compte approuvé, `syncGroupReach` tient la portée des groupes et
 // des plannings, la tâche horaire et le webhook des tickets relisent analyses et PR livrées,
 // `onRecipeWritten` pose `titre_key`, et `manageInvitationFn` écrit `group_owner_id`.

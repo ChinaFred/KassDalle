@@ -13,8 +13,16 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { HttpsError } from "firebase-functions/v2/https";
 
-import { accessDenial, accountFromToken, mergeAccount, type AccountState } from "../callable/_auth";
+import {
+  accessDenial,
+  accountDocumentFrom,
+  accountFromToken,
+  mergeAccount,
+  type AccountState,
+} from "../callable/_auth";
+import { isAccessRefusal } from "../callable/billingCallable";
 import { claimsFrom, gainsAccess, shouldRevokeSessions } from "../triggers/userClaimsSync";
 import { founderRepair, isFounderAccount, isFounderEmail } from "../triggers/founderRole";
 import {
@@ -107,11 +115,18 @@ describe("accountFromToken", () => {
     );
   });
 
-  test("un rôle porté par le jeton est lu tel quel, espaces retirés", () => {
+  test("un rôle porté par le jeton est lu à l'identique : espaces ou casse le rendent inconnu", () => {
     assert.equal(
-      accountFromToken({ auth: { uid: "u1", token: { role: " editor " } } } as never).role,
+      accountFromToken({ auth: { uid: "u1", token: { role: "editor" } } } as never).role,
       "editor",
     );
+    for (const role of [" editor ", "admin ", "Admin", "superadmin"]) {
+      assert.equal(
+        accountFromToken({ auth: { uid: "u1", token: { role } } } as never).role,
+        null,
+        role,
+      );
+    }
   });
 });
 
@@ -239,23 +254,58 @@ describe("compte fondateur", () => {
 });
 
 describe("mergeAccount — le document relu à chaque appel fait foi", () => {
+  // Le document tel que le lit `requireAuth` : champ `role` absent si `role`
+  // vaut undefined.
+  function doc(role: unknown, revoked = false) {
+    return accountDocumentFrom(
+      role === undefined ? { is_revoked: revoked } : { role, is_revoked: revoked },
+    );
+  }
+
   test("un jeton d'avant la révocation ne passe plus", () => {
-    const merged = mergeAccount(account("reader"), account("reader", true));
+    const merged = mergeAccount(account("reader"), doc("reader", true));
     assert.equal(merged.revoked, true);
     assert.notEqual(accessDenial(merged, "approved"), null);
   });
 
   test("le jeton confirme une révocation, le document ne l'infirme pas", () => {
-    assert.equal(mergeAccount(account("reader", true), account("reader")).revoked, true);
+    assert.equal(mergeAccount(account("reader", true), doc("reader")).revoked, true);
   });
 
   test("le rôle du document prime, celui du jeton sert de repli", () => {
-    assert.equal(mergeAccount(account("editor"), account("reader")).role, "reader");
-    assert.equal(mergeAccount(account("reader"), account(null)).role, "reader");
+    assert.equal(mergeAccount(account("editor"), doc("reader")).role, "reader");
+    assert.equal(mergeAccount(account("reader"), doc(undefined)).role, "reader");
+    assert.equal(mergeAccount(account("reader"), doc(null)).role, "reader");
+  });
+
+  test("document sans rôle, jeton editor : le repli est accepté", () => {
+    const merged = mergeAccount(account("editor"), doc(undefined));
+    assert.equal(merged.role, "editor");
+    assert.equal(accessDenial(merged, "editor"), null);
+  });
+
+  // Ticket #163 : un rôle présent mais mal écrit ne se rabat pas sur le jeton,
+  // comme `roleOf()` dans firestore.rules.
+  test("document superadmin, jeton admin : role null, refusé", () => {
+    const merged = mergeAccount(account("admin"), doc("superadmin"));
+    assert.equal(merged.role, null);
+    assert.notEqual(accessDenial(merged, "admin"), null);
+  });
+
+  test('document " editor ", jeton editor : refusé', () => {
+    const merged = mergeAccount(account("editor"), doc(" editor "));
+    assert.equal(merged.role, null);
+    assert.notEqual(accessDenial(merged, "editor"), null);
+  });
+
+  test('document "admin " ou de type inattendu : pas de repli sur le jeton', () => {
+    for (const role of ["admin ", "Admin", "", 3, ["admin"]]) {
+      assert.equal(mergeAccount(account("admin"), doc(role)).role, null, JSON.stringify(role));
+    }
   });
 
   test("un compte remis en attente est refusé malgré son jeton", () => {
-    const merged = mergeAccount(account("editor"), account("pending"));
+    const merged = mergeAccount(account("editor"), doc("pending"));
     assert.notEqual(accessDenial(merged, "approved"), null);
   });
 
@@ -320,5 +370,18 @@ describe("syncUserClaims — livres système créés quand le compte reçoit l'a
     assert.equal(gainsAccess(reader, revoked, true), false);
     assert.equal(gainsAccess(pending, revoked, true), false);
     assert.equal(gainsAccess(pending, reader, false), false);
+  });
+});
+
+describe("ensureAdminWithAudit — un refus n'est pas une panne (ticket #163)", () => {
+  test("permission-denied et unauthenticated sont des refus, journalisés en WARNING", () => {
+    assert.equal(isAccessRefusal(new HttpsError("permission-denied", "x")), true);
+    assert.equal(isAccessRefusal(new HttpsError("unauthenticated", "x")), true);
+  });
+
+  test("toute autre erreur de la garde reste une erreur", () => {
+    assert.equal(isAccessRefusal(new HttpsError("internal", "x")), false);
+    assert.equal(isAccessRefusal(new Error("Firestore indisponible")), false);
+    assert.equal(isAccessRefusal("permission-denied"), false);
   });
 });

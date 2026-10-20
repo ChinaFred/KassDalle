@@ -198,6 +198,26 @@ void main() {
       expect(urlImportFailureFor(job())!.retryable, isTrue);
     });
 
+    test(
+      'propriétaire qui n’est plus éditeur : message seul, aucune action',
+      () {
+        final refused = job(errorCode: kJobOwnerNotEditorCode);
+        expect(refused.ownerNotEditor, isTrue);
+        expect(refused.errorCode, isNull);
+        final failure = urlImportFailureFor(refused)!;
+        expect(failure.retryable, isFalse);
+        expect(failure.offerOpenPage, isFalse);
+        expect(failure.offerPasteText, isFalse);
+        expect(
+          failure.message,
+          'Import arrêté : votre compte n\'a plus le droit d\'importer des '
+          'recettes. Demandez à un administrateur de vous le rendre, puis '
+          'importez de nouveau.',
+        );
+        expect(job(errorCode: 'timeout').ownerNotEditor, isFalse);
+      },
+    );
+
     test('fil d’étapes et libellé de lecture', () {
       expect(
         trailFor(ProcessingJobType.recipeUrlImport).map((s) => s.code).toList(),

@@ -446,7 +446,7 @@ par le client. Le serveur crée aussi ceux qui manquent à tout compte approuvé
 (`ensureSystemBooksFor`, `books/systemBooks.ts`) : `syncUserClaims` quand le compte reçoit
 l'accès (`gainsAccess` : approbation d'un compte en attente, invitation par e-mail acceptée, levée d'une révocation ; un échec est
 journalisé et n'empêche pas l'accès). Les comptes approuvés avant la v0.23.50 les ont reçus du
-backfill ponctuel « Livres système des comptes » (`system_books`), retiré en v0.24.32. Ces trois livres
+backfill ponctuel « Livres système des comptes » (`system_books`), retiré en v0.24.33. Ces trois livres
 ont un identifiant fixe, `kassdalle_{uid}`, `libres_{uid}` et `secretes_{uid}` (`systemBookId`
 côté serveur, `_createSystemBook` côté client) : à l'approbation d'un éditeur, le déclencheur et
 l'application peuvent tourner en même temps, et un livre système en double ne se supprime pas.
@@ -533,7 +533,7 @@ Document principal d'une recette.
 | `scan_id` | `String?` | Le scan d'où vient la recette. Écrit par `recipeProcessor` au moment de l'enregistrement, et lu par `onRecipeWritten` : c'est le seul fil entre l'import et les calculs qu'il déclenche. Le déclencheur part sur une écriture Firestore, sans lien avec la tâche qui l'a produite — sans ce champ, la nutrition et les courses d'un import formaient un groupe de journaux à part, et leur coût sortait du total du scan. Absent sur une recette écrite à la main |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
 | `illustration_report` | `Map?` | Ce que la recherche d'illustrations a donné : `{detectees, retenues, publiees, pagesEnEchec}` — la quatrième clé est en camelCase là où les trois autres sont en snake_case ; l'écrivain et le lecteur emploient la même graphie, en changer une seule perdrait le compte. `detectees` compte ce que la page **porte**, jamais ce qu'on en a tiré — c'est ce chiffre qui permet au bandeau de relecture d'annoncer « trois photos repérées, à extraire à la main » alors même que rien n'a été extrait. Sans lui, « aucune photo » posait trois questions sans réponse : la page n'en portait-elle pas, l'extraction a-t-elle échoué, ou la page a-t-elle été sautée ? |
-| `titre_key` | `String?` | Le titre sous la forme que compare la détection des doublons à l'import : minuscules, accents retirés, « œ » et « æ » écrits « oe » et « ae », tout ce qui n'est ni lettre ni chiffre remplacé par une espace, espaces de bord retirées (`titleKey`, `pipeline/duplicateDetection.ts`). Chaîne vide pour un titre vide. **Serveur seul** : posé par `saveDraft` (`recipeProcessor`) à la création d'un brouillon importé, puis tenu à jour par `onRecipeWritten` (`syncRecipeTitleKey`, `triggers/recipeTitleKey.ts`) à chaque écriture dont le titre ne correspond plus à la clé — saisie, copie, titre corrigé à la relecture. Les recettes antérieures l'ont reçu du backfill ponctuel « Clé de titre des recettes » (`recipe_title_keys`), retiré en v0.24.32. Calculé côté serveur seulement : le client compare des clés déjà posées, sans logique dupliquée Dart ↔ TypeScript. Index composite `book_id` + `titre_key` (`firestore.indexes.json`). Le client le lit (`Recipe.titreKey`) sans le recalculer ni l'écrire : la file des brouillons s'en sert pour rapprocher deux brouillons du même livre (`draftTitleTwins`, `features/recipes/domain/draft_title_twins.dart`). Les règles ne le protègent pas : une valeur fausse posée par un client est réécrite par le déclencheur à l'écriture suivante |
+| `titre_key` | `String?` | Le titre sous la forme que compare la détection des doublons à l'import : minuscules, accents retirés, « œ » et « æ » écrits « oe » et « ae », tout ce qui n'est ni lettre ni chiffre remplacé par une espace, espaces de bord retirées (`titleKey`, `pipeline/duplicateDetection.ts`). Chaîne vide pour un titre vide. **Serveur seul** : posé par `saveDraft` (`recipeProcessor`) à la création d'un brouillon importé, puis tenu à jour par `onRecipeWritten` (`syncRecipeTitleKey`, `triggers/recipeTitleKey.ts`) à chaque écriture dont le titre ne correspond plus à la clé — saisie, copie, titre corrigé à la relecture. Les recettes antérieures l'ont reçu du backfill ponctuel « Clé de titre des recettes » (`recipe_title_keys`), retiré en v0.24.33. Calculé côté serveur seulement : le client compare des clés déjà posées, sans logique dupliquée Dart ↔ TypeScript. Index composite `book_id` + `titre_key` (`firestore.indexes.json`). Le client le lit (`Recipe.titreKey`) sans le recalculer ni l'écrire : la file des brouillons s'en sert pour rapprocher deux brouillons du même livre (`draftTitleTwins`, `features/recipes/domain/draft_title_twins.dart`). Les règles ne le protègent pas : une valeur fausse posée par un client est réécrite par le déclencheur à l'écriture suivante |
 | `duplicate_of` | `Map?` | Marque « Doublon possible » d'un brouillon issu d'un **import de livre entier** dont la recette existait déjà dans le livre : `{ titre: String, page: int?, recipe_id: String?, job_id: String? }`. `titre` et `page` sont ceux de la référence ; `recipe_id` nomme une recette existante du livre, `job_id` un import plus ancien encore en cours, l'un des deux est présent (`duplicateOfField`). Posé par `saveDraft` (`recipeProcessor`) seulement ; un scan de page ne crée jamais de brouillon marqué, il s'arrête en `duplicate` (§3.4). Le client le lit (`Recipe.duplicateOf`, `RecipeDuplicateRef`) ; `toFirestore` ne l'écrit jamais. Les règles refusent au client de le poser à la création et de le poser ou de le changer à une mise à jour, administrateur compris ; seul son effacement passe (`duplicateMarkKeptOrRemoved`, §4). `validateDraft` l'efface dans la même écriture que la validation. La validation en lot écarte un brouillon marqué, après avoir relu sa référence en parallèle (`staleDuplicateMarks`, `work_queue_batch.dart`) : une marque dont la recette de référence est supprimée, ou dont l'import de référence est absent, en erreur, rejeté ou terminé sans recette encore présente, est périmée et le brouillon est validé ; un import de référence lui-même en `duplicate` garde la marque |
 | `plating_advice` | `Map?` | Conseil de dressage produit par l'IA à la demande. Écrit **uniquement** par `suggestPlatingFn` / `generatePlatingImageFn`, à la demande du créateur de la recette ou d'un administrateur (§4, `assertCanModifyRecipe`). Absent tant que personne ne l'a demandé — cf. structure ci-dessous |
 
@@ -1217,14 +1217,14 @@ Jobs de traitement asynchrone pour scans recettes/livres et imports par lien.
 | `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages), **20 au plus** (21 pages avec la première, v0.24.17). Les règles refusent une liste plus longue ou d'un autre type, en création et en mise à jour ; le processeur refuse le job (`too_many_pages`) ; le client désactive « Analyser » au-delà (`kMaxAdditionalFileUrls`). Poids total de l'import (fichier principal et pages) : 200 Mo au plus, contrôlé par le processeur (`too_large`) |
 | `current_step` | `String?` | Étape courante du traitement IA. `fetch` (« Lecture de la page web… ») n'existe que pour `recipeUrlImport`. `translate` (« Traduction de la recette par l'IA… ») n'apparaît que pour une recette écrite dans une autre langue : entre `gemini_call` et `parse` pour un scan, entre `parse` et `tagging` pour un `recipeUrlImport`. Son jalon n'est dans le fil d'icônes (`processing_trail`) que si le job porte `translated` |
 | `translated` | `Boolean?` | **Posé par le serveur** à `true` dans la même écriture que `current_step: "translate"` (`recipeProcessor.ts`, `urlImport.ts`), jamais retiré. Le fil d'icônes de la file de travail y ajoute le jalon « Traduction », et le garde jusqu'à la fin du traitement. Absent pour une recette française |
-| `scan_id` | `String?` | Le scan d'où vient ce job. **Posé par le client** au premier envoi, avant même que le job existe : le contrôle du fichier a lieu dans une callable séparée, et une page supplémentaire arrive par un appel séparé. Le `jobDispatcher` le relit, le réécrit — pour qu'une relance retrouve le même scan — et le transmet au `recipeProcessor` dans le payload de la tâche. Un job créé avant l'existence du champ en reçoit un fabriqué côté serveur, qui couvre au moins l'import et ses suites. **À la création, la valeur du client n'est pas crue telle quelle** (v0.23.12, `dispatchScanId`) : un `bookDocumentScan` reçoit toujours un identifiant tiré par le serveur, et un autre job reçoit un identifiant neuf si `scan_spend/{scan_id}` appartient déjà à un autre compte (`user_id`). Sans cela, un éditeur qui reprenait le `scan_id` d'un import d'autrui relevait son plafond et y imputait ses dépenses. Le client ne peut plus changer ce champ ensuite (règles) |
+| `scan_id` | `String?` | Le scan d'où vient ce job. **Posé par le client** au premier envoi, avant même que le job existe : le contrôle du fichier a lieu dans une callable séparée, et une page supplémentaire arrive par un appel séparé. Le `jobDispatcher` le relit, le réécrit — pour qu'une relance retrouve le même scan — et le transmet au `recipeProcessor` dans le payload de la tâche. Un job créé avant l'existence du champ en reçoit un fabriqué côté serveur, qui couvre au moins l'import et ses suites. **À la création, la valeur du client n'est pas crue telle quelle** (v0.23.12, `dispatchScanId`) : un `bookDocumentScan` reçoit toujours un identifiant tiré par le serveur, et un autre job reçoit un identifiant neuf si `scan_spend/{scan_id}` appartient déjà à un autre compte (`user_id`), ou si la valeur n'a pas la forme `^scan_\d{1,16}_[a-z0-9]{1,16}$` (`isValidScanId`, `ai/importBudget.ts`, v0.24.31) — celle que produisent le client (`_newScanId`) et le serveur (`newScanId`) ; un identifiant mal formé n'est pas lu dans `scan_spend`. Sans cela, un éditeur qui reprenait le `scan_id` d'un import d'autrui relevait son plafond et y imputait ses dépenses. Le client ne peut plus changer ce champ ensuite (règles) |
 | `import_illustrations` | `Boolean` | Extraire les illustrations des pages de ce job. Copié depuis la case de l'écran d'import au moment de la création, **jamais relu depuis le profil** : le serveur traite ce job après coup, et la préférence a pu changer entre-temps. Ce qui a été demandé au moment de l'import est ce qui est fait. Toujours `false` hors `recipeScan`. |
 | `parent_job_id` | `String?` | **Posé par le serveur** sur le job d'une tranche de livre : l'identifiant du job `bookDocumentScan` qui l'a créé. Sert au retrait d'un livre vide après un échec, et à retrouver les enfants d'un import. |
 | `book_window` | `Map?` | **Posé par le serveur** sur le job d'une tranche : `{ kind: "pdf" \| "text", owned?: Number, context: Number }`. `owned` = pages à transcrire, `context` = pages (ou 0/1 pour un texte) de contexte qui suivent. `recipeProcessor` en fait un préambule de prompt (`bookWindowPreamble`) et saute le comptage d'illustrations pour ces jobs. |
 | `windows_total` / `windows_created` | `Number?` | Sur un job `bookDocumentScan` : nombre de tranches prévu, puis nombre déjà créé (mis à jour toutes les 10 tranches). |
 | `budget_limit_usd` | `Number?` | **Posé par le client** sur le job `bookDocumentScan` : le plafond de dépense de l'import, en dollars, fixé sur l'écran de confirmation. `runBookImport` le pose sur `scan_spend/{scan_id}` avant de créer la première tranche, borné par le serveur (`effectiveImportLimitUsd`, v0.23.12) : au plus `MAX_IMPORT_BUDGET_PER_WINDOW_EUR` (4 €) par tranche depuis v0.23.13, convertis en dollars au moment du calcul avec le taux de la facture (`app_config/currency_rate`, `getUsdToEurRate`), jamais plus de `MAX_IMPORT_BUDGET_PER_WINDOW_HARD_USD` (8 $) par tranche, et arrondis au centime inférieur. Sans taux, ou avec un taux hors des bornes de vraisemblance de la réconciliation (`MIN_PLAUSIBLE_RATE` 0,1 – `MAX_PLAUSIBLE_RATE` 10, `usableRate`), aucun taux n'est inventé : le maximum vaut 4 $ par tranche, valeur plus basse que 4 € tant qu'un dollar vaut moins qu'un euro, et `runBookImport` le journalise (`logWarn`). La valeur du client ne peut que réduire ce maximum ; un job sans plafond reçoit le maximum. |
 | `source_url` | `String?` | **Posé par `importRecipeFromUrlFn`** sur un job `recipeUrlImport` : l'adresse normalisée de la page. `file_url` vaut alors `""`, `file_name` le nom du site, `mime_type` `text/html`, `book_titre` « Mes recettes du web » et `book_id` `null` jusqu'à l'écriture du brouillon. Le client ne peut pas le changer (règles : une relance ne touche que les champs de relance) |
-| `error_code` | `String?` | **Posé par le serveur** sur un `recipeUrlImport` en échec : `page_blocked` (401, 402, 403, 429, 451), `page_not_found` (404, 410), `no_recipe`, `timeout` (délai, réseau, 5xx), `url_refused` (adresse non publique, plus de 3 redirections, contenu non HTML, page de plus de 3 Mo). La tuile de la file choisit ses actions sur ce code. Effacé au début de chaque tentative |
+| `error_code` | `String?` | **Posé par le serveur** sur un `recipeUrlImport` en échec : `page_blocked` (401, 402, 403, 429, 451), `page_not_found` (404, 410), `no_recipe`, `timeout` (délai, réseau, 5xx), `url_refused` (adresse non publique, plus de 3 redirections, contenu non HTML, page de plus de 3 Mo). Sur **tout type de job** : `owner_not_editor` quand le propriétaire (`created_by`) n'est plus éditeur à une tentative — révoqué, lecteur, en attente ou supprimé (`assertJobOwnerEditor`) ; la tuile affiche alors le message du serveur sans « Relancer » (`ProcessingJob.ownerNotEditor`). La tuile de la file choisit ses actions sur ce code. Effacé au début de chaque tentative, et remis à `null` par `relaunchDeadLetterFn` |
 | `recettes_trouvees` | `Number?` | **Posé par le serveur** sur un `recipeUrlImport` : nombre de recettes trouvées sur la page. Une seule est reprise ; au-delà d'une, la tuile le dit |
 | `photo_status` | `String?` | **Posé par le serveur** sur un `recipeUrlImport` terminé : `attached`, `held` (modération en attente), `refused`, `none` (pas de photo sur la page), `failed` (récupération ou conversion en échec, journalisée) |
 | `url_retry_count` | `Number?` | Sur un `recipeUrlImport` : relances faites depuis la file. **Écrit par le client** à chaque relance (`retryJob`), qui doit l'incrémenter d'exactement un ; les règles n'admettent la relance que d'un job en `error` dont `error_code` vaut `timeout` ou est absent (incident du pipeline, annulation), et deux fois au plus (`urlRelaunchAllowed`). Une annulation le laisse inchangé (`retryCountUnchanged`) : sinon chaque annulation le remettrait à zéro et la borne de deux ne tiendrait plus. Un job terminé ou refusé par le site ne se relance pas : chaque relance relance le pipeline facturé, hors du plafond quotidien compté par la callable |
@@ -1316,13 +1316,13 @@ quel groupe relie deux comptes ; vérifier le rôle du propriétaire dans les r�
 recettes coûterait une lecture de plus par document lu, à chaque requête. Le retrait de la
 portée ne coûte que des lectures de déclencheur, à chaque changement de rôle. Le délai est
 celui de `syncGroupReach` (quelques secondes). Le backfill « Portée des groupes et des
-plannings » (`group_planning_reach`, retiré en v0.24.32) a recalculé les portées antérieures. Un compte sorti de tous ses groupes reçoit `uids: []` ; le document n'est pas supprimé.
+plannings » (`group_planning_reach`, retiré en v0.24.33) a recalculé les portées antérieures. Un compte sorti de tous ses groupes reçoit `uids: []` ; le document n'est pas supprimé.
 Un échec est journalisé et l'événement rejoué (`retry: true`) : une portée périmée laisserait
 un membre sorti lire encore les livres du groupe. `backfillGroupReachFn`, qui a semé le fonds
 après la v0.23.19, est retiré depuis la v0.23.23 : lancé en production, son travail est fait.
 
 **Risque accepté (v0.23.23).** Depuis le retrait du backfill ponctuel `group_planning_reach`
-(v0.24.32), aucun outil ne recalcule la portée en masse. Si
+(v0.24.33), aucun outil ne recalcule la portée en masse. Si
 `syncGroupReach` échoue au-delà de la fenêtre de nouvelles tentatives d'Eventarc (environ
 7 jours), la portée des comptes concernés reste périmée jusqu'à la prochaine modification des
 membres de ce groupe ; un renommage ne la corrige pas. Un membre retiré pendant cette panne
@@ -1351,7 +1351,7 @@ index simples, sans index composite).
 | `email_key` | `String` | Clé de comparaison (`normalizeEmailKey`, `functions/src/invitations/rules.ts`) : minuscules ; pour `gmail.com` et `googlemail.com`, points et suffixe `+…` de la partie locale retirés, `googlemail.com` → `gmail.com`. Logique serveur seule, sans jumeau Dart |
 | `role` | `String` | `reader` ou `editor`. Jamais `admin` : la callable le refuse |
 | `group_id` | `String` | Groupe que l'invité rejoindra |
-| `group_owner_id` | `String` | UID du propriétaire du groupe (`groups/{group_id}.owner_id`, figé par les règles), écrit par le serveur à la création, et au renvoi seulement s'il manque et que l'auteur de l'invitation est le propriétaire relu (`manageInvitationFn` ; sinon, ou présent et différent du propriétaire relu : refus `group_changed`). À l'acceptation, le groupe relu n'est rejoint que si son `owner_id` vaut ce champ (`invitationGroupOf`, `applyEmailInvitation`, `applyRevokedInvitation`). C'est le champ que compare la règle de lecture d'un non-administrateur (§4, ticket #152) : un groupe supprimé puis recréé sous le même identifiant par un autre compte ne lui ouvre pas les invitations restées en base. Absent sur les invitations créées avant v0.24.14 et non reprises : elles ne sont lisibles que par un administrateur. Le backfill ponctuel « Propriétaire du groupe des invitations » (`invitation_group_owner`, terminé en production, retiré en v0.24.32) l'a recopié depuis le groupe courant quand il existait et que l'auteur de l'invitation en était le propriétaire. Une invitation sans le champ acceptée donne le rôle sans le groupe |
+| `group_owner_id` | `String` | UID du propriétaire du groupe (`groups/{group_id}.owner_id`, figé par les règles), écrit par le serveur à la création, et au renvoi seulement s'il manque et que l'auteur de l'invitation est le propriétaire relu (`manageInvitationFn` ; sinon, ou présent et différent du propriétaire relu : refus `group_changed`). À l'acceptation, le groupe relu n'est rejoint que si son `owner_id` vaut ce champ (`invitationGroupOf`, `applyEmailInvitation`, `applyRevokedInvitation`). C'est le champ que compare la règle de lecture d'un non-administrateur (§4, ticket #152) : un groupe supprimé puis recréé sous le même identifiant par un autre compte ne lui ouvre pas les invitations restées en base. Absent sur les invitations créées avant v0.24.14 et non reprises : elles ne sont lisibles que par un administrateur. Le backfill ponctuel « Propriétaire du groupe des invitations » (`invitation_group_owner`, terminé en production, retiré en v0.24.33) l'a recopié depuis le groupe courant quand il existait et que l'auteur de l'invitation en était le propriétaire. Une invitation sans le champ acceptée donne le rôle sans le groupe |
 | `group_name` | `String` | Nom du groupe au moment de l'invitation, pour l'e-mail et la liste |
 | `message` | `String` | Message de l'administrateur, 500 caractères au plus. Le formulaire le préremplit (`defaultInvitationMessage`, client seul) ; vide, il reste vide et l'e-mail part sans paragraphe personnel |
 | `invited_by` | `String` | UID de l'administrateur qui a créé l'invitation |
@@ -1466,7 +1466,7 @@ garde la lecture de ses repas antérieurs ; depuis le planning de groupe, il ne 
 plus (`delete` exige `isEditor()`).
 
 **Planning de groupe.** Un repas est personnel (`group_id` `null` ; absent sur les repas
-antérieurs au passage du backfill `group_planning_reach`, retiré en v0.24.32, qui l'a posé), ou du planning
+antérieurs au passage du backfill `group_planning_reach`, retiré en v0.24.33, qui l'a posé), ou du planning
 d'un groupe familial (`group_id` =
 identifiant du groupe). `uid` reste le cuisinier : pour un repas de groupe, c'est le
 propriétaire du groupe, seul à y écrire (règles : `get(groups/{group_id}).owner_id ==
@@ -1492,7 +1492,7 @@ personnel d'un membre recevait aussi, par `uid == propriétaire`, les repas des 
 membre dont il n'est pas membre. Le flux d'un planning partagé filtre donc `uid ==
 propriétaire` **et** `group_id == null` (index `uid`, `group_id`, `planned_at`) ; une égalité à
 `null` ne trouve pas un document sans le champ, et le backfill « Portée des groupes et des
-plannings » (retiré en v0.24.32) a posé `group_id: null` sur les repas antérieurs ; un repas
+plannings » (retiré en v0.24.33) a posé `group_id: null` sur les repas antérieurs ; un repas
 antérieur resté sans le champ ne se lit pas par le partage, ni un par un ni par requête. Le titulaire garde sa
 requête `uid == moi` sans filtre (« Mon planning », archive, reprise de « Nouveau planning ») :
 les repas qui portent un `group_id` y sont écartés côté client, et un repas antérieur non encore
@@ -1525,7 +1525,7 @@ attendant une décision.
 | Champ | Type | Description |
 |---|---|---|
 | `uid` | `String` | Le cuisinier : propriétaire du planning personnel, ou propriétaire du groupe pour un repas de groupe. Figé |
-| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Le backfill `group_planning_reach` (retiré en v0.24.32) l'a posé à `null` sur les repas antérieurs. Figé côté client ; seul le backfill `move_meals_to_group` le change, de `null` (ou absent) vers un groupe de l'appelant |
+| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Le backfill `group_planning_reach` (retiré en v0.24.33) l'a posé à `null` sur les repas antérieurs. Figé côté client ; seul le backfill `move_meals_to_group` le change, de `null` (ou absent) vers un groupe de l'appelant |
 | `recipe_id` | `String?` | Recette servie ; `null` pour un créneau resté vide |
 | `recipe_titre` | `String` | Titre dénormalisé, pour afficher sans lire la recette |
 | `planned_at` | `Timestamp` | Date et heure du repas |
@@ -1656,7 +1656,7 @@ groupe qui l'invite). Trois déclencheurs :
   un éditeur rétrogradé ou révoqué ne doit pas rester lisible. `syncUserClaims` ne s'en
   occupe pas.
 
-Un backfill, « Portée des groupes et des plannings » (`group_planning_reach`, retiré en v0.24.32),
+Un backfill, « Portée des groupes et des plannings » (`group_planning_reach`, retiré en v0.24.33),
 a écrit `group_ids`, `masked_group_ids` et `masked_invitation_ids` sur les comptes antérieurs,
 membres et invités de tous les groupes (`groupAccounts`) — sans lui, un membre d'un
 groupe que personne n'a touché depuis le déploiement ne lirait pas le planning du groupe —, puis
@@ -1983,7 +1983,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls`, `total_analyzed_image_units` et `total_grounded_searches`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` (la seule quantité dont dépend une franchise mensuelle) et `grounded_searches` (appels ancrés dans Google, à rapprocher de la ligne « grounding » de la facture). `getMonthlyCostsFn` rend ce dernier total en `ai.groundedSearches` |
 | `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel — d'un appel, ou du nombre d'images analysées pour la relance de modération, `dailyCalls`, depuis v0.23.48), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
-| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
+| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. Un `scanId` venu du client n'atteint ce document qu'après deux contrôles : `scanAndPromoteUploadFn` l'écarte (`undefined`, `logWarn`) s'il n'a pas la forme `isValidScanId` ou si `scanOwnerConflict` désigne un autre compte — le contrôle du fichier a lieu, son coût reste dans `ai_usage` et la dépense du jour, sans compteur de scan ; `jobDispatcher` (`dispatchScanId`) le remplace par un identifiant serveur dans les mêmes cas. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
 ---
@@ -1991,7 +1991,9 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 ### 3.12 Exploitation — `dead_letters`, `error_reports`
 
 - `dead_letters/{jobId}` : job d'import abandonné après trois tentatives, avec son motif et
-  son étape. Relancé ou purgé depuis *Admin › File d'échecs*.
+  son étape. Relancé ou purgé depuis *Admin › File d'échecs*. `relaunched_at`,
+  `relaunched_by` et `relaunched_into_job_id` sont posés par `relaunchDeadLetterFn` ; un
+  dead letter dont `relaunched_at` est renseigné ne se relance plus.
 - `error_reports/{id}` : erreurs remontées par le client via `ErrorReportService` —
   `feature`, message, pile, `userId` et un `context` (chaîne JSON depuis v0.23.48, carte
   avant), champs et longueurs bornés par les règles (§7.7). C'est le seul endroit où un
@@ -2165,9 +2167,9 @@ client, Admin › Tickets trie sur `created_at` seul, et les requêtes serveur (
 **Migration :** aucune pour `tickets` et `ticket_quotas` ; `app_config/tickets` n'a pas
 besoin d'être semé (§3.13). `tickets/{id}/admin/launches` n'existe que pour les tickets qui ont
 reçu un lancement (v0.23.64) : document absent, la section « Lancements » est vide. Les analyses publiées sur GitHub avant v0.23.62 ont été relevées par le
-backfill ponctuel `ticket_analyses` (« Analyses des tickets »), retiré en v0.24.32.
+backfill ponctuel `ticket_analyses` (« Analyses des tickets »), retiré en v0.24.33.
 Les tickets livrés avant v0.23.78 n'avaient pas `delivered_pr_number`, ceux livrés avant v0.23.81 pas `delivered_version` : le backfill ponctuel
-`ticket_delivered_pr` (« PR des tickets livrés », retiré en v0.24.32) les a repris ; un ticket fermé à la main, sans
+`ticket_delivered_pr` (« PR des tickets livrés », retiré en v0.24.33) les a repris ; un ticket fermé à la main, sans
 PR, reste sans numéro. **PR de livraison :** à la fermeture de
 l'Issue, `recordDeliveredPr` lit les événements de l'Issue (`GET /issues/{n}/events`) pour le
 commit du dernier événement `closed`, puis `GET /commits/{sha}/pulls`, et retient la dernière
@@ -2203,15 +2205,16 @@ Elle empêche cette configuration de revenir après une suppression volontaire.
 
 Des documents de plus ne décident rien : ce sont les **points de reprise** des
 backfills (§7.10). Le serveur les écrit via `setBackfillCursor`
-(`callable/_backfillCursor.ts`). Aucun code client ne les écrit, mais les règles
-Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
+(`callable/_backfillCursor.ts`). Aucun code client ne les écrit, et les règles
+Firestore refusent l'écriture client, administrateur compris (`*_checkpoint`,
+`backfill_cursor_*` dans `isServerOnlyConfig`, v0.24.31).
 
 | Document | Écrit par |
 |---|---|
 | `nutrition_catch_up_checkpoint` | `backfillNutritionFn`, passage manuel seulement : le passage programmé repart du début à chaque fois, comme l'ancienne tâche de 5 h |
 | `shopping_products_backfill_checkpoint` | `backfillShoppingFn` |
-| `recipe_title_keys_backfill_checkpoint` | `backfillTitleKeysFn`, retiré en v0.24.32 : le document reste en base, plus rien ne l'écrit ni ne le lit |
-| `invitation_group_owner_backfill_checkpoint` | `backfillInvitationGroupOwnerFn`, retiré en v0.24.32 : le document reste en base, plus rien ne l'écrit ni ne le lit |
+| `recipe_title_keys_backfill_checkpoint` | `backfillTitleKeysFn`, retiré en v0.24.33 : le document reste en base, plus rien ne l'écrit ni ne le lit |
+| `invitation_group_owner_backfill_checkpoint` | `backfillInvitationGroupOwnerFn`, retiré en v0.24.33 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `illustration_folders_backfill_checkpoint` | `backfillIllustrationFoldersFn` : `last_doc_id`, la dernière recette examinée ; `null` quand `recipes` a été parcourue jusqu'au bout |
 | `recipe_roles_backfill_checkpoint` | `backfillRecipeRolesFn` |
 | `recipe_protein_backfill_checkpoint` | `backfillRecipeProteinFn`, retiré en v0.23.52 : le document reste en base, plus rien ne l'écrit ni ne le lit |
@@ -2220,7 +2223,7 @@ Firestore ne l'interdisent pas : un `admin` peut écrire sur tout `app_config`.
 | `estimated_times_backfill_checkpoint` | `backfillEstimatedTimesFn`, retiré en v0.23.52 : le document reste en base, verrou `running_until` compris, plus rien ne l'écrit ni ne le lit |
 | `user_profiles_backfill_checkpoint` | `backfillUserProfilesFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `group_reach_backfill_checkpoint` | `backfillGroupReachFn`, retiré en v0.23.23 : le document reste en base, plus rien ne l'écrit ni ne le lit |
-| `group_planning_reach_backfill_checkpoint` | `backfillGroupPlanningReachFn`, retiré en v0.24.32 : le document reste en base, plus rien ne l'écrit ni ne le lit |
+| `group_planning_reach_backfill_checkpoint` | `backfillGroupPlanningReachFn`, retiré en v0.24.33 : le document reste en base, plus rien ne l'écrit ni ne le lit |
 | `backfill_cursor_enrich_referentials_ingredients` | `backfillEnrichReferentialsFn`, remplissage normal |
 | `backfill_cursor_refresh_sodium_ingredients` | `backfillEnrichReferentialsFn`, réparation du sodium |
 
@@ -2244,7 +2247,7 @@ il n'a pas de point de reprise — chaque passage relit les repas de sa période
 contrôle ne part pas pendant le rangement. Les ponctuels `recipe_protein`,
 `estimated_times` et `planning_defaults` sont retirés en v0.23.52, et `system_books`,
 `group_planning_reach`, `ticket_analyses`, `ticket_delivered_pr`, `recipe_title_keys` et
-`invitation_group_owner` en v0.24.32 : leur `backfill_run_<clé>` reste en base, et l'écran
+`invitation_group_owner` en v0.24.33 : leur `backfill_run_<clé>` reste en base, et l'écran
 ignore une clé absente du registre. La liste des backfills retirés, avec leur version, vit dans
 le skill `backfill` (« Backfills retirés »). Deux sortes de documents, écrits par le serveur seul — les règles refusent
 l'écriture client, administrateur compris (§4) —, lus en continu par l'écran
@@ -2510,6 +2513,20 @@ avait cassé l'import. Depuis la v0.23.12, `syncUserClaims` appelle en plus
 reader/editor/admin, document supprimé d'un compte nommé ou révoqué : la session ne se
 renouvelle plus, et le jeton en cours n'est pas prolongé au-delà de son heure.
 
+**Le rôle se lit à l'identique, des deux côtés** (v0.24.32, ticket #163). Quatre valeurs :
+`pending`, `reader`, `editor`, `admin`. Les règles n'en acceptent pas d'autre à l'écriture
+(`updatedTypesOk`). Côté Functions, `readRole` (`security/roles.ts`) rend `null` pour toute
+autre valeur, sans retirer d'espaces : `claimsFrom` (claim posé par `syncUserClaims`),
+`accountFromToken` et la lecture du document dans `callable/_auth.ts` (`accountDocumentFrom`), `inviterStillAdmin`,
+`isApprovedAccount`, `isPlannerAccount`, `publicProfileFrom` et la recherche d'un compte
+par adresse des invitations. Un `"admin "` historique ne vaut donc administrateur nulle
+part ; il vaut « aucun rôle » et ferme l'accès. `requireAuth` ne se replie sur le claim du
+jeton que si le document n'a pas de champ `role` (absent ou nul), comme `roleOf()` : un rôle
+présent mais inconnu est refusé, même avec un jeton `admin` encore valide (`mergeAccount`). Le client lit le même vocabulaire
+(`UserRole`, `app_user.dart`), à l'identique, une valeur inconnue y valant `pending`. La
+liste est la même des trois côtés sans fixture partagée : le client ne décide que de l'affichage
+avec elle.
+
 La présence d'un claim se teste par `'clé' in request.auth.token` plutôt que par
 comparaison à `null` : c'est la seule forme dont la sémantique est garantie sur
 un claim absent.
@@ -2681,7 +2698,10 @@ service cloud.firestore {
                   || request.resource.data.get('last_seen_at', null) is timestamp)
           && (!changes('display_name')
                   || request.resource.data.get('display_name', null) is string)
-          && (!changes('role') || request.resource.data.get('role', null) is string)
+          // Quatre rôles, écrits à l'identique (v0.24.32, ticket #163).
+          && (!changes('role')
+                  || request.resource.data.get('role', null)
+                       in ['pending', 'reader', 'editor', 'admin'])
           && (!changes('is_revoked') || request.resource.data.get('is_revoked', null) is bool);
       }
       function ownerKeysOk() {     // _upsertUser, nom préféré, couverture, préférences
@@ -2976,7 +2996,7 @@ service cloud.firestore {
 
 | Collection | Lecture | Écriture |
 |---|---|---|
-| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
+| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. **Rôle** (v0.24.32, ticket #163) : `role` ne prend que `pending`, `reader`, `editor` ou `admin`, écrit à l'identique ; un `superadmin` ou un `admin ` est refusé. Le serveur lit le champ de la même façon (`readRole`, `functions/src/security/roles.ts`) : une autre valeur vaut « aucun rôle », dans les claims (`syncUserClaims`) comme dans les gardes des callables (`requireAuth`). Les lectures retiraient auparavant les espaces, et un `admin ` y devenait administrateur. Côté client, `UserRole` lit aussi le nom à l'identique et rabat une valeur inconnue sur `pending`. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` |
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
@@ -2986,13 +3006,13 @@ service cloud.firestore {
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création par un editor ou un admin (`isEditor()`, v0.23.54 : plus le reader), à son nom, soi seul membre, sans invité, avec les seuls champs que `createGroup` écrit (`keys().hasOnly` : `name`, `owner_id`, `member_ids`, `invited_ids`, `created_at` — v0.24.30, ticket #162) ; `owner_id` figé ; cinq mises à jour et elles seules : **gestion** (`isManagement`) par le propriétaire s'il est editor (`isEditor()`, v0.23.54), ou par un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **réduction** (`isShrinking`, v0.23.54) par le propriétaire quel que soit son rôle — `invited_ids` et `member_ids` ne font que perdre des comptes, le propriétaire reste membre, rien d'autre ne change (ni nom, ni invitation nouvelle) ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Acceptation, refus et sortie restent ouverts à tout rôle approuvé. Suppression par le propriétaire quel que soit son rôle, ou par un admin : un reader propriétaire d'un groupe créé avant la v0.23.54 ne peut pas le quitter, la suppression est sa seule sortie. Testé dans `rules-tests` (« groupes — rôle éditeur requis ») |
-| `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide ; « Ce n'est pas un doublon » (`isDuplicateResume`) : le propriétaire **éditeur ou administrateur** fait passer un job de `duplicate` à `queued` avec `duplicate_override: true`, en ne touchant que `status`, `duplicate_override`, `error_message`, `current_step` et `updated_at` — `created_recipe_ids` reste en place, `duplicate_override` ne se pose sur aucun autre statut, un lecteur propriétaire ne reprend pas, un import par lien non plus ; à la création, le job naît en `queued` (statut absent admis) et sans aucun des champs que seul le pipeline écrit pour les doublons (`titre_keys`, `titre_key_pages`, `titre_key_titres`, `duplicate_checked`, `duplicates`, `pending_items`, `duplicate_override`) — posés par le client sur un job jamais mis en file, ils arrêteraient les imports suivants du même livre ; une relance par le propriétaire éditeur n'écrit que `queued` ou `error`, jamais `duplicate`, et ne part pas d'un job `duplicate` (seules la reprise et l'annulation en sortent) ; suppression par un admin, ou par le propriétaire **éditeur ou administrateur** d'un job au statut `duplicate` (rien n'y tourne, et la ligne n'a pas d'autre sortie que la reprise) ; `additional_file_urls`, quand il est présent, est une liste de **20 entrées au plus**, en création comme en mise à jour, administrateur compris (`additionalFileUrlsBounded`, v0.24.17) : le pipeline télécharge chaque page et l'envoie au modèle |
-| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur resté sans le champ, que le backfill `group_planning_reach` (retiré en v0.24.32) n'a pas atteint, ne se lit pas) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
+| `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide ; « Ce n'est pas un doublon » (`isDuplicateResume`) : le propriétaire **éditeur ou administrateur** fait passer un job de `duplicate` à `queued` avec `duplicate_override: true`, en ne touchant que `status`, `duplicate_override`, `error_message`, `current_step` et `updated_at` — `created_recipe_ids` reste en place, `duplicate_override` ne se pose sur aucun autre statut, un lecteur propriétaire ne reprend pas, un import par lien non plus ; à la création, le job naît en `queued` (statut absent admis) et sans aucun des champs que seul le pipeline écrit pour les doublons (`titre_keys`, `titre_key_pages`, `titre_key_titres`, `duplicate_checked`, `duplicates`, `pending_items`, `duplicate_override`) — posés par le client sur un job jamais mis en file, ils arrêteraient les imports suivants du même livre ; une relance par le propriétaire éditeur n'écrit que `queued` ou `error`, jamais `duplicate`, et ne part pas d'un job `duplicate` (seules la reprise et l'annulation en sortent) ; suppression par un admin, par le propriétaire **éditeur ou administrateur** d'un job au statut `duplicate` (rien n'y tourne, et la ligne n'a pas d'autre sortie que la reprise), ou par le propriétaire **actif** (`isApproved()` : approuvé, non révoqué), quel que soit son rôle, d'un job au statut `error` (v0.24.31) — un job `owner_not_editor` n'a pas d'autre sortie ; aucun déclencheur ne suit cette suppression : le fichier `scans/`, `scan_spend/{scan_id}` (trace comptable) et la dead letter restent, et `relaunchDeadLetterFn` refuse ensuite la relance (« Job original supprimé ») ; `additional_file_urls`, quand il est présent, est une liste de **20 entrées au plus**, en création comme en mise à jour, administrateur compris (`additionalFileUrlsBounded`, v0.24.17) : le pipeline télécharge chaque page et l'envoie au modèle |
+| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur resté sans le champ, que le backfill `group_planning_reach` (retiré en v0.24.33) n'a pas atteint, ne se lit pas) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
 | `meal_suggestions` | l'auteur (`author_uid`) ou le propriétaire du groupe (`group_owner_id`), compte nommé (`isApproved()`) ; un autre membre ne lit pas les suggestions des autres ; une requête sans l'un de ces deux filtres est refusée | création par un compte nommé, à son nom, sous l'identifiant imposé `{group_id}_{uid}_{day}_{0..4}` (`suggestionIds` : cinq au plus par auteur, groupe et jour), membre d'un groupe **actif** (`canReadGroupPlanning`, `planning_reach.group_ids`) et présent dans `member_ids` du groupe, **pas** son propriétaire ; `group_owner_id` égal à `owner_id` du groupe (une lecture de `groups/{group_id}`) ; forme `isMealSuggestion` : liste de champs fermée, `day` date réelle de la veille à J+60 (`isSuggestionDay`), recette (`recipe_id` + `recipe_titre` ≤ 200) **ou** nom libre (`free_title` ≤ 60), `note` ≤ 200, `created_at == request.time`. Aucune mise à jour. Suppression par l'auteur ou le propriétaire du groupe. Le serveur supprime celles d'un groupe supprimé et d'un membre sorti (`syncGroupReach`) |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
-| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** `backfill_schedules`, `backfill_run_*`, `tickets_status` et `apk_notification` (`isServerOnlyConfig`), écrits par le serveur seul : un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
+| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** les documents de `isServerOnlyConfig`, écrits par le serveur seul : `backfill_schedules`, `backfill_run_*`, `tickets_status` et `apk_notification` — un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; depuis v0.24.31 (ticket #162), les politiques `ai_pricing` (`setAiPricingFn`), `ai_routing_policy` (`setAiRoutingPolicyFn`), `ai_budget_policy` (`setAiBudgetFn`), `app_check_policy` (`setAppCheckPolicyFn`) et `nutrition_source_policy` (`setNutritionSourcePolicyFn`), les documents serveur `image_moderation`, `currency_rate`, `anthropic_costs`, `planning_policy` (réglages de la présélection, lus par `gemini/planningStore.ts`) et `ai_budget_alert` (dernière alerte de budget, `scheduled/aiBudgetAlertSchedule.ts`), et les points de reprise `*_checkpoint` et `backfill_cursor_*` — une écriture directe contournait la validation de la callable (`readPolicyOrThrow`, garde-fou `enforce` d'App Check), sa trace d'audit et App Check. L'administrateur écrit encore `tickets` (plafonds, sans callable), `usage` et les autres réglages ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
@@ -3186,6 +3206,13 @@ service firebase.storage {
 
     function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
 
+    // Éditeur ou administrateur, sur la foi du claim (v0.24.32, ticket #162).
+    // Seuls ces rôles importent : `analyzeBookImport`, l'extraction de texte
+    // et la création d'un job exigent l'éditeur.
+    function isEditorToken() {
+      return isApprovedToken() && request.auth.token.role in ['editor', 'admin'];
+    }
+
     // Le type MIME sans ses paramètres : le texte collé s'envoie en
     // `text/plain; charset=utf-8`, qu'une comparaison exacte refuserait.
     function baseContentType() {
@@ -3202,6 +3229,15 @@ service firebase.storage {
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
              'text/plain'
            ];
+    }
+
+    // Ce qu'un lecteur dépose : une photo JPEG ou PNG, hors de `livres/`
+    // (couverture « Recette libre », illustration d'une de ses recettes).
+    // `livres/` s'exclut par le nom complet : les deux blocs se recouvrent.
+    function isReaderImageUnder(maxBytes) {
+      return request.resource.size < maxBytes
+        && baseContentType() in ['image/jpeg', 'image/png']
+        && !request.resource.name.matches('quarantine/[^/]+/livres/.*');
     }
 
     // Administrateur, sur la foi du claim. Sert la seule lecture qui ne soit
@@ -3233,10 +3269,14 @@ service firebase.storage {
     // La lecture est ouverte à l'ADMINISTRATEUR en plus du propriétaire : une
     // image « à revoir » attend ici, et personne ne tranche sur une photo qu'il
     // ne peut pas voir.
+    //
+    // Un lecteur n'y dépose que des photos ; un éditeur ou un administrateur,
+    // tous les types d'un import (v0.24.32, ticket #162).
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
       allow write: if isOwner(uid) && isApprovedToken()
-        && isImportableUnder(50 * 1024 * 1024);
+        && ((isEditorToken() && isImportableUnder(50 * 1024 * 1024))
+            || isReaderImageUnder(50 * 1024 * 1024));
     }
 
     // Un livre entier — PDF, EPUB ou Word — à découper en recettes. Plafond de
@@ -3244,9 +3284,10 @@ service firebase.storage {
     // l'accès est accordé si l'un d'eux l'autorise, et le premier refuse toujours
     // plus de 50 Mo. Même plafond que `MAX_BOOK_UPLOAD_SIZE_BYTES`
     // (`utils/uploadSecurity.ts`) et que `_maxBookBytes` (`scan_upload_service.dart`).
+    // Éditeurs et administrateurs seulement (v0.24.32, ticket #162).
     match /quarantine/{uid}/livres/{fileName} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid) && isApprovedToken()
+      allow write: if isOwner(uid) && isEditorToken()
         && request.resource.size < 300 * 1024 * 1024
         && baseContentType() in [
              'application/pdf',
@@ -3311,13 +3352,25 @@ service firebase.storage {
 > `tickets/` est le seul dossier écrit par le client hors de la quarantaine : par le compte
 > lui-même, sous son uid, un fichier nommé `screenshot.png` ou `screenshot.jpg`. La
 > suppression est refusée à tous (aucune purge en V1).
+>
+> **Ce que dépose un lecteur** (v0.24.32, ticket #162). Un lecteur n'importe pas : la
+> création d'un job (`processing_jobs`, `isEditor()`), `analyzeBookImport` et l'extraction
+> de texte (`requireEditor`) lui sont refusées. Il déposait pourtant des PDF, des documents
+> Word et du texte jusqu'à 50 Mo, et des livres jusqu'à 300 Mo sous `livres/`, que rien ne
+> traitait ensuite. Il ne dépose plus que des photos JPEG ou PNG, hors de `livres/` : la
+> couverture « Recette libre » et l'illustration d'une de ses recettes, que
+> `ImageModerationService` envoie toujours sous l'un de ces deux types canoniques. Les autres
+> envois vers la quarantaine (`ScanUploadService`, `RecipeRepository.uploadScanFile` pour le
+> texte collé de la création à la main) servent l'import et la création de recette, réservés
+> à l'éditeur. Testé dans `rules-tests` (« quarantaine — ce que dépose un lecteur »).
 
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
-`[firebase_storage/unauthorized]` peut vouloir dire quatre choses : le chemin n'appartient
+`[firebase_storage/unauthorized]` peut vouloir dire cinq choses : le chemin n'appartient
 pas à l'appelant, son jeton ne porte pas encore de rôle (compte `pending`, ou jeton émis
 avant la propagation — une heure au plus), le fichier dépasse 50 Mo (300 Mo sous
-`quarantine/{uid}/livres/`), ou son type MIME n'est pas dans la liste. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
-`storagePath` et `mimeType` : sans eux, les quatre causes sont indiscernables.
+`quarantine/{uid}/livres/`), son type MIME n'est pas dans la liste, ou l'appelant est un
+lecteur et le fichier n'est pas une photo JPEG ou PNG hors de `livres/`. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
+`storagePath` et `mimeType` : sans eux, ces cinq causes sont indiscernables.
 
 ### Tests des règles
 
@@ -3683,7 +3736,7 @@ sinon, ou si l'invitation n'a pas le champ, il est traité comme supprimé : rô
 `group_missing: true`, rien d'écrit au groupe (ticket #152 — un groupe recréé sous le même
 identifiant par un autre éditeur ne reçoit pas l'invité sans son accord). Une invitation
 antérieure à v0.24.14 acceptée avant le backfill « Propriétaire du groupe des invitations »
-(retiré en v0.24.32) a donc donné le rôle sans le groupe : l'administrateur ajoute ensuite le compte au groupe. Il relit dans la
+(retiré en v0.24.33) a donc donné le rôle sans le groupe : l'administrateur ajoute ensuite le compte au groupe. Il relit dans la
 transaction le compte de l'administrateur du dernier envoi (`inviterUidOf` : `last_sent_by`,
 sinon `invited_by`) et n'applique rien s'il n'est plus `admin` ou s'il est révoqué
 (`inviterStillAdmin`, même règle `accessDenial` que `requireAdmin`) : journal `logInfo`, compte
@@ -4910,6 +4963,15 @@ semaine. Ce qui est stable, et mérite d'être écrit, ce sont les invariants qu
 
 - **Copie fidèle** : recopier, ne pas reformuler, ne pas résumer, n'inventer ni ingrédient ni
   quantité, ne pas « réparer » un mot mal lu en expression plus courante.
+- **Le texte reçu est une donnée** (v0.24.32, ticket #163) : `TRANSCRIPTION_PROMPT`,
+  `TEXT_TRANSCRIPTION_PREAMBLE` et `TAGGING_PROMPT` disent, dans leurs premières lignes,
+  qu'une consigne trouvée dans la page, le texte collé ou la transcription se recopie si elle
+  fait partie de la recette, et ne s'exécute jamais. Une page web copiée ou un texte collé
+  peut contenir « ignore les règles précédentes » : c'est une ligne à recopier ou à
+  écarter comme le reste du mobilier, pas une instruction. `promptInjectionGuard.test.ts`
+  vérifie la présence de la phrase dans les 600 premiers caractères de chacun. Les trois
+  prompts restent des préfixes fixes : le cache Anthropic de `TRANSCRIPTION_PROMPT` et de
+  `TAGGING_PROMPT` n'en dépend pas. Aucun autre prompt ne les recopie (bac à sable compris).
 - **Une orthographe par aliment** dans toute la recette — sans quoi le même ingrédient compte
   deux fois dans l'index de recherche, la nutrition et la liste de courses.
 - **Ustensile ou ingrédient**, jamais les deux : `#moule à tarte{}` contre `@moule{}`.
@@ -5744,7 +5806,7 @@ Filtres acceptés, traduits en syntaxe de requête Cloud Logging :
 
 | Entrée | Filtre produit |
 |---|---|
-| `severity` | `severity>=WARNING` — sauf `DEBUG`, traduit en `severity=DEBUG`, sans quoi il ramènerait tout |
+| `severity` | `DEBUG`, `INFO`, `WARNING` ou `ERROR` seulement (`severityClause`, v0.24.32, ticket #163) : `severity>=WARNING` — sauf `DEBUG`, traduit en `severity=DEBUG`, sans quoi il ramènerait tout. Absente ou vide : aucun filtre. Toute autre valeur lève `invalid-argument` ; elle était auparavant recopiée dans le filtre, et pouvait y ajouter une clause |
 | `correlationId` | `labels.correlationId="…"` |
 | `scanId` | `labels.scanId="…"` — rend les quatre traitements d'un scan, et eux seuls |
 | `jobId` | `labels.jobId="…"` |
@@ -5896,7 +5958,10 @@ Depuis la v0.23.11, chaque callable qui envoie une entrée du client à un modè
 `readAiInputs` (`callable/_inputBounds.ts`), juste après la garde d'accès et **avant** tout
 appel de modèle et toute réservation de budget. Les entrées produites par le serveur
 (pipeline d'import, déclencheurs) et le bac à sable (`sandboxFn`, réservé à `admin`) ne
-passent pas par là.
+passent pas par là. Le bac à sable borne quand même son image : `readSandboxImage`
+(`sandbox/callable.ts`) refuse en `invalid-argument` un `bytesBase64` de plus de 20 Mo
+décodés (`PAGE_IMAGE_MAX_BYTES`, importé de `callable/_inputBounds.ts`), mesuré avant tout
+décodage (v0.24.32, ticket #163).
 
 Les bornes sont **larges** : aucun texte réel ne les atteint, seuls les envois de plusieurs
 centaines de milliers de jetons sont refusés. Au-delà, la callable lève
@@ -6001,11 +6066,29 @@ les pages supplémentaires du job avant la branche couverture. Une tâche `bookC
 Le rang de la tentative arrive dans `req.retryCount` et est écrit sur le job
 (`attempt_count`).
 
-**Quand la reprise n'a pas lieu.** Huit échecs envoient le job **directement** en dead
+**Le propriétaire, relu à chaque tentative.** Avant toute écriture et tout appel de modèle,
+`processJob` relit `users/{created_by}` (`assertJobOwnerEditor`, `pipeline/jobOwner.ts`) et
+applique la décision de `requireEditor` : `accessDenial(compte, "editor")` de
+`callable/_auth.ts`, sur le compte lu par `accountDocument`. Un compte révoqué, lecteur, en
+attente (`pending`) ou supprimé est refusé ; un éditeur et un administrateur passent, et le
+fondateur passe comme administrateur (`triggers/founderRole.ts` restaure son rôle). Le
+contrôle couvre ce qu'aucune callable ne garde : les nouveaux essais de Cloud Tasks, les
+tranches d'un livre créées par `runBookImport` et le job recréé par `relaunchDeadLetterFn`
+(dont `created_by` reste celui du job d'origine). Un refus écrit sur le job `status: "error"`,
+`error_code: "owner_not_editor"` et un `error_message` lisible (`OWNER_NOT_EDITOR_MESSAGE` :
+« Import arrêté : votre compte n'a plus le droit d'importer des recettes. Demandez à un
+administrateur de vous le rendre, puis importez de nouveau. », repris mot pour mot en repli
+par la tuile), puis part en dead letter `owner_not_editor` sans nouvel essai ; aucun appel de
+modèle n'a lieu. Cette dead letter ne se relance pas (`relaunchDenial`) : une fois son droit
+rendu, le membre importe de nouveau, et il supprime le job en erreur depuis sa file. Coût : une lecture
+Firestore de plus par tentative.
+
+**Quand la reprise n'a pas lieu.** Neuf échecs envoient le job **directement** en dead
 letter, sans réessayer, parce qu'une nouvelle tentative échouerait à l'identique : un plafond
 de dépense atteint (`budget_exceeded`), un livre illisible (`book_file_unreadable`), un
 balisage coupé à tous les efforts (`tagging_truncated`), un livre cible qui n'appartient
-pas au créateur du job (`foreign_book`), et un fichier source hors du dossier du créateur du
+pas au créateur du job (`foreign_book`), un propriétaire qui n'est plus éditeur
+(`owner_not_editor`), et un fichier source hors du dossier du créateur du
 job (`forbidden_source_path`), un DOCX joint à un import de recette au-delà des bornes de
 lecture (`archive_limit_exceeded`, `ZipLimitError`), un job qui liste plus de 20 pages
 supplémentaires (`too_many_pages`, `TooManyPagesError` de `pipeline/jobPages.ts`, contrôlé
@@ -6033,22 +6116,37 @@ refusés (`StoragePathRefusedError`). `additional_file_urls` compte 20 entrées 
 `assertImportSizeWithin` additionne leurs tailles (`getMetadata().size`) : 200 Mo au plus
 (`MAX_IMPORT_TOTAL_BYTES`), 300 Mo pour un livre entier.
 
-**La sortie.** À la dernière tentative — ou immédiatement dans les cinq cas ci-dessus —
+**La sortie.** À la dernière tentative — ou immédiatement dans les cas ci-dessus —
 `moveToDeadLetter(...)` écrit `dead_letters/{jobId}` avec :
 
 | Champ | Valeurs |
 |---|---|
-| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `forbidden_source_path`, `archive_limit_exceeded`, `too_many_pages`, `too_large`, `url_page_blocked`, `url_page_not_found`, `url_no_recipe`, `url_url_refused`, `url_timeout`, `pipeline_error` |
+| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `owner_not_editor`, `forbidden_source_path`, `archive_limit_exceeded`, `too_many_pages`, `too_large`, `url_page_blocked`, `url_page_not_found`, `url_no_recipe`, `url_url_refused`, `url_timeout`, `pipeline_error` |
 | `last_error` | le message de l'exception |
 | `retry_count` | le nombre de tentatives consommées |
 | `file_path` | le fichier téléversé, pour pouvoir rejouer ; l'adresse de la page pour un import par lien |
 | `correlation_id`, `user_id` | le fil et le compte |
 
 Le job passe alors en `status: "error"` avec son `error_message`, et le processeur **retourne
-sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà classé.
+sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà classé. Un échec
+générique (`pipeline_error`) reçoit un message fixe (`PIPELINE_ERROR_MESSAGE` : « L'import n'a
+pas abouti après plusieurs essais. Relancez-le, ou supprimez-le s'il échoue de nouveau. ») ; le
+texte de l'exception (souvent gRPC ou SDK) ne reste que dans `last_error` de la dead letter et
+dans le `logError` « Échec pipeline ».
 
 **La reprise manuelle.** `relaunchDeadLetterFn` (admin) recrée un `processing_jobs` en
 `queued` avec `attempt_count: 0` et horodate `relaunched_at` sur la dead letter.
+`deadLetterId` doit être un identifiant de document (`isValidDocumentId`,
+`moderation/promote.ts`), sinon `invalid-argument`. La lecture de la dead letter, le test de
+`relaunched_at`, la lecture du job d'origine, la création du nouveau job et la mise à jour de
+la dead letter tiennent dans une seule `runTransaction` : deux appels simultanés (double
+appui, deux onglets) ne créent qu'un job, et le second reçoit `failed-precondition`
+« Ce job a déjà été relancé. ». La décision est la fonction pure `relaunchDenial`
+(`pipeline/deadLetterHandler.ts`) : dead letter absente, `not-found` ; déjà relancée,
+`failure_reason` (ou `error_code`) `owner_not_editor` — « Le compte qui a lancé cet import
+n'a plus le droit d'importer. Rendez-lui ce droit, puis demandez-lui d'importer de nouveau. »
+—, ou job d'origine supprimé, `failed-precondition`. Le nouveau job repart sans `error_code` ni
+`error_message`.
 `deleteDeadLetterFn` purge. Les deux sont exposées dans *Admin › File d'échecs*.
 
 **L'import d'un livre entier** passe par trois étapes côté client, et deux fonctions côté serveur.
@@ -6133,10 +6231,10 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillMoveMealsToGroupFn` | `admin` | ponctuel paramétré `move_meals_to_group`, « Déplacer mes repas vers un groupe ». Entrée `{ groupId, fromDay, toDay, startAt, endAt, appVersion? }` : identifiant de groupe au format sûr (`[A-Za-z0-9_-]{1,128}`), jours `AAAA-MM-JJ` inclusifs, `fromDay <= toDay`, 62 jours au plus ; `startAt` et `endAt` sont les instants (ms) du minuit local du premier jour et du lendemain du dernier, calculés par l'appareil (`MoveMealsRequest`), et doivent tomber à moins de quatorze heures des jours annoncés. Le fuseau de l'appareil fait foi : le serveur ne le devine pas. Entrée invalide : `invalid-argument`, avant le verrou. Le passage lit `groups/{groupId}` : absent, `not-found` ; `owner_id` différent de l'appelant, `permission-denied`. L'appelant est administrateur non révoqué (`requireAdmin`), donc planificateur, et ses groupes sont actifs. Sélection : `uid == appelant` et `startAt <= planned_at < endAt` (index `uid` + `planned_at`, 2 000 repas lus au plus), puis les repas dont `group_id` est nul ou absent ; un repas déjà dans un groupe est compté « ignoré ». Chaque repas s'écrit dans une **transaction** qui relit `groups/{groupId}` (présent, `owner_id` = appelant) et le repas (présent, `uid` = appelant, `group_id` nul ou absent), puis pose `group_id: groupId`. Un groupe supprimé ou cédé pendant le passage l'arrête (`groupeIndisponible: true`) : aucun repas n'est rattaché à un groupe que `deleteGroupMeals` a déjà vidé. Un repas qui a changé entre la lecture et la transaction est compté « ignoré ». Rien d'autre n'est écrit : ni `uid`, ni `base_portions`, ni `target_portions`, ni la recette. 500 repas déplacés par passage, arrêt sur trois échecs de suite. Compte rendu : `groupId`, période (`du`, `au`), examinés, déplacés, ignorés, en erreur, restants, `lectureTronquee`, `groupeIndisponible` — **ni nom de groupe ni titre de recette** : il est recopié dans `app_config/backfill_run_move_meals_to_group`, que tout administrateur lit. Réentrant sans curseur : un repas déplacé n'est plus sélectionné. Jamais marqué terminé tout seul (`summarizeMoveMealsToGroup`, `remaining: null`), et le menu ⋮ de sa tuile ne propose pas de le marquer (`reusable` au registre client, `backfillOffersDoneMenu`). Sans appel de modèle |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains` (jamais sur une recette corrigée à la main, `contains_manual`, même avec `force` : `containsPatch`), `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
 | `backfillIllustrationFoldersFn` | `admin` | ponctuel `illustration_folders`, « Dossiers des illustrations » — **contrôle en lecture seule** (suite de l'audit #151, ticket #154). Parcourt `recipes` par identifiant, pages de 400, depuis le point de reprise `app_config/illustration_folders_backfill_checkpoint`, et lit chaque URL de `image_urls` et de `thumbnail_urls` (`recipeIllustrationIssues`, `backfills/illustrationFolders.ts`). Le chemin de l'objet se lit décodé, par `storageObjectPathOf` (`utils/storagePath.ts`) pour une URL `firebasestorage.googleapis.com` ou `gs://`, et directement pour une URL publique `storage.googleapis.com/<bucket>/<chemin>` — les formes que le client affiche (`app_image_url.dart`) ; buckets admis : le bucket par défaut et `kassdale-6d948.appspot.com`. Une URL conforme est sous `illustrations/` ou `recipes/` (`PUBLISHED_IMAGE_PREFIXES`), avec un chemin bien formé. Un parcours parti du début et arrivé au bout écrit aussi, dans `app_config/backfill_run_illustration_folders` (fusion, serveur seul par `isServerOnlyConfig`, motif `backfill_run_.*`), la liste fermée `signalees` (`List<{recipe_id: String, key: String}>`, `key` = `bucket/chemin`, `flaggedIllustrationKeys`, 2 000 entrées au plus, `signalees_tronquee`), `signalees_le` et `signalees_par` ; un passage repris ne la remplace pas. Toute autre recette va dans `aRevoir` avec le lieu trouvé : premier segment du chemin (`scans/`, `rejected/` ; un nom hors `[A-Za-z0-9_.-]` ou de plus de 40 caractères devient « dossier inattendu »), « racine du bucket », « autre bucket », « hors du stockage de l'application », « chemin sans adresse », « chemin mal formé », « adresse vide ou illisible », ou « image_urls n'est pas une liste ». Ni l'URL ni le chemin complet (qui porte l'uid d'un scan) ne sont recopiés ; les journaux (`logInfo`, `illustration_folders_backfill`) ne reçoivent que les compteurs, et une URL illisible ou mal encodée n'est pas tracée par `storageObjectPathOf` (option `silent`, désactivée pour les autres appelants). **N'écrit rien dans les recettes** : seuls le curseur et `backfill_run_illustration_folders` sont écrits. 2 000 recettes par appel par défaut (`maxDocs`, 10 000 au plus), 8 minutes au plus, arrêt sur trois recettes illisibles de suite. Compte rendu : examinées, conformes, `horsDossiers`, échouées, `depuisLeDebut`, arrêts (délai, quota, erreurs), `completed`. Marqué terminé seulement par un passage parti du début de la collection et arrivé au bout sans recette à revoir : un passage repris au point de reprise ignore ce que les passages précédents ont listé. Sans appel de modèle. À lancer une fois après le déploiement ; une liste vide permet de limiter l'affichage des illustrations à ces deux dossiers |
-| `backfillIllustrationFoldersMoveFn` | `admin` | ponctuel `illustration_folders_move`, « Ranger les illustrations » (v0.24.32, suite du ticket #154). **Écrit.** Lit d'abord la liste fermée `signalees` du dernier contrôle complet (`readFlaggedList`) ; absente, il ne fait rien et le dit (`listeAbsente: true`, jamais terminé). Seuls les couples (recette, `bucket/chemin`) de cette liste se rangent : une image ajoutée à une recette après le contrôle n'a été vue par personne, et va dans « À revoir » (« non signalée par le dernier contrôle : relancez « Dossiers des illustrations » »). Lit ensuite toutes les `recipes` (pages de 400, gardées en mémoire), et retient pour chacune les URL de `image_urls` et de `thumbnail_urls` que `recipeIllustrationIssues` signale et qui nomment un objet du bucket par défaut ou de `kassdale-6d948.appspot.com` (`recipeMovePlan`, `backfills/illustrationFoldersMove.ts`) ; une URL d'un autre bucket, d'un autre hôte, un chemin nu ou un champ qui n'est pas une liste n'est pas rangé et place la recette dans « À revoir ». Seules deux sources se rangent (`movableSourceRefusal`) : une page d'import `scans/{uid}/…` et une couverture « Recette libre » `users/{uid}/free_recipe_cover_{horodatage}.{ext}` ; `quarantine/` (pas encore modérée), `rejected/` (refusée), `tickets/`, `covers/`, la racine, tout autre dossier et tout autre fichier sous `users/` vont dans « À revoir » et ne sont jamais copiés — un éditeur peut écrire n'importe quelle URL du bucket dans sa recette. Pour chaque image, au plus 100 recettes par appel (`maxRecipes`, 500 au plus), 8 minutes au plus, arrêt sur trois recettes en échec de suite : lit les 16 premiers octets (JPEG, PNG ou WebP, sinon refus `illustrationMimeOf`), copie l'objet vers `recipes/{recipeId}/illus_moved_{empreinte}.{ext}` (`movedIllustrationPath` : empreinte SHA-256 de `bucket/chemin`, 16 caractères ; le nom ne dépend que de la source, une copie faite par un passage interrompu est retrouvée), pose `contentType`, `cacheControl: public, max-age=31536000`, un nouveau `firebaseStorageDownloadTokens` et `moderation_status: approved`, `moderation_id`, `moderated_at`, puis écrit `image_moderation/illustration_move_{empreinte}` (`moveModerationId`) : `status: approved`, `decision_reason: manual_folder_move`, `engine: none`, `reviewed_by` l'administrateur, `uid` le créateur de la recette, `moved_from_bucket`, `moved_from_path`, `source_file_status: pending`. Aucune analyse Cloud Vision, rien de facturé. Réécrit ensuite la recette en transaction (`rewriteIllustrationReferences`) : chaque champ qui cite le fichier, URL entière, URL dans un texte (lien Markdown du CookLang) ou chemin nu, à toute profondeur, sauf `source_file_url`, `source_file_name`, `additional_source_file_urls` et `source_url` (le fichier importé, que l'import relit sous `scans/{uid}/`) ; `updated_at` n'est pas touché. Les messages d'erreur partent filtrés dans le journal et dans « À revoir » : code, sans URL ni chemin (`scrubbedErrorMessage`). L'ancien fichier n'est supprimé que si plus aucun document ne le cite (`sourceFileDecision`), et une relecture juste avant la suppression (`array-contains` sur `image_urls` et `thumbnail_urls`, pour les URL lues, l'URL de téléchargement de chaque jeton `firebaseStorageDownloadTokens` lu sur l'objet source, l'URL publique `storage.googleapis.com/{bucket}/{chemin}`, le chemin nu et la forme `gs://`, `citationVariants`) le garde (`keep_referenced`) si une recette le cite de nouveau ou si la requête échoue : les recettes relues, `processing_jobs`, `books`, `users`, `user_profiles`, `image_moderation` (hors lignes de ce backfill), `backup_recipes`, `backup_books`, et les sous-collections `annotations` et `origine` (groupes de collections). Cette lecture a 40 % du délai ; inachevée ou en échec, aucun ancien fichier n'est supprimé (`keep_unverified`), et le passage suivant reprend la décision depuis les lignes `manual_folder_move` restées `pending`, `keep_unverified` ou `delete_failed`. États finaux : `deleted`, `keep_referenced`, `missing`, avec `source_file_checked_at`. Compte rendu : examinées, `aRanger`, `rangees`, `imagesCopiees`, `copiesRetrouvees`, `nonDeplacables`, échouées, `restantes`, `anciensSupprimes`, `anciensConservesCites`, `anciensEnAttente`, `anciensIntrouvables`, `referencesLues`, `indexComplet`, arrêts, `completed`. Marqué terminé quand toutes les recettes ont été lues, sans recette restante, sans ancien fichier en attente et sans élément à revoir (`summarizeIllustrationFoldersMove`). Verrou partagé avec `illustration_folders` (`LOCK_GROUPS`). Aucun point de reprise : chaque passage relit `recipes` en entier. À lancer une fois après le déploiement, puis relancer « Dossiers des illustrations », qui doit rendre 0 à revoir |
+| `backfillIllustrationFoldersMoveFn` | `admin` | ponctuel `illustration_folders_move`, « Ranger les illustrations » (v0.24.33, suite du ticket #154). **Écrit.** Lit d'abord la liste fermée `signalees` du dernier contrôle complet (`readFlaggedList`) ; absente, il ne fait rien et le dit (`listeAbsente: true`, jamais terminé). Seuls les couples (recette, `bucket/chemin`) de cette liste se rangent : une image ajoutée à une recette après le contrôle n'a été vue par personne, et va dans « À revoir » (« non signalée par le dernier contrôle : relancez « Dossiers des illustrations » »). Lit ensuite toutes les `recipes` (pages de 400, gardées en mémoire), et retient pour chacune les URL de `image_urls` et de `thumbnail_urls` que `recipeIllustrationIssues` signale et qui nomment un objet du bucket par défaut ou de `kassdale-6d948.appspot.com` (`recipeMovePlan`, `backfills/illustrationFoldersMove.ts`) ; une URL d'un autre bucket, d'un autre hôte, un chemin nu ou un champ qui n'est pas une liste n'est pas rangé et place la recette dans « À revoir ». Seules deux sources se rangent (`movableSourceRefusal`) : une page d'import `scans/{uid}/…` et une couverture « Recette libre » `users/{uid}/free_recipe_cover_{horodatage}.{ext}` ; `quarantine/` (pas encore modérée), `rejected/` (refusée), `tickets/`, `covers/`, la racine, tout autre dossier et tout autre fichier sous `users/` vont dans « À revoir » et ne sont jamais copiés — un éditeur peut écrire n'importe quelle URL du bucket dans sa recette. Pour chaque image, au plus 100 recettes par appel (`maxRecipes`, 500 au plus), 8 minutes au plus, arrêt sur trois recettes en échec de suite : lit les 16 premiers octets (JPEG, PNG ou WebP, sinon refus `illustrationMimeOf`), copie l'objet vers `recipes/{recipeId}/illus_moved_{empreinte}.{ext}` (`movedIllustrationPath` : empreinte SHA-256 de `bucket/chemin`, 16 caractères ; le nom ne dépend que de la source, une copie faite par un passage interrompu est retrouvée), pose `contentType`, `cacheControl: public, max-age=31536000`, un nouveau `firebaseStorageDownloadTokens` et `moderation_status: approved`, `moderation_id`, `moderated_at`, puis écrit `image_moderation/illustration_move_{empreinte}` (`moveModerationId`) : `status: approved`, `decision_reason: manual_folder_move`, `engine: none`, `reviewed_by` l'administrateur, `uid` le créateur de la recette, `moved_from_bucket`, `moved_from_path`, `source_file_status: pending`. Aucune analyse Cloud Vision, rien de facturé. Réécrit ensuite la recette en transaction (`rewriteIllustrationReferences`) : chaque champ qui cite le fichier, URL entière, URL dans un texte (lien Markdown du CookLang) ou chemin nu, à toute profondeur, sauf `source_file_url`, `source_file_name`, `additional_source_file_urls` et `source_url` (le fichier importé, que l'import relit sous `scans/{uid}/`) ; `updated_at` n'est pas touché. Les messages d'erreur partent filtrés dans le journal et dans « À revoir » : code, sans URL ni chemin (`scrubbedErrorMessage`). L'ancien fichier n'est supprimé que si plus aucun document ne le cite (`sourceFileDecision`), et une relecture juste avant la suppression (`array-contains` sur `image_urls` et `thumbnail_urls`, pour les URL lues, l'URL de téléchargement de chaque jeton `firebaseStorageDownloadTokens` lu sur l'objet source, l'URL publique `storage.googleapis.com/{bucket}/{chemin}`, le chemin nu et la forme `gs://`, `citationVariants`) le garde (`keep_referenced`) si une recette le cite de nouveau ou si la requête échoue : les recettes relues, `processing_jobs`, `books`, `users`, `user_profiles`, `image_moderation` (hors lignes de ce backfill), `backup_recipes`, `backup_books`, et les sous-collections `annotations` et `origine` (groupes de collections). Cette lecture a 40 % du délai ; inachevée ou en échec, aucun ancien fichier n'est supprimé (`keep_unverified`), et le passage suivant reprend la décision depuis les lignes `manual_folder_move` restées `pending`, `keep_unverified` ou `delete_failed`. États finaux : `deleted`, `keep_referenced`, `missing`, avec `source_file_checked_at`. Compte rendu : examinées, `aRanger`, `rangees`, `imagesCopiees`, `copiesRetrouvees`, `nonDeplacables`, échouées, `restantes`, `anciensSupprimes`, `anciensConservesCites`, `anciensEnAttente`, `anciensIntrouvables`, `referencesLues`, `indexComplet`, arrêts, `completed`. Marqué terminé quand toutes les recettes ont été lues, sans recette restante, sans ancien fichier en attente et sans élément à revoir (`summarizeIllustrationFoldersMove`). Verrou partagé avec `illustration_folders` (`LOCK_GROUPS`). Aucun point de reprise : chaque passage relit `recipes` en entier. À lancer une fois après le déploiement, puis relancer « Dossiers des illustrations », qui doit rendre 0 à revoir |
 
 Six reprises ponctuelles, menées au bout et marquées terminées en production, sont retirées en
-v0.24.32 avec leur callable : `backfillSystemBooksFn` (« Livres système des comptes »),
+v0.24.33 avec leur callable : `backfillSystemBooksFn` (« Livres système des comptes »),
 `backfillGroupPlanningReachFn` (« Portée des groupes et des plannings »),
 `backfillTicketAnalysesFn` (« Analyses des tickets »), `backfillTicketDeliveredPrFn` (« PR des
 tickets livrés »), `backfillTitleKeysFn` (« Clé de titre des recettes ») et
@@ -6331,6 +6429,8 @@ code, et une réimplémentation doit la reproduire :
 | Recette JSON-LD au-delà des bornes (60 000 car., 200 ingrédients, 150 étapes, 2 000 car. par ligne) | `no_recipe`, aucun appel de modèle |
 | Adresse d'import non publique, à la callable ou à la connexion | `parseImportUrl` / `assertPublicHost` refusent avant la requête ; `guardedLookup` refuse au moment de la connexion. Aucun octet n'est envoyé |
 | Livre cible d'un autre membre (import) | `assertJobTargetBook` refuse avant tout téléchargement : dead letter dès la première tentative, `failure_reason: foreign_book` |
+| Propriétaire du job révoqué, lecteur, en attente ou supprimé (import, à chaque tentative) | `assertJobOwnerEditor` refuse avant toute écriture et tout appel de modèle : `error_code: owner_not_editor` sur le job, dead letter dès cette tentative, `failure_reason: owner_not_editor` |
+| Dead letter relancée deux fois (double appui, deux onglets) | `relaunchDeadLetterFn` lit et marque la dead letter dans une transaction : un seul job créé, `failed-precondition` « Ce job a déjà été relancé. » pour le second appel |
 | Fichier source hors de `scans/{created_by}/` (import) | `resolveJobSourcePath` refuse avant tout téléchargement : dead letter dès la première tentative, `failure_reason: forbidden_source_path` |
 | Image à relire hors des dossiers publiés (amélioration d'illustration, visuel de dressage précédent) | `downloadStorageBytes` n'admet que `illustrations/` et `recipes/` : `permission-denied` avant tout téléchargement |
 | Trop d'appels d'IA simultanés pour un compte, depuis une callable | Attente jusqu'à 20 s, puis `BudgetExceededError` de motif `concurrency`, rendu en `resource-exhausted`. Le pipeline, les déclencheurs et les tâches planifiées ne sont pas limités en simultanéité |
@@ -7668,6 +7768,9 @@ pourtant, et une réimplémentation doit connaître leur contrat :
   l'aiguillage : un appel non administrateur est refusé quel que soit `experiment`, absent
   ou inconnu compris (v0.24.17). Chaque expérience reçoit le contexte de cette garde et
   pose elle-même son poste de coût (`ctx.feature`) ;
+- l'image d'une expérience est bornée à 20 Mo décodés (`readSandboxImage`, plafond
+  `PAGE_IMAGE_MAX_BYTES` importé de `callable/_inputBounds.ts`) ; l'erreur d'une expérience rend `err.message`,
+  lisible par le seul administrateur ;
 - rien n'y est enregistré — ni Firestore, ni Storage sur les chemins de production ;
 - le bac à sable **lit** le code de l'application, ne l'édite jamais : une expérience qui
   doit modifier un comportement existant en copie le code.
@@ -7713,7 +7816,10 @@ journalisation et coût.
   Storage, rend l'URL de téléchargement, supprime la source en dernier. Idempotente :
   le SDK Android rejoue un appel dont la connexion est tombée, et le serveur reçoit deux
   requêtes pour le même chemin. Une seule copie (`ifGenerationMatch: 0`) ; l'autre
-  requête attend la fin de la première et relit sa promotion au lieu d'échouer.
+  requête attend la fin de la première et relit sa promotion au lieu d'échouer. Le
+  `scanId` du client n'est retenu que s'il a la forme `isValidScanId` et que
+  `scan_spend/{scanId}` n'appartient pas à un autre compte (`scanOwnerConflict`) ; sinon il
+  devient `undefined`, avec un `logWarn` (un `logError` si le propriétaire est illisible).
 - **`utils/uploadSecurity.ts` — `scanUpload()`** juge le contenant : taille, extension,
   type MIME, signature binaire, EICAR. Il ne regarde pas l'image. Un `.txt`, sans signature,
   doit se déclarer `text/plain` (ou `text/plain; charset=utf-8`) ou sans type, et ne pas
@@ -7790,7 +7896,7 @@ Un refus porte sur le lot entier, renvoyé en `permission-denied`, sans analyse 
 | `published_url` | `string?` | posé à la promotion |
 | `rejected_path` | `string?` | image conservée après un refus, sous `rejected/{uid}/` — `null` si le déplacement a échoué |
 | `correlation_id` | `string` | relie la ligne aux traces Cloud Logging |
-| `moved_from_bucket`, `moved_from_path` | `string?` | lignes `manual_folder_move` seulement (v0.24.32) : bucket et chemin du fichier d'origine, hors des dossiers modérés, que le backfill « Ranger les illustrations » a copié vers `target_path`. `quarantine_path` vaut alors `null`. Absents ailleurs |
+| `moved_from_bucket`, `moved_from_path` | `string?` | lignes `manual_folder_move` seulement (v0.24.33) : bucket et chemin du fichier d'origine, hors des dossiers modérés, que le backfill « Ranger les illustrations » a copié vers `target_path`. `quarantine_path` vaut alors `null`. Absents ailleurs |
 | `source_file_status`, `source_file_checked_at` | `string?`, `timestamp?` | lignes `manual_folder_move` seulement : sort de l'ancien fichier — `pending` (copie faite, décision à prendre), `deleted`, `keep_referenced` (un autre document le cite), `keep_unverified` (lecture des références inachevée, reprise au passage suivant), `delete_failed`, `missing` |
 | `attach_on_approval` | `bool` | posé à `true` par l'import par lien seulement (`attachWebPhoto`) : à l'approbation — immédiate, par un administrateur (`reviewModeratedImageFn`) ou par une relance (`retryPendingModerationFn`) —, `attachApprovedIllustration` ajoute `published_url` à `image_urls` de la recette `owner_id` (`recipe_illustration`). Une recette supprimée entre-temps est journalisée et ignorée. `false` partout ailleurs : une image envoyée par le client et mise en attente ne s'attache pas d'elle-même |
 
