@@ -430,6 +430,38 @@ function pieceWeightForIngredient(name: string): number {
   return 100;
 }
 
+/**
+ * Poids d'un couple unité/ingrédient que la table des unités ne peut pas porter.
+ *
+ * « noix » pèse 3 g de muscade et 10 g de beurre ; « blanc » et « jaune » ne
+ * désignent une quantité que devant « œuf ». Aucune valeur de l'unité seule ne
+ * serait vraie pour tous : un couple absent de cette liste reste sans poids.
+ * Le référentiel Firestore (`IngredientWeightOverride.gramsPerUnit`) garde la
+ * priorité sur ces valeurs. Les unités sont au singulier, les ingrédients des
+ * formes canoniques (`normalizeIngredientCanonicalId`) comparées par inclusion.
+ */
+const UNIT_INGREDIENT_PROFILES: { unit: string; matchers: string[]; gramsPerUnit: number }[] = [
+  { unit: "noix", matchers: ["muscade"], gramsPerUnit: 3 },
+  { unit: "noix", matchers: ["beurre"], gramsPerUnit: 10 },
+  { unit: "blanc", matchers: ["oeuf"], gramsPerUnit: 30 },
+  { unit: "jaune", matchers: ["oeuf"], gramsPerUnit: 18 },
+];
+
+function unitIngredientWeight(normalizedUnit: string, ingredientName: string): number | null {
+  const singular = normalizedUnit.endsWith("s") ? normalizedUnit.slice(0, -1) : normalizedUnit;
+  const normalizedName = normalizeIngredientCanonicalId(ingredientName);
+  if (!normalizedName) return null;
+  for (const profile of UNIT_INGREDIENT_PROFILES) {
+    if (
+      profile.unit === singular &&
+      profile.matchers.some((matcher) => normalizedName.includes(matcher))
+    ) {
+      return profile.gramsPerUnit;
+    }
+  }
+  return null;
+}
+
 export function canonicalizeNormalizedUnit(normalizedUnit: string): string {
   if (!normalizedUnit) return "";
   if (CANONICAL_UNIT_ALIASES[normalizedUnit]) {
@@ -494,6 +526,16 @@ export function getKnownUnitMetadata(
     };
   }
 
+  const coupleWeight = unitIngredientWeight(normalizedUnit, ingredientName ?? "");
+  if (coupleWeight != null) {
+    return {
+      normalizedUnit,
+      measurementType: "count",
+      gramsPerUnit: coupleWeight,
+      source: "builtin",
+    };
+  }
+
   return null;
 }
 
@@ -550,6 +592,9 @@ export const INGREDIENT_DEPENDENT_UNITS = new Set([
   "poignee",
   "morceau",
   "gousse",
+  "noix",
+  "blanc",
+  "jaune",
 ]);
 
 /** Cette unité tire-t-elle son poids de l'ingrédient plutôt que d'elle-même ? */
@@ -705,7 +750,9 @@ export interface WeighingInput {
  *
  * Cinq cas, et rien d'autre :
  *
- *  1. la quantité se lit — on la rend telle quelle, l'unité inchangée ;
+ *  1. la quantité se lit — on la rend telle quelle, l'unité inchangée ; sauf sur
+ *     un assaisonnement sans unité ni poids à la pièce, dont le nombre se lit en
+ *     pincées (« 1 muscade ») ;
  *  2. elle manque sur une petite mesure à poids fixe (« pincée ») — on lit 1 ;
  *  3. elle manque sur une unité comptée une à une (« brin », « bouquet ») — on
  *     lit 1, et le poids de l'unité vient de l'ingrédient ;
@@ -733,7 +780,18 @@ export function resolveWeighingInput(
 ): WeighingInput | null {
   const unitStr = typeof unit === "string" ? unit.trim() : "";
   const quantity = parseQuantityToNumber(qty);
-  if (quantity != null) return { qty: quantity, unit: unitStr };
+  if (quantity != null) {
+    // « 1 muscade » : le nombre est là, l'unité non. Sans poids à la pièce
+    // connu, il se lit en pincées, comme un assaisonnement sans nombre.
+    if (
+      unitStr === "" &&
+      isSeasoning(ingredientName) &&
+      matchedPieceWeightForIngredient(ingredientName) == null
+    ) {
+      return { qty: quantity, unit: SEASONING_DEFAULT_UNIT };
+    }
+    return { qty: quantity, unit: unitStr };
+  }
 
   const normalizedUnit = normalizeObservedUnit(unitStr);
   if (FIXED_SMALL_MEASURE_UNITS.has(normalizedUnit) || IMPLIED_ONE_UNITS.has(normalizedUnit)) {

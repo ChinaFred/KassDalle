@@ -115,6 +115,9 @@ class NutritionQuantityConverter {
     'poignee',
     'morceau',
     'gousse',
+    'noix',
+    'blanc',
+    'jaune',
   };
 
   /// Cette unité tire-t-elle son poids de l'ingrédient plutôt que d'elle-même ?
@@ -265,6 +268,9 @@ class NutritionQuantityConverter {
   ///  5. elle manque sans unité, sur un autre ingrédient dont la fiche porte
   ///     une portion usuelle — on lit cette portion, en grammes.
   ///
+  /// Au cas 1, un assaisonnement sans unité ni poids à la pièce lit son nombre
+  /// en pincées (« 1 muscade »).
+  ///
   /// Tout le reste rend `null`. Une quantité absente devant « g » ou
   /// « c. à c. » est une donnée abîmée, pas une convention d'écriture : lui
   /// prêter un 1 inventerait un poids là où la recette attendait un nombre.
@@ -286,6 +292,13 @@ class NutritionQuantityConverter {
     final unitStr = unit.trim();
     final quantity = parseQuantity(qty);
     if (quantity != null && quantity > 0) {
+      // « 1 muscade » : le nombre est là, l'unité non. Sans poids à la pièce
+      // connu, il se lit en pincées, comme un assaisonnement sans nombre.
+      if (unitStr.isEmpty &&
+          isSeasoning(ingredientName) &&
+          _matchedPieceWeightForIngredient(ingredientName) == null) {
+        return WeighingInput(qty: quantity, unit: seasoningDefaultUnit);
+      }
       return WeighingInput(qty: quantity, unit: unitStr);
     }
 
@@ -732,6 +745,47 @@ class NutritionQuantityConverter {
       );
     }
 
+    final coupleWeight = _unitIngredientWeight(normalizedUnit, ingredientName);
+    if (coupleWeight != null) {
+      return KnownUnit(
+        normalizedUnit: normalizedUnit,
+        measurementType: UnitMeasurementType.count,
+        gramsPerUnit: coupleWeight,
+      );
+    }
+
+    return null;
+  }
+
+  /// Poids d'un couple unité/ingrédient que la table des unités ne peut pas
+  /// porter. Miroir de `UNIT_INGREDIENT_PROFILES` côté TypeScript.
+  ///
+  /// « noix » pèse 3 g de muscade et 10 g de beurre ; « blanc » et « jaune » ne
+  /// désignent une quantité que devant « œuf ». Un couple absent de cette liste
+  /// reste sans poids. Le référentiel d'ingrédients garde la priorité.
+  static const List<({String unit, List<String> matchers, double gramsPerUnit})>
+  _unitIngredientProfiles = [
+    (unit: 'noix', matchers: ['muscade'], gramsPerUnit: 3),
+    (unit: 'noix', matchers: ['beurre'], gramsPerUnit: 10),
+    (unit: 'blanc', matchers: ['oeuf'], gramsPerUnit: 30),
+    (unit: 'jaune', matchers: ['oeuf'], gramsPerUnit: 18),
+  ];
+
+  static double? _unitIngredientWeight(
+    String normalizedUnit,
+    String ingredientName,
+  ) {
+    final singular = normalizedUnit.endsWith('s')
+        ? normalizedUnit.substring(0, normalizedUnit.length - 1)
+        : normalizedUnit;
+    final normalizedName = _normalize(ingredientName);
+    if (normalizedName.isEmpty) return null;
+    for (final profile in _unitIngredientProfiles) {
+      if (profile.unit == singular &&
+          profile.matchers.any(normalizedName.contains)) {
+        return profile.gramsPerUnit;
+      }
+    }
     return null;
   }
 
