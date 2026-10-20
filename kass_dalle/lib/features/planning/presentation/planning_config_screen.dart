@@ -17,6 +17,7 @@ import '../services/calendar_service.dart';
 import 'constraint_understanding.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/error_message.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -826,15 +827,28 @@ class _RefusalsTileState extends ConsumerState<_RefusalsTile> {
     if (confirmed == true && mounted) await _forget(count);
   }
 
-  void _forgetFailed(int count) {
-    context.showErrorSnackBar(
-      'Les refus n\'ont pas été effacés.',
-      action: SnackBarAction(
-        label: 'Réessayer',
-        onPressed: () {
-          if (mounted) _forget(count);
-        },
-      ),
+  /// Échec de l'oubli des refus, en deux phrases, accordé sur [count].
+  /// [error] nul : aucun compte connecté au moment d'oublier ; réessayer ne
+  /// servirait à rien, le message ne propose donc pas « Réessayer ».
+  void _forgetFailed(int count, Object? error) {
+    final what = count > 1 ? 'Refus non oubliés' : 'Refus non oublié';
+    if (error == null) {
+      context.showErrorSnackBar('$what. Session expirée.');
+      return;
+    }
+    // Un refus de droits ou une session perdue échouerait de nouveau : pas de
+    // « Réessayer » dans ce cas.
+    context.showFailureSnackBar(
+      what,
+      error,
+      action: describeError(error).retryable
+          ? SnackBarAction(
+              label: 'Réessayer',
+              onPressed: () {
+                if (mounted) _forget(count);
+              },
+            )
+          : null,
     );
   }
 
@@ -846,7 +860,7 @@ class _RefusalsTileState extends ConsumerState<_RefusalsTile> {
         feature: 'planningConfigScreen.forgetRefusals',
         error: StateError('Compte introuvable au moment d\'oublier les refus'),
       );
-      _forgetFailed(count);
+      _forgetFailed(count, null);
       return;
     }
     setState(() => _clearing = true);
@@ -867,7 +881,7 @@ class _RefusalsTileState extends ConsumerState<_RefusalsTile> {
         userId: uid,
       );
       if (!mounted) return;
-      _forgetFailed(count);
+      _forgetFailed(count, e);
     } finally {
       if (mounted) setState(() => _clearing = false);
     }

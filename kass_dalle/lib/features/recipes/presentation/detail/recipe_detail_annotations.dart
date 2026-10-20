@@ -181,20 +181,24 @@ class AnnotationTile extends ConsumerWidget {
     final isAdmin = user?.isAdmin ?? false;
     final theme = Theme.of(context);
 
-    final (icon, color, label) = switch (annotation.type) {
+    final scheme = theme.colorScheme;
+    final (icon, color, onColor, label) = switch (annotation.type) {
       AnnotationType.note => (
         Icons.sticky_note_2_outlined,
-        Colors.blue.shade100,
+        scheme.secondaryContainer,
+        scheme.onSecondaryContainer,
         'Remarque',
       ),
       AnnotationType.tip => (
         Icons.lightbulb_outline,
-        theme.colorScheme.tertiaryContainer,
+        scheme.tertiaryContainer,
+        scheme.onTertiaryContainer,
         'Astuce',
       ),
       AnnotationType.correction => (
         Icons.build_circle_outlined,
-        theme.colorScheme.errorContainer,
+        scheme.errorContainer,
+        scheme.onErrorContainer,
         'Correction',
       ),
     };
@@ -204,6 +208,7 @@ class AnnotationTile extends ConsumerWidget {
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: color,
+          foregroundColor: onColor,
           child: Icon(icon, size: AppIconSize.small),
         ),
         title: Text(annotation.text),

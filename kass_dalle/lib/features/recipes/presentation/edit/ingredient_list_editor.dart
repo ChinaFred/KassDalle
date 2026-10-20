@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/utils/platform_utils.dart';
 
 const _kSuggestedUnits = <String>[
   // Poids
@@ -513,7 +514,8 @@ class _IngTileState extends State<_IngTile> {
     final row = widget.row;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 480;
+        final isNarrow =
+            constraints.maxWidth < PlatformUtils.narrowContentBreakpoint;
 
         // ── Layout empilé (mobile) ──────────────────────────────────────────
         if (isNarrow) {

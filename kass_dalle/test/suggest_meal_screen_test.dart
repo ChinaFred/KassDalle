@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:kass_dalle/core/widgets/error_message.dart';
 import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/groups/domain/family_group.dart';
@@ -66,7 +67,9 @@ void main() {
     Recipe? recipe,
     bool recipesFail = false,
     List<Recipe>? recipes,
+    int titlesFailures = 0,
   }) async {
+    var titlesCalls = 0;
     final repo = _FakeRepo();
     final day = DateTime(2026, 10, 20);
     await tester.pumpWidget(
@@ -75,9 +78,16 @@ void main() {
           mealSuggestionRepositoryProvider.overrideWithValue(repo),
           appUserProvider.overrideWith((ref) => Stream.value(_user)),
           memberNameProvider.overrideWith((ref, uid) => 'Marie'),
-          suggestablePrivateTitlesProvider.overrideWith(
-            (ref) async => [_recipe('p1', 'Gâteau secret', isPrivate: true)],
-          ),
+          suggestablePrivateTitlesProvider.overrideWith((ref) async {
+            if (titlesCalls++ < titlesFailures) {
+              throw StateError('titres illisibles');
+            }
+            // Une relecture prend un instant : l'indicateur se voit.
+            if (titlesCalls > 1) {
+              await Future<void>.delayed(const Duration(milliseconds: 100));
+            }
+            return [_recipe('p1', 'Gâteau secret', isPrivate: true)];
+          }),
           suggestableRecipesProvider.overrideWith((ref) async {
             if (recipesFail) throw StateError('lecture impossible');
             return recipes ??
@@ -218,6 +228,64 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'des frites');
     await tester.pump();
     expect(sendButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('titres privés illisibles : ligne sous le champ et Réessayer', (
+    tester,
+  ) async {
+    await open(tester, titlesFailures: 1);
+    expect(find.text('Titres des livres privés non chargés.'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).first, 'a');
+    await tester.pump();
+    // La liste habituelle reste proposée.
+    expect(find.text('Lasagnes'), findsOneWidget);
+    expect(find.text('Gâteau secret'), findsNothing);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Réessayer'));
+    await tester.pump();
+    // Pendant la relecture, l'indicateur remplace le bouton.
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('Titres des livres privés non chargés.'), findsNothing);
+    expect(find.text('Gâteau secret'), findsOneWidget);
+  });
+
+  testWidgets('recettes et titres illisibles : un seul message, tout relu', (
+    tester,
+  ) async {
+    await open(tester, recipesFail: true, titlesFailures: 1);
+    expect(find.text('Titres des livres privés non chargés.'), findsNothing);
+    expect(
+      find.text(
+        'Les recettes n\'ont pas pu être lues. Un nom libre reste possible.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(TextButton, 'Réessayer'));
+    await tester.pumpAndSettle();
+    // Les titres ont été relus avec les recettes.
+    await tester.enterText(find.byType(TextField).first, 'secret');
+    await tester.pump();
+    expect(find.text('Gâteau secret'), findsOneWidget);
+  });
+
+  testWidgets('échec d\'envoi : deux phrases, saisie conservée', (
+    tester,
+  ) async {
+    final repo = await open(tester);
+    final error = StateError('réseau');
+    repo.failWith = error;
+    await tester.enterText(find.byType(TextField).first, 'des frites');
+    await tester.pump();
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Envoyer la suggestion'),
+    );
+    await tester.pumpAndSettle();
+    final message = failureMessage('Suggestion non envoyée', error);
+    expect(message, startsWith('Suggestion non envoyée. '));
+    // Dans l'écran et dans le message.
+    expect(find.text(message), findsNWidgets(2));
+    expect(find.text('des frites'), findsOneWidget);
   });
 
   testWidgets('quota atteint : message, saisie conservée', (tester) async {

@@ -106,33 +106,36 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
               Text(RecipeAiUiCopy.generateImageDialogTitle),
             ],
           ),
-          content: SizedBox(
-            width: MediaQuery.sizeOf(ctx).width > 720
-                ? 560
-                : MediaQuery.sizeOf(ctx).width * 0.9,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  RecipeAiUiCopy.generateImageDialogHelper,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+          // 560 au plus ; sur téléphone, toute la largeur que laisse le
+          // dialogue.
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    RecipeAiUiCopy.generateImageDialogHelper,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                StylusPadTextField(
-                  controller: promptCtrl,
-                  padTitle: RecipeAiUiCopy.generateImageDialogTitle,
-                  autofocus: true,
-                  minLines: 8,
-                  maxLines: 12,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  StylusPadTextField(
+                    controller: promptCtrl,
+                    padTitle: RecipeAiUiCopy.generateImageDialogTitle,
+                    autofocus: true,
+                    minLines: 8,
+                    maxLines: 12,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           actions: [

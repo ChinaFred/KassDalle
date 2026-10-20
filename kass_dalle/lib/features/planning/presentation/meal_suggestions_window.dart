@@ -7,6 +7,7 @@ import '../../../core/theme/app_icon_size.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/widgets/error_message.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -77,10 +78,10 @@ Future<void> removeSuggestionWithUndo(
   final scheme = Theme.of(context).colorScheme;
   try {
     await repo.remove(suggestion);
-  } catch (_) {
+  } catch (e) {
     // Remonté au rapport par le repository.
     if (context.mounted) {
-      context.showErrorSnackBar('La suggestion n\'a pas pu être retirée.');
+      context.showFailureSnackBar('Suggestion non retirée', e);
     }
     return;
   }
@@ -92,16 +93,11 @@ Future<void> removeSuggestionWithUndo(
       onPressed: () async {
         try {
           await repo.restore(suggestion);
-        } catch (_) {
+        } catch (e) {
           // Remonté au rapport par le repository.
-          messenger.showSnackBar(
-            SnackBar(
-              backgroundColor: scheme.errorContainer,
-              content: Text(
-                'La suggestion n\'a pas pu être remise.',
-                style: TextStyle(color: scheme.onErrorContainer),
-              ),
-            ),
+          messenger.showErrorMessage(
+            failureMessage('Suggestion non remise', e),
+            scheme: scheme,
           );
         }
       },

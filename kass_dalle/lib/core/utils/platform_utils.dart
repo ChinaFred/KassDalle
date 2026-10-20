@@ -63,6 +63,13 @@ class PlatformUtils {
   /// le raccourci galerie en plus du reste.
   static const double galleryShortcutBreakpoint = 900.0;
 
+  /// Largeur d'un BLOC (lue sur `LayoutBuilder`, pas sur l'écran) sous
+  /// laquelle ses éléments s'empilent au lieu de s'aligner : une ligne
+  /// d'ingrédient, la barre de l'éditeur hybride, une carte du coach de
+  /// dressage. Un bloc étroit peut vivre dans un écran large (colonne d'un
+  /// panneau, dialogue).
+  static const double narrowContentBreakpoint = 480.0;
+
   /// Hauteur disponible sous laquelle une barre d'actions n'est plus fixée
   /// en bas d'une fiche : elle suit le contenu en fin de défilement
   /// (paysage, texte agrandi, bandeaux), plutôt que de masquer la fiche.

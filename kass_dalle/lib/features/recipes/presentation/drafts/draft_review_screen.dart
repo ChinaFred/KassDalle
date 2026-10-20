@@ -122,62 +122,65 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               Text(RecipeAiUiCopy.refineDialogTitle),
             ],
           ),
-          content: SizedBox(
-            width: MediaQuery.sizeOf(ctx).width > 720
-                ? 560
-                : MediaQuery.sizeOf(ctx).width * 0.9,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  RecipeAiUiCopy.refineDialogInputPrompt,
-                  style: TextStyle(fontSize: 13),
-                ),
-                const SizedBox(height: 8),
-                StylusPadTextField(
-                  controller: _refineCtrl,
-                  padTitle: RecipeAiUiCopy.refineDialogTitle,
-                  autofocus: true,
-                  minLines: 4,
-                  maxLines: 4,
-                  decoration: InputDecoration(
-                    hintText: recipe.pageType != PageType.recipe
-                        ? 'Ex : "Mets les titres en gras, regroupe les items similaires…"'
-                        : 'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
-                    border: const OutlineInputBorder(),
+          // 560 au plus ; sur téléphone, toute la largeur que laisse le
+          // dialogue.
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    RecipeAiUiCopy.refineDialogInputPrompt,
+                    style: TextStyle(fontSize: 13),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  recipe.pageType != PageType.recipe
-                      ? 'Si vide : correction orthographique et mise en forme Markdown.'
-                      : 'Si vide : reformatage et corrections automatiques.',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                if (isSourceImage) ...[
-                  const Divider(height: 20),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    title: const Text(
-                      'Extraire les illustrations depuis le scan',
-                      style: TextStyle(fontSize: 13),
+                  const SizedBox(height: 8),
+                  StylusPadTextField(
+                    controller: _refineCtrl,
+                    padTitle: RecipeAiUiCopy.refineDialogTitle,
+                    autofocus: true,
+                    minLines: 4,
+                    maxLines: 4,
+                    decoration: InputDecoration(
+                      hintText: recipe.pageType != PageType.recipe
+                          ? 'Ex : "Mets les titres en gras, regroupe les items similaires…"'
+                          : 'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
+                      border: const OutlineInputBorder(),
                     ),
-                    subtitle: const Text(
-                      'Détecte et recadre les photos culinaires de l\'image source',
-                      style: TextStyle(fontSize: 11),
-                    ),
-                    value: alsoExtract,
-                    onChanged: (v) =>
-                        setDialogState(() => alsoExtract = v ?? false),
                   ),
+                  const SizedBox(height: 6),
+                  Text(
+                    recipe.pageType != PageType.recipe
+                        ? 'Si vide : correction orthographique et mise en forme Markdown.'
+                        : 'Si vide : reformatage et corrections automatiques.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (isSourceImage) ...[
+                    const Divider(height: 20),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text(
+                        'Extraire les illustrations depuis le scan',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      subtitle: const Text(
+                        'Détecte et recadre les photos culinaires de l\'image source',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                      value: alsoExtract,
+                      onChanged: (v) =>
+                          setDialogState(() => alsoExtract = v ?? false),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           actions: [
@@ -445,14 +448,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             .updateRecipeIllustrations(recipe.id, result.urls);
         if (mounted) {
           context.showSuccessSnackBar(
-            '${result.urls.length} illustration(s) extraite(s) ✓',
+            RecipeAiUiCopy.illustrationsExtracted(result.urls.length),
           );
         }
       } else {
         if (mounted) {
-          context.showSuccessSnackBar(
-            'Aucune illustration trouvée dans le scan',
-          );
+          context.showSnackBar(RecipeAiUiCopy.noIllustrationFound);
         }
       }
     } on ForeignImageUrl catch (e) {

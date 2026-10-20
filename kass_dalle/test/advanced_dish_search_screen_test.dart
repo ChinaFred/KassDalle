@@ -29,11 +29,16 @@ Recipe _recipe(
 );
 
 void main() {
+  // Nombre de lectures des titres privés du dernier `open`.
+  var titlesCalls = 0;
+
   Future<List<AdvancedDishPick?>> open(
     WidgetTester tester, {
     String initialQuery = '',
     bool recipesFail = false,
+    int titlesFailures = 0,
   }) async {
+    titlesCalls = 0;
     final results = <AdvancedDishPick?>[];
     final router = GoRouter(
       routes: [
@@ -63,11 +68,12 @@ void main() {
       ProviderScope(
         overrides: [
           memberNameProvider.overrideWith((ref, uid) => 'Marie'),
-          suggestablePrivateTitlesProvider.overrideWith(
-            (ref) async => [
-              _recipe('p1', 'Tarte aux tomates', isPrivate: true),
-            ],
-          ),
+          suggestablePrivateTitlesProvider.overrideWith((ref) async {
+            if (titlesCalls++ < titlesFailures) {
+              throw StateError('titres illisibles');
+            }
+            return [_recipe('p1', 'Tarte aux tomates', isPrivate: true)];
+          }),
           suggestableRecipesProvider.overrideWith((ref) async {
             if (recipesFail) throw StateError('lecture impossible');
             return [
@@ -132,4 +138,45 @@ void main() {
     await open(tester, recipesFail: true);
     expect(find.text('Réessayer'), findsOneWidget);
   });
+
+  testWidgets(
+    'titres privés en erreur : la liste reste, une ligne propose de réessayer',
+    (tester) async {
+      await open(tester, initialQuery: 'tomate', titlesFailures: 1);
+      expect(find.text('Gratin du soir'), findsOneWidget);
+      expect(find.text('Tarte aux tomates'), findsNothing);
+      expect(
+        find.text('Titres des livres privés non chargés.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Réessayer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Titres des livres privés non chargés.'), findsNothing);
+      expect(find.text('Tarte aux tomates'), findsOneWidget);
+    },
+  );
+
+  testWidgets('le cadenas d\'un titre privé ne répète pas le sous-titre', (
+    tester,
+  ) async {
+    await open(tester, initialQuery: 'tarte');
+    expect(find.text('Seul le titre est visible'), findsOneWidget);
+    final lock = tester.widget<Icon>(find.byIcon(Icons.lock_outline));
+    expect(lock.semanticLabel, isNull);
+  });
+
+  testWidgets(
+    'recettes en erreur : pas de ligne des titres, « Réessayer » relance tout',
+    (tester) async {
+      await open(tester, recipesFail: true, titlesFailures: 1);
+      expect(find.text('Titres des livres privés non chargés.'), findsNothing);
+      expect(find.text('Réessayer'), findsOneWidget);
+      expect(titlesCalls, 1);
+
+      await tester.tap(find.text('Réessayer'));
+      await tester.pumpAndSettle();
+      expect(titlesCalls, 2);
+    },
+  );
 }

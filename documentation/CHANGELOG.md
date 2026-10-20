@@ -20,6 +20,34 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.34 — fonctionnel
+
+Audit #151, lot 9, PR G (ticket #181) : messages et couleurs.
+
+- L'avatar d'une remarque prend les couleurs du thème (`secondaryContainer`), au lieu d'un bleu
+  fixe illisible en thème sombre ; astuce et correction gardent leurs conteneurs, avec la
+  couleur d'avant-plan assortie.
+- Extraction d'illustrations relancée à la main : « Aucune illustration trouvée dans le scan. »
+  devient un message neutre (il s'affichait en couleur de succès), et le compte s'accorde :
+  « 1 illustration extraite ✓ », « N illustrations extraites ✓ ».
+- Planning : les échecs s'écrivent en deux phrases, ce qui n'a pas eu lieu puis la cause
+  (`showFailureSnackBar`) : « Recette non conçue. … » (ou « L'IA n'a pas rendu de recette. »),
+  « Refus non oublié. … » ou « Refus non oubliés. … » selon le nombre (ou « Session
+  expirée. », sans « Réessayer »), « Suggestion non envoyée. … »,
+  « Suggestion non retirée. … », « Suggestion non remise. … ».
+- Les titres des livres privés qui n'ont pas pu être lus ne disparaissent plus sans rien dire :
+  « Suggérer un plat » et la recherche avancée affichent sous le champ la ligne « Titres des
+  livres privés non chargés. » avec « Réessayer ». Cette ligne est masquée quand les recettes
+  sont en erreur ; le « Réessayer » des recettes relance alors les deux lectures.
+  `suggestablePrivateTitlesProvider` laisse remonter l'erreur ; le rapport reste envoyé par
+  `PrivateTitlesRepository`.
+- Dans la recherche avancée, le cadenas d'un titre privé n'a plus d'étiquette
+  d'accessibilité : elle répétait le sous-titre. L'icône d'erreur des invitations par e-mail
+  (membres d'un groupe) prend la couleur d'erreur. Admin › Tickets : quatre icônes passent à `AppIconSize.small`.
+- Seuils nommés : les dialogues de relecture IA et de génération d'image se bornent à 560 de
+  large par contrainte, sans calcul sur la largeur de l'écran ; `PlatformUtils.narrowContentBreakpoint`
+  (480, largeur d'un bloc) remplace le 480 écrit en clair dans trois éditeurs.
+
 ### v0.24.33 — fonctionnel
 
 Nouveau backfill ponctuel « Ranger les illustrations » dans Admin › Backfills

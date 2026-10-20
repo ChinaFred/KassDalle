@@ -1462,7 +1462,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           );
       final recipe = suggestion.recipe;
       if (recipe == null) {
-        if (mounted) _conceptFailed(meal);
+        if (mounted) _conceptFailed(meal, null);
         return;
       }
       final id = await repo.saveAsDraft(recipe);
@@ -1503,7 +1503,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         // réessayer ne servirait à rien avant demain.
         context.showErrorSnackBar(e.message);
       } else {
-        _conceptFailed(meal);
+        _conceptFailed(meal, e);
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -1511,20 +1511,27 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         error: e,
         stackTrace: stackTrace,
       );
-      if (mounted) _conceptFailed(meal);
+      if (mounted) _conceptFailed(meal, e);
     } finally {
       if (mounted) setState(() => _aiLoadingIds.remove(meal.id));
     }
   }
 
-  void _conceptFailed(PlannedMeal meal) {
-    context.showErrorSnackBar(
-      'La conception n\'a pas abouti.',
-      action: SnackBarAction(
-        label: 'Réessayer',
-        onPressed: () => _conceiveForMeal(meal),
-      ),
+  /// Échec d'une conception, en deux phrases. [error] nul : l'appel a
+  /// abouti, mais l'IA n'a pas rendu de recette.
+  void _conceptFailed(PlannedMeal meal, Object? error) {
+    final retry = SnackBarAction(
+      label: 'Réessayer',
+      onPressed: () => _conceiveForMeal(meal),
     );
+    if (error == null) {
+      context.showErrorSnackBar(
+        'Recette non conçue. L\'IA n\'a pas rendu de recette.',
+        action: retry,
+      );
+    } else {
+      context.showFailureSnackBar('Recette non conçue', error, action: retry);
+    }
   }
 
   /// Affiche le conseil de conservation d'un repas, en le produisant s'il

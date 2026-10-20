@@ -1849,7 +1849,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           );
       if (!mounted) return _ConceptOutcome.failed;
       if (suggestion.recipe == null) {
-        _conceptFailed(slotIndex);
+        _conceptFailed(slotIndex, null);
         return _ConceptOutcome.failed;
       }
       await _applySuggestionToSlot(slotIndex, suggestion);
@@ -1881,7 +1881,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _showError(e.message);
         return runId != null ? _ConceptOutcome.denied : _ConceptOutcome.failed;
       }
-      _conceptFailed(slotIndex);
+      _conceptFailed(slotIndex, e);
       return _ConceptOutcome.failed;
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -1889,22 +1889,29 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         error: e,
         stackTrace: stackTrace,
       );
-      if (mounted) _conceptFailed(slotIndex);
+      if (mounted) _conceptFailed(slotIndex, e);
       return _ConceptOutcome.failed;
     } finally {
       if (mounted) setState(() => _conceivingSlots.remove(slotIndex));
     }
   }
 
-  void _conceptFailed(int slotIndex) {
+  /// Échec d'une conception, en deux phrases. [error] nul : l'appel a
+  /// abouti, mais l'IA n'a pas rendu de recette.
+  void _conceptFailed(int slotIndex, Object? error) {
     if (!mounted) return;
-    context.showErrorSnackBar(
-      'La conception n\'a pas abouti.',
-      action: SnackBarAction(
-        label: 'Réessayer',
-        onPressed: () => _conceiveForSlot(slotIndex),
-      ),
+    final retry = SnackBarAction(
+      label: 'Réessayer',
+      onPressed: () => _conceiveForSlot(slotIndex),
     );
+    if (error == null) {
+      context.showErrorSnackBar(
+        'Recette non conçue. L\'IA n\'a pas rendu de recette.',
+        action: retry,
+      );
+    } else {
+      context.showFailureSnackBar('Recette non conçue', error, action: retry);
+    }
   }
 
   /// Pose une suggestion sur un créneau, en enregistrant d'abord la recette si
