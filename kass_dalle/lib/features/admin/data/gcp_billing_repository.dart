@@ -451,85 +451,6 @@ class GcpBillingRepository {
     );
   }
 
-  /// Crée, pour chaque compte approuvé (lecteur, éditeur, administrateur), les
-  /// livres système qui lui manquent. Sans appel de modèle. Les drapeaux
-  /// valent 1 ou 0 ; les comptes en échec sont dans `failures`.
-  Future<BackfillCounts> backfillSystemBooks() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillSystemBooksFn',
-      <String, dynamic>{'appVersion': kAppVersion},
-      timeout: const Duration(minutes: 9),
-    );
-
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
-  /// Recalcule `group_reach` et `planning_reach` (dont `group_ids` et
-  /// `masked_group_ids`) de chaque membre d'un groupe familial. Sans appel de
-  /// modèle. Les drapeaux valent 1 ou 0 ; les comptes en échec sont dans
-  /// `failures`.
-  Future<BackfillCounts> backfillGroupPlanningReach() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillGroupPlanningReachFn',
-      <String, dynamic>{'appVersion': kAppVersion},
-      timeout: const Duration(minutes: 9),
-    );
-
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
-  /// Relève les analyses déjà publiées sur GitHub de chaque ticket dans
-  /// `tickets/{id}/admin/analysis`. Sans appel de modèle. Les drapeaux valent
-  /// 1 ou 0 ; les tickets en échec sont dans `failures`.
-  Future<BackfillCounts> backfillTicketAnalyses() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillTicketAnalysesFn',
-      <String, dynamic>{'appVersion': kAppVersion},
-      timeout: const Duration(minutes: 9),
-    );
-
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
-  /// Retrouve la PR de chaque ticket livré (`delivered_pr_number` et
-  /// `delivered_pr_url` sur le ticket). Sans appel de modèle. Les drapeaux
-  /// valent 1 ou 0 ; les tickets sans PR sont dans `failures`.
-  Future<BackfillCounts> backfillTicketDeliveredPr() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillTicketDeliveredPrFn',
-      <String, dynamic>{'appVersion': kAppVersion},
-      timeout: const Duration(minutes: 9),
-    );
-
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
-  /// Pose `titre_key` sur les recettes qui ne l'ont pas, sans appel de
-  /// modèle : la détection des doublons à l'import la compare.
-  Future<BackfillCounts> backfillTitleKeys() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillTitleKeysFn',
-      <String, dynamic>{'appVersion': kAppVersion},
-      timeout: const Duration(minutes: 9),
-    );
-
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
-  /// Pose `group_owner_id` sur les invitations par e-mail qui ne l'ont pas,
-  /// sans appel de modèle : la règle Firestore compare ce champ pour ouvrir
-  /// une invitation au propriétaire de son groupe. Les invitations sans
-  /// groupe sont dans `failures`.
-  Future<BackfillCounts> backfillInvitationGroupOwner() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillInvitationGroupOwnerFn',
-      <String, dynamic>{'appVersion': kAppVersion},
-      timeout: const Duration(minutes: 9),
-    );
-
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
   /// Contrôle, sans rien écrire dans les recettes, que leurs illustrations
   /// (`image_urls`, `thumbnail_urls`) sont sous `illustrations/` ou
   /// `recipes/` du bucket. Sans appel de modèle. Les recettes hors de ces
@@ -537,6 +458,21 @@ class GcpBillingRepository {
   Future<BackfillCounts> backfillIllustrationFolders() async {
     final dynamic raw = await _callViaSdk(
       'backfillIllustrationFoldersFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
+  /// Range sous `recipes/{id}/` les illustrations et vignettes des recettes
+  /// restées hors des dossiers modérés, approuvées telles quelles par
+  /// l'administrateur, et supprime l'ancien fichier quand plus rien ne le
+  /// cite. Sans appel de modèle. Les recettes non rangées sont dans
+  /// `failures`.
+  Future<BackfillCounts> backfillIllustrationFoldersMove() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillIllustrationFoldersMoveFn',
       <String, dynamic>{'appVersion': kAppVersion},
       timeout: const Duration(minutes: 9),
     );

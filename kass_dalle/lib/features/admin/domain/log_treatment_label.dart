@@ -51,6 +51,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'invitation_group_owner_backfill':
       'Reprise du propriétaire du groupe des invitations',
   'illustration_folders_backfill': 'Contrôle des dossiers des illustrations',
+  'illustration_folders_move_backfill': 'Rangement des illustrations',
   'csp': 'Rapports de la politique de sécurité du web',
   'portee_groupes': 'Portée des groupes après écriture d\'un groupe',
   'portee_plannings':

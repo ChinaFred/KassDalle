@@ -23,11 +23,6 @@ import {
   type OwnerState,
 } from "../triggers/planningReach";
 import { invitedOfOwnedGroups, membersOfOwnedGroups } from "../triggers/plannerRole";
-import {
-  groupAccounts,
-  needsGroupIdField,
-  summarizeGroupPlanningReach,
-} from "../callable/groupPlanningReachBackfillCallable";
 import { readPlanningGroupId } from "../callable/_aiInputReaders";
 
 const editor = { role: "editor", is_revoked: false };
@@ -267,18 +262,6 @@ describe("membersOfOwnedGroups", () => {
   });
 });
 
-describe("groupAccounts (backfill)", () => {
-  test("les membres et les invités de tous les groupes, sans doublon", () => {
-    assert.deepEqual(groupAccounts([famille.data, cousins.data, undefined]), [
-      "invite",
-      "lea",
-      "marie",
-      "paul",
-      "zoe",
-    ]);
-  });
-});
-
 describe("maskedInvitationsFrom", () => {
   test("une invitation vers un groupe en pause est masquée", () => {
     const state = owners({ marie: { config: null, user: reader } });
@@ -322,49 +305,6 @@ describe("invitedOfOwnedGroups", () => {
       invitedOfOwnedGroups([{ invited_ids: ["b", "a", 3, "", "x/y"] }, { invited_ids: ["a"] }]),
       ["a", "b"],
     );
-  });
-});
-
-describe("needsGroupIdField (backfill, repas)", () => {
-  test("repas sans le champ : à marquer", () => {
-    assert.equal(needsGroupIdField({}), true);
-    assert.equal(needsGroupIdField(undefined), true);
-  });
-
-  test("champ présent, nul ou non : gardé", () => {
-    assert.equal(needsGroupIdField({ group_id: null }), false);
-    assert.equal(needsGroupIdField({ group_id: "gd" }), false);
-  });
-});
-
-describe("summarizeGroupPlanningReach", () => {
-  const base = {
-    groupes: 1,
-    examines: 2,
-    ecrits: 1,
-    dejaAJour: 1,
-    echoues: 0,
-    restants: 0,
-    repasExamines: 10,
-    repasMarques: 4,
-    repasEchoues: 0,
-    repasRestants: 0,
-    stoppedByDeadline: false,
-    stoppedByBudget: false,
-    stoppedByErrors: false,
-    completed: true,
-    aRevoir: { items: [], total: 0 },
-  };
-
-  test("comptes et repas restants additionnés", () => {
-    assert.equal(
-      summarizeGroupPlanningReach({ ...base, restants: 2, repasRestants: 5 }).remaining,
-      7,
-    );
-  });
-
-  test("décompte des repas inconnu : reste inconnu", () => {
-    assert.equal(summarizeGroupPlanningReach({ ...base, repasRestants: null }).remaining, null);
   });
 });
 

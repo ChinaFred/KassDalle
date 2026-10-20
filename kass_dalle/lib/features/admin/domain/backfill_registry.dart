@@ -11,9 +11,11 @@
 ///   programme (jours + heure de Paris).
 ///
 /// Retirés en v0.23.52, une fois terminés en production : `recipe_protein`,
-/// `estimated_times` et `planning_defaults`. Leurs documents
-/// `app_config/backfill_run_<clé>` restent en base ; l'écran ignore une clé
-/// absente de ce registre.
+/// `estimated_times` et `planning_defaults`. Retirés en v0.24.32 :
+/// `system_books`, `group_planning_reach`, `ticket_analyses`,
+/// `ticket_delivered_pr`, `recipe_title_keys` et `invitation_group_owner`.
+/// Leurs documents `app_config/backfill_run_<clé>` restent en base ; l'écran
+/// ignore une clé absente de ce registre.
 library;
 
 enum BackfillKind { ponctuel, recurrent }
@@ -26,14 +28,9 @@ abstract final class BackfillKeys {
   static const recipeRoles = 'recipe_roles';
   static const shoppingProducts = 'shopping_products';
   static const refreshSodium = 'refresh_sodium';
-  static const systemBooks = 'system_books';
-  static const groupPlanningReach = 'group_planning_reach';
   static const moveMealsToGroup = 'move_meals_to_group';
-  static const ticketAnalyses = 'ticket_analyses';
-  static const ticketDeliveredPr = 'ticket_delivered_pr';
-  static const recipeTitleKeys = 'recipe_title_keys';
-  static const invitationGroupOwner = 'invitation_group_owner';
   static const illustrationFolders = 'illustration_folders';
+  static const illustrationFoldersMove = 'illustration_folders_move';
 }
 
 class BackfillDefinition {
@@ -153,29 +150,6 @@ const List<BackfillDefinition> kBackfillRegistry = [
     passLimit: 'Chaque passage travaille au plus huit minutes.',
   ),
 
-  BackfillDefinition(
-    key: BackfillKeys.systemBooks,
-    kind: BackfillKind.ponctuel,
-    title: 'Livres système des comptes',
-    description:
-        'Crée les livres système manquants de chaque compte lecteur, éditeur '
-        'ou administrateur.',
-    usesAi: false,
-    passLimit: 'Chaque passage complète au plus 500 comptes.',
-  ),
-  BackfillDefinition(
-    key: BackfillKeys.groupPlanningReach,
-    kind: BackfillKind.ponctuel,
-    title: 'Portée des groupes et des plannings',
-    description:
-        'Ouvre aux membres de chaque groupe le planning du groupe, masque '
-        'les groupes dont le propriétaire n\'est plus éditeur, et marque les '
-        'repas antérieurs comme personnels.',
-    usesAi: false,
-    passLimit:
-        'Chaque passage réécrit au plus 500 comptes et marque au plus 4 000 '
-        'repas.',
-  ),
   // Paramétré (groupe, période) et réutilisable : le serveur ne le marque
   // jamais terminé tout seul, son reste n'est pas compté.
   BackfillDefinition(
@@ -191,46 +165,6 @@ const List<BackfillDefinition> kBackfillRegistry = [
     reusable: true,
   ),
   BackfillDefinition(
-    key: BackfillKeys.ticketAnalyses,
-    kind: BackfillKind.ponctuel,
-    title: 'Analyses des tickets',
-    description:
-        'Relève sur GitHub les analyses déjà publiées des tickets, pour les '
-        'lire dans Admin › Tickets des membres.',
-    usesAi: false,
-    passLimit: 'Chaque passage relève au plus 200 tickets.',
-  ),
-  BackfillDefinition(
-    key: BackfillKeys.ticketDeliveredPr,
-    kind: BackfillKind.ponctuel,
-    title: 'PR des tickets livrés',
-    description:
-        'Retrouve sur GitHub la PR qui a livré chaque ticket déjà livré, pour '
-        'l\'afficher aux membres et dans Admin › Tickets.',
-    usesAi: false,
-    passLimit: 'Chaque passage reprend au plus 100 tickets.',
-  ),
-  BackfillDefinition(
-    key: BackfillKeys.recipeTitleKeys,
-    kind: BackfillKind.ponctuel,
-    title: 'Clé de titre des recettes',
-    description:
-        'Pose sur les recettes existantes la clé de titre que l\'import '
-        'compare pour reconnaître une page déjà présente dans le livre.',
-    usesAi: false,
-    passLimit: 'Chaque passage examine au plus 2 000 recettes.',
-  ),
-  BackfillDefinition(
-    key: BackfillKeys.invitationGroupOwner,
-    kind: BackfillKind.ponctuel,
-    title: 'Propriétaire du groupe des invitations',
-    description:
-        'Recopie sur les invitations par e-mail existantes le propriétaire de '
-        'leur groupe, pour qu\'il les retrouve dans la feuille du groupe.',
-    usesAi: false,
-    passLimit: 'Chaque passage examine au plus 2 000 invitations.',
-  ),
-  BackfillDefinition(
     key: BackfillKeys.illustrationFolders,
     kind: BackfillKind.ponctuel,
     title: 'Dossiers des illustrations',
@@ -239,6 +173,18 @@ const List<BackfillDefinition> kBackfillRegistry = [
         'vignette n\'est pas rangée dans les dossiers des images modérées.',
     usesAi: false,
     passLimit: 'Chaque passage examine au plus 2 000 recettes.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.illustrationFoldersMove,
+    kind: BackfillKind.ponctuel,
+    title: 'Ranger les illustrations',
+    description:
+        'Range dans le dossier de chaque recette les illustrations et '
+        'vignettes que le dernier contrôle « Dossiers des illustrations » a '
+        'listées, et les inscrit comme approuvées par vous, sans les '
+        'modifier.',
+    usesAi: false,
+    passLimit: 'Chaque passage range les images d\'au plus 100 recettes.',
   ),
 ];
 

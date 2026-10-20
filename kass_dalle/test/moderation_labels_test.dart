@@ -31,6 +31,7 @@ void main() {
       'engine_unavailable',
       'manual_approved',
       'manual_rejected',
+      'manual_folder_move',
     ];
 
     // Miroir de `ModerationStatus`.

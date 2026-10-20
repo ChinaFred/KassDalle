@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/admin/domain/backfill_status.dart';
@@ -37,7 +38,7 @@ Future<void> _pump(
 
 void main() {
   final runs = {
-    'system_books': BackfillRunState.fromMap('system_books', {
+    'illustration_folders': BackfillRunState.fromMap('illustration_folders', {
       'termine_le': DateTime.utc(2026, 10, 10, 10),
       'termine_version': '0.23.30',
       'termine_par': 'auto',
@@ -51,7 +52,7 @@ void main() {
   ) async {
     await _pump(tester, size: const Size(400, 4800), runs: runs);
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (8)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (3)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(
       find.text('Programmation : Tous les jours à 5 h'),
@@ -70,7 +71,7 @@ void main() {
   testWidgets('état d\'un backfill retiré du code : ignoré, sans erreur', (
     tester,
   ) async {
-    // Les ponctuels retirés en v0.23.52 laissent leur
+    // Les ponctuels retirés en v0.23.52 et en v0.24.32 laissent leur
     // `app_config/backfill_run_<clé>` en base, terminé ou même en cours.
     await _pump(
       tester,
@@ -91,15 +92,53 @@ void main() {
           'dernier_passage_statut': 'erreur',
           'dernier_passage_erreur': 'ancienne erreur',
         }),
+        'system_books': BackfillRunState.fromMap('system_books', {
+          'termine_le': DateTime.utc(2026, 10, 13, 10),
+          'termine_par': 'auto',
+          'dernier_passage_statut': 'termine',
+        }),
       },
     );
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (8)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (3)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(find.text('Durées estimées'), findsNothing);
     expect(find.text('Protéine et féculent des plats'), findsNothing);
     expect(find.text('Contraintes de variété par défaut'), findsNothing);
+    expect(find.text('Livres système des comptes'), findsNothing);
     expect(find.textContaining('ancienne erreur'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('« Copier la liste » copie une ligne par ponctuel terminé', (
+    tester,
+  ) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await _pump(tester, size: const Size(400, 4800), runs: runs);
+    await tester.tap(find.widgetWithText(TextButton, 'Copier la liste'));
+    await tester.pump();
+    expect(
+      copied,
+      'illustration_folders — Dossiers des illustrations — terminé le '
+      '10/10/2026 en v0.23.30 — automatique — dernier compte rendu : absent '
+      '— à revoir : 0',
+    );
+    expect(find.text('Liste des ponctuels terminés copiée.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

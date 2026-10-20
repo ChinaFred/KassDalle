@@ -298,7 +298,7 @@ void main() {
     });
 
     test('ponctuel terminé à la main', () {
-      final state = BackfillRunState.fromMap('system_books', {
+      final state = BackfillRunState.fromMap('refresh_sodium', {
         'termine_le': DateTime.utc(2026, 10, 10, 10),
         'termine_version': '0.23.30',
         'termine_par': 'manuel',
@@ -385,9 +385,10 @@ void main() {
   group('rangement', () {
     test('trois sections, ordre fixe du registre', () {
       final sections = backfillSections(kBackfillRegistry, {
-        'system_books': BackfillRunState.fromMap('system_books', {
-          'termine_le': DateTime.utc(2026, 10, 10),
-        }),
+        'illustration_folders': BackfillRunState.fromMap(
+          'illustration_folders',
+          {'termine_le': DateTime.utc(2026, 10, 10)},
+        ),
         // Un état de récurrent marqué terminé ne le déplace pas.
         'nutrition': BackfillRunState.fromMap('nutrition', {
           'termine_le': DateTime.utc(2026, 10, 10),
@@ -402,30 +403,34 @@ void main() {
       ]);
       expect(sections.ponctuelsALancer.map((d) => d.key), [
         'refresh_sodium',
-        'group_planning_reach',
         'move_meals_to_group',
-        'ticket_analyses',
-        'ticket_delivered_pr',
-        'recipe_title_keys',
-        'invitation_group_owner',
+        'illustration_folders_move',
+      ]);
+      expect(sections.ponctuelsTermines.map((d) => d.key), [
         'illustration_folders',
       ]);
-      expect(sections.ponctuelsTermines.map((d) => d.key), ['system_books']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(9));
+      expect(sections.ponctuelsALancer, hasLength(4));
       expect(sections.ponctuelsTermines, isEmpty);
     });
 
     test('clé retirée du registre : son état resté en base est ignoré', () {
-      // `app_config/backfill_run_<clé>` des ponctuels retirés en v0.23.52.
+      // `app_config/backfill_run_<clé>` des ponctuels retirés en v0.23.52 et
+      // en v0.24.32.
       final sections = backfillSections(kBackfillRegistry, {
         for (final key in [
           'recipe_protein',
           'estimated_times',
           'planning_defaults',
+          'system_books',
+          'group_planning_reach',
+          'ticket_analyses',
+          'ticket_delivered_pr',
+          'recipe_title_keys',
+          'invitation_group_owner',
         ])
           key: BackfillRunState.fromMap(key, {
             'termine_le': DateTime.utc(2026, 10, 10),
@@ -444,50 +449,90 @@ void main() {
       expect(shown, hasLength(kBackfillRegistry.length));
       expect(sections.ponctuelsTermines, isEmpty);
       expect(backfillDefinition('estimated_times'), isNull);
+      expect(backfillDefinition('system_books'), isNull);
       expect(backfillReportSummary('recipe_protein', {'traitees': 3}), '');
-    });
-
-    test('analyses des tickets : résumé de la tuile', () {
       expect(
-        backfillReportSummary('ticket_analyses', {
-          'ecrits': 12,
-          'analyses': 9,
-          'restants': 0,
-        }),
-        '12 tickets relevés, 9 analyses, 0 ticket restant',
+        backfillReportSummary('ticket_analyses', {'ecrits': 12}),
+        '',
+        reason: 'résumé retiré avec le backfill',
       );
     });
 
-    test('PR des tickets livrés : résumé de la tuile', () {
+    test('ranger les illustrations : résumé de la tuile', () {
       expect(
-        backfillReportSummary('ticket_delivered_pr', {
-          'ecrits': 7,
-          'sansPr': 2,
-          'restants': 0,
+        backfillReportSummary(BackfillKeys.illustrationFoldersMove, {
+          'rangees': 21,
+          'restantes': 0,
+          'anciensSupprimes': 3,
+          'anciensConservesCites': 18,
+          'anciensEnAttente': 0,
         }),
-        '7 tickets repris, 2 sans PR, 0 ticket restant',
+        '21 recettes rangées, 0 restante, 3 anciens fichiers supprimés, '
+        '18 conservés car encore cités',
+      );
+    });
+  });
+
+  group('liste des ponctuels terminés', () {
+    test('une ligne par backfill : clé, titre, fin, origine, compte rendu', () {
+      final done = [
+        backfillDefinition(BackfillKeys.illustrationFolders)!,
+        backfillDefinition(BackfillKeys.refreshSodium)!,
+      ];
+      final text = backfillDoneListText(done, {
+        'illustration_folders': BackfillRunState.fromMap(
+          'illustration_folders',
+          {
+            'termine_le': DateTime.utc(2026, 10, 20, 8),
+            'termine_version': '0.24.32',
+            'termine_par': 'auto',
+            'last_report': {
+              'examinees': 616,
+              'conformes': 616,
+              'horsDossiers': 0,
+              'echouees': 0,
+              'aRevoir': {'items': <Object>[], 'total': 0},
+            },
+          },
+        ),
+        'refresh_sodium': BackfillRunState.fromMap('refresh_sodium', {
+          'termine_le': DateTime.utc(2026, 10, 12, 8),
+          'termine_par': 'manuel',
+        }),
+      });
+      expect(
+        text,
+        'illustration_folders — Dossiers des illustrations — terminé le '
+        '20/10/2026 en v0.24.32 — automatique — dernier compte rendu : '
+        '616 recettes examinées, 616 conformes, 0 à revoir — à revoir : 0\n'
+        'refresh_sodium — Reprendre le sel des ingrédients — terminé le '
+        '12/10/2026 (version inconnue) — marqué à la main — dernier compte '
+        'rendu : absent — à revoir : 0',
       );
     });
 
-    test('portée des groupes : repas restants inconnus, reste inconnu', () {
-      expect(
-        backfillReportSummary('group_planning_reach', {
-          'ecrits': 2,
-          'repasMarques': 40,
-          'restants': 0,
-          'repasRestants': 12,
-        }),
-        '2 comptes réécrits, 40 repas marqués, 12 restants',
-      );
-      expect(
-        backfillReportSummary('group_planning_reach', {
-          'ecrits': 1,
-          'repasMarques': 0,
-          'restants': 3,
-          'repasRestants': null,
-        }),
-        '1 compte réécrit, 0 repas marqué, reste inconnu',
-      );
+    test(
+      'sans date ni version : « terminé (date inconnue, version inconnue) »',
+      () {
+        final text = backfillDoneListText(
+          [backfillDefinition(BackfillKeys.refreshSodium)!],
+          {
+            'refresh_sodium': BackfillRunState.fromMap('refresh_sodium', {
+              'termine_par': 'manuel',
+            }),
+          },
+        );
+        expect(
+          text,
+          'refresh_sodium — Reprendre le sel des ingrédients — terminé (date '
+          'inconnue, version inconnue) — marqué à la main — dernier compte '
+          'rendu : absent — à revoir : 0',
+        );
+      },
+    );
+
+    test('aucun ponctuel terminé : texte vide', () {
+      expect(backfillDoneListText(const [], const {}), '');
     });
   });
 

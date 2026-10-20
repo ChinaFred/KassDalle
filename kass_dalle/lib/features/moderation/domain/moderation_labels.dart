@@ -65,6 +65,9 @@ const Map<String, String> kModerationReasons = {
   'bundled_asset': 'Publiée sans analyse : image livrée avec l\'application.',
   'manual_approved': 'Publiée par décision d\'un administrateur.',
   'manual_rejected': 'Refusée par décision d\'un administrateur.',
+  'manual_folder_move':
+      'Publiée par décision d\'un administrateur, sans analyse : image déjà '
+      'affichée, rangée dans le dossier des illustrations de la recette.',
 };
 
 /// Libellé d'un état.

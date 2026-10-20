@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 
 import {
   LEGACY_APP_BUCKET,
+  flaggedIllustrationKeys,
   illustrationFolderIssue,
   recipeIllustrationIssues,
 } from "../backfills/illustrationFolders";
@@ -165,5 +166,24 @@ describe("journal des refus", () => {
     for (const fragment of ["secret1", "secret2", "uid42", "token=", "scans"]) {
       assert.ok(!all.includes(fragment), `la console contient « ${fragment} »`);
     }
+  });
+});
+
+describe("flaggedIllustrationKeys", () => {
+  test("les objets signalés d'une recette, sans doublon ni autre hôte", () => {
+    assert.deepEqual(
+      flaggedIllustrationKeys(
+        {
+          image_urls: [
+            downloadUrl("scans/u/p.jpg"),
+            downloadUrl("recipes/r/a.jpg"),
+            "https://exemple.org/a.jpg",
+          ],
+          thumbnail_urls: [downloadUrl("scans/u/p.jpg")],
+        },
+        opts,
+      ),
+      [`${BUCKET}/scans/u/p.jpg`],
+    );
   });
 });

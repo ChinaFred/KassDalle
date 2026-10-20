@@ -142,6 +142,15 @@ attendre.
 
 ## Retrait
 
+**D'abord, demander la liste.** Une session ne voit pas l'écran de production. Avant tout
+retrait, demander à l'utilisateur le texte de **Admin › Backfills › Ponctuels terminés ›
+« Copier la liste »** : une ligne par ponctuel terminé, au format
+`clé — titre — terminé le JJ/MM/AAAA en vX.Y.Z — automatique | marqué à la main — dernier
+compte rendu : … — à revoir : N`. Ne retirer que les clés qui y figurent. Un ponctuel
+« marqué à la main », ou dont la ligne dit « à revoir » supérieur à 0, se signale à
+l'utilisateur avant le retrait : son travail n'est peut-être pas fini. Sans ce texte, ne rien
+retirer.
+
 Un **ponctuel terminé** (section « Ponctuels terminés », mention « à retirer du code ») sort
 du code une fois son travail fait en production : supprimer le callable, son export, la méthode
 du repository, son entrée dans **les deux registres**, son `case` dans `_runPass` et
@@ -151,5 +160,37 @@ dans `admin_backfills_screen.dart` qui dit ce qu'il a fait. Mettre à jour §3.1
 lit. Son poste de coût reste au catalogue comptable et quitte `ROUTABLE_FEATURES` ; son libellé
 de journal reste.
 
+Avant de supprimer une fonction exportée par le callable, la chercher par son nom côté
+Functions et côté Dart, tests exclus : une logique partagée avec un déclencheur ou l'import
+reste (exemple : `titleKeyUpdate`, que `onRecipeWritten` appelle encore), une fonction que
+seul le callable appelait part avec lui (exemple : `refreshTicketAnalyses`, v0.24.32).
+Compléter le commentaire « Retirés en … » de `registry.ts` et de `backfill_registry.dart`,
+et ajouter les clés au tableau ci-dessous, dans le même commit.
+
 Un récurrent ne se retire pas ainsi : il se déprogramme, ou change de nature par décision
 explicite (puis suit la règle du ponctuel).
+
+## Backfills retirés
+
+Ce qui a tourné en production puis quitté le code. Une session qui cherche pourquoi un champ
+existe sur les documents anciens, ou ce que contient un `app_config/backfill_run_<clé>`
+resté en base, commence ici. Le détail de chaque passage est dans le `CHANGELOG.md` de la
+version d'ajout.
+
+| Clé | Titre | Callable | Terminé en production | Retiré en |
+|---|---|---|---|---|
+| — | Reprendre la confidentialité des livres | `backfillBookPrivacyFn` | — | v0.23.14 |
+| — | — | `backfillUserProfilesFn`, `backfillGroupReachFn` | — | v0.23.23 |
+| `recipe_protein` | Protéine et féculent des plats | `backfillRecipeProteinFn` | — | v0.23.52 |
+| `estimated_times` | Durées estimées | `backfillEstimatedTimesFn` | — | v0.23.52 |
+| `planning_defaults` | Contraintes de variété par défaut | `backfillPlanningDefaultsFn` | — | v0.23.52 |
+| `system_books` | Livres système des comptes | `backfillSystemBooksFn` | le 13/10/2026, v0.23.51 | v0.24.32 |
+| `group_planning_reach` | Portée des groupes et des plannings | `backfillGroupPlanningReachFn` | le 13/10/2026, v0.23.58 | v0.24.32 |
+| `ticket_analyses` | Analyses des tickets | `backfillTicketAnalysesFn` | le 14/10/2026, v0.23.63 | v0.24.32 |
+| `ticket_delivered_pr` | PR des tickets livrés | `backfillTicketDeliveredPrFn` | le 17/10/2026, v0.23.99 | v0.24.32 |
+| `recipe_title_keys` | Clé de titre des recettes | `backfillTitleKeysFn` | le 17/10/2026, v0.23.97 | v0.24.32 |
+| `invitation_group_owner` | Propriétaire du groupe des invitations | `backfillInvitationGroupOwnerFn` | le 19/10/2026, v0.24.14 | v0.24.32 |
+
+Un tiret signale une information que le dépôt ne garde pas. Les autres opérations retirées
+avant le registre (v0.23.45), sans version de retrait connue, sont décrites dans le
+commentaire de fin de `admin_backfills_screen.dart`.

@@ -6,7 +6,8 @@
  * Sert le backfill de contrôle « Dossiers des illustrations »
  * (`illustrationFoldersBackfillCallable.ts`), qui n'écrit rien : il liste les
  * recettes dont une illustration pointe hors de ces dossiers, avant qu'une
- * version suivante limite l'affichage à eux seuls.
+ * version suivante limite l'affichage à eux seuls. Le backfill « Ranger les
+ * illustrations » (`illustrationFoldersMove.ts`) range celles qu'il liste.
  *
  * Mêmes formes d'URL que le client (`lib/core/utils/app_image_url.dart`) :
  * URL de téléchargement `firebasestorage.googleapis.com` (chemin encodé, lu
@@ -43,9 +44,10 @@ export function illustrationFolderIssue(
   const reference = url.trim();
   if (!/^[a-z][a-z0-9+.-]*:/i.test(reference)) return "chemin sans adresse";
 
-  const path = objectPathInBuckets(reference, opts);
-  if (path === undefined) return "hors du stockage de l'application";
-  if (path === null) return "autre bucket";
+  const ref = objectRefInBuckets(reference, opts);
+  if (ref === undefined) return "hors du stockage de l'application";
+  if (ref === null) return "autre bucket";
+  const path = ref.path;
   if (!isWellFormedObjectPath(path)) return "chemin mal formé";
   const ok = PUBLISHED_IMAGE_PREFIXES.some(
     (prefix) => path.startsWith(prefix) && path.length > prefix.length,
@@ -53,19 +55,44 @@ export function illustrationFolderIssue(
   return ok ? null : folderLabel(path);
 }
 
+/** Un objet du stockage : son bucket et son chemin décodé. */
+export interface StorageObjectRef {
+  bucket: string;
+  path: string;
+}
+
 /**
- * Chemin d'objet si la référence nomme l'un des buckets admis ; `null` si
- * elle est du stockage Firebase mais d'un autre bucket ; `undefined` si elle
- * n'en est pas (autre hôte, autre schéma, URL illisible).
+ * L'objet nommé par une URL d'illustration (`firebasestorage`, publique ou
+ * `gs://`), s'il est dans l'un des buckets admis et que son chemin est bien
+ * formé ; `null` sinon. Un chemin nu, sans adresse, n'est pas lu : il ne
+ * s'affiche pas. Sert le rangement des illustrations
+ * (`illustrationFoldersMove.ts`), qui doit savoir où copier.
  */
-function objectPathInBuckets(
+export function illustrationObjectRef(
+  url: unknown,
+  opts: { buckets: readonly string[]; allowEmulator?: boolean },
+): StorageObjectRef | null {
+  if (typeof url !== "string") return null;
+  const reference = url.trim();
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(reference)) return null;
+  const ref = objectRefInBuckets(reference, opts);
+  if (ref == null || !isWellFormedObjectPath(ref.path)) return null;
+  return ref;
+}
+
+/**
+ * Bucket et chemin d'objet si la référence nomme l'un des buckets admis ;
+ * `null` si elle est du stockage Firebase mais d'un autre bucket ; `undefined`
+ * si elle n'en est pas (autre hôte, autre schéma, URL illisible).
+ */
+function objectRefInBuckets(
   reference: string,
   opts: { buckets: readonly string[]; allowEmulator?: boolean },
-): string | null | undefined {
+): StorageObjectRef | null | undefined {
   const publicPath = publicUrlPath(reference);
   if (publicPath !== undefined) {
     if (publicPath == null) return undefined;
-    return opts.buckets.includes(publicPath.bucket) ? publicPath.path : null;
+    return opts.buckets.includes(publicPath.bucket) ? publicPath : null;
   }
 
   for (const bucketName of opts.buckets) {
@@ -74,7 +101,7 @@ function objectPathInBuckets(
       allowEmulator: opts.allowEmulator,
       silent: true,
     });
-    if (path != null) return path;
+    if (path != null) return { bucket: bucketName, path };
   }
   const anyBucket = storageObjectPathOf(reference, {
     allowEmulator: opts.allowEmulator,
@@ -159,4 +186,39 @@ export function recipeIllustrationIssues(
     }
   }
   return issues;
+}
+
+/** Une image signalée par le contrôle : sa recette et l'objet cité (`bucket/chemin`). */
+export interface FlaggedIllustration {
+  recipe_id: string;
+  key: string;
+}
+
+/** Entrées gardées au plus dans la liste des images signalées. */
+export const FLAGGED_LIST_LIMIT = 2000;
+
+/**
+ * Les objets (`bucket/chemin`) que le contrôle signale dans une recette : les
+ * URL de `image_urls` et `thumbnail_urls` hors des dossiers modérés qui nomment
+ * un objet d'un bucket admis. Une URL d'un autre hôte ou bucket n'a pas
+ * d'objet à nommer : elle reste dans « À revoir » sans entrer dans la liste.
+ * Le rangement (`illustrationFoldersMove.ts`) ne copie que ces objets.
+ */
+export function flaggedIllustrationKeys(
+  data: Record<string, unknown>,
+  opts: { buckets: readonly string[]; allowEmulator?: boolean },
+): string[] {
+  const keys: string[] = [];
+  for (const field of ["image_urls", "thumbnail_urls"] as const) {
+    const value = data[field];
+    if (!Array.isArray(value)) continue;
+    for (const url of value) {
+      if (illustrationFolderIssue(url, opts) == null) continue;
+      const ref = illustrationObjectRef(url, opts);
+      if (ref == null) continue;
+      const key = `${ref.bucket}/${ref.path}`;
+      if (!keys.includes(key)) keys.push(key);
+    }
+  }
+  return keys;
 }

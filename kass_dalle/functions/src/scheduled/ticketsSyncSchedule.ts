@@ -47,8 +47,9 @@ const RESYNC_STATUSES = ["received", "analyzed", "validated", "in_progress"];
 
 /**
  * Un ticket livré depuis moins de trois jours sans PR de livraison est relu :
- * rattrape un webhook perdu. Au-delà, le backfill « PR des tickets livrés »
- * reprend le fonds, et une Issue fermée à la main n'est pas relue chaque heure.
+ * rattrape un webhook perdu. Au-delà, une Issue fermée à la main n'est pas
+ * relue chaque heure ; le fonds antérieur a été repris par le backfill « PR des
+ * tickets livrés », retiré en v0.24.32.
  */
 const DELIVERED_PR_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 

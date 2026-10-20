@@ -30,8 +30,8 @@ enum TicketAnalysisKind {
 /// sur l'Issue GitHub d'un ticket.
 ///
 /// Élément de `tickets/{ticketId}/admin/analysis.analyses`, écrit par les
-/// Cloud Functions seules (webhook, tâche horaire, décisions, backfill
-/// « Analyses des tickets ») et lisible par l'administrateur seul.
+/// Cloud Functions seules (webhook, tâche horaire, décisions) et lisible par
+/// l'administrateur seul.
 class TicketAnalysis {
   /// Identifiant du commentaire GitHub, ou `null`.
   final int? commentId;

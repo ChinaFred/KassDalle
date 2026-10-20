@@ -1066,11 +1066,17 @@ flowchart LR
         aucune recette : il liste dans « À revoir » chaque recette dont une illustration ou une
         vignette n'est pas rangée dans les dossiers des images modérées, avec le dossier trouvé.
         Aucun appel d'IA.
-        <b>« Livres système des comptes »</b> est une reprise de Backfills : elle crée, pour
-        chaque compte lecteur, éditeur ou administrateur, ceux des quatre livres système qui lui
-        manquent. Un compte approuvé depuis la v0.23.50 les reçoit dès son approbation. Un livre déjà présent, même renommé, n'est pas recréé. Aucun appel d'IA. Le
-        compte rendu donne les comptes complétés, le nombre de livres créés, les comptes déjà à
-        jour, ceux en attente ou révoqués, et les échecs.
+        <b>« Ranger les illustrations »</b> range la liste que le dernier contrôle complet a
+        enregistrée, et elle seule, une fois que l'administrateur a regardé ces images et les
+        garde ; sans cette liste, il ne fait rien : chaque image est copiée dans le
+        dossier de sa recette, inscrite au journal de modération comme publiée par décision d'un
+        administrateur, sans analyse, et la recette affiche la copie. L'ancien fichier n'est
+        supprimé que si plus rien ne le cite (recette, brouillon, import, livre, compte,
+        sauvegarde). Aucun appel d'IA. Après lui, « Dossiers des illustrations » rend 0 à revoir.
+        <b>« Copier la liste »</b>, sous l'en-tête « Ponctuels terminés », copie une ligne par
+        ponctuel terminé : clé technique, titre, date et version de fin, automatique ou marqué à
+        la main, dernier compte rendu. L'administrateur la colle à la session qui retire ces
+        backfills du code.
         <b>« Déplacer mes repas vers un groupe »</b> est une reprise paramétrée : sa tuile
         demande d'abord le groupe — un groupe actif dont l'administrateur est propriétaire — et
         la période, 62 jours au plus, puis confirme (« Déplacer vos repas du … au … vers « … » ? »).
@@ -1282,11 +1288,9 @@ flowchart LR
         <b>Les analyses</b> sont les commentaires du compte GitHub de l'administrateur qui
         commencent par « ## Analyse ». Ses réponses s'y intercalent, sur une carte distincte. L'application les relève à chaque commentaire, à chaque
         vérification horaire et après une décision, et les affiche sur la fiche, dix au plus,
-        pour l'administrateur seul. Les tickets antérieurs se relèvent par Admin › Backfills,
-        « Analyses des tickets ».
+        pour l'administrateur seul.
         <b>La PR de livraison</b> d'un ticket Livré est affichée au membre et à l'administrateur
-        (« Livré en vX.Y.Z par la PR #N », avec un lien ; « Livré par la PR #N » sans version lisible) ; les tickets livrés avant cette version se reprennent par
-        Admin › Backfills, « PR des tickets livrés ».
+        (« Livré en vX.Y.Z par la PR #N », avec un lien ; « Livré par la PR #N » sans version lisible).
         <b>Seul un commentaire de l'administrateur qui commence par « Réponse : » revient dans
         l'application</b>, comme réponse à une Question ou motif d'un refus. Les autres
         commentaires restent sur GitHub. Le membre n'a pas de lien vers l'Issue.

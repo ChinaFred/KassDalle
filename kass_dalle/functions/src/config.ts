@@ -60,7 +60,7 @@ export const GMAIL_APP_PASSWORD = defineSecret("GMAIL_APP_PASSWORD");
  * Attaché à `submitTicket`, `retryTicketSend`, `validateTicket`, `refuseTicket`,
  * `closeTicket`, `launchTicketAnalysis`, `launchTicketDevelopment` (relecture de l'Issue avant lancement),
  * `launchTicketDelivery` (PR, fichiers, CI et Issue relus avant lancement),
- * `backfillTicketAnalysesFn`, `backfillTicketDeliveredPrFn`, `ticketsSyncSchedule` et `githubTicketWebhook`
+ * `ticketsSyncSchedule` et `githubTicketWebhook`
  * (qui relit les commentaires d'une Issue pour les analyses), et lu
  * par `process.env.GITHUB_TICKETS_TOKEN` comme `ANTHROPIC_API_KEY` : une valeur
  * vide n'est pas une erreur, le ticket reste « Envoi en cours » et

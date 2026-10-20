@@ -1,7 +1,7 @@
 /**
- * Livres système : ce que le backfill crée pour un compte. Il ne doit créer
- * que les livres absents, reconnus à leur tag, et sauter les comptes en
- * attente ou révoqués.
+ * Livres système : ce que `ensureSystemBooksFor` crée pour un compte
+ * approuvé (`syncUserClaims`). Il ne doit créer que les livres absents,
+ * reconnus à leur tag.
  */
 
 import { test, describe } from "node:test";
@@ -15,7 +15,6 @@ import {
   systemBookDocument,
   systemBookId,
 } from "../books/systemBooks";
-import { isApprovedAccount } from "../callable/systemBooksBackfillCallable";
 
 describe("livres système manquants", () => {
   test("aucun livre : les quatre manquent", () => {
@@ -37,23 +36,6 @@ describe("livres système manquants", () => {
     assert.deepEqual(missingSystemBooks([{}, { tags: "__libres" }, { tags: [42] }]), [
       ...SYSTEM_BOOK_TAGS,
     ]);
-  });
-});
-
-describe("comptes concernés", () => {
-  test("lecteur, éditeur et administrateur reçoivent les livres", () => {
-    for (const role of ["reader", "editor", "admin"]) {
-      assert.equal(isApprovedAccount({ role }), true, role);
-    }
-  });
-  test("compte en attente, sans rôle ou révoqué : sauté", () => {
-    assert.equal(isApprovedAccount({ role: "pending" }), false);
-    assert.equal(isApprovedAccount({}), false);
-    assert.equal(isApprovedAccount(undefined), false);
-    assert.equal(isApprovedAccount({ role: "editor", is_revoked: true }), false);
-  });
-  test("rôle entouré d'espaces : lu comme par les gardes", () => {
-    assert.equal(isApprovedAccount({ role: " editor " }), true);
   });
 });
 

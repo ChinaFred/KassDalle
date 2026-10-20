@@ -301,7 +301,8 @@ export const syncUserClaims = onDocumentWritten(
     }
 
     // Après les claims : un livre système ne conditionne pas l'accès, et son
-    // échec n'empêche pas le reste. Le backfill `system_books` le rattrape.
+    // échec n'empêche pas le reste : il est journalisé, et le client crée les
+    // livres manquants d'un éditeur à l'ouverture de la bibliothèque.
     if (gainsAccess(before, after, true)) {
       await ensureBooksOnAccess(uid, afterData);
     }

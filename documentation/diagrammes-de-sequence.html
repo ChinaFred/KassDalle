@@ -3573,6 +3573,10 @@ sequenceDiagram
     A->>S: ⋮ Marquer comme terminé / Remettre à lancer
     S->>C: setBackfillDoneFn → termine_* posés ou retirés
   end
+  opt Copier la liste (Ponctuels terminés)
+    A->>S: Copier la liste
+    S-->>A: presse-papiers : une ligne par ponctuel terminé<br/>clé, titre, date et version de fin, origine, compte rendu
+  end
 </pre>
       </div>
       <figcaption>
@@ -3590,6 +3594,54 @@ sequenceDiagram
           l'administrateur qui a enregistré la programmation ; la nutrition, au propriétaire de
           chaque recette.
         </span>
+      </figcaption>
+    </figure>
+    <p class="sec-note">
+      « Ranger les illustrations » (v0.24.32) : les images qu'a listées « Dossiers des
+      illustrations », approuvées telles quelles par l'administrateur, passent sous
+      <code>recipes/{id}/</code>, sans analyse.
+      <span class="path">callable/illustrationFoldersMoveBackfillCallable.ts
+      (backfillIllustrationFoldersMoveFn, runIllustrationFoldersMovePass) →
+      backfills/illustrationFoldersMove.ts (recipeMovePlan, movedIllustrationPath,
+      rewriteIllustrationReferences, referencedObjectKeys, sourceFileDecision)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Administrateur
+  participant F as backfillIllustrationFoldersMoveFn
+  participant FS as Firestore
+  participant ST as Storage
+
+  A->>F: Lancer « Ranger les illustrations » (requireAdmin)
+  F->>FS: liste fermée signalees du dernier contrôle complet<br/>(backfill_run_illustration_folders) ; absente : rien à faire
+  F->>FS: lit toutes les recettes, garde les images de la liste<br/>sous scans/{uid}/ ou users/{uid}/free_recipe_cover_*
+  F->>FS: lignes image_moderation manual_folder_move en attente
+  F->>FS: lit processing_jobs, books, users, user_profiles, image_moderation,<br/>sauvegardes, annotations, origine : qui cite encore chaque fichier ?
+  loop chaque recette, 100 au plus
+    F->>ST: 16 premiers octets (JPEG, PNG, WebP)
+    F->>ST: copie vers recipes/{id}/illus_moved_{empreinte}.{ext}<br/>type, cache, nouveau jeton (copie retrouvée si déjà faite)
+    F->>FS: image_moderation : approved, manual_folder_move,<br/>reviewed_by l'administrateur, source_file_status pending
+    F->>FS: transaction : réécrit les champs qui citent le fichier,<br/>sauf ceux du fichier importé
+  end
+  loop chaque ancien fichier
+    alt plus aucun document ne le cite, lecture complète
+      F->>ST: supprime l'ancien fichier
+      F->>FS: source_file_status deleted
+    else encore cité, ou lecture inachevée
+      F->>FS: keep_referenced ou keep_unverified (repris au passage suivant)
+    end
+  end
+  F-->>A: compte rendu chiffré et « À revoir »
+</pre>
+      </div>
+      <figcaption>
+        <b>Aucune analyse, rien de facturé.</b> L'image publiée est celle que l'administrateur a
+        vue ; la ligne de modération le dit. <b>Dans le doute, l'ancien fichier reste</b> : une
+        sauvegarde, un import ou un compte qui le cite le garde en place. Après le passage,
+        « Dossiers des illustrations », relancé, rend 0 à revoir.
       </figcaption>
     </figure>
   </section>
@@ -3651,8 +3703,9 @@ sequenceDiagram
       </div>
       <figcaption>
         <b>Un backfill après le déploiement du planning de groupe.</b> « Portée des groupes et
-        des plannings » pose <code>group_id: null</code> sur les repas antérieurs, que la
-        requête <code>group_id == null</code> ne trouverait pas sans lui. Sans
+        des plannings » a posé <code>group_id: null</code> sur les repas antérieurs, que la
+        requête <code>group_id == null</code> ne trouverait pas sans lui (terminé, retiré du
+        code en v0.24.32). Sans
         <code>shared_group_ids</code>, rien n'est partagé ; sans <code>planning_reach</code>,
         rien ne se lit. Un groupe dont le
         propriétaire n'est plus éditeur ne transmet plus aucun partage (section 38). <b>Le partage n'est pas réciproque</b> et
@@ -3989,11 +4042,6 @@ sequenceDiagram
         d'un autre. Un invité ne lit rien : seuls les membres reçoivent le groupe dans
         <code>group_ids</code>. Un repas de groupe n'apparaît pas dans « Mon planning » de son
         propriétaire : les flux <code>uid ==</code> l'écartent côté client.
-        <span class="expect">
-          <b>Après le déploiement</b>, Admin › Backfills › « Portée des groupes et des plannings »
-          écrit <code>group_ids</code> et <code>masked_group_ids</code> pour les groupes existants,
-          puis <code>group_id: null</code> sur les repas antérieurs.
-        </span>
       </figcaption>
     </figure>
   </section>
@@ -4087,8 +4135,7 @@ sequenceDiagram
       webhook signé, doublé d'une relecture horaire.
       <span class="path">GitHub → tickets/webhook.ts (githubTicketWebhook) → tickets/rules.ts
       (verifyGithubSignature, statusFromIssue, nextTicketStatus, replyFromComment,
-      analysesFromComments) → tickets/service.ts (applyGithubUpdate, refreshTicketAnalyses,
-      writeTicketAnalyses) ; scheduled/ticketsSyncSchedule.ts</span>
+      analysesFromComments) → tickets/service.ts (applyGithubUpdate, writeTicketAnalyses) ; scheduled/ticketsSyncSchedule.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
