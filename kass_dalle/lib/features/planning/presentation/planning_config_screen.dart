@@ -264,7 +264,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur chargement calendriers : $e');
+        context.showFailureSnackBar('Calendriers non chargés', e);
       }
     } finally {
       if (mounted) setState(() => _calendarLoading = false);
@@ -303,7 +303,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        context.showFailureSnackBar('Préférences non enregistrées', e);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -315,8 +315,10 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     final prefsAsync = ref.watch(planningPreferencesOnceProvider);
 
     return prefsAsync.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('Préférences du planning')),
+        body: const AppLoadingState(label: 'Chargement de vos préférences…'),
+      ),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Préférences du planning')),
         body: AppErrorState(
@@ -333,7 +335,10 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
 
   Widget _buildScaffold() {
     if (_prefs == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        appBar: AppBar(title: const Text('Préférences du planning')),
+        body: const AppLoadingState(label: 'Chargement de vos préférences…'),
+      );
     }
     return PopScope(
       // Toujours retenu : la question ne se pose que s'il y a quelque chose à

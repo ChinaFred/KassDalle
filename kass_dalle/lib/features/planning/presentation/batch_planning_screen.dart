@@ -52,6 +52,8 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_service.dart'
     show GeminiCallableException;
 import '../../../core/widgets/app_states.dart';
+import '../../../core/widgets/error_message.dart';
+import '../domain/calendar_export_messages.dart';
 import '../../../core/theme/app_icon_size.dart';
 
 /// Décision prise au moment de valider un planning qui recouvre des repas
@@ -369,7 +371,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       );
       if (mounted) {
         setState(() => _recipesLoaded = true);
-        _showError('Impossible de charger les recettes : $e');
+        _showFailure('Recettes non chargées', e);
         unawaited(_prefillRegisteredMeals());
       }
     }
@@ -443,7 +445,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         stackTrace: stackTrace,
       );
       _showError(
-        'Impossible de lire les repas déjà au planning : $e. Un créneau '
+        '${failureMessage('Repas déjà planifiés non chargés', e)} Un créneau '
         'affiché vide peut être déjà occupé.',
       );
       return;
@@ -1300,23 +1302,35 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final calendar = await _exportMealsToCalendar(toExport);
       if (mounted) {
         final replaced = choice == _ValidateChoice.replace
-            ? ' (${existing.length} remplacés)'
+            ? ' (${replacedMealsLabel(existing.length)})'
             : '';
-        final planned = '${mealsToAdd.length} repas planifiés$replaced';
+        final planned = '${plannedMealsLabel(mealsToAdd.length)}$replaced';
         if (calendar.tokenError != null) {
-          context.showSnackBar(
-            '$planned ; calendrier non autorisé : ${calendar.tokenError}',
+          context.showErrorSnackBar(
+            '$planned. '
+            '${failureMessage(kCalendarAccessNotGranted, calendar.tokenError)}',
           );
         } else if (calendar.exported < toExport.length) {
-          context.showSnackBar(
-            '$planned, ${calendar.exported} sur ${toExport.length} ajoutés '
-            'au calendrier',
+          // Pas de « Réessayer » : il doublerait dans l'agenda les événements
+          // déjà posés.
+          final missed = calendarExportMissed(
+            exported: calendar.exported,
+            total: toExport.length,
+            participle: 'ajouté',
+            place: 'au calendrier',
           );
+          context.showErrorSnackBar('$planned. $missed');
         } else {
+          // Le participe s'accorde sur ce qu'il désigne : tous les repas
+          // planifiés, ou le seul nombre exporté quand certains étaient déjà
+          // dans l'agenda.
+          final added = toExport.length == mealsToAdd.length
+              ? (mealsToAdd.length > 1 ? 'ajoutés' : 'ajouté')
+              : '${toExport.length} ${toExport.length > 1 ? 'ajoutés' : 'ajouté'}';
           context.showSuccessSnackBar(
             toExport.isEmpty
                 ? '$planned ✓'
-                : '$planned, ajoutés au calendrier ✓',
+                : '$planned, $added au calendrier ✓',
           );
         }
         // Le cycle est enregistré : le garde de sortie n'a plus rien à
@@ -1330,7 +1344,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         error: e,
         stackTrace: stackTrace,
       );
-      _showError('Erreur lors de la sauvegarde : $e');
+      _showFailure('Repas non planifiés', e);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -2021,7 +2035,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         error: e,
         stackTrace: stackTrace,
       );
-      _showError('Erreur conservation : $e');
+      _showFailure('Conservation de « ${recipe.titre} » non obtenue', e);
     } finally {
       if (mounted) {
         setState(() => _storageLoadingSlots.remove(slotIndex));
@@ -2122,7 +2136,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         error: e,
         stackTrace: stackTrace,
       );
-      _showError('Impossible de lire les semaines passées : $e');
+      _showFailure('Semaines passées non chargées', e);
       return;
     }
     if (!mounted) return;
@@ -2565,6 +2579,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     context.showErrorSnackBar(msg);
   }
 
+  /// L'échec d'une action en deux phrases (`showFailureSnackBar`) : ce qui
+  /// n'a pas eu lieu, puis la cause lisible. Le texte brut de [error] reste
+  /// dans le rapport d'erreur.
+  void _showFailure(String what, Object error) {
+    if (!mounted) return;
+    context.showFailureSnackBar(what, error);
+  }
+
   /// Pose l'événement Google Calendar d'un repas tel qu'il sera au planning :
   /// même lien, mêmes parts, même jour de préparation, mêmes accompagnements.
   ///
@@ -2589,10 +2611,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
   /// Pose dans Google Calendar les événements de [meals], avec un seul jeton.
   ///
-  /// Rend le nombre d'événements créés, et le message d'erreur si le jeton
-  /// n'a pas pu être obtenu. Un événement qui échoue est signalé et compté
+  /// Rend le nombre d'événements créés, et l'erreur si le jeton n'a pas pu
+  /// être obtenu (affichée par [failureMessage], jamais en texte brut). Un événement qui échoue est signalé et compté
   /// en moins ; les autres sont posés quand même.
-  Future<({int exported, String? tokenError})> _exportMealsToCalendar(
+  Future<({int exported, Object? tokenError})> _exportMealsToCalendar(
     List<PlannedMeal> meals,
   ) async {
     if (meals.isEmpty) return (exported: 0, tokenError: null);
@@ -2605,7 +2627,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         error: e,
         stackTrace: stackTrace,
       );
-      return (exported: 0, tokenError: '$e');
+      return (exported: 0, tokenError: e);
     }
     var exported = 0;
     for (final meal in meals) {
@@ -2641,7 +2663,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         error: e,
         stackTrace: stackTrace,
       );
-      _showError('Erreur Calendar : $e');
+      _showFailure('« ${meal.recipeTitre} » non ajouté au calendrier', e);
       return;
     }
 
@@ -2673,8 +2695,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         stackTrace: stackTrace,
       );
       _showError(
-        'Événement créé, mais le repas n\'a pas pu être enregistré au '
-        'planning : $e',
+        '« ${meal.recipeTitre} » ajouté au calendrier. '
+        '${failureMessage('Repas non enregistré au planning', e)}',
       );
     }
   }
@@ -2710,7 +2732,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       if (!owned.hasValue) {
         return const Scaffold(
           appBar: _NewPlanningAppBar(),
-          body: AppLoadingState(),
+          body: AppLoadingState(label: 'Chargement de vos groupes…'),
         );
       }
       final group = owned.value!.where((g) => g.id == groupId).firstOrNull;
@@ -2734,8 +2756,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     final prefsAsync = ref.watch(planningPreferencesOnceProvider);
 
     return prefsAsync.when(
-      loading: () =>
-          const Scaffold(appBar: _NewPlanningAppBar(), body: AppLoadingState()),
+      loading: () => const Scaffold(
+        appBar: _NewPlanningAppBar(),
+        body: AppLoadingState(label: 'Chargement de vos préférences…'),
+      ),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: Text(_title)),
         body: AppErrorState(
@@ -3145,7 +3169,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   /// une seule liste qui défile.
   Widget _buildSlotList(PlanningPreferences effectivePrefs) {
     if (_slotDates.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingState(label: 'Préparation des créneaux…');
     }
     return ListView.separated(
       controller: _slotListCtrl,
@@ -3174,7 +3198,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   /// va dans la colonne `i % colonnes`.
   Widget _buildSlotGrid(PlanningPreferences effectivePrefs) {
     if (_slotDates.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingState(label: 'Préparation des créneaux…');
     }
     const gap = 12.0;
     return LayoutBuilder(
