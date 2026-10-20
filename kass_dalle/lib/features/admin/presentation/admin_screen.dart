@@ -574,7 +574,7 @@ class _UserDetailDialog extends StatelessWidget {
             _DetailRow(
               Icons.admin_panel_settings_outlined,
               'Rôle',
-              _roleLabel(user.role),
+              userRoleLabel(user.role),
             ),
             _DetailRow(
               Icons.calendar_today_outlined,
@@ -609,13 +609,6 @@ class _UserDetailDialog extends StatelessWidget {
       ],
     );
   }
-
-  String _roleLabel(UserRole role) => switch (role) {
-    UserRole.admin => 'Administrateur',
-    UserRole.editor => 'Éditeur',
-    UserRole.reader => 'Lecteur',
-    UserRole.pending => 'En attente d\'approbation',
-  };
 
   String _fmt(DateTime dt) =>
       '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';

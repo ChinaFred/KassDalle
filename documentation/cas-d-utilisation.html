@@ -233,6 +233,17 @@
       il ne lit plus les livres du groupe, et le groupe ne lit plus les siens ; il garde ses
       propres documents. L'<code>admin</code> lit tout.
     </span>
+    <span class="expect">
+      <b>Sans groupe, la Bibliothèque le dit.</b> Un compte qui a des livres mais n'est relié
+      à aucun proche par un groupe voit, sous « Mes livres », la carte « Vous ne voyez que vos livres. Rejoignez
+      un groupe familial pour voir ceux de vos proches. » et le bouton « Ouvrir Groupes
+      familiaux », quel que soit son rôle. Une Bibliothèque vide envoie le
+      <code>reader</code> sans groupe au même endroit (« Les livres de votre famille apparaissent
+      ici quand vous rejoignez un groupe. Un proche vous y invite. ») ; déjà dans un groupe, il
+      lit « Les livres de votre famille apparaîtront ici dès qu'un proche en ajoutera un. », sans
+      bouton. Elle propose à l'<code>editor</code>
+      et à l'<code>admin</code> d'ajouter leur premier livre.
+    </span>
     <span class="expect warn">
       <code>pending</code> n'est pas un rôle diminué, c'est l'absence de rôle : ni lecture, ni
       écriture, ni appel d'IA. Être connecté ouvrait auparavant toute la bibliothèque à n'importe
@@ -1393,11 +1404,6 @@ flowchart LR
       Ce n'est pas une faille de données : les callables qu'ils appellent exigent le rôle admin
       (<code>requireAdmin</code>), et les règles Firestore filtrent le reste. Un
       <code>reader</code> qui force l'URL obtient un écran vide, pas des données.
-    </p>
-    <p>
-      <code>AppRoutes.tokenUsage</code> (<span class="path">/token-usage</span>) est déclarée
-      sans être routée : la consommation de jetons a rejoint
-      <span class="path">/admin/ai-spend</span>, et la constante subsiste sans appelant.
     </p>
     <p>
       À garder en tête si vous ajoutez un écran d'administration : la garde utile est celle du

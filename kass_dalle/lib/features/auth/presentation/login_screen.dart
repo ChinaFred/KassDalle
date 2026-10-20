@@ -1,12 +1,16 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'auth_providers.dart';
+import '../../admin/presentation/admin_providers.dart'
+    show errorReportServiceProvider;
 import '../../../core/app_version.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/widgets/error_message.dart';
 
 const _devAutoLogin = bool.fromEnvironment(
   'DEV_AUTO_LOGIN',
@@ -18,6 +22,31 @@ const kRevokedLoginMessage =
     "Votre accès a été révoqué. Contactez l'administrateur.\n"
     'Vous avez reçu une invitation ? Reconnectez-vous avec le compte Google '
     "de l'adresse invitée.";
+
+/// Conseil des erreurs de connexion qui n'en ont pas de propre : un refus
+/// d'accès ou une erreur inattendue. Les conseils génériques renvoient à un
+/// rôle ou à des détails techniques que l'écran de connexion n'a pas.
+const kLoginErrorAdvice =
+    'Réessayez. Si le problème persiste, prévenez l\'administrateur de la '
+    'famille.';
+
+/// Le message affiché quand la connexion échoue : un titre et un conseil,
+/// jamais le texte technique de l'exception (code, « Exception »), qui part
+/// dans le rapport d'erreur.
+@visibleForTesting
+({String title, String? advice}) loginError(Object error) {
+  final message = describeError(error);
+  final accessDenied = describeError(
+    FirebaseException(plugin: 'auth', code: 'permission-denied'),
+  ).title;
+  final unexpected = describeError(Object()).title;
+  final ownAdvice =
+      message.title != accessDenied && message.title != unexpected;
+  return (
+    title: message.title,
+    advice: ownAdvice ? message.advice : kLoginErrorAdvice,
+  );
+}
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -42,6 +71,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           feature: 'loginScreen.didChangeDependencies',
           error: error,
           stackTrace: stackTrace,
+          service: ref.read(errorReportServiceProvider),
         );
         // Laisse l'utilisateur utiliser le bouton manuel en cas d'échec popup.
       }
@@ -60,9 +90,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 400),
-                child: Padding(
+                // Défile : sur un téléphone en paysage, ou avec une grande
+                // taille de police, le bouton de connexion sortait de l'écran.
+                child: SingleChildScrollView(
                   padding: const EdgeInsets.all(32),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Image.asset('assets/Icon.png', width: 120, height: 120),
@@ -122,11 +155,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               child: Center(
                 child: Text(
                   'v$kAppVersion',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.35),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -138,50 +168,67 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 }
 
-class _GoogleSignInButton extends StatefulWidget {
+class _GoogleSignInButton extends ConsumerStatefulWidget {
   final Future<void> Function() onSignIn;
   const _GoogleSignInButton({required this.onSignIn});
 
   @override
-  State<_GoogleSignInButton> createState() => _GoogleSignInButtonState();
+  ConsumerState<_GoogleSignInButton> createState() =>
+      _GoogleSignInButtonState();
 }
 
-class _GoogleSignInButtonState extends State<_GoogleSignInButton> {
+class _GoogleSignInButtonState extends ConsumerState<_GoogleSignInButton> {
   bool _loading = false;
-  String? _errorMessage;
+  ({String title, String? advice})? _error;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_errorMessage != null)
+        if (_error case final error?)
           Padding(
             padding: const EdgeInsets.only(bottom: 16),
             child: Card(
               color: Theme.of(context).colorScheme.errorContainer,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Text(
-                  _errorMessage!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onErrorContainer,
-                    fontSize: 12,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      error.title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                    if (error.advice != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        error.advice!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
           ),
-        SizedBox(
-          width: double.infinity,
-          height: 52,
+        ConstrainedBox(
+          // Hauteur minimale : avec une grande police, le libellé grandit.
+          constraints: const BoxConstraints(
+            minWidth: double.infinity,
+            minHeight: 52,
+          ),
           child: OutlinedButton.icon(
             onPressed: _loading
                 ? null
                 : () async {
                     setState(() {
                       _loading = true;
-                      _errorMessage = null;
+                      _error = null;
                     });
                     try {
                       await widget.onSignIn().timeout(
@@ -197,23 +244,26 @@ class _GoogleSignInButtonState extends State<_GoogleSignInButton> {
                         feature: 'loginScreen.build',
                         error: e,
                         stackTrace: stackTrace,
+                        service: ref.read(errorReportServiceProvider),
                       );
                       if (mounted) {
-                        setState(() => _errorMessage = e.message);
+                        setState(
+                          () => _error = (
+                            title: e.message ?? describeError(e).title,
+                            advice: null,
+                          ),
+                        );
                       }
                     } catch (e, stackTrace) {
                       reportUnexpectedError(
                         feature: 'loginScreen.build',
                         error: e,
                         stackTrace: stackTrace,
+                        service: ref.read(errorReportServiceProvider),
                       );
                       if (mounted) {
-                        setState(
-                          () => _errorMessage =
-                              'Erreur de connexion: ${e.toString()}',
-                        );
+                        setState(() => _error = loginError(e));
                       }
-                      debugPrint('Login error: $e');
                     } finally {
                       if (mounted) setState(() => _loading = false);
                     }

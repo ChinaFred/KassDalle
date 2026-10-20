@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/presentation/leave_guard.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/widgets/app_states.dart';
+import '../domain/app_user.dart';
 import 'auth_providers.dart';
 import 'preferred_name_dialog.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -12,30 +15,33 @@ class AccountScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(appUserProvider).value;
+    final isAdmin = ref.watch(isAdminProvider);
+    final hasPhoto = (user?.photoUrl ?? '').isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profil et compte')),
       body: user == null
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoadingState(label: 'Chargement du profil…')
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 Card(
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundImage: user.photoUrl != null
+                      backgroundImage: hasPhoto
                           ? NetworkImage(user.photoUrl!)
                           : null,
-                      child: user.photoUrl == null
-                          ? Text(user.displayName[0].toUpperCase())
-                          : null,
+                      child: hasPhoto ? null : Text(user.initial),
                     ),
                     title: Text(
-                      user.displayName,
+                      // Un compte Google sans nom : le nom affiché partout.
+                      user.displayName.trim().isEmpty
+                          ? user.displayedName
+                          : user.displayName,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     subtitle: Text(user.email),
-                    trailing: Chip(label: Text(user.role.name.toUpperCase())),
+                    trailing: Chip(label: Text(userRoleLabel(user.role))),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -63,9 +69,14 @@ class AccountScreen extends ConsumerWidget {
                     children: [
                       const ListTile(
                         leading: Icon(Icons.badge_outlined),
-                        title: Text('Identite'),
+                        title: Text('Identité'),
                       ),
-                      _InfoRow(label: 'Nom affiche', value: user.displayName),
+                      _InfoRow(
+                        label: 'Nom du compte Google',
+                        value: user.displayName.trim().isEmpty
+                            ? 'Aucun nom'
+                            : user.displayName,
+                      ),
                       // Le nom Google revient à chaque connexion et n'est pas
                       // modifiable ici. Le nom préféré, lui, est le seul que
                       // la famille voit sur les bibliothèques.
@@ -77,22 +88,26 @@ class AccountScreen extends ConsumerWidget {
                         onTap: () =>
                             showPreferredNameDialog(context, ref, user),
                       ),
-                      _InfoRow(label: 'Email', value: user.email),
-                      _InfoRow(label: 'UID', value: user.uid),
+                      _InfoRow(label: 'Adresse e-mail', value: user.email),
+                      // L'identifiant technique ne sert qu'à l'administrateur,
+                      // qui le recoupe avec les journaux et les rapports.
+                      if (isAdmin)
+                        _InfoRow(
+                          label: 'Identifiant du compte',
+                          value: user.uid,
+                        ),
                       _InfoRow(
                         label: 'Photo de profil',
-                        value: user.photoUrl ?? 'Aucune photo',
+                        value: hasPhoto
+                            ? 'Photo du compte Google'
+                            : 'Aucune photo',
                       ),
                       const Divider(height: 1),
                       const ListTile(
                         leading: Icon(Icons.shield_outlined),
                         title: Text('Accès et permissions'),
                       ),
-                      _InfoRow(label: 'Role', value: user.role.name),
-                      _InfoRow(
-                        label: 'Compte revoque',
-                        value: user.isRevoked ? 'Oui' : 'Non',
-                      ),
+                      _InfoRow(label: 'Rôle', value: userRoleLabel(user.role)),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                         child: Wrap(
@@ -104,11 +119,11 @@ class AccountScreen extends ConsumerWidget {
                               enabled: user.canRead,
                             ),
                             _PermissionChip(
-                              label: 'Edition',
+                              label: 'Édition',
                               enabled: user.canEdit,
                             ),
                             _PermissionChip(
-                              label: 'Admin',
+                              label: 'Administration',
                               enabled: user.isAdmin,
                             ),
                           ],
@@ -117,7 +132,7 @@ class AccountScreen extends ConsumerWidget {
                       const Divider(height: 1),
                       const ListTile(
                         leading: Icon(Icons.schedule_outlined),
-                        title: Text('Activite du compte'),
+                        title: Text('Activité du compte'),
                       ),
                       _InfoRow(
                         label: 'Compte créé le',
@@ -130,8 +145,8 @@ class AccountScreen extends ConsumerWidget {
                       const Divider(height: 1),
                       ListTile(
                         leading: const Icon(Icons.logout),
-                        title: const Text('Se deconnecter'),
-                        onTap: () => ref.read(authRepositoryProvider).signOut(),
+                        title: const Text('Se déconnecter'),
+                        onTap: () => signOutGuarded(context, ref),
                       ),
                     ],
                   ),

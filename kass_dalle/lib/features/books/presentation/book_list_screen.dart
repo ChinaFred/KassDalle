@@ -10,7 +10,9 @@ import 'book_providers.dart';
 import 'delete_book_flow.dart';
 import 'export_my_books_flow.dart';
 import 'reorderable_books_grid.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../groups/presentation/group_providers.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/platform_utils.dart';
@@ -152,6 +154,9 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
     final groupBooksAsync = ref.watch(groupMemberBooksProvider);
     final canEdit = ref.watch(canEditProvider);
     final myUid = ref.watch(appUserProvider).value?.uid ?? '';
+    // Vide une fois lu : en cours de lecture, la carte « aucun groupe » ne
+    // s'affiche pas.
+    final noGroup = ref.watch(groupMemberIdsProvider).value?.isEmpty ?? false;
 
     // Group member books by ownerUid
     final booksByOwner = <String, List<Book>>{};
@@ -204,29 +209,39 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
             final hasGroupBooks = booksByOwner.isNotEmpty;
 
             if (myBooks.isEmpty && !hasGroupBooks) {
-              return Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.library_books_outlined,
-                      size: AppIconSize.hero,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+              // Dans une vue qui défile : « tirer pour rafraîchir » ne
+              // répond que sur un `Scrollable`.
+              return CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: AppEmptyState(
+                      icon: Icons.library_books_outlined,
+                      title: 'Aucun livre pour le moment',
+                      message: canEdit
+                          ? 'Ajoutez votre premier livre : scan de la '
+                                'couverture, fichier PDF ou EPUB, ou saisie.'
+                          : noGroup
+                          ? 'Les livres de votre famille apparaissent ici '
+                                'quand vous rejoignez un groupe. Un proche '
+                                'vous y invite.'
+                          // Déjà relié à un proche par un groupe : rien à
+                          // rejoindre, les proches n'ont pas encore de livre.
+                          : 'Les livres de votre famille apparaîtront ici '
+                                'dès qu\'un proche en ajoutera un.',
+                      action: canEdit
+                          ? FilledButton.icon(
+                              onPressed: _openAddBookFlow,
+                              icon: const Icon(Icons.add),
+                              label: const Text('Ajouter un livre'),
+                            )
+                          : noGroup
+                          ? const _OpenGroupsButton(primary: true)
+                          : null,
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Aucun livre pour le moment',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    if (canEdit)
-                      FilledButton.icon(
-                        onPressed: _openAddBookFlow,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Ajouter un livre'),
-                      ),
-                  ],
-                ),
+                  ),
+                ],
               );
             }
 
@@ -261,6 +276,10 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
                               _BookGridCard(book: book, canEdit: canEdit),
                         ),
 
+                // Sans groupe, seuls ses propres livres s'affichent : la
+                // carte dit pourquoi, et où aller.
+                if (noGroup) const SliverToBoxAdapter(child: _NoGroupCard()),
+
                 // ── Livres des membres ─────────────────────────────────────────
                 for (final entry in booksByOwner.entries) ...[
                   _MemberSectionHeader(
@@ -284,6 +303,70 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
 }
 
 enum _BookCreationMethod { scanCover, fromFile, manual }
+
+// ── Groupes familiaux ──────────────────────────────────────────────────────────
+
+/// Ouvre Groupes familiaux, d'où l'on rejoint la famille.
+class _OpenGroupsButton extends StatelessWidget {
+  /// Bouton principal de l'écran vide ; secondaire dans la carte.
+  final bool primary;
+
+  const _OpenGroupsButton({this.primary = false});
+
+  @override
+  Widget build(BuildContext context) {
+    void open() => context.push(AppRoutes.groups);
+    const icon = Icon(Icons.groups_outlined);
+    const label = Text('Ouvrir Groupes familiaux');
+    return primary
+        ? FilledButton.icon(onPressed: open, icon: icon, label: label)
+        : FilledButton.tonalIcon(onPressed: open, icon: icon, label: label);
+  }
+}
+
+/// Carte posée sous « Mes livres » quand le compte n'est dans aucun groupe.
+class _NoGroupCard extends StatelessWidget {
+  const _NoGroupCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.groups_outlined,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Vous ne voyez que vos livres. Rejoignez un groupe '
+                      'familial pour voir ceux de vos proches.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: _OpenGroupsButton(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 // ── En-tête de section ─────────────────────────────────────────────────────────
 

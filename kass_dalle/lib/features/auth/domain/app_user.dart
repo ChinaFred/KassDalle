@@ -8,6 +8,15 @@ import 'user_profile.dart';
 /// toute la bibliothèque de la famille.
 enum UserRole { admin, editor, reader, pending }
 
+/// Le libellé d'un rôle, tel que l'affichent l'administration et l'écran du
+/// compte.
+String userRoleLabel(UserRole role) => switch (role) {
+  UserRole.admin => 'Administrateur',
+  UserRole.editor => 'Éditeur',
+  UserRole.reader => 'Lecteur',
+  UserRole.pending => 'En attente',
+};
+
 /// Adresse du compte fondateur, en dur côté serveur (`FOUNDER_EMAIL`) et dans
 /// `firestore.rules`.
 const kFounderEmail = 'china.fred.75@gmail.com';
@@ -90,6 +99,17 @@ class AppUser {
     final chosen = preferredName?.trim() ?? '';
     if (chosen.isNotEmpty) return chosen;
     return defaultPreferredName(displayName, email);
+  }
+
+  /// L'initiale de l'avatar, en majuscule.
+  ///
+  /// Lue sur [displayedName], qui n'est jamais vide (repli sur l'adresse,
+  /// puis « Membre ») : `displayName[0]` levait une exception sur un compte
+  /// Google sans nom, et le menu du compte cassait toute l'application.
+  String get initial {
+    final name = displayedName.trim();
+    if (name.isEmpty) return '?';
+    return String.fromCharCode(name.runes.first).toUpperCase();
   }
 
   /// La valeur par défaut du nom préféré : le prénom du compte Google.

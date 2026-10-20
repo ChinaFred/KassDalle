@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/services/gemini_providers.dart';
 import 'package:kass_dalle/core/services/gemini_service.dart';
+import 'package:kass_dalle/core/widgets/readable_width.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe_filter.dart';
@@ -132,5 +133,32 @@ void main() {
     );
     // La préférence enregistrée n'est ni lue ni modifiée.
     expect(container.exists(explorePreferencesProvider), isFalse);
+  });
+
+  testWidgets('sur un écran de 2 000 px, la liste reste bornée à 1 200 px', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(2000, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _open(tester, (_) {});
+    // La barre garde toute la largeur ; le contenu est borné par
+    // `ReadableWidth`, que le shell ne pose pas sur une page poussée.
+    expect(tester.getSize(find.byType(AppBar)).width, 2000);
+    final content = find
+        .descendant(
+          of: find.byType(ReadableWidth),
+          matching: find.byType(MediaQuery),
+        )
+        .first;
+    expect(tester.getSize(content).width, kReadableMaxWidth);
+    expect(
+      tester.getSize(find.text('Lasagnes brouillon')).width,
+      lessThanOrEqualTo(kReadableMaxWidth),
+    );
+    expect(
+      tester.getTopLeft(find.text('Recette pour lundi 5 janvier, Dupont')).dx,
+      greaterThanOrEqualTo((2000 - kReadableMaxWidth) / 2),
+    );
   });
 }

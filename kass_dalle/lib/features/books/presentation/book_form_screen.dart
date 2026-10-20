@@ -1,11 +1,16 @@
 import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../auth/presentation/not_owner_scaffold.dart';
+import '../../../core/presentation/leave_guard.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/widgets/error_message.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
@@ -46,13 +51,106 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   /// relisait le livre à chaque reconstruction.
   Future<Book?>? _bookFuture;
 
+  /// Les champs tels qu'ouverts — vides en création, ceux du livre en
+  /// modification. Ce qui en diffère au moment de partir est une saisie non
+  /// enregistrée. `null` tant que le livre à modifier n'est pas lu.
+  Map<String, String>? _openedSnapshot;
+
+  /// Vrai une fois enregistré, ou l'abandon accepté : quitter ne perd plus
+  /// rien.
+  bool _saved = false;
+
+  // Garde de sortie : la barre de navigation et le menu latéral appellent
+  // `context.go`, que `PopScope` ne voit pas (voir `leave_guard.dart`).
+  late final LeaveGuardNotifier _leaveGuardNotifier;
+  late final LeaveGuard _leaveGuard = _confirmLeave;
+
   @override
   void initState() {
     super.initState();
+    _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
+    // Après le rendu : un provider ne se modifie pas pendant la construction.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _leaveGuardNotifier.set(_leaveGuard);
+    });
     final bookId = widget.bookId;
     if (bookId != null) {
-      _bookFuture = ref.read(bookRepositoryProvider).getBook(bookId);
+      _bookFuture = _loadBook(bookId);
+    } else {
+      _openedSnapshot = _currentSnapshot();
     }
+  }
+
+  /// Lit le livre à modifier. Une lecture en échec est remontée, puis rendue
+  /// au `FutureBuilder`, qui affiche l'erreur et « Réessayer ».
+  Future<Book?> _loadBook(String bookId) async {
+    try {
+      return await ref.read(bookRepositoryProvider).getBook(bookId);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'bookFormScreen.loadBook',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'book_id': bookId},
+      );
+      rethrow;
+    }
+  }
+
+  /// Les champs du formulaire, sous une forme comparable.
+  Map<String, String> _currentSnapshot() => {
+    'titre': _titreCtrl.text,
+    'sous_titre': _sousTitreCtrl.text,
+    'editeur': _editeurCtrl.text,
+    'serie': _serieCtrl.text,
+    'auteur': _auteurCtrl.text,
+    'annee': _anneeCtrl.text,
+    'isbn': _isbnCtrl.text,
+    'description': _descriptionCtrl.text,
+    'tags': _tagsCtrl.text,
+    'couverture': _coverCtrl.text,
+    'langue': _langue,
+    'prive': '$_isPrivate',
+  };
+
+  bool get _dirty {
+    final opened = _openedSnapshot;
+    if (_saved || opened == null) return false;
+    return _localCoverBytes != null || !mapEquals(_currentSnapshot(), opened);
+  }
+
+  /// Vrai quand l'écran peut être quitté : rien à perdre, ou l'utilisateur
+  /// accepte d'abandonner sa saisie.
+  Future<bool> _confirmLeave() async {
+    if (!_dirty) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quitter sans enregistrer ?'),
+        content: Text(
+          widget.bookId == null
+              ? 'Ce livre ne sera pas créé.'
+              : 'Les modifications de ce livre seront perdues.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Rester'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Quitter'),
+          ),
+        ],
+      ),
+    );
+    return leave == true;
+  }
+
+  Future<void> _leaveAfterConfirmation() async {
+    if (!await _confirmLeave() || !mounted) return;
+    _saved = true; // la question est posée : le retour suivant passe
+    Navigator.of(context).pop();
   }
 
   // Couverture sélectionnée localement (avant upload)
@@ -61,6 +159,10 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
 
   @override
   void dispose() {
+    // Différé : un provider ne se modifie pas pendant le démontage de l'arbre.
+    final notifier = _leaveGuardNotifier;
+    final guard = _leaveGuard;
+    Future.microtask(() => notifier.clearIf(guard));
     _titreCtrl.dispose();
     _sousTitreCtrl.dispose();
     _editeurCtrl.dispose();
@@ -89,6 +191,14 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     _langue = book.langue;
     _isPrivate = book.isPrivate;
     _initialized = true;
+    _openedSnapshot = _currentSnapshot();
+  }
+
+  /// La couverture vient d'être enregistrée à part : elle n'est plus une
+  /// modification en attente.
+  void _coverSaved(String url) {
+    final opened = _openedSnapshot;
+    if (opened != null) _openedSnapshot = {...opened, 'couverture': url};
   }
 
   Future<void> _pickCover(ImageSource source, {String? bookId}) async {
@@ -111,7 +221,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         context: {'etape': 'capture', 'source': source.name},
       );
       if (mounted) {
-        context.showErrorSnackBar('Impossible de prendre la photo : $e');
+        context.showErrorSnackBar(
+          'Impossible de prendre la photo : ${shortErrorMessage(e)}',
+        );
       }
       return;
     }
@@ -127,6 +239,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               (await ref.read(bookRepositoryProvider).getBook(bookId))!
                   .copyWith(urlCouverture: url, updatedAt: DateTime.now()),
             );
+        _coverSaved(url);
         setState(() {
           _coverCtrl.text = url;
           _localCoverBytes = null;
@@ -140,7 +253,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           stackTrace: stackTrace,
         );
         if (mounted) {
-          context.showErrorSnackBar('Erreur upload : $e');
+          context.showErrorSnackBar(
+            'Envoi de la couverture impossible : ${shortErrorMessage(e)}',
+          );
         }
       } finally {
         if (mounted) setState(() => _uploadingCover = false);
@@ -172,6 +287,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               updatedAt: DateTime.now(),
             ),
           );
+      _coverSaved(url);
       setState(() {
         _coverCtrl.text = url;
         _localCoverBytes = null;
@@ -185,7 +301,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur upload : $e');
+        context.showErrorSnackBar(
+          'Envoi de la couverture impossible : ${shortErrorMessage(e)}',
+        );
       }
     } finally {
       if (mounted) setState(() => _uploadingCover = false);
@@ -281,6 +399,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         await ref.read(bookRepositoryProvider).updateBook(updated);
         ref.invalidate(myBooksProvider);
         ref.invalidate(accessibleBooksProvider);
+        _saved = true;
         if (mounted) {
           context.showSuccessSnackBar('Livre mis à jour');
           context.pop();
@@ -375,6 +494,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       ref.invalidate(myBooksProvider);
       ref.invalidate(accessibleBooksProvider);
 
+      _saved = true;
       if (mounted) {
         context.showSuccessSnackBar(
           existing == null ? 'Livre ajouté manuellement' : 'Livre mis à jour',
@@ -388,7 +508,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        context.showErrorSnackBar(
+          'Enregistrement impossible : ${shortErrorMessage(e)}',
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -421,11 +543,29 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
             body: const AppLoadingState(),
           );
         }
+        if (snap.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Modifier le livre')),
+            body: AppErrorState(
+              error: snap.error,
+              onRetry: () => setState(() => _bookFuture = _loadBook(bookId)),
+            ),
+          );
+        }
         final existing = snap.data;
         if (existing == null) {
           return Scaffold(
             appBar: AppBar(title: const Text('Modifier le livre')),
-            body: const Center(child: Text('Livre introuvable')),
+            body: AppEmptyState(
+              icon: Icons.library_books_outlined,
+              title: 'Livre introuvable',
+              message: 'Ce livre a peut-être été supprimé.',
+              action: FilledButton.icon(
+                onPressed: () => context.go(AppRoutes.books),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Retour à la bibliothèque'),
+              ),
+            ),
           );
         }
         final gate = gateFor(existing);
@@ -436,7 +576,21 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     );
   }
 
-  Scaffold _buildScaffold({Book? existing}) {
+  Widget _buildScaffold({Book? existing}) {
+    return PopScope(
+      // Toujours retenu : la question ne se pose que s'il y a quelque chose à
+      // perdre, ce que seul le moment du départ sait (les champs de texte ne
+      // reconstruisent pas l'écran).
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _leaveAfterConfirmation();
+      },
+      child: _buildForm(existing: existing),
+    );
+  }
+
+  Scaffold _buildForm({Book? existing}) {
     final isSystem = existing?.isSystemBook == true;
 
     return Scaffold(
@@ -496,7 +650,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               TextFormField(
                 controller: _sousTitreCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Sous-titre / Legende',
+                  labelText: 'Sous-titre / Légende',
                   prefixIcon: Icon(Icons.short_text),
                 ),
               ),
@@ -504,7 +658,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               TextFormField(
                 controller: _editeurCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Editeur',
+                  labelText: 'Éditeur',
                   prefixIcon: Icon(Icons.business_outlined),
                 ),
               ),
@@ -512,7 +666,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               TextFormField(
                 controller: _serieCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Serie',
+                  labelText: 'Série',
                   prefixIcon: Icon(Icons.collections_bookmark_outlined),
                 ),
               ),
@@ -558,9 +712,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                   prefixIcon: Icon(Icons.language),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'fr', child: Text('Francais')),
+                  DropdownMenuItem(value: 'fr', child: Text('Français')),
                   DropdownMenuItem(value: 'en', child: Text('Anglais')),
-                  DropdownMenuItem(value: 'nl', child: Text('Neerlandais')),
+                  DropdownMenuItem(value: 'nl', child: Text('Néerlandais')),
                 ],
                 onChanged: _saving
                     ? null
@@ -581,7 +735,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               if (existing?.sourceFileName != null) ...[
                 const SizedBox(height: 12),
                 Text(
-                  'Source IA: ${existing!.sourceFileName}',
+                  'Source IA : ${existing!.sourceFileName}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),

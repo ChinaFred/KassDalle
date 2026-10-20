@@ -104,7 +104,6 @@ class AppRoutes {
   static String groupMembersPath(String groupId) =>
       '/groups/${Uri.encodeComponent(groupId)}';
   static const search = '/search';
-  static const tokenUsage = '/token-usage';
   static const errorReports = '/error-reports';
   static const deadLetters = '/dead-letters';
   static const logs = '/logs';
