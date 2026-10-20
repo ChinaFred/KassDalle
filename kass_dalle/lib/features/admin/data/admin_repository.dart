@@ -12,10 +12,15 @@ class AdminRepository {
   /// Les comptes **en attente** passent devant : ce sont les seuls qui
   /// demandent une décision, et un compte qui attend en bas d'une liste
   /// chronologique attend longtemps. Le reste garde l'ordre d'arrivée.
+  ///
+  /// L'uid d'un compte est l'identifiant de son document, jamais le champ
+  /// `uid` qu'il porte : ce champ est écrit par le client, et l'écran agit
+  /// sur `user.uid` (rôle, révocation). Un compte en attente qui y aurait
+  /// mis l'uid d'un éditeur faisait révoquer l'éditeur (ticket #162).
   Stream<List<AppUser>> watchAllUsers() {
     return _firestore.collection('users').snapshots().map((snap) {
       final users = snap.docs
-          .map((d) => AppUser.fromFirestore(d.data()))
+          .map((d) => AppUser.fromFirestore({...d.data(), 'uid': d.id}))
           .toList();
       users.sort((a, b) {
         if (a.isPending != b.isPending) return a.isPending ? -1 : 1;

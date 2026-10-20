@@ -24,8 +24,8 @@ const rulesPath = (name) => new URL(`../../${name}`, import.meta.url);
 
 /// Les comptes de test. `claims` reprend ce que `syncUserClaims` frappe dans
 /// le jeton (`role`, `revoked`) plus l'adresse ; `doc` reprend `users/{uid}`,
-/// que les règles Firestore relisent pour la révocation (et pour le rôle
-/// quand le jeton ne porte pas encore le claim).
+/// que les règles Firestore relisent pour la révocation et pour le rôle (le
+/// claim ne sert que si le document n'a pas de rôle, depuis v0.24.29).
 export const PERSONAS = {
   // Jeton d'une connexion Google à l'adresse vérifiée : `isFounder()` exige
   // `email_verified` et `firebase.sign_in_provider == 'google.com'`.
@@ -83,6 +83,20 @@ export const PERSONAS = {
     uid: "stranger",
     claims: { role: "editor", revoked: false, email: "stranger@example.com" },
     doc: { role: "editor", is_revoked: false, email: "stranger@example.com" },
+  },
+  // Administrateur rétrogradé à l'instant : le jeton porte encore le claim
+  // `admin`, le document dit `editor`. Firestore suit le document (#162).
+  demotedAdmin: {
+    uid: "demoted-admin",
+    claims: { role: "admin", revoked: false, email: "demoted@example.com" },
+    doc: { role: "editor", is_revoked: false, email: "demoted@example.com" },
+  },
+  // Compte nommé à l'instant : le jeton dit encore `pending`, le document
+  // `reader`. Firestore lui ouvre la bibliothèque sans attendre le jeton.
+  promotedReader: {
+    uid: "promoted-reader",
+    claims: { role: "pending", revoked: false, email: "promoted@example.com" },
+    doc: { role: "reader", is_revoked: false, email: "promoted@example.com" },
   },
   // Compte approuvé dont le jeton ne porte pas encore le claim de rôle :
   // Firestore se replie sur le document.

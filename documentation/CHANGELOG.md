@@ -20,6 +20,25 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.29 — technique
+
+Règles Firestore des comptes et des groupes, lot 9 de l'audit #151 (ticket #162). Le rôle se
+lit désormais sur le document `users/{uid}`, et le claim du jeton seulement si le document n'a
+pas de champ `role` : un administrateur rétrogradé gardait le claim `admin` jusqu'au
+renouvellement de son jeton (une heure au plus) et pouvait se renommer administrateur. Un
+compte nommé accède aussi sans attendre son jeton. Storage reste lié au jeton, écart décrit au
+§4 de `TechnicalRequirements.md`.
+
+Le champ `uid` d'un document `users` est absent ou égal à l'uid du document, et ne change plus
+après la création. L'écran Admin › Comptes lit l'uid sur l'identifiant du document
+(`watchAllUsers`, et `watchAppUser` pour le compte connecté) : un compte en attente qui
+portait l'uid d'un éditeur faisait révoquer l'éditeur par un clic sur sa propre ligne. Les
+champs écrits sont listés (`hasOnly`) : création d'un compte (`AppUser.toFirestore`), mise à
+jour par le titulaire, mise à jour par un administrateur (`role`, `is_revoked`,
+`preferred_name`), création d'un groupe (`createGroup`). `photo_url` est bornée à 2048
+caractères. 23 tests de règles ajoutés (personas `demotedAdmin` et `promotedReader`), un test
+Dart sur `watchAllUsers`.
+
 ### v0.24.28 — fonctionnel
 
 Messages d'erreur de l'administration et de la modération, quatrième et dernier sous-lot du

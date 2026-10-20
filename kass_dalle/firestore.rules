@@ -2,28 +2,37 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Autorisation : le rôle vient du jeton, la révocation du document ─────
+    // ── Autorisation : le rôle et la révocation viennent du document ───────
     //
     // Le rôle et la révocation vivent tous deux dans `users/{uid}` ET dans les
     // custom claims du jeton, entretenus par le déclencheur `syncUserClaims`.
     // Les règles Storage ne peuvent lire que le jeton — une lecture Firestore
     // depuis Storage est facturée et, surtout, peut échouer et faire refuser la
-    // règle entière. Ces règles-ci, elles, ont accès aux deux sources. Le choix
-    // n'est donc pas « l'une ou l'autre » mais « laquelle pour quoi » :
+    // règle entière. Ces règles-ci ont accès aux deux sources, et lisent
+    // d'abord le document :
     //
-    //  • Le RÔLE passe par le jeton. Il change rarement, une latence d'une
-    //    heure sur une promotion est sans conséquence, et le lire dans le jeton
-    //    évite une lecture facturée par requête. Repli sur le document tant
-    //    qu'un jeton ne porte pas encore le claim : sans ce repli, la bascule
-    //    aurait mis dehors tous les comptes non rafraîchis.
+    //  • Le RÔLE se lit sur le document, et sur le jeton seulement quand le
+    //    document n'en porte pas. Il se lisait dans le jeton jusqu'en
+    //    v0.24.29 : un administrateur rétrogradé gardait le claim `admin`
+    //    jusqu'au renouvellement de son jeton (une heure au plus), et pouvait
+    //    pendant ce temps se renommer administrateur sur son propre document
+    //    (ticket #162). La lecture du document ne coûte rien de plus :
+    //    `isRevoked()` la fait déjà, et une même requête ne facture qu'une
+    //    lecture par document. Même ordre côté Functions (`callable/_auth.ts`).
     //
-    //  • La RÉVOCATION reste lue sur le document. C'est le seul contrôle qui
-    //    doit mordre immédiatement : couper l'accès à quelqu'un et devoir
-    //    attendre le renouvellement de son jeton n'est pas une révocation.
-    //    Le jeton peut la confirmer, jamais l'infirmer.
+    //  • La RÉVOCATION se lit sur le document. Couper l'accès à quelqu'un et
+    //    devoir attendre le renouvellement de son jeton n'est pas une
+    //    révocation. Le jeton peut la confirmer, jamais l'infirmer.
     //
-    // Écart assumé et connu : sur Storage, une révocation ne prend effet qu'au
-    // renouvellement du jeton (une heure au plus). Ici elle est immédiate.
+    // Sans document — première connexion, avant que `_upsertUser` ne l'écrive
+    // — `getUserData()` échoue, et une erreur vaut refus : un tel compte n'a
+    // que les droits qui ne demandent aucun rôle (créer son document,
+    // `isKnownRevoked` pour les rapports d'erreur). C'était déjà le cas par
+    // `isRevoked()` avant v0.24.29.
+    //
+    // Écart assumé et connu : sur Storage, le rôle et la révocation ne
+    // changent qu'au renouvellement du jeton (une heure au plus). Ici ils
+    // changent immédiatement.
     //
     // Quatre rôles, dont un qui n'ouvre rien : `pending`. Un compte neuf naît
     // ainsi, et `isApproved()` — pas `isAuthenticated()` — garde tout ce qui
@@ -38,16 +47,12 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    /// Vrai si le jeton porte le claim de rôle (compte amorcé, jeton à jour).
-    /// Testé par présence de clé plutôt que par comparaison à null : c'est la
-    /// seule forme dont la sémantique est garantie sur un claim absent.
-    function tokenHasRole() {
-      return 'role' in request.auth.token && request.auth.token.role != null;
-    }
-
-    /// Le rôle en vigueur : le claim s'il existe, le document sinon.
+    /// Le rôle en vigueur : celui du document, ou le claim du jeton quand le
+    /// document ne porte pas de rôle (compte ancien). Le document fait foi :
+    /// un rôle retiré mord tout de suite, sans attendre le jeton.
     function roleOf() {
-      return tokenHasRole() ? request.auth.token.role : getUserData().role;
+      let d = getUserData();
+      return d.get('role', null) != null ? d.role : request.auth.token.get('role', null);
     }
 
     /// Les trois rôles qui ouvrent l'application. `pending` n'y est pas : un
@@ -228,6 +233,46 @@ service cloud.firestore {
                              + uid + '%2Ffree_recipe_cover_[0-9]+[.](jpg|jpeg|png|webp)([?][^/#%]*)?'));
       }
 
+      /// La photo Google (`photo_url`) est absente, nulle, ou une chaîne de
+      /// 2048 caractères au plus. Elle est recopiée dans le profil public :
+      /// sans borne, un compte y posait un texte de taille quelconque.
+      function photoUrlOk() {
+        let url = request.resource.data.get('photo_url', null);
+        return url == null || (url is string && url.size() <= 2048);
+      }
+
+      /// Les champs que le client écrit à la création (`AppUser.toFirestore`,
+      /// appelé par `_upsertUser`). `uid`, quand il est écrit, est l'uid du
+      /// document : `watchAllUsers` le lisait comme identifiant du compte, si
+      /// bien qu'un compte en attente qui portait l'uid d'un éditeur faisait
+      /// révoquer l'éditeur par un clic sur sa propre ligne (ticket #162).
+      function createdKeysOk() {
+        return request.resource.data.keys().hasOnly([
+                 'uid', 'email', 'display_name', 'preferred_name', 'photo_url',
+                 'free_recipe_cover_url', 'role', 'created_at', 'last_seen_at',
+                 'is_revoked'])
+               && (!('uid' in request.resource.data) || request.resource.data.uid == uid);
+      }
+
+      /// Les champs que le titulaire change lui-même : sa connexion
+      /// (`_upsertUser` : `last_seen_at`, `photo_url`, `display_name`), son
+      /// nom préféré, sa couverture « Recette libre » et le défaut
+      /// d'extraction des illustrations (`UserPreferencesRepository`). Ni
+      /// `uid`, ni `email`, ni `role`, ni `is_revoked`, ni `created_at`.
+      function ownerKeysOk() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                 'last_seen_at', 'photo_url', 'display_name', 'preferred_name',
+                 'free_recipe_cover_url', 'import_illustrations']);
+      }
+
+      /// Ce qu'un administrateur change sur le compte d'un autre : le rôle,
+      /// la révocation et le nom préféré (écran Admin › Comptes). Sur son
+      /// propre compte, il a en plus les champs du titulaire.
+      function adminKeysOk() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                 'role', 'is_revoked', 'preferred_name']);
+      }
+
       /// À la création, les deux noms sont bornés.
       function namesBounded() {
         return nameOk('display_name') && nameOk('preferred_name');
@@ -259,19 +304,30 @@ service cloud.firestore {
                       && request.resource.data.is_revoked == false
                       && request.resource.data.email == request.auth.token.email
                       && request.auth.token.email_verified == true
+                      && createdKeysOk()
                       && namesBounded()
+                      && photoUrlOk()
                       && coverUrlOk();
 
       // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
       // peut destituer. Sans cette réserve, un administrateur adoubé pouvait
       // mettre dehors celui qui l'avait nommé.
+      //
+      // Chaque branche dit les champs qu'elle touche (`affectedKeys().hasOnly`) :
+      // `uid` n'est dans aucune liste, et ne change donc plus après la
+      // création (ticket #162).
       allow update: if !touchesEmail()
                       && touchedNamesBounded()
                       && (!request.resource.data.diff(resource.data).affectedKeys()
                              .hasAny(['free_recipe_cover_url'])
                           || coverUrlOk())
-                      && ((isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
+                      && (!request.resource.data.diff(resource.data).affectedKeys()
+                             .hasAny(['photo_url'])
+                          || photoUrlOk())
+                      && ((isAdmin() && adminKeysOk()
+                           && (!touchesAuthority() || !targetIsFounder() || isFounder()))
                           || (isAuthenticated() && request.auth.uid == uid
+                              && ownerKeysOk()
                               && !touchesAuthority()));
 
       allow delete: if isAdmin() && !targetIsFounder();
@@ -851,7 +907,11 @@ service cloud.firestore {
         (resource.data.owner_id == request.auth.uid
           || request.auth.uid in resource.data.member_ids
           || request.auth.uid in resource.data.get('invited_ids', []));
+      // Les champs que `GroupRepository.createGroup` écrit, et `invited_ids`
+      // vide : un champ libre (`description`…) serait relu par chaque invité.
       allow create: if isEditor()
+        && request.resource.data.keys().hasOnly(
+             ['name', 'owner_id', 'member_ids', 'invited_ids', 'created_at'])
         && request.resource.data.owner_id == request.auth.uid
         && request.resource.data.member_ids == [request.auth.uid]
         && request.resource.data.get('invited_ids', []).size() == 0

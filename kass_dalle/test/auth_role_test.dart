@@ -143,6 +143,32 @@ void main() {
         expect(users.map((u) => u.uid), ['arrivant', 'ancien', 'recent']);
       },
     );
+
+    // Ticket #162 : l'écran Admin révoque `user.uid`. Un compte en attente
+    // qui écrit l'uid d'un éditeur dans son champ `uid` ne doit pas faire
+    // agir l'administrateur sur l'éditeur.
+    test(
+      'l\'uid d\'un compte vient de l\'identifiant du document, pas du champ',
+      () async {
+        final firestore = FakeFirebaseFirestore();
+        await firestore
+            .collection('users')
+            .doc('editeur')
+            .set(userDoc(uid: 'editeur', role: 'editor'));
+        await firestore
+            .collection('users')
+            .doc('intrus')
+            .set(userDoc(uid: 'editeur', role: 'pending'));
+
+        final users = await AdminRepository(
+          firestore: firestore,
+        ).watchAllUsers().first;
+
+        final pending = users.singleWhere((u) => u.isPending);
+        expect(pending.uid, 'intrus');
+        expect(users.map((u) => u.uid).toSet(), {'intrus', 'editeur'});
+      },
+    );
   });
 
   // Miroir des règles `recipes` et `books` de `firestore.rules` (v0.23.8) :

@@ -352,7 +352,11 @@ class AuthRepository {
             .doc(uid)
             .snapshots()
             .map(
-              (doc) => doc.exists ? AppUser.fromFirestore(doc.data()!) : null,
+              // L'uid vient de l'identifiant du document, pas du champ
+              // `uid` écrit par le client (ticket #162).
+              (doc) => doc.exists
+                  ? AppUser.fromFirestore({...doc.data()!, 'uid': doc.id})
+                  : null,
             )
             .asyncMap((user) async {
               if (user != null) {
@@ -469,7 +473,9 @@ class AuthRepository {
           );
         }
         transaction.update(userRef, updates);
-        final data = userSnap.data()!..addAll(updates);
+        final data = userSnap.data()!
+          ..addAll(updates)
+          ..['uid'] = userSnap.id;
         return AppUser.fromFirestore(data);
       }
 
