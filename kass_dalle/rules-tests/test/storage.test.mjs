@@ -14,6 +14,7 @@ const storage = (name) => as(env, name).storage();
 
 const READER = PERSONAS.reader.uid;
 const OTHER = PERSONAS.otherReader.uid;
+const EDITOR = PERSONAS.editor.uid;
 
 const MB = 1024 * 1024;
 const small = () => new Uint8Array([1, 2, 3, 4]);
@@ -174,30 +175,37 @@ describe("quarantaine — propriété et rôle", () => {
 });
 
 describe("quarantaine — types et tailles", () => {
+  // Un éditeur ou un administrateur dépose tous les types d'un import.
   for (const type of [
     "image/png",
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/plain; charset=utf-8",
   ]) {
-    it(`accepte ${type}`, async () => {
-      await assertSucceeds(put("reader", `quarantine/${READER}/f`, type));
+    it(`un éditeur dépose ${type}`, async () => {
+      await assertSucceeds(put("editor", `quarantine/${EDITOR}/f`, type));
     });
   }
 
   for (const type of ["image/gif", "image/svg+xml", "application/zip", "text/html"]) {
-    it(`refuse ${type}`, async () => {
-      await assertFails(put("reader", `quarantine/${READER}/f`, type));
+    it(`refuse ${type}, même à un éditeur`, async () => {
+      await assertFails(put("editor", `quarantine/${EDITOR}/f`, type));
     });
   }
 
   it("refuse un EPUB hors de livres/", async () => {
-    await assertFails(put("reader", `quarantine/${READER}/livre.epub`, "application/epub+zip"));
+    await assertFails(put("editor", `quarantine/${EDITOR}/livre.epub`, "application/epub+zip"));
   });
 
-  it("accepte un EPUB sous livres/", async () => {
+  it("un éditeur dépose un EPUB sous livres/", async () => {
     await assertSucceeds(
-      put("reader", `quarantine/${READER}/livres/livre.epub`, "application/epub+zip"),
+      put("editor", `quarantine/${EDITOR}/livres/livre.epub`, "application/epub+zip"),
+    );
+  });
+
+  it("un administrateur dépose un EPUB sous livres/", async () => {
+    await assertSucceeds(
+      put("admin", `quarantine/${PERSONAS.admin.uid}/livres/livre.epub`, "application/epub+zip"),
     );
   });
 
@@ -205,23 +213,66 @@ describe("quarantaine — types et tailles", () => {
   // l'un OU l'autre passe (une photo de moins de 50 Mo aussi). Un type
   // qu'aucun des deux n'accepte reste refusé.
   it("refuse une archive ZIP sous livres/", async () => {
-    await assertFails(put("reader", `quarantine/${READER}/livres/livre.zip`, "application/zip"));
+    await assertFails(put("editor", `quarantine/${EDITOR}/livres/livre.zip`, "application/zip"));
   });
 
   it("refuse un fichier de 50 Mo hors de livres/", async () => {
     await assertFails(
-      put("reader", `quarantine/${READER}/gros.pdf`, "application/pdf", new Uint8Array(50 * MB)),
+      put("editor", `quarantine/${EDITOR}/gros.pdf`, "application/pdf", new Uint8Array(50 * MB)),
     );
   });
 
-  it("accepte un fichier de 50 Mo sous livres/", async () => {
+  it("un éditeur dépose un PDF de 50 Mo sous livres/", async () => {
     await assertSucceeds(
       put(
-        "reader",
-        `quarantine/${READER}/livres/gros.pdf`,
+        "editor",
+        `quarantine/${EDITOR}/livres/gros.pdf`,
         "application/pdf",
         new Uint8Array(50 * MB),
       ),
+    );
+  });
+});
+
+// Un lecteur n'importe pas (`requireEditor`, `isEditor()` sur les jobs) : il ne
+// dépose que les photos à modérer — couverture « Recette libre », illustration
+// d'une de ses recettes (audit #151, ticket #162).
+describe("quarantaine — ce que dépose un lecteur", () => {
+  for (const type of ["image/jpeg", "image/png"]) {
+    it(`un lecteur dépose ${type}`, async () => {
+      await assertSucceeds(put("reader", `quarantine/${READER}/f`, type));
+    });
+  }
+
+  for (const type of [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain; charset=utf-8",
+  ]) {
+    it(`un lecteur ne dépose pas ${type}`, async () => {
+      await assertFails(put("reader", `quarantine/${READER}/f`, type));
+    });
+  }
+
+  it("un lecteur ne dépose pas d'EPUB sous livres/", async () => {
+    await assertFails(
+      put("reader", `quarantine/${READER}/livres/livre.epub`, "application/epub+zip"),
+    );
+  });
+
+  it("un lecteur ne dépose pas de PDF sous livres/", async () => {
+    await assertFails(put("reader", `quarantine/${READER}/livres/livre.pdf`, "application/pdf"));
+  });
+
+  // Les deux blocs se recouvrent : sans l'exclusion de livres/ dans le bloc
+  // général, cette photo passerait.
+  it("un lecteur ne dépose pas de photo sous livres/", async () => {
+    await assertFails(put("reader", `quarantine/${READER}/livres/photo.jpg`, "image/jpeg"));
+  });
+
+  it("un lecteur ne dépose pas de photo de 50 Mo", async () => {
+    await assertFails(
+      put("reader", `quarantine/${READER}/gros.jpg`, "image/jpeg", new Uint8Array(50 * MB)),
     );
   });
 });

@@ -28,6 +28,7 @@ import { COLL_USERS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { ensureSystemBooksFor } from "../books/systemBooks";
 import { accessDenial, requireAdmin, type AuthContext } from "./_auth";
+import { readRole } from "../security/roles";
 import { runBackfillFromCallable } from "../backfills/runner";
 import type { PassSummary } from "../backfills/schedule";
 import { BackfillReview, shortErrorMessage, withoutReviewList } from "./_backfillReview";
@@ -49,8 +50,10 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 
 /** Vrai pour un compte `reader`, `editor` ou `admin` non révoqué. Pur, testé. */
 export function isApprovedAccount(data: Record<string, unknown> | undefined): boolean {
-  const role = typeof data?.role === "string" ? data.role.trim() : null;
-  return accessDenial({ role, revoked: data?.is_revoked === true }, "approved") === null;
+  return (
+    accessDenial({ role: readRole(data?.role), revoked: data?.is_revoked === true }, "approved") ===
+    null
+  );
 }
 
 export interface BackfillSystemBooksResponse {

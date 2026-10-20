@@ -42,7 +42,7 @@ import { writeFailureMemory } from "../backfills/failureMemoryWrites";
 import { requireAdmin, type AuthContext } from "./_auth";
 import { runBackfillFromCallable } from "../backfills/runner";
 import type { PassSummary } from "../backfills/schedule";
-import { logError, logInfo } from "../logging";
+import { logError, logInfo, logWarn } from "../logging";
 import {
   AI_PER100G_MARKERS,
   estimatePer100gForTargets,
@@ -249,13 +249,36 @@ export async function ensureAdminWithAudit(
     return await requireAdmin(req, op);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    await logError({
-      message: `${op}: accès refusé`,
-      errorDescription: errMsg,
-      extra: { uid: req.auth?.uid ?? null },
-    });
+    const uid = req.auth?.uid ?? null;
+    if (isAccessRefusal(err)) {
+      // Un refus est la garde qui fonctionne, pas une panne : un WARNING, pour
+      // que les erreurs de l'écran Journaux restent les vraies pannes (audit
+      // #151, ticket #163). L'uid et l'opération restent lisibles.
+      await logWarn({
+        message: `${op}: accès refusé`,
+        errorDescription: errMsg,
+        ...(uid ? { userId: uid } : {}),
+        extra: { uid, op },
+      });
+    } else {
+      // Toute autre erreur de la garde (lecture du compte en échec…) en est une.
+      await logError({
+        message: `${op}: contrôle d'accès en échec`,
+        errorDescription: errMsg,
+        ...(uid ? { userId: uid } : {}),
+        extra: { uid, op },
+      });
+    }
     throw err;
   }
+}
+
+/** Un refus de la garde : compte absent, en attente, révoqué ou non admin. Pure, testée. */
+export function isAccessRefusal(err: unknown): boolean {
+  return (
+    err instanceof HttpsError &&
+    (err.code === "permission-denied" || err.code === "unauthenticated")
+  );
 }
 
 function toNumber(value: unknown): number {

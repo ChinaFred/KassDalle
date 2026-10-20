@@ -14,6 +14,7 @@ import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/
 
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { requireAdmin, type AuthContext } from "../callable/_auth";
+import { PAGE_IMAGE_MAX_BYTES } from "../callable/_inputBounds";
 import { readModelChoice } from "./model";
 import { detectOrientation } from "./orientation";
 import { detectPageQuad } from "./page";
@@ -73,6 +74,41 @@ interface SandboxRequest {
   model?: string;
 }
 
+/**
+ * L'image et son type, lus de la requête et bornés. Pure, testée.
+ *
+ * Plafond : `PAGE_IMAGE_MAX_BYTES` (20 Mo décodés), la borne de
+ * `detectAndCropIllustrationsFn` pour la même page photographiée. Sans borne,
+ * `Buffer.from` décodait tout ce que la requête apportait, et le modèle
+ * recevait l'image entière, facturée au poids (audit #151, ticket #163).
+ *
+ * La taille se mesure avant tout décodage (`Buffer.byteLength` en base64) :
+ * une image trop lourde est refusée sans être recopiée en mémoire.
+ */
+export function readSandboxImage(data: SandboxRequest | undefined): {
+  bytes: Buffer;
+  mimeType: string;
+} {
+  const { bytesBase64, mimeType } = data ?? {};
+  if (
+    typeof bytesBase64 !== "string" ||
+    !bytesBase64 ||
+    typeof mimeType !== "string" ||
+    !mimeType
+  ) {
+    throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
+  }
+  const size = Buffer.byteLength(bytesBase64, "base64");
+  if (size > PAGE_IMAGE_MAX_BYTES) {
+    throw new HttpsError(
+      "invalid-argument",
+      `Image trop lourde : ${size} octets, ${PAGE_IMAGE_MAX_BYTES} au plus.`,
+      { field: "bytesBase64", size, max: PAGE_IMAGE_MAX_BYTES, unit: "bytes" },
+    );
+  }
+  return { bytes: Buffer.from(bytesBase64, "base64"), mimeType };
+}
+
 export const sandboxFn = onCall<SandboxRequest>(sandboxOpts, async (req) => {
   const experiment = req.data?.experiment;
   // Une seule garde, avant tout aiguillage : un appel non administrateur est
@@ -104,14 +140,12 @@ async function detectPage(
   req: CallableRequest<SandboxRequest>,
   ctx: AuthContext,
 ): Promise<{ page: unknown | null }> {
-  const { bytesBase64, mimeType, widthPx, heightPx } = req.data ?? {};
-  if (!bytesBase64 || !mimeType) {
-    throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
-  }
+  const { widthPx, heightPx } = req.data ?? {};
+  const { bytes, mimeType } = readSandboxImage(req.data);
 
   try {
     const page = await detectPageQuad({
-      bytes: Buffer.from(bytesBase64, "base64"),
+      bytes,
       mimeType,
       widthPx,
       heightPx,
@@ -133,14 +167,12 @@ async function detectRegions(
   req: CallableRequest<SandboxRequest>,
   ctx: AuthContext,
 ): Promise<{ regions: unknown[]; engines: unknown[] }> {
-  const { bytesBase64, mimeType, widthPx, heightPx } = req.data ?? {};
-  if (!bytesBase64 || !mimeType) {
-    throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
-  }
+  const { widthPx, heightPx } = req.data ?? {};
+  const { bytes, mimeType } = readSandboxImage(req.data);
 
   try {
     const result = await detectPageRegions({
-      bytes: Buffer.from(bytesBase64, "base64"),
+      bytes,
       mimeType,
       widthPx,
       heightPx,
@@ -162,14 +194,12 @@ async function detectPageOrientation(
   req: CallableRequest<SandboxRequest>,
   ctx: AuthContext,
 ): Promise<{ orientation: unknown | null }> {
-  const { bytesBase64, mimeType, widthPx, heightPx } = req.data ?? {};
-  if (!bytesBase64 || !mimeType) {
-    throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
-  }
+  const { widthPx, heightPx } = req.data ?? {};
+  const { bytes, mimeType } = readSandboxImage(req.data);
 
   try {
     const orientation = await detectOrientation({
-      bytes: Buffer.from(bytesBase64, "base64"),
+      bytes,
       mimeType,
       widthPx,
       heightPx,

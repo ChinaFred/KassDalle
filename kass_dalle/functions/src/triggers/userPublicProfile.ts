@@ -23,6 +23,7 @@
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { COLL_USER_PROFILES } from "../config";
+import { readRole } from "../security/roles";
 
 /** Rôles qui donnent un profil public. `pending` n'en fait pas partie. */
 const PROFILE_ROLES = ["reader", "editor", "admin"];
@@ -113,8 +114,8 @@ export function publicProfileFrom(
   uid: string,
 ): PublicProfile | null {
   if (!data) return null;
-  const role = typeof data.role === "string" ? data.role.trim() : "";
-  if (!PROFILE_ROLES.includes(role)) return null;
+  const role = readRole(data.role);
+  if (role === null || !PROFILE_ROLES.includes(role)) return null;
   return {
     display_name: optionalName(data.display_name) ?? "",
     preferred_name: optionalName(data.preferred_name),

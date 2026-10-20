@@ -53,6 +53,7 @@ import { logError, logInfo, newCorrelationId } from "../logging";
 import { syncPublicProfile } from "./userPublicProfile";
 import { cancelStaleReturnInvitations } from "./invitationSignup";
 import { isAccessRestored } from "../invitations/rules";
+import { readRole } from "../security/roles";
 
 /** Claims dérivés du document utilisateur. */
 export interface UserClaims {
@@ -60,10 +61,16 @@ export interface UserClaims {
   revoked: boolean;
 }
 
+/**
+ * Le rôle et la révocation à poser en claims. Pure, testée.
+ *
+ * Le rôle n'est gardé que s'il vaut `admin`, `editor`, `reader` ou `pending`,
+ * à l'identique (`readRole`) : un `"superadmin"` ou un `"admin "` donne
+ * `role: null`, donc aucun accès, comme dans `firestore.rules`.
+ */
 export function claimsFrom(data: Record<string, unknown> | undefined): UserClaims {
   if (!data) return { role: null, revoked: false };
-  const role = typeof data.role === "string" && data.role.trim() ? data.role.trim() : null;
-  return { role, revoked: data.is_revoked === true };
+  return { role: readRole(data.role), revoked: data.is_revoked === true };
 }
 
 function sameClaims(a: UserClaims, b: UserClaims): boolean {

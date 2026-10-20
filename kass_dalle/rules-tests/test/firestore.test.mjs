@@ -991,6 +991,25 @@ describe("users — champ uid et champs permis", () => {
     );
   });
 
+  // Audit #151, ticket #163 : quatre rôles, écrits à l'identique.
+  it("un administrateur ne pose pas role: 'superadmin'", async () => {
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ role: "superadmin" }),
+    );
+  });
+
+  it("un administrateur ne pose pas un rôle entouré d'espaces", async () => {
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ role: "admin " }),
+    );
+  });
+
+  it("un administrateur pose role: 'editor'", async () => {
+    await assertSucceeds(
+      db("admin").doc(`users/${READER}`).update({ role: "editor" }),
+    );
+  });
+
   it("le titulaire ne change pas son champ uid", async () => {
     await assertFails(
       db("reader").doc(`users/${READER}`).update({ uid: OTHER }),
