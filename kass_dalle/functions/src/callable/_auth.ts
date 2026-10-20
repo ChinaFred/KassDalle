@@ -117,8 +117,13 @@ function baseContext(req: CallableRequest<unknown>, feature: string): AuthContex
   return { userId: uid, correlationId: newCorrelationId(feature) };
 }
 
-/** Le compte lu sur son document, ou `null` si le document n'existe pas. */
-async function accountDocument(uid: string): Promise<AccountState | null> {
+/**
+ * Le compte lu sur son document, ou `null` si le document n'existe pas.
+ *
+ * Exportée pour les traitements sans requête (le pipeline d'import relit le
+ * propriétaire d'un job à chaque tentative, `pipeline/jobOwner.ts`).
+ */
+export async function accountDocument(uid: string): Promise<AccountState | null> {
   const snap = await getFirestore().collection(COLL_USERS).doc(uid).get();
   if (!snap.exists) return null;
   const data = snap.data();

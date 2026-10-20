@@ -67,6 +67,12 @@ import type { JsonLdNutrition } from "../web/recipePage";
 import { BookFileError } from "../books/bookFile";
 import { TargetBookNotOwned, assertJobTargetBook } from "./targetBook";
 import {
+  JobOwnerNotEditor,
+  OWNER_NOT_EDITOR_CODE,
+  OWNER_NOT_EDITOR_MESSAGE,
+  assertJobOwnerEditor,
+} from "./jobOwner";
+import {
   StoragePathRefusedError,
   promotedScanPrefix,
   resolveAllowedStoragePath,
@@ -162,6 +168,14 @@ const STEP_ORDER: PipelineStep[] = [
   "done",
 ];
 
+/**
+ * Message d'un échec générique (`pipeline_error`) sur le job, lu par le membre.
+ * Le message de l'exception n'y est pas recopié : c'est souvent un texte gRPC
+ * ou SDK, sans sens pour lui.
+ */
+export const PIPELINE_ERROR_MESSAGE =
+  "L'import n'a pas abouti après plusieurs essais. Relancez-le, ou supprimez-le s'il échoue de nouveau.";
+
 function stepIndex(step: PipelineStep): number {
   return STEP_ORDER.indexOf(step);
 }
@@ -246,6 +260,12 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
   const start = Date.now();
 
   try {
+    // Le propriétaire est relu à chaque tentative, avant toute écriture et tout
+    // appel de modèle : un compte révoqué, rétrogradé ou supprimé depuis la
+    // mise en file ne dépense plus rien. Nouveaux essais de Cloud Tasks,
+    // tranches d'un livre et relance d'un dead letter passent tous ici.
+    await assertJobOwnerEditor((job.created_by as string | undefined) ?? userId);
+
     await jobRef.update({
       status: "processing",
       updated_at: Timestamp.now(),
@@ -969,6 +989,10 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
     const isTruncatedTagging = err instanceof TaggingTruncatedError;
     // Le livre d'un autre le restera à chaque tentative.
     const isForeignBook = err instanceof TargetBookNotOwned;
+    // Un propriétaire qui n'est plus éditeur ne le redeviendra pas d'ici le
+    // prochain essai. Sa dead letter ne se relance pas non plus
+    // (`relaunchDenial`) : une fois son droit rendu, il importe de nouveau.
+    const isOwnerNotEditor = err instanceof JobOwnerNotEditor;
     // Un fichier source hors du dossier du propriétaire le restera.
     const isForbiddenSource = err instanceof StoragePathRefusedError;
     // Une archive (DOCX, EPUB) au-delà des bornes de lecture le restera :
@@ -1012,6 +1036,7 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
         isUnreadableBook,
         isTruncatedTagging,
         isForeignBook,
+        isOwnerNotEditor,
         isForbiddenSource,
         isZipLimit,
         isTooManyPages,
@@ -1021,36 +1046,35 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
     });
 
     // Dernière tentative — ou plafond atteint, fichier illisible, balisage
-    // coupé, livre cible d'un autre (`foreign_book`), fichier source hors du
-    // dossier du propriétaire (`forbidden_source_path`), archive au-delà des
-    // bornes de lecture (`archive_limit_exceeded`), plus de 20 pages
-    // supplémentaires (`too_many_pages`), plus de 200 Mo au total
-    // (`too_large`) : ces huit cas se rejouent à l'identique, il est inutile
-    // de les réessayer.
+    // coupé, livre cible d'un autre (`foreign_book`), propriétaire qui n'est
+    // plus éditeur (`owner_not_editor`), fichier source hors du dossier du
+    // propriétaire (`forbidden_source_path`), archive au-delà des bornes de
+    // lecture (`archive_limit_exceeded`), plus de 20 pages supplémentaires
+    // (`too_many_pages`), plus de 200 Mo au total (`too_large`) : ces neuf
+    // cas se rejouent à l'identique, il est inutile de les réessayer.
     if (
       attempt + 1 >= MAX_RETRY_ATTEMPTS ||
       isBudget ||
       isUnreadableBook ||
       isTruncatedTagging ||
       isForeignBook ||
+      isOwnerNotEditor ||
       isForbiddenSource ||
       isZipLimit ||
       isTooManyPages ||
       isTooLarge ||
       isFinalUrlError
     ) {
-      await moveToDeadLetter({
-        jobId,
-        userId,
-        correlationId,
-        failureReason: isBudget
-          ? "budget_exceeded"
-          : isUnreadableBook
-            ? "book_file_unreadable"
-            : isTruncatedTagging
-              ? "tagging_truncated"
-              : isForeignBook
-                ? "foreign_book"
+      const failureReason = isBudget
+        ? "budget_exceeded"
+        : isUnreadableBook
+          ? "book_file_unreadable"
+          : isTruncatedTagging
+            ? "tagging_truncated"
+            : isForeignBook
+              ? "foreign_book"
+              : isOwnerNotEditor
+                ? OWNER_NOT_EDITOR_CODE
                 : isForbiddenSource
                   ? "forbidden_source_path"
                   : isZipLimit
@@ -1063,7 +1087,12 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
                           ? `url_${urlError.code}`
                           : isQuota
                             ? "quota_exceeded"
-                            : "pipeline_error",
+                            : "pipeline_error";
+      await moveToDeadLetter({
+        jobId,
+        userId,
+        correlationId,
+        failureReason,
         lastError: message,
         retryCount: attempt + 1,
         filePath:
@@ -1072,9 +1101,23 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
       await jobRef.update({
         status: "error",
         // Un import par lien porte un message lisible et son code : la tuile
-        // du client choisit ses actions sur le code.
-        error_message: urlError ? URL_IMPORT_MESSAGES[urlError.code] : message,
-        ...(urlError ? { error_code: urlError.code } : {}),
+        // du client choisit ses actions sur le code. Un propriétaire refusé
+        // aussi (`owner_not_editor`), quel que soit le type du job.
+        // Un échec générique (`pipeline_error`) porte un message fixe : le
+        // texte de l'exception (gRPC, SDK) reste dans `last_error` de la dead
+        // letter et dans le `logError` ci-dessus, lus par l'administrateur.
+        error_message: isOwnerNotEditor
+          ? OWNER_NOT_EDITOR_MESSAGE
+          : urlError
+            ? URL_IMPORT_MESSAGES[urlError.code]
+            : failureReason === "pipeline_error"
+              ? PIPELINE_ERROR_MESSAGE
+              : message,
+        ...(isOwnerNotEditor
+          ? { error_code: OWNER_NOT_EDITOR_CODE, current_step: null }
+          : urlError
+            ? { error_code: urlError.code }
+            : {}),
         created_book_id: createdBookId,
         updated_at: Timestamp.now(),
       });

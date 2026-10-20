@@ -20,6 +20,37 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.31 — technique
+
+Règles Firestore de `app_config`, lot 9 de l'audit #151 (ticket #162, point 4). Un
+administrateur pouvait écrire directement tout document de `app_config` hors des quatre de
+`isServerOnlyConfig`. Les écrans passent pourtant par une callable : une écriture directe
+contournait sa validation (`readPolicyOrThrow`, garde-fou `enforce` d'App Check), sa trace
+d'audit et App Check. `isServerOnlyConfig` couvre désormais `ai_pricing`,
+`ai_routing_policy`, `ai_budget_policy`, `app_check_policy`, `nutrition_source_policy`,
+`image_moderation`, `currency_rate`, `anthropic_costs`, `planning_policy`, `ai_budget_alert`,
+et les points de reprise des
+backfills (`*_checkpoint`, `backfill_cursor_*`). Aucun code client n'écrit ces documents ; il
+les lit toujours. `tickets` et `usage` restent écrits par l'administrateur. Les tests des
+règles vérifient le refus de `set`, `update` et `delete` sur chacun, la lecture
+administrateur, et l'écriture de `app_config/tickets` ; le test qui visait
+`app_config/nutrition_policy`, identifiant inexistant, vise `nutrition_source_policy`.
+
+Pipeline d'import, lot 9 de l'audit #151 (ticket #163). Le pipeline relit le compte du
+propriétaire d'un job à chaque tentative (`assertJobOwnerEditor`), avec la même décision que
+`requireEditor`. Un compte révoqué, lecteur, en attente ou supprimé voit son job passer en
+`error_code: owner_not_editor`, puis en dead letter, sans appel de modèle ; la file l'affiche sans
+proposer « Relancer », et cette dead letter ne se relance pas. Les règles laissent désormais le
+propriétaire actif (approuvé, non révoqué), quel que soit son rôle, supprimer son job en
+`error` : un tel job restait sinon dans la file. Un échec générique (`pipeline_error`) écrit un
+message fixe sur le job ; le texte de l'exception reste dans la dead letter et le journal. Les nouveaux essais de Cloud Tasks, les tranches d'un livre et les
+relances de dead letter n'avaient aucun contrôle de rôle. `relaunchDeadLetterFn` valide son
+identifiant et fait tenir la relance dans une transaction : une seule relance par dead letter,
+la seconde reçoit « Ce job a déjà été relancé. ». Un `scanId` venu du client doit avoir la forme
+`scan_<ms>_<suffixe>` (`isValidScanId`) ; il est écarté par `scanAndPromoteUploadFn` et remplacé
+par `jobDispatcher` s'il est mal formé ou si son compteur `scan_spend` appartient à un autre
+compte.
+
 ### v0.24.30 — technique
 
 Règles Firestore des comptes et des groupes, lot 9 de l'audit #151 (ticket #162). Le rôle se
