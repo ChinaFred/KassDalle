@@ -172,6 +172,23 @@ export function scanOwnerConflict(existingUserId: unknown, userId: string): bool
   return typeof existingUserId === "string" && existingUserId !== "" && existingUserId !== userId;
 }
 
+/**
+ * Forme d'un identifiant de scan : `scan_<horodatage>_<suffixe base 36>`.
+ *
+ * Les deux producteurs écrivent cette forme : le client (`_newScanId` de
+ * `scan_upload_service.dart`, millisecondes puis un entier de 32 bits en base
+ * 36, sept caractères au plus) et le serveur (`newScanId` de `logging.ts`,
+ * millisecondes puis huit caractères au plus). L'identifiant nomme un document
+ * `scan_spend/{scanId}` : sans ce contrôle, un client pouvait y poser n'importe
+ * quelle chaîne non vide, y compris l'identifiant du compteur d'un autre.
+ */
+const SCAN_ID_PATTERN = /^scan_\d{1,16}_[a-z0-9]{1,16}$/;
+
+/** Vrai si `value` a la forme d'un identifiant de scan produit par l'application. */
+export function isValidScanId(value: unknown): boolean {
+  return typeof value === "string" && SCAN_ID_PATTERN.test(value);
+}
+
 /** Le plafond d'un scan qui appartient à un autre compte : refusé, jamais fusionné. */
 export class ForeignScanError extends Error {
   constructor(scanId: string) {

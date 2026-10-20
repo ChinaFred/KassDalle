@@ -68,6 +68,12 @@ UrlImportErrorCode? urlImportErrorCodeFrom(Object? raw) => switch (raw) {
   _ => null,
 };
 
+/// Code `error_code` écrit par le pipeline quand le compte qui a lancé le job
+/// n'est plus éditeur : révoqué, rétrogradé ou supprimé depuis la mise en
+/// file. Le job part en dead letter sans nouvel essai, et aucun appel d'IA n'a
+/// lieu. Vaut pour tous les types de job, import par lien compris.
+const kJobOwnerNotEditorCode = 'owner_not_editor';
+
 /// `duplicate` : le serveur a arrêté le traitement après la transcription,
 /// parce que la ou les recettes lues existent déjà dans le livre (ou sont
 /// attendues d'un import plus ancien). Le job attend une décision de
@@ -212,6 +218,11 @@ class ProcessingJob {
   /// Code d'échec d'un import par lien, quand il a échoué.
   final UrlImportErrorCode? errorCode;
 
+  /// Vrai quand le serveur a arrêté le job parce que son propriétaire n'est
+  /// plus éditeur ([kJobOwnerNotEditorCode]). « Relancer » n'a pas de sens :
+  /// le même refus reviendrait.
+  final bool ownerNotEditor;
+
   /// Combien de recettes la page contenait ; une seule est reprise.
   final int? recettesTrouvees;
 
@@ -260,6 +271,7 @@ class ProcessingJob {
     this.budgetLimitUsd,
     this.sourceUrl,
     this.errorCode,
+    this.ownerNotEditor = false,
     this.recettesTrouvees,
     this.urlRetryCount = 0,
     this.translated = false,
@@ -302,6 +314,7 @@ class ProcessingJob {
       budgetLimitUsd: (data['budget_limit_usd'] as num?)?.toDouble(),
       sourceUrl: data['source_url'] as String?,
       errorCode: urlImportErrorCodeFrom(data['error_code']),
+      ownerNotEditor: data['error_code'] == kJobOwnerNotEditorCode,
       recettesTrouvees: (data['recettes_trouvees'] as num?)?.toInt(),
       urlRetryCount: (data['url_retry_count'] as num?)?.toInt() ?? 0,
       translated: data['translated'] == true,
@@ -369,6 +382,7 @@ class ProcessingJob {
       budgetLimitUsd: budgetLimitUsd,
       sourceUrl: sourceUrl,
       errorCode: errorCode,
+      ownerNotEditor: ownerNotEditor,
       recettesTrouvees: recettesTrouvees,
       urlRetryCount: urlRetryCount,
       translated: translated,
