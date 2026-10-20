@@ -904,6 +904,23 @@ class RecipeRepository {
     });
   }
 
+  /// Range un brouillon dans [bookId], sans le valider. La confidentialité
+  /// prend celle du livre quand le livre change ; `page_number` reste tel quel.
+  /// La marque « Doublon possible » n'est pas touchée : elle est relue à la
+  /// validation.
+  Future<void> assignBookToDraft({
+    required String recipeId,
+    required String bookId,
+    required String bookTitre,
+  }) async {
+    await _col.doc(recipeId).update({
+      'book_id': bookId,
+      'book_titre': bookTitre,
+      'is_private': ?await _privacyIfBookChanges(recipeId, bookId),
+      'updated_at': DateTime.now(),
+    });
+  }
+
   Future<void> deleteRecipe(String recipeId) async {
     await _col.doc(recipeId).delete();
   }

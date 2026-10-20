@@ -244,3 +244,35 @@ String actionSummary({
 String? pendingDuplicatesLabel(int count) => count <= 0
     ? null
     : '${countOf(count, 'doublon possible', 'doublons possibles')} à trancher';
+
+/// Ce qu'un rangement en lot change pour [drafts] dans le livre [bookId].
+({int changing, int withPageNumber}) bookAssignmentImpact(
+  Iterable<Recipe> drafts,
+  String bookId,
+) {
+  var changing = 0;
+  var withPageNumber = 0;
+  for (final d in drafts) {
+    if ((d.bookId ?? '').isEmpty || d.bookId == bookId) continue;
+    changing++;
+    if (d.pageNumber != null) withPageNumber++;
+  }
+  return (changing: changing, withPageNumber: withPageNumber);
+}
+
+/// Compte rendu d'un rangement en lot : « 3 brouillons rangés dans « Titre » »,
+/// avec les échecs s'il y en a.
+String bookAssignmentSummary({
+  required int done,
+  required int failed,
+  required String bookTitre,
+}) {
+  final ok = done - failed;
+  if (failed == 0) {
+    return '${countOf(ok, 'brouillon rangé', 'brouillons rangés')} dans « $bookTitre »';
+  }
+  final done_ = ok == 0
+      ? 'Aucun brouillon rangé'
+      : '${countOf(ok, 'brouillon rangé', 'brouillons rangés')} dans « $bookTitre »';
+  return '$done_, $failed en erreur';
+}

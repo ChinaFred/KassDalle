@@ -265,9 +265,13 @@ class WorkQueueSelectionBar extends StatelessWidget {
   /// Nul : aucun traitement relançable coché, l'action est masquée.
   final int? retryCount;
   final int deleteCount;
+
+  /// Nul : aucun brouillon coché, l'action « Livre » est masquée.
+  final int? assignBookCount;
   final VoidCallback onValidate;
   final VoidCallback onRetry;
   final VoidCallback onDelete;
+  final VoidCallback? onAssignBook;
 
   const WorkQueueSelectionBar({
     super.key,
@@ -275,9 +279,11 @@ class WorkQueueSelectionBar extends StatelessWidget {
     this.showValidateCount = true,
     required this.retryCount,
     required this.deleteCount,
+    this.assignBookCount,
     required this.onValidate,
     required this.onRetry,
     required this.onDelete,
+    this.onAssignBook,
   });
 
   @override
@@ -301,6 +307,12 @@ class WorkQueueSelectionBar extends StatelessWidget {
                   onPressed: onRetry,
                   icon: const Icon(Icons.refresh),
                   label: Text('Relancer ($retryCount)'),
+                ),
+              if (assignBookCount != null)
+                OutlinedButton.icon(
+                  onPressed: onAssignBook,
+                  icon: const Icon(Icons.menu_book_outlined),
+                  label: Text('Ranger ($assignBookCount)'),
                 ),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(foregroundColor: scheme.error),
