@@ -41,6 +41,8 @@ pas les recettes dont `missing_weight` porte `unite_sans_poids` ou `comptage_san
 (`UNFIXABLE_BY_CATCH_UP`) : une recette déjà bloquée se recalcule depuis son écran ou à sa
 prochaine modification.
 
+### v0.24.24 — fonctionnel
+
 Messages d'erreur du planning, deuxième sous-lot du lot 8 de l'audit #151 (tickets #170 et
 #171, à suivre).
 
