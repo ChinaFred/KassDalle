@@ -58,6 +58,10 @@
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {
+        "source": "/csp-report",
+        "function": { "functionId": "cspReportFn", "region": "europe-west1" }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -71,7 +75,7 @@
           { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
           {
             "key": "Content-Security-Policy-Report-Only",
-            "value": "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleapis.com https://*.googleusercontent.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://fonts.gstatic.com https://*.googleapis.com https://*.google.com https://*.cloudfunctions.net wss://*.firebaseio.com; frame-src https://kassdale-6d948.firebaseapp.com https://www.google.com"
+            "value": "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-x64uMFJ/Xt6pCAC9fs6zqoUYSXjGHnDa6DE6aa6+lMM=' 'sha256-BzI684MyYRKdn5wTzBdcxkznkBjL2jRaTpbJXWarR1U=' 'sha256-pPjjoSpBd13bHnogATkOaA29BKZz9GGHosqgFMogFpk=' 'sha256-reYe1I77sn6jsp8gKj1EY7wGW6JUKq8FD9JneePy2ds=' 'sha256-CUvLjkG73E0SHKSIhFgZD0F2EeVOnhhrNXG5sz99PX8=' 'sha256-Vk1T4ljKCTi4puRuOxAEOGiVo3mZoeAL4yjfSMrrxIE=' 'sha256-rxktUz/x5IiyDZdpCpEfBIPBgiLT4AvfutH1eR/LxRo=' 'sha256-4VjiyonmZ/MeMVDd+uN/EPSTsK6HH78fVIM329rmoiQ=' 'sha256-VcqKolZSII5VJPSIzE3rZD3Gow0f4J82y2FHMhDzPZE=' 'sha256-0HnKb1XrVIvCeOPnYoGRcsFAF3qMPAfXi0wR2OSq1pM=' 'sha256-rfg7hv0pkrN9jeIyHIK7vibT9cn0Kq7ZRLaivuDuWks=' 'sha256-iWHfbFl2xAkej/VjK83h7azThbU0Whcoa56/xuEvtok=' 'sha256-a3mcYeuHQMfnmoysomNOwIyTpDaZYm/Ume8wm07YNiI=' 'sha256-OHycSRLfRLxab1/xALMWBWU1dhnSO+Cysq/phAcB/hU=' 'sha256-NTbkLmlXAuwHnT4s/QX3YTMbMuQrOy9VJEF8OdBKG6E=' 'sha256-Wwv0IxHhYQhZFJ5oWDISCyf/KWdGinj08fxaa8eVa8Y=' https://www.gstatic.com https://www.google.com https://apis.google.com https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleapis.com https://*.googleusercontent.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://www.gstatic.com https://fonts.gstatic.com https://*.googleapis.com https://*.googleusercontent.com https://*.google.com https://*.cloudfunctions.net wss://*.firebaseio.com; frame-src https://kassdale-6d948.firebaseapp.com https://www.google.com https://recaptcha.google.com; report-uri /csp-report"
           }
         ]
       },

@@ -191,7 +191,8 @@
       <li value="47"><a href="#notification-version">Notifier les administrateurs d'un nouvel APK</a></li>
       <li value="48"><a href="#doublon-import">Trancher un doublon possible à l'import</a></li>
       <li value="49"><a href="#ticket-clore">Clore un ticket depuis l'application</a></li>
-      <li value="50"><a href="#criteres-verifies">Critères vérifiés : traduire les préférences, tenir les exclusions</a></li>
+      <li value="50"><a href="#rapport-csp">Rapporter une violation de la politique de sécurité du web</a></li>
+      <li value="51"><a href="#criteres-verifies">Critères vérifiés : traduire les préférences, tenir les exclusions</a></li>
     </ol>
   </nav>
 
@@ -1951,7 +1952,7 @@ sequenceDiagram
   Note over SP: requireEditor (v0.23.47) : le lecteur ne planifie pas
   SP->>FS: app_config/planning_policy · planned_meals 90 j (appelant)<br/>· recipe_ratings et preferences/planning_refusals (appelant seul)
   FS-->>SP: politique, dernière date servie par recette, notes, refus de moins de 21 j
-  SP->>SP: textes compris (v0.24.18, diagramme 50) :<br/>cache, puis un appel planning_constraints pour les textes modifiés
+  SP->>SP: textes compris (v0.24.18, diagramme 51) :<br/>cache, puis un appel planning_constraints pour les textes modifiés
   SP->>PL: applyRecentlyServed puis preselect (critères de chaque créneau)
   PL->>PL: filtres : rôle, exclusion comprise (jamais relâchée), prépa max,<br/>repos, note ≤ 3, écartées, déjà au cycle, préférence comprise
   PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note × refus<br/>× féculent d'un créneau voisin (×0,5) × protéine d'un créneau voisin (×0,5)<br/>× cuisine étrangère déjà au cycle (×0,5 par répétition, française jamais)<br/>(refus : ×0,5 sur 21 j, ×0,25 dès 3 refus, jamais exclue)<br/>protéine : main_protein, sinon dish_types<br/>tirage pondéré, 3 protéines en tête, relâchement si vide
@@ -4812,7 +4813,57 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="criteres-verifies"><span class="n">50</span>Critères vérifiés : traduire les préférences, tenir les exclusions</h2>
+    <h2 id="rapport-csp"><span class="n">50</span>Rapporter une violation de la politique de sécurité du web</h2>
+    <p class="sec-note">
+      La Content Security Policy de <code>firebase.json</code> est en rapport seul : le navigateur
+      ne bloque rien et envoie chaque violation à <code>/csp-report</code>, sur la même origine.
+      <span class="path">firebase.json (report-uri, réécriture /csp-report) →
+      csp/cspReportFn.ts → csp/reports.ts (cspReportFormat, parseCspReports, CspLogBudget)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant B as Navigateur (application web)
+  participant H as Hosting
+  participant R as cspReportFn
+  participant L as Cloud Logging
+
+  B->>B: une ressource ou un script enfreint la politique
+  B->>H: POST /csp-report (application/csp-report)
+  H->>R: réécriture vers cspReportFn (europe-west1)
+  opt première requête d'une nouvelle minute, avec des écarts
+    R->>L: logInfo : violations non journalisées et corps refusés
+  end
+  alt autre méthode que POST
+    R-->>B: 405
+  else plus de 16 Ko, autre type, JSON illisible
+    R-->>B: 413, 415 ou 400 (refus compté)
+    opt JSON illisible, premier de la minute
+      R->>L: logError « cspReport : corps de rapport illisible »
+    end
+  else rapport lisible
+    R->>R: directive, origine bloquée, chemin du document (sans requête ni fragment)
+    alt déjà vue dans la minute, ou 30 violations distinctes atteintes
+      R->>R: comptée, non journalisée
+    else
+      R->>L: logInfo « cspReport : … »
+    end
+    R-->>B: 204
+  end
+</pre>
+      </div>
+      <figcaption>
+        La fonction est publique : un navigateur n'envoie ni jeton d'authentification ni jeton
+        App Check avec un rapport. Elle n'écrit rien dans Firestore et n'appelle aucun modèle ;
+        <code>maxInstances: 1</code> borne le débit. Les rapports se lisent dans Admin › Journaux.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="criteres-verifies"><span class="n">51</span>Critères vérifiés : traduire les préférences, tenir les exclusions</h2>
     <p class="sec-note">
       Les textes libres des préférences — préférences générales, contrainte d'un jour — sont
       traduits par le modèle en critères d'un vocabulaire fermé, une fois par texte modifié ;

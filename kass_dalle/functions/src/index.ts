@@ -153,6 +153,11 @@ export { githubTicketWebhook } from "./tickets/webhook";
 export { ticketsSyncSchedule } from "./scheduled/ticketsSyncSchedule";
 export { releaseNotificationSchedule } from "./scheduled/releaseNotificationSchedule";
 
+// ── Hébergement web ──────────────────────────────────────────────────────────
+// Rapports de violation de la Content Security Policy, reçus par la réécriture
+// Hosting `/csp-report` (firebase.json). Publique, journalise seulement.
+export { cspReportFn } from "./csp/cspReportFn";
+
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
 export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";

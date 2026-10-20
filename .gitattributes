@@ -1,3 +1,9 @@
 # Les scripts shell gardent des fins de ligne LF, y compris sur le PC Windows :
 # bash refuse « set -euo pipefail\r ».
 *.sh text eol=lf
+
+# index.html du web garde des fins de ligne LF, y compris sur le PC Windows : la
+# Content Security Policy de firebase.json autorise ses deux scripts en ligne par
+# leur empreinte SHA-256, calculée sur le texte LF. Un build depuis une copie en
+# CRLF (deploy.ps1) changerait l'empreinte, et la politique refuserait les scripts.
+kass_dalle/web/index.html text eol=lf
