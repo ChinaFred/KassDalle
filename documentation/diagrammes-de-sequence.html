@@ -3202,7 +3202,8 @@ sequenceDiagram
     P->>PR: getValidatedRecipes (une fois), puis getFamilyValidatedRecipes
     PR->>FS: recipes
     alt lecture en échec
-      FS-->>U: « Les recettes n'ont pas pu être lues. » ou « Vos garnitures n'ont pas pu être lues. » — Réessayer relit dans la feuille
+      FS-->>P: erreur de lecture
+      P-->>U: « Les recettes n'ont pas pu être lues. » ou « Vos garnitures n'ont pas pu être lues. » — Réessayer relit dans la feuille
     end
     P-->>U: SidePickerSheet filtrée « Pour le légume »
     U-->>P: garniture, recette, ou texte libre avec ses pastilles

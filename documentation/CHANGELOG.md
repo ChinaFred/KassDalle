@@ -20,6 +20,21 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.21 — fonctionnel
+
+« Compléter » et « Choisir » dans le planning ouvrent leur feuille dès l'appui. Elle affiche
+« Lecture des recettes et des garnitures… » tant que la lecture n'est pas finie, et n'annonce
+plus à tort « Aucune garniture ». Un échec de lecture s'affiche dans la feuille avec
+« Réessayer », qui montre de nouveau le chargement pendant la relecture. Le champ de
+recherche de la feuille porte le libellé « Rechercher ». La feuille d'accompagnement vide et
+*Mes garnitures* vide renvoient au bouton « Ma garniture » au lieu de parler de backfills ;
+un administrateur lit en plus où se tient la liste commune. Dans le retoucheur d'image, une
+correction qui échoue n'envoie plus la photo d'origine : l'écran reste ouvert avec ses
+réglages et propose « Réessayer ». Un envoi qui échoue se relance sans refaire la correction,
+sauf accès refusé ou session expirée, et le message se ferme dès qu'un réglage change. Les
+messages d'erreur ne montrent plus de texte technique. La fenêtre « Explication de l'IA » se
+ferme par « Fermer ». (#176, #177, #179, #180)
+
 ### v0.24.20 — fonctionnel
 
 Lot 4 de l'audit d'ergonomie (#151) : six tickets, #165 à #169 et #178.
