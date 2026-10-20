@@ -1252,9 +1252,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           'mimeType': mimeType,
           'intent': intent.name,
           'securityRejection': _isSecurityRejection(e),
-          // Un refus Storage se diagnostique avec la taille et le chemin : la
-          // règle `quarantine/{uid}` ne pose que deux conditions, la propriété
-          // du chemin et un plafond de 50 Mo. Sans ces deux valeurs, un
+          // Un refus Storage se diagnostique avec la taille, le type et le
+          // chemin : la règle `quarantine/{uid}` vérifie la propriété du
+          // chemin, le rôle (un lecteur ne dépose que du JPEG ou du PNG), le
+          // type et un plafond de 50 Mo. Sans ces valeurs, un
           // « unauthorized » ne se distingue pas d'un fichier trop gros.
           'sizeBytes': bytes.length,
           'storagePath': 'quarantine/$uid/',

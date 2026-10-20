@@ -562,7 +562,12 @@ stateDiagram-v2
       ne sert que si le document n'a pas de rôle. Les règles Storage ne lisent que les
       <i>custom claims</i>, alimentés par <code>syncUserClaims</code>. Changer un rôle prend donc
       effet immédiatement côté callable et côté Firestore, mais seulement au rafraîchissement du
-      jeton côté Storage.
+      jeton côté Storage. Le rôle se lit à l'identique partout depuis la v0.24.33
+      (<code>readRole</code>, <code>security/roles.ts</code>) : seuls <code>pending</code>,
+      <code>reader</code>, <code>editor</code> et <code>admin</code> comptent, et les règles
+      n'acceptent pas d'autre valeur à l'écriture. Côté Storage, un lecteur ne dépose dans
+      <code>quarantine/</code> que des photos JPEG ou PNG, hors de <code>livres/</code> ; les
+      autres types d'un import sont réservés à l'éditeur et à l'administrateur.
     </span>
   </section>
 

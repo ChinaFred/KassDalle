@@ -273,12 +273,21 @@ service cloud.firestore {
       /// `display_name: null` faisaient tomber Admin › Comptes pour tous les
       /// administrateurs. Un retrait de champ échoue aussi : la valeur
       /// absente n'a pas le type demandé.
+      ///
+      /// Le rôle n'est pas seulement une chaîne : l'une des quatre valeurs
+      /// connues, écrite à l'identique (audit #151, ticket #163). Un
+      /// `superadmin` ou un `admin ` n'ouvrait rien ici, mais le serveur lisait
+      /// le second en retirant les espaces (`readRole`, `security/roles.ts`, lit
+      /// désormais à l'identique). Même liste que `KNOWN_ROLES` et que
+      /// l'énumération `UserRole` côté Dart.
       function updatedTypesOk() {
         return (!changes('last_seen_at')
                   || request.resource.data.get('last_seen_at', null) is timestamp)
           && (!changes('display_name')
                   || request.resource.data.get('display_name', null) is string)
-          && (!changes('role') || request.resource.data.get('role', null) is string)
+          && (!changes('role')
+                  || request.resource.data.get('role', null)
+                       in ['pending', 'reader', 'editor', 'admin'])
           && (!changes('is_revoked') || request.resource.data.get('is_revoked', null) is bool);
       }
 

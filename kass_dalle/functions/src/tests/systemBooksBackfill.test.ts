@@ -52,8 +52,8 @@ describe("comptes concernés", () => {
     assert.equal(isApprovedAccount(undefined), false);
     assert.equal(isApprovedAccount({ role: "editor", is_revoked: true }), false);
   });
-  test("rôle entouré d'espaces : lu comme par les gardes", () => {
-    assert.equal(isApprovedAccount({ role: " editor " }), true);
+  test("rôle entouré d'espaces : refusé, lu comme par les gardes", () => {
+    assert.equal(isApprovedAccount({ role: " editor " }), false);
   });
 });
 

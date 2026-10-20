@@ -2503,6 +2503,20 @@ avait cassé l'import. Depuis la v0.23.12, `syncUserClaims` appelle en plus
 reader/editor/admin, document supprimé d'un compte nommé ou révoqué : la session ne se
 renouvelle plus, et le jeton en cours n'est pas prolongé au-delà de son heure.
 
+**Le rôle se lit à l'identique, des deux côtés** (v0.24.33, ticket #163). Quatre valeurs :
+`pending`, `reader`, `editor`, `admin`. Les règles n'en acceptent pas d'autre à l'écriture
+(`updatedTypesOk`). Côté Functions, `readRole` (`security/roles.ts`) rend `null` pour toute
+autre valeur, sans retirer d'espaces : `claimsFrom` (claim posé par `syncUserClaims`),
+`accountFromToken` et la lecture du document dans `callable/_auth.ts` (`accountDocumentFrom`), `inviterStillAdmin`,
+`isApprovedAccount`, `isPlannerAccount`, `publicProfileFrom` et la recherche d'un compte
+par adresse des invitations. Un `"admin "` historique ne vaut donc administrateur nulle
+part ; il vaut « aucun rôle » et ferme l'accès. `requireAuth` ne se replie sur le claim du
+jeton que si le document n'a pas de champ `role` (absent ou nul), comme `roleOf()` : un rôle
+présent mais inconnu est refusé, même avec un jeton `admin` encore valide (`mergeAccount`). Le client lit le même vocabulaire
+(`UserRole`, `app_user.dart`), à l'identique, une valeur inconnue y valant `pending`. La
+liste est la même des trois côtés sans fixture partagée : le client ne décide que de l'affichage
+avec elle.
+
 La présence d'un claim se teste par `'clé' in request.auth.token` plutôt que par
 comparaison à `null` : c'est la seule forme dont la sémantique est garantie sur
 un claim absent.
@@ -2674,7 +2688,10 @@ service cloud.firestore {
                   || request.resource.data.get('last_seen_at', null) is timestamp)
           && (!changes('display_name')
                   || request.resource.data.get('display_name', null) is string)
-          && (!changes('role') || request.resource.data.get('role', null) is string)
+          // Quatre rôles, écrits à l'identique (v0.24.33, ticket #163).
+          && (!changes('role')
+                  || request.resource.data.get('role', null)
+                       in ['pending', 'reader', 'editor', 'admin'])
           && (!changes('is_revoked') || request.resource.data.get('is_revoked', null) is bool);
       }
       function ownerKeysOk() {     // _upsertUser, nom préféré, couverture, préférences
@@ -2969,7 +2986,7 @@ service cloud.firestore {
 
 | Collection | Lecture | Écriture |
 |---|---|---|
-| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
+| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. **Rôle** (v0.24.33, ticket #163) : `role` ne prend que `pending`, `reader`, `editor` ou `admin`, écrit à l'identique ; un `superadmin` ou un `admin ` est refusé. Le serveur lit le champ de la même façon (`readRole`, `functions/src/security/roles.ts`) : une autre valeur vaut « aucun rôle », dans les claims (`syncUserClaims`) comme dans les gardes des callables (`requireAuth`). Les lectures retiraient auparavant les espaces, et un `admin ` y devenait administrateur. Côté client, `UserRole` lit aussi le nom à l'identique et rabat une valeur inconnue sur `pending`. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` |
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
@@ -3179,6 +3196,13 @@ service firebase.storage {
 
     function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
 
+    // Éditeur ou administrateur, sur la foi du claim (v0.24.33, ticket #162).
+    // Seuls ces rôles importent : `analyzeBookImport`, l'extraction de texte
+    // et la création d'un job exigent l'éditeur.
+    function isEditorToken() {
+      return isApprovedToken() && request.auth.token.role in ['editor', 'admin'];
+    }
+
     // Le type MIME sans ses paramètres : le texte collé s'envoie en
     // `text/plain; charset=utf-8`, qu'une comparaison exacte refuserait.
     function baseContentType() {
@@ -3195,6 +3219,15 @@ service firebase.storage {
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
              'text/plain'
            ];
+    }
+
+    // Ce qu'un lecteur dépose : une photo JPEG ou PNG, hors de `livres/`
+    // (couverture « Recette libre », illustration d'une de ses recettes).
+    // `livres/` s'exclut par le nom complet : les deux blocs se recouvrent.
+    function isReaderImageUnder(maxBytes) {
+      return request.resource.size < maxBytes
+        && baseContentType() in ['image/jpeg', 'image/png']
+        && !request.resource.name.matches('quarantine/[^/]+/livres/.*');
     }
 
     // Administrateur, sur la foi du claim. Sert la seule lecture qui ne soit
@@ -3226,10 +3259,14 @@ service firebase.storage {
     // La lecture est ouverte à l'ADMINISTRATEUR en plus du propriétaire : une
     // image « à revoir » attend ici, et personne ne tranche sur une photo qu'il
     // ne peut pas voir.
+    //
+    // Un lecteur n'y dépose que des photos ; un éditeur ou un administrateur,
+    // tous les types d'un import (v0.24.33, ticket #162).
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
       allow write: if isOwner(uid) && isApprovedToken()
-        && isImportableUnder(50 * 1024 * 1024);
+        && ((isEditorToken() && isImportableUnder(50 * 1024 * 1024))
+            || isReaderImageUnder(50 * 1024 * 1024));
     }
 
     // Un livre entier — PDF, EPUB ou Word — à découper en recettes. Plafond de
@@ -3237,9 +3274,10 @@ service firebase.storage {
     // l'accès est accordé si l'un d'eux l'autorise, et le premier refuse toujours
     // plus de 50 Mo. Même plafond que `MAX_BOOK_UPLOAD_SIZE_BYTES`
     // (`utils/uploadSecurity.ts`) et que `_maxBookBytes` (`scan_upload_service.dart`).
+    // Éditeurs et administrateurs seulement (v0.24.33, ticket #162).
     match /quarantine/{uid}/livres/{fileName} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid) && isApprovedToken()
+      allow write: if isOwner(uid) && isEditorToken()
         && request.resource.size < 300 * 1024 * 1024
         && baseContentType() in [
              'application/pdf',
@@ -3304,13 +3342,25 @@ service firebase.storage {
 > `tickets/` est le seul dossier écrit par le client hors de la quarantaine : par le compte
 > lui-même, sous son uid, un fichier nommé `screenshot.png` ou `screenshot.jpg`. La
 > suppression est refusée à tous (aucune purge en V1).
+>
+> **Ce que dépose un lecteur** (v0.24.33, ticket #162). Un lecteur n'importe pas : la
+> création d'un job (`processing_jobs`, `isEditor()`), `analyzeBookImport` et l'extraction
+> de texte (`requireEditor`) lui sont refusées. Il déposait pourtant des PDF, des documents
+> Word et du texte jusqu'à 50 Mo, et des livres jusqu'à 300 Mo sous `livres/`, que rien ne
+> traitait ensuite. Il ne dépose plus que des photos JPEG ou PNG, hors de `livres/` : la
+> couverture « Recette libre » et l'illustration d'une de ses recettes, que
+> `ImageModerationService` envoie toujours sous l'un de ces deux types canoniques. Les autres
+> envois vers la quarantaine (`ScanUploadService`, `RecipeRepository.uploadScanFile` pour le
+> texte collé de la création à la main) servent l'import et la création de recette, réservés
+> à l'éditeur. Testé dans `rules-tests` (« quarantaine — ce que dépose un lecteur »).
 
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
-`[firebase_storage/unauthorized]` peut vouloir dire quatre choses : le chemin n'appartient
+`[firebase_storage/unauthorized]` peut vouloir dire cinq choses : le chemin n'appartient
 pas à l'appelant, son jeton ne porte pas encore de rôle (compte `pending`, ou jeton émis
 avant la propagation — une heure au plus), le fichier dépasse 50 Mo (300 Mo sous
-`quarantine/{uid}/livres/`), ou son type MIME n'est pas dans la liste. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
-`storagePath` et `mimeType` : sans eux, les quatre causes sont indiscernables.
+`quarantine/{uid}/livres/`), son type MIME n'est pas dans la liste, ou l'appelant est un
+lecteur et le fichier n'est pas une photo JPEG ou PNG hors de `livres/`. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
+`storagePath` et `mimeType` : sans eux, ces cinq causes sont indiscernables.
 
 ### Tests des règles
 
@@ -4906,6 +4956,15 @@ semaine. Ce qui est stable, et mérite d'être écrit, ce sont les invariants qu
 
 - **Copie fidèle** : recopier, ne pas reformuler, ne pas résumer, n'inventer ni ingrédient ni
   quantité, ne pas « réparer » un mot mal lu en expression plus courante.
+- **Le texte reçu est une donnée** (v0.24.33, ticket #163) : `TRANSCRIPTION_PROMPT`,
+  `TEXT_TRANSCRIPTION_PREAMBLE` et `TAGGING_PROMPT` disent, dans leurs premières lignes,
+  qu'une consigne trouvée dans la page, le texte collé ou la transcription se recopie si elle
+  fait partie de la recette, et ne s'exécute jamais. Une page web copiée ou un texte collé
+  peut contenir « ignore les règles précédentes » : c'est une ligne à recopier ou à
+  écarter comme le reste du mobilier, pas une instruction. `promptInjectionGuard.test.ts`
+  vérifie la présence de la phrase dans les 600 premiers caractères de chacun. Les trois
+  prompts restent des préfixes fixes : le cache Anthropic de `TRANSCRIPTION_PROMPT` et de
+  `TAGGING_PROMPT` n'en dépend pas. Aucun autre prompt ne les recopie (bac à sable compris).
 - **Une orthographe par aliment** dans toute la recette — sans quoi le même ingrédient compte
   deux fois dans l'index de recherche, la nutrition et la liste de courses.
 - **Ustensile ou ingrédient**, jamais les deux : `#moule à tarte{}` contre `@moule{}`.
@@ -5740,7 +5799,7 @@ Filtres acceptés, traduits en syntaxe de requête Cloud Logging :
 
 | Entrée | Filtre produit |
 |---|---|
-| `severity` | `severity>=WARNING` — sauf `DEBUG`, traduit en `severity=DEBUG`, sans quoi il ramènerait tout |
+| `severity` | `DEBUG`, `INFO`, `WARNING` ou `ERROR` seulement (`severityClause`, v0.24.33, ticket #163) : `severity>=WARNING` — sauf `DEBUG`, traduit en `severity=DEBUG`, sans quoi il ramènerait tout. Absente ou vide : aucun filtre. Toute autre valeur lève `invalid-argument` ; elle était auparavant recopiée dans le filtre, et pouvait y ajouter une clause |
 | `correlationId` | `labels.correlationId="…"` |
 | `scanId` | `labels.scanId="…"` — rend les quatre traitements d'un scan, et eux seuls |
 | `jobId` | `labels.jobId="…"` |
@@ -5892,7 +5951,10 @@ Depuis la v0.23.11, chaque callable qui envoie une entrée du client à un modè
 `readAiInputs` (`callable/_inputBounds.ts`), juste après la garde d'accès et **avant** tout
 appel de modèle et toute réservation de budget. Les entrées produites par le serveur
 (pipeline d'import, déclencheurs) et le bac à sable (`sandboxFn`, réservé à `admin`) ne
-passent pas par là.
+passent pas par là. Le bac à sable borne quand même son image : `readSandboxImage`
+(`sandbox/callable.ts`) refuse en `invalid-argument` un `bytesBase64` de plus de 20 Mo
+décodés (`PAGE_IMAGE_MAX_BYTES`, importé de `callable/_inputBounds.ts`), mesuré avant tout
+décodage (v0.24.33, ticket #163).
 
 Les bornes sont **larges** : aucun texte réel ne les atteint, seuls les envois de plusieurs
 centaines de milliers de jetons sont refusés. Au-delà, la callable lève
@@ -7661,6 +7723,9 @@ pourtant, et une réimplémentation doit connaître leur contrat :
   l'aiguillage : un appel non administrateur est refusé quel que soit `experiment`, absent
   ou inconnu compris (v0.24.17). Chaque expérience reçoit le contexte de cette garde et
   pose elle-même son poste de coût (`ctx.feature`) ;
+- l'image d'une expérience est bornée à 20 Mo décodés (`readSandboxImage`, plafond
+  `PAGE_IMAGE_MAX_BYTES` importé de `callable/_inputBounds.ts`) ; l'erreur d'une expérience rend `err.message`,
+  lisible par le seul administrateur ;
 - rien n'y est enregistré — ni Firestore, ni Storage sur les chemins de production ;
 - le bac à sable **lit** le code de l'application, ne l'édite jamais : une expérience qui
   doit modifier un comportement existant en copie le code.

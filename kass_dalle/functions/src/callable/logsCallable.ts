@@ -244,6 +244,34 @@ function toJsonSafe(value: unknown): unknown {
   );
 }
 
+/** Les sévérités que l'écran Admin › Journaux envoie (`logs_screen.dart`). */
+const SEVERITIES = ["DEBUG", "INFO", "WARNING", "ERROR"] as const;
+
+/**
+ * La clause de sévérité du filtre Cloud Logging, ou `null` sans filtre.
+ * Pure, testée.
+ *
+ * Seuil, pas égalité. Une sélection « INFO » qui excluait les ERROR était
+ * un piège : on croyait tout voir en filtrant le bruit, et on masquait
+ * les lignes qu'on cherchait. `DEBUG` reste exact — c'est le seul cas où
+ * l'on veut l'instrumentation seule.
+ *
+ * Liste blanche : la valeur était recopiée telle quelle dans le filtre, si
+ * bien qu'un `"INFO OR logName:…"` y ajoutait une clause de son choix (audit
+ * #151, ticket #163). Toute valeur hors liste lève `invalid-argument`.
+ * Absente, nulle ou vide : aucun filtre, comme avant.
+ */
+export function severityClause(severity: unknown): string | null {
+  if (severity === undefined || severity === null || severity === "") return null;
+  if (typeof severity !== "string" || !(SEVERITIES as readonly string[]).includes(severity)) {
+    throw new HttpsError(
+      "invalid-argument",
+      `Sévérité inconnue : attendu ${SEVERITIES.join(", ")}.`,
+    );
+  }
+  return severity === "DEBUG" ? "severity=DEBUG" : `severity>=${severity}`;
+}
+
 export const queryLogsFn = onCall<QueryLogsRequest>(
   {
     region: REGION,
@@ -270,13 +298,8 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
       `logName=${quote(`projects/${projectId}/logs/${LOG_NAME}`)}`,
       `timestamp >= ${quote(sinceIso)}`,
     ];
-    if (data.severity) {
-      // Seuil, pas égalité. Une sélection « INFO » qui excluait les ERROR était
-      // un piège : on croyait tout voir en filtrant le bruit, et on masquait
-      // précisément les lignes qu'on cherchait. `DEBUG` reste exact — c'est le
-      // seul cas où l'on veut l'instrumentation seule.
-      filters.push(data.severity === "DEBUG" ? "severity=DEBUG" : `severity>=${data.severity}`);
-    }
+    const severity = severityClause(data.severity);
+    if (severity) filters.push(severity);
     if (data.correlationId) {
       filters.push(`labels.correlationId=${quote(data.correlationId)}`);
     }

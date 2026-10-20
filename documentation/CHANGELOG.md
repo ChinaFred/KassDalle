@@ -20,6 +20,37 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.33 — technique
+
+Storage et hygiène serveur, lot 9 de l'audit #151 (tickets #162 et #163). Un lecteur ne
+dépose plus dans `quarantine/{uid}/` que des photos JPEG ou PNG, hors de `livres/` : la
+couverture « Recette libre » et l'illustration d'une de ses recettes. Il déposait aussi des
+PDF, des documents Word et du texte jusqu'à 50 Mo, et des livres jusqu'à 300 Mo sous
+`livres/`, alors que l'import lui est refusé (`requireEditor`, `isEditor()` sur les jobs).
+`quarantine/{uid}/livres/` est réservé aux éditeurs et aux administrateurs, qui gardent la
+liste complète des types.
+
+Le rôle d'un compte se lit à l'identique : `pending`, `reader`, `editor` ou `admin`. Les
+règles refusent toute autre valeur à l'écriture d'un administrateur, et le serveur
+(`readRole`, `security/roles.ts`) la lit comme « aucun rôle », dans les claims
+(`syncUserClaims`), dans les gardes des callables et dans les contrôles des invitations, des
+groupes, des profils publics et des livres système. Les lectures retiraient les espaces : un
+`"admin "` y devenait administrateur alors que les règles le refusaient. `requireAuth` ne se
+replie sur le rôle du jeton que si le document n'a pas de champ `role`, comme `roleOf()` dans
+les règles : un rôle présent mais inconnu est refusé, même avec un jeton encore valide.
+
+`queryLogsFn` n'accepte plus que `DEBUG`, `INFO`, `WARNING` ou `ERROR` comme sévérité
+(`severityClause`) : la valeur reçue était recopiée dans le filtre Cloud Logging. `sandboxFn`
+refuse une image de plus de 20 Mo décodés (`readSandboxImage`, plafond
+`PAGE_IMAGE_MAX_BYTES`). Un refus d'accès d'`ensureAdminWithAudit` (écrans de facturation et
+de qualité des données) s'écrit en `WARNING` avec l'uid et l'opération ; une autre erreur de
+la garde reste en `ERROR`. `TRANSCRIPTION_PROMPT`, `TEXT_TRANSCRIPTION_PREAMBLE` et
+`TAGGING_PROMPT` disent en tête que le texte reçu est une donnée : une consigne qu'il contient
+se recopie si elle fait partie de la recette, et ne s'exécute jamais. Aucun poste d'IA
+nouveau. Tests : `rules-tests` (quarantaine par rôle, rôles écrits par un administrateur),
+`userClaims.test.ts`, `logsFilter.test.ts`, `promptInjectionGuard.test.ts`,
+`sandboxGuard.test.ts`, `authGuards.test.ts`.
+
 ### v0.24.30 — technique
 
 Règles Firestore des comptes et des groupes, lot 9 de l'audit #151 (ticket #162). Le rôle se

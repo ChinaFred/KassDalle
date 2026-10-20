@@ -31,6 +31,7 @@ import { COLL_USERS } from "../config";
 import { logWarn, newCorrelationId } from "../logging";
 import { appCheckVerdict, getAppCheckPolicy } from "../security/appCheckPolicy";
 import { markInteractiveCall } from "../ai/callOrigin";
+import { readRole } from "../security/roles";
 
 export interface AuthContext {
   userId: string;
@@ -82,27 +83,61 @@ export function accessDenial(
 }
 
 /**
+ * Le compte lu sur son document : le rôle lu à l'identique, et la présence du
+ * champ `role`.
+ *
+ * `roleSet` est vrai dès que le champ existe et n'est pas nul, quelle que soit
+ * sa valeur : c'est ce que teste `roleOf()` dans `firestore.rules`
+ * (`d.get('role', null) != null`). Un rôle présent mais inconnu
+ * (`"superadmin"`, `"admin "`) donne `role: null` ET `roleSet: true` : il
+ * n'ouvre rien, et n'autorise pas le repli sur le jeton.
+ */
+export interface DocumentAccountState extends AccountState {
+  roleSet: boolean;
+}
+
+/** Le compte d'après les données du document `users/{uid}`. Pure, testée. */
+export function accountDocumentFrom(
+  data: Record<string, unknown> | undefined,
+): DocumentAccountState {
+  const raw = data?.role;
+  return {
+    role: readRole(raw),
+    revoked: data?.is_revoked === true,
+    roleSet: raw !== undefined && raw !== null,
+  };
+}
+
+/**
  * Le compte retenu par `requireAuth`.
  *
  * Le document est relu à chaque appel : il fait foi pour le rôle, le jeton ne
- * sert que de repli quand le document n'en porte pas. Révoqué si l'une des
- * deux sources le dit — le jeton peut confirmer une révocation, jamais
+ * sert que de repli quand le document n'a pas de champ `role` (absent ou nul),
+ * comme `roleOf()` dans `firestore.rules`. Un rôle présent mais mal écrit ne
+ * se rabat pas sur le jeton : un jeton émis avant la correction du document
+ * redonnerait l'accès (audit #151, ticket #163). Révoqué si l'une des deux
+ * sources le dit — le jeton peut confirmer une révocation, jamais
  * l'infirmer. Document absent (`fromDoc` nul) : aucun rôle, donc refusé ; un
  * compte supprimé par un administrateur ne garde pas l'accès par son jeton.
  */
-export function mergeAccount(fromToken: AccountState, fromDoc: AccountState | null): AccountState {
+export function mergeAccount(
+  fromToken: AccountState,
+  fromDoc: DocumentAccountState | null,
+): AccountState {
   if (fromDoc == null) return { role: null, revoked: fromToken.revoked };
   return {
-    role: fromDoc.role ?? fromToken.role,
+    role: fromDoc.roleSet ? fromDoc.role : fromToken.role,
     revoked: fromToken.revoked || fromDoc.revoked,
   };
 }
 
-/** Le rôle et l'état portés par le jeton, `role: null` si le claim manque. */
+/**
+ * Le rôle et l'état portés par le jeton, `role: null` si le claim manque ou
+ * n'est pas l'un des quatre rôles, écrit à l'identique (`readRole`).
+ */
 export function accountFromToken(req: CallableRequest<unknown>): AccountState {
   const token = req.auth?.token as Record<string, unknown> | undefined;
-  const role = typeof token?.role === "string" && token.role.trim() ? token.role.trim() : null;
-  return { role, revoked: token?.revoked === true };
+  return { role: readRole(token?.role), revoked: token?.revoked === true };
 }
 
 function baseContext(req: CallableRequest<unknown>, feature: string): AuthContext {
@@ -118,19 +153,16 @@ function baseContext(req: CallableRequest<unknown>, feature: string): AuthContex
 }
 
 /** Le compte lu sur son document, ou `null` si le document n'existe pas. */
-async function accountDocument(uid: string): Promise<AccountState | null> {
+async function accountDocument(uid: string): Promise<DocumentAccountState | null> {
   const snap = await getFirestore().collection(COLL_USERS).doc(uid).get();
   if (!snap.exists) return null;
-  const data = snap.data();
-  const role = typeof data?.role === "string" && data.role.trim() ? data.role.trim() : null;
-  return { role, revoked: data?.is_revoked === true };
+  return accountDocumentFrom(snap.data());
 }
 
 async function accountFromFirestore(uid: string): Promise<AccountState> {
   const snap = await getFirestore().collection(COLL_USERS).doc(uid).get();
   const data = snap.data();
-  const role = typeof data?.role === "string" && data.role.trim() ? data.role.trim() : null;
-  return { role, revoked: data?.is_revoked === true };
+  return { role: readRole(data?.role), revoked: data?.is_revoked === true };
 }
 
 /**
