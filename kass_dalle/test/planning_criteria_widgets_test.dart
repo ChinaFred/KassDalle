@@ -415,6 +415,17 @@ void main() {
         const [platGap],
       );
     });
+
+    test('un dessert resté « à choisir » puis retiré perd son écart', () {
+      expect(
+        unmetAfterManualCourses(
+          unmet: const [platGap, dessertGap],
+          before: [course('dessert', '')],
+          after: const [],
+        ),
+        const [platGap],
+      );
+    });
   });
 
   test('une recette aux allergènes inconnus : « non vérifiés »', () {

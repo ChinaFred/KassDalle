@@ -18,6 +18,58 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-20
+
+### v0.24.19 — fonctionnel
+
+Quatrième palier de la refonte plat / menu : les critères écrits en texte libre sont
+vérifiés. Au clic sur « Planifier avec l'IA », Kass'Dalle traduit une fois les préférences
+générales et les contraintes du jour qui ont changé : allergène exclu, protéine ou féculent
+principal exclu ou souhaité, durée maximale, repas léger. Il vérifie ensuite lui-même ces
+critères. Sous chaque champ s'affichent « Compris : sans porc · 30 min max », puis
+« Transmis à l'IA, non vérifié : « pas trop gras » ». Une exclusion ne se relâche jamais :
+un service sans candidat reste vide, avec « Dessert : à choisir. Aucun dessert sans fruits
+à coque. » et « Choisir ». Une préférence se relâche et la carte le dit : « 1 h 10, au-delà
+des 45 min demandées : peu d'autres choix ». Un avis compte les créneaux concernés et mène
+au premier avec « Voir le premier ». Ces écarts restent ensuite sur le repas, dans sa ligne
+d'origine ; choisir, remplacer ou retirer une entrée ou un dessert retire leurs écarts, et
+« Autre suggestion » sur un repas du planning remplace les écarts du plat en gardant ceux de
+l'entrée et du dessert. Le programme ne propose plus d'accompagnement qui contient un
+allergène exclu ; choisi à la main, un accompagnement est signalé « contient : gluten », et
+une recette dont les allergènes ne sont pas encore calculés « allergènes non vérifiés ». Les
+garnitures reçoivent leurs allergènes majeurs, saisis à la main dans le référentiel et dans
+*Mes garnitures* ; sans saisie, elles sont « allergènes non renseignés ». Une exclusion de
+protéine ne porte que sur la protéine principale de la recette. Sur téléphone, l'icône d'IA
+de Nouveau planning s'appelle « Planifier avec l'IA », comme le bouton du grand écran.
+
+### v0.24.19 — technique
+
+Nouveau poste d'IA `planning_constraints`, étape de `suggestMealPlanFn`, inscrit dans
+`ROUTABLE_FEATURES` (Planning) et dans `kFeatureCatalog` / `kFeatureProcess`. Un appel
+`askJson` au plus par génération, pour les seuls textes absents du cache
+`users/{uid}/preferences/planning_constraints` (empreinte SHA-256, 40 entrées). La
+traduction entre dans le plafond par génération : son coût plafond est estimé avant l'appel,
+et elle n'a pas lieu s'il dépasse le plafond (les textes partent alors « non vérifiés ») ; son
+coût enregistré, à défaut son estimation, est retiré du plafond laissé au choix des plats et
+ajouté au `cost_usd` de la génération (`planningRunCost`, rappel `onCost` d'`askJson`).
+Règles Firestore : le cache est écrit par le serveur seul et lu par son titulaire seul ; la
+lecture de l'administrateur, ouverte sur les autres préférences, est fermée pour ce document,
+qui recopie les textes de `planning_config`. Un test bloquant de `rules-tests` vérifie
+l'écriture et la lecture. Coût estimé : 600 à 950 jetons d'entrée et 50 à 300 de sortie par
+appel, quelques appels par mois et par compte. Nouvelle fixture partagée
+`planning_criteria.json` (`planningCriteria.ts` ↔ `planning_criteria.dart`) : vocabulaire,
+lecture, réunion, prédicat d'exclusion ; les préférences restent côté serveur. La
+présélection ajoute les motifs de rejet `excluded`, `unverified` et `preference`. « Prépa
+max » devient une préférence relâchée en dernier (`max_duration`). Les clés relâchables
+gagnent `wanted_proteins`, `wanted_starches`, `light` et `max_duration`.
+`planning_slot_rules.json` reçoit 17 cas et en voit un changer : le plat trop long revient,
+avec l'écart affiché. La réponse gagne `unmet` (suggestions, candidats, listes) et
+`constraintTranslations`. Le résumé de recette envoyé au serveur porte `allergens`. Nouveaux
+champs : `planned_meals.unmet_criteria`, `meal_staples.allergens` et `allergens` dans les
+retouches ; `updateMealComponents` peut réécrire `unmet_criteria`. Aucun backfill : un champ
+absent vaut « aucun écart » ou « allergènes non renseignés ». Le diagramme de séquence des
+critères vérifiés porte le numéro 51.
+
 ## 2026-10-19
 
 ### v0.24.18 — technique

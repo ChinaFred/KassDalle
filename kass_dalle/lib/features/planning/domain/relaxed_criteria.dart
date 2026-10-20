@@ -3,7 +3,7 @@
 /// La présélection (`gemini/planning.ts`, `RelaxedFilter`) relâche ses filtres
 /// un par un quand aucune recette ne passe : la note personnelle, le « pas
 /// deux fois dans le cycle », puis la fenêtre de variété. Elle le dit dans
-/// `relaxed` de chaque liste classée — et depuis la v0.24.18 les préférences
+/// `relaxed` de chaque liste classée — et depuis la v0.24.19 les préférences
 /// comprises des textes (`wanted_proteins`, `wanted_starches`, `light`) et
 /// la durée maximale (`max_duration`). Le repas garde ces clés
 /// (`relaxed_criteria`) pour que l'écart reste lisible après la validation,

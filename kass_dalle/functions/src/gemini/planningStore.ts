@@ -319,7 +319,7 @@ export async function writePlanningRun(args: {
   /** Le groupe dont le planning est généré, `null` pour le planning personnel. */
   groupId?: string | null;
   /**
-   * La traduction des préférences (`planning_constraints`, v0.24.18) : ce
+   * La traduction des préférences (`planning_constraints`, v0.24.19) : ce
    * qu'elle a retiré du plafond (`spentUsd` — coût enregistré, à défaut son
    * estimation) entre dans `cost_usd` ; un appel sans montant compte en plus
    * dans `unpriced_calls`. Les conceptions voient ainsi le plafond déjà entamé

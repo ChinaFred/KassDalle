@@ -837,7 +837,7 @@ typedef MealPlanSlotDto = ({
   bool repeat,
 
   /// Écarts aux critères compris, bruts : `{key, regime, status, service,
-  /// detail}` (v0.24.18). Lus par la feature planning.
+  /// detail}` (v0.24.19). Lus par la feature planning.
   List<Map<dynamic, dynamic>> unmet,
 });
 
@@ -866,7 +866,7 @@ class MealPlanResponse {
   final int conceptsRemaining;
 
   /// Ce que le serveur a compris de chaque texte, brut : `{text, criteria,
-  /// untranslated, status}` (v0.24.18).
+  /// untranslated, status}` (v0.24.19).
   final List<Map<dynamic, dynamic>> constraintTranslations;
 
   const MealPlanResponse({

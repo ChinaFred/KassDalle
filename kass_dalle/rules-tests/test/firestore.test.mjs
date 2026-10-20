@@ -4961,7 +4961,7 @@ describe("users/{uid}/preferences et nutrition_portion_overrides — compte nomm
   });
 
   it("planning_constraints : écrit par le serveur seul, lu par son titulaire", async () => {
-    // Le cache des préférences comprises (v0.24.18) : absent de
+    // Le cache des préférences comprises (v0.24.19) : absent de
     // `knownPreferenceIds`, le client ne l'écrit pas, administrateur compris.
     const path = `users/${READER}/preferences/planning_constraints`;
     await seedDocs(env, { [path]: { entries: {} } });

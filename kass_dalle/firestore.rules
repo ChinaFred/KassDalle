@@ -298,7 +298,7 @@ service cloud.firestore {
       // identifiant que le client écrit réellement (`knownPreferenceIds`) :
       // un compte `pending` ou révoqué ne remplissait pas moins son espace de
       // documents aux noms de son choix (ticket #153). La lecture reste à son
-      // propriétaire. `planning_constraints` (v0.24.18, préférences comprises,
+      // propriétaire. `planning_constraints` (v0.24.19, préférences comprises,
       // écrit par le serveur seul) recopie les textes de `planning_config`,
       // que l'administrateur ne lit pas : il ne le lit pas non plus.
       match /preferences/{prefId} {

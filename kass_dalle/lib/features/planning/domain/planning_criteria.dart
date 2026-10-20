@@ -569,15 +569,16 @@ List<UnmetCriterion> unmetWithNewDish({
     if (u.service != 'plat') u,
 ];
 
-/// Le contenu du premier service de [role] : sa source, ou `null` s'il est
-/// absent ou « à choisir ».
+/// Le contenu du premier service de [role] : sa source, `''` s'il est « à
+/// choisir », `null` s'il est absent. Les deux derniers cas se distinguent :
+/// retirer un service resté « à choisir » est un changement.
 String? _firstCourseKey(
   List<MealComponent> components,
   MealComponentRole role,
 ) {
   for (final c in components) {
     if (c.role != role) continue;
-    return c.isEmptyCourse ? null : c.sourceId;
+    return c.isEmptyCourse ? '' : c.sourceId;
   }
   return null;
 }
