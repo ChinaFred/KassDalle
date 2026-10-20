@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
+import 'admin_server_message.dart';
 import 'billing_providers.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -64,7 +65,9 @@ class AdminReferentialsScreen extends ConsumerWidget {
                         ),
                       ),
                       error: (e, _) => AppErrorState(
-                        error: e,
+                        // `CallableFailure` ramenée au code de la callable :
+                        // « Réessayer » en dépend.
+                        error: readableError(e),
                         title: 'Indicateurs indisponibles',
                         compact: true,
                         onRetry: () => ref.invalidate(referentialKpisProvider),

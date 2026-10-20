@@ -37,7 +37,13 @@ class ErrorReportsScreen extends ConsumerWidget {
         ),
         data: (reports) {
           if (reports.isEmpty) {
-            return const Center(child: Text('Aucun rapport d\'erreur.'));
+            return const AppEmptyState(
+              icon: Icons.task_alt,
+              title: 'Aucun rapport d\'erreur',
+              message:
+                  'Une erreur rencontrée dans l\'application par un membre '
+                  'apparaîtra ici, avec son contexte.',
+            );
           }
           return ListView.separated(
             itemCount: reports.length,

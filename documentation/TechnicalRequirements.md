@@ -7522,6 +7522,31 @@ introuvable » (icône `link_off_outlined`) avec « Retour à la bibliothèque �
 (« no routes for location: … », texte de développeur en anglais) n'est pas affiché ;
 `test/route_not_found_screen_test.dart` le vérifie.
 
+**Messages d'erreur.** Un échec s'écrit `failureMessage(what, error)`
+(`core/widgets/error_message.dart`) ou `context.showFailureSnackBar(what, error)` : ce qui
+n'a pas eu lieu, puis le titre de `describeError`. Une page ou un encart d'erreur passe par
+`AppErrorState`, dont « Détails » (le texte brut) n'est visible que de l'admin. Les écrans
+d'administration et de modération gardent le message écrit par une callable pour une liste
+blanche de codes lue dans `functions/src`, appel par appel : `adminFailureMessage(what,
+error, codes:)` (`features/admin/presentation/admin_server_message.dart`) ; `internal`,
+`unknown`, `unavailable` et `deadline-exceeded` n'y sont jamais repris, et une
+`CallableFailure` (dépôt de facturation) est lue par son code : `readableError` la ramène
+à une `FirebaseFunctionsException` de même code avant `AppErrorState` (politique nutrition,
+qualité des données, indicateurs des référentiels), pour que « Réessayer » disparaisse sur un
+refus de droits. Exemples : `failed-precondition`
+de `reviewModeratedImageFn`, `setAppCheckPolicyFn`, `relaunchDeadLetterFn` et
+`retryPendingModerationFn` ; `invalid-argument` de `setAiRoutingPolicyFn` ; `already-exists`
+et `not-found` de `aiRoutingPresetsFn`. `invalid-argument` reste écarté pour
+`aiRoutingPresetsFn` et `setAiBudgetFn`, qui y écrivent aussi des textes de développeur
+(« id est requis. », « policy est requis. »). `setAiRoutingPolicyFn` écrit aussi « policy est
+requis. » et « defaultProvider doit valoir … », que l'écran ne provoque pas puisqu'il envoie
+toujours une politique complète : écart accepté.
+`test/error_text_guard_test.dart` lit les `.dart` de `lib/features/**/presentation` et de
+`lib/core/presentation`, et échoue si l'argument d'un `show…SnackBar(` ou d'un `…Text(`
+interpole `$e`, `${e}`, `$error`, `${error}` ou `$_error`, ou appelle `e.toString()`. Un cas
+conforme se déclare dans sa liste d'exceptions (fichier, motif, raison) ; elle est vide à ce
+jour, et une exception qui ne sert plus fait échouer le test.
+
 ### 13.2 La redirection — la seule fonction qui décide qui voit quoi
 
 `resolveRedirect({user, isLoading, location})` est **extraite** de la fermeture `redirect`

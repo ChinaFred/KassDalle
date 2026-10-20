@@ -8,6 +8,8 @@ import 'package:intl/intl.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/widgets/error_message.dart';
+import '../../admin/presentation/admin_server_message.dart';
 import '../domain/moderation_entry.dart';
 import '../domain/moderation_labels.dart';
 import 'moderation_providers.dart';
@@ -42,10 +44,11 @@ class AdminModerationScreen extends ConsumerWidget {
           const Divider(height: 1),
           Expanded(
             child: journal.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () =>
+                  const AppLoadingState(label: 'Chargement du journal…'),
               error: (e, _) => AppErrorState(
                 error: e,
-                title: 'Journal de modération illisible.',
+                title: 'Journal de modération non chargé',
                 onRetry: () => ref.invalidate(moderationJournalProvider),
               ),
               data: (entries) {
@@ -72,15 +75,28 @@ class AdminModerationScreen extends ConsumerWidget {
           .read(moderationRepositoryProvider)
           .retryPending();
       if (!context.mounted) return;
-      context.showSnackBar(
-        result.relaunched == 0 && result.stillDown == 0
-            ? 'Aucune image en attente de verdict.'
-            : '${result.relaunched} image(s) traitée(s), '
-                  '${result.stillDown} toujours sans verdict.',
-      );
+      final message = result.relaunched == 0 && result.stillDown == 0
+          ? 'Aucune image en attente de verdict.'
+          : '${result.relaunched} image(s) traitée(s), '
+                '${result.stillDown} toujours sans verdict.';
+      // Tout traité : un succès. Rien à faire, ou un reste sans verdict :
+      // une information.
+      if (result.stillDown == 0 && result.relaunched > 0) {
+        context.showSuccessSnackBar(message);
+      } else {
+        context.showSnackBar(message);
+      }
     } catch (e) {
+      // Signalée au rapport d'erreurs par ModerationRepository.retryPending.
+      // `failed-precondition` : « La modération est désactivée. »
       if (!context.mounted) return;
-      context.showSnackBar('Relance impossible : $e');
+      context.showErrorSnackBar(
+        adminFailureMessage(
+          'Images non relancées',
+          e,
+          codes: const {'failed-precondition'},
+        ),
+      );
     }
   }
 }
@@ -90,17 +106,13 @@ class _EmptyJournal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Text(
-          'Aucune image sur cette période.\n\n'
+    return const AppEmptyState(
+      icon: Icons.image_search_outlined,
+      title: 'Aucune image sur cette période',
+      message:
           'Un journal vide n\'est pas la preuve que la modération fonctionne : '
-          'élargissez la période avant d\'en conclure quoi que ce soit.',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      ),
+          'choisissez « Tout » dans la période, ou « Tous » dans les statuts, '
+          'avant d\'en conclure quoi que ce soit.',
     );
   }
 }
@@ -362,10 +374,13 @@ class _EntryCard extends ConsumerWidget {
           .read(moderationRepositoryProvider)
           .review(moderationId: entry.id, approve: true);
       if (!context.mounted) return;
-      context.showSnackBar('Image publiée.');
+      context.showSuccessSnackBar('Image publiée.');
     } catch (e) {
+      // Signalée au rapport d'erreurs par ModerationRepository.review.
       if (!context.mounted) return;
-      context.showSnackBar('Publication impossible : $e');
+      context.showErrorSnackBar(
+        adminFailureMessage('Image non publiée', e, codes: _reviewCodes),
+      );
     }
   }
 
@@ -411,12 +426,22 @@ class _EntryCard extends ConsumerWidget {
           .read(moderationRepositoryProvider)
           .review(moderationId: entry.id, approve: false, note: note);
       if (!context.mounted) return;
-      context.showSnackBar('Image refusée.');
+      context.showSuccessSnackBar('Image refusée.');
     } catch (e) {
+      // Signalée au rapport d'erreurs par ModerationRepository.review.
       if (!context.mounted) return;
-      context.showSnackBar('Refus impossible : $e');
+      context.showErrorSnackBar(
+        adminFailureMessage('Image non refusée', e, codes: _reviewCodes),
+      );
     }
   }
+
+  /// Codes de `reviewModeratedImageFn` dont le texte est écrit pour
+  /// l'administrateur : `failed-precondition` (« Cette image n'attend pas de
+  /// décision. », format ni JPEG ni PNG, fichier changé depuis l'analyse) et
+  /// `not-found` (« Décision introuvable. »). `invalid-argument` reste écarté :
+  /// « moderationId et decision sont requis. » est un texte de développeur.
+  static const _reviewCodes = {'failed-precondition', 'not-found'};
 }
 
 /// L'image à juger, consultable à la demande.
@@ -454,7 +479,10 @@ class _SourcePreviewState extends State<_SourcePreview> {
 
   Uint8List? _bytes;
   bool _loading = false;
-  String? _error;
+
+  /// Message d'échec du chargement, déjà rédigé : « Image non chargée.
+  /// Accès refusé. »
+  String? _failure;
   final _errorReportService = ErrorReportService();
 
   @override
@@ -473,7 +501,7 @@ class _SourcePreviewState extends State<_SourcePreview> {
     if (!mounted) return;
     setState(() {
       _loading = true;
-      _error = null;
+      _failure = null;
     });
     try {
       final data = await FirebaseStorage.instance
@@ -494,8 +522,10 @@ class _SourcePreviewState extends State<_SourcePreview> {
       if (!mounted) return;
       setState(() {
         // Un refus de lecture et un fichier absent ne se corrigent pas de la
-        // même façon : le message porte la cause, pas un « échec » générique.
-        _error = e.toString();
+        // même façon : le message porte la cause (« Accès refusé », « Contenu
+        // introuvable »), pas un « échec » générique. Le texte brut reste au
+        // rapport d'erreurs.
+        _failure = failureMessage('Image non chargée', e);
         _loading = false;
       });
     }
@@ -527,13 +557,13 @@ class _SourcePreviewState extends State<_SourcePreview> {
       );
     }
 
-    if (_error != null) {
+    if (_failure != null) {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Text(
-              'Image illisible : $_error',
+              _failure!,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.error,
               ),

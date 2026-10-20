@@ -7,6 +7,8 @@ import '../../planning/domain/meal_staple.dart';
 import '../../planning/presentation/meal_staples_providers.dart';
 import '../../planning/presentation/staple_allergens_field.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/error_message.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -87,15 +89,11 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
               ),
               data: (items) {
                 if (items.isEmpty) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Aucune garniture. Ajoutez-en une avec le bouton '
-                        '« Nouvelle garniture ».',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
+                  return const AppEmptyState(
+                    icon: Icons.rice_bowl_outlined,
+                    title: 'Aucune garniture',
+                    message:
+                        'Ajoutez-en une avec le bouton « Nouvelle garniture ».',
                   );
                 }
                 final sorted = [...items]..sort(_compare);
@@ -103,8 +101,10 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
                     .where(_matchesSearch)
                     .toList(growable: false);
                 if (filtered.isEmpty) {
-                  return const Center(
-                    child: Text('Aucune garniture ne correspond.'),
+                  return const AppEmptyState(
+                    icon: Icons.search_off,
+                    title: 'Aucune garniture ne correspond',
+                    message: 'Modifiez ou effacez la recherche.',
                   );
                 }
                 return ListView(
@@ -187,6 +187,7 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
       messenger,
       () => ref.read(mealStaplesRepositoryProvider).createBase(result),
       success: 'Garniture créée.',
+      failure: 'Garniture non créée',
       feature: 'admin_meal_staples_create',
       context: {'id': result.id},
     );
@@ -203,6 +204,7 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
       messenger,
       () => ref.read(mealStaplesRepositoryProvider).updateBase(result),
       success: 'Garniture mise à jour.',
+      failure: 'Garniture non mise à jour',
       feature: 'admin_meal_staples_update',
       context: {'id': staple.id},
     );
@@ -218,6 +220,9 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
       success: staple.active
           ? '« ${staple.name} » désactivée : plus proposée à personne.'
           : '« ${staple.name} » réactivée.',
+      failure: staple.active
+          ? '« ${staple.name} » non désactivée'
+          : '« ${staple.name} » non réactivée',
       feature: 'admin_meal_staples_toggle_active',
       context: {'id': staple.id, 'active': !staple.active},
     );
@@ -254,6 +259,7 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
       messenger,
       () => ref.read(mealStaplesRepositoryProvider).deleteBase(staple.id),
       success: 'Garniture supprimée.',
+      failure: 'Garniture non supprimée',
       feature: 'admin_meal_staples_delete',
       context: {'id': staple.id},
     );
@@ -263,14 +269,15 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
     ScaffoldMessengerState messenger,
     Future<void> Function() action, {
     required String success,
+    required String failure,
     required String feature,
     Map<String, dynamic> context = const {},
   }) async {
+    // Lu avant l'attente : l'écran peut avoir été quitté au retour.
+    final scheme = Theme.of(this.context).colorScheme;
     try {
       await action();
-      if (success.isNotEmpty) {
-        messenger.showSnackBar(SnackBar(content: Text(success)));
-      }
+      messenger.showSuccessMessage(success, scheme: scheme);
     } catch (e, st) {
       try {
         await ref
@@ -288,7 +295,7 @@ class _MealStaplesScreenState extends ConsumerState<MealStaplesScreen> {
           stackTrace: stackTrace,
         );
       }
-      messenger.showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      messenger.showErrorMessage(failureMessage(failure, e), scheme: scheme);
     }
   }
 }
@@ -657,10 +664,8 @@ class _StapleEditorDialogState extends State<_StapleEditorDialog> {
         ? (typedId.isEmpty ? stapleIdFromName(name) : typedId)
         : widget.existing!.id;
     if (id.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de déduire un identifiant de ce nom.'),
-        ),
+      context.showErrorSnackBar(
+        'Identifiant non déduit de ce nom. Saisissez-le à la main.',
       );
       return;
     }

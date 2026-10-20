@@ -472,8 +472,12 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
               data: (page) {
                 final entries = page.entries;
                 if (entries.isEmpty && page.calls.isEmpty) {
-                  return const Center(
-                    child: Text('Aucune entrée correspondant aux filtres.'),
+                  return const AppEmptyState(
+                    icon: Icons.manage_search,
+                    title: 'Aucune entrée pour ces filtres',
+                    message:
+                        'Élargissez la fenêtre, ou videz un champ de '
+                        'recherche, puis appuyez sur « Filtrer ».',
                   );
                 }
 

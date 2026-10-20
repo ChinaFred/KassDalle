@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/app_states.dart';
 import '../domain/nutrition_policy.dart';
+import 'admin_server_message.dart';
 import 'billing_providers.dart';
-import '../../../core/theme/app_icon_size.dart';
 
 /// Réglage de la politique de calcul nutritionnel.
 ///
@@ -80,7 +81,15 @@ class _NutritionPolicyScreenState extends ConsumerState<NutritionPolicyScreen> {
         error: error,
         stackTrace: stackTrace,
       );
-      if (mounted) context.showErrorSnackBar('Enregistrement refusé : $error');
+      // Aucun message du serveur n'est repris : les refus de
+      // `setNutritionSourcePolicyFn` (`invalid-argument`) nomment les champs
+      // techniques (« minCoverageForPer100g doit être… »), et l'écran
+      // empêche déjà d'envoyer une politique incohérente.
+      if (mounted) {
+        context.showErrorSnackBar(
+          adminFailureMessage('Politique nutrition non enregistrée', error),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -135,9 +144,16 @@ class _NutritionPolicyScreenState extends ConsumerState<NutritionPolicyScreen> {
               label: Text(_saving ? 'Enregistrement…' : 'Enregistrer'),
             ),
       body: _loadError != null
-          ? _ErrorBody(error: _loadError!, onRetry: _load)
+          ? AppErrorState(
+              // Ramenée au code de la callable : le conseil et « Réessayer »
+              // (absent pour un refus de droits) en dépendent. « Détails »
+              // montre le code et le message de la callable.
+              error: readableError(_loadError),
+              title: 'Politique nutrition non chargée',
+              onRetry: _load,
+            )
           : draft == null
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoadingState(label: 'Chargement de la politique…')
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
               children: [
@@ -358,45 +374,4 @@ class _ReadOnlyCard extends StatelessWidget {
       'Permissif : accepte des correspondances approchantes, au risque de valeurs inexactes.',
     _ => policy,
   };
-}
-
-class _ErrorBody extends StatelessWidget {
-  final Object error;
-  final VoidCallback onRetry;
-
-  const _ErrorBody({required this.error, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.error_outline,
-              color: theme.colorScheme.error,
-              size: AppIconSize.large,
-            ),
-            const SizedBox(height: 12),
-            Text('Politique illisible', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              '$error',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Réessayer'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

@@ -17,7 +17,12 @@ typedef AiPricingRow = ({
 class AiPricingUnavailable implements Exception {
   final String cause;
 
-  const AiPricingUnavailable(this.cause);
+  /// L'exception d'origine quand la lecture elle-même a échoué (réseau,
+  /// droits) ; null quand la grille a été lue mais n'est pas exploitable.
+  /// L'écran en tire un message lisible sans recopier [toString].
+  final Object? source;
+
+  const AiPricingUnavailable(this.cause, {this.source});
 
   @override
   String toString() => 'Grille tarifaire indisponible ($cause)';
@@ -127,7 +132,7 @@ class AiPricingRepository {
         error: error,
         stackTrace: stackTrace,
       );
-      throw AiPricingUnavailable('lecture impossible : $error');
+      throw AiPricingUnavailable('lecture impossible : $error', source: error);
     }
 
     final raw = data?['models'];
@@ -164,7 +169,7 @@ class AiPricingRepository {
         error: error,
         stackTrace: stackTrace,
       );
-      throw AiPricingUnavailable('lecture impossible : $error');
+      throw AiPricingUnavailable('lecture impossible : $error', source: error);
     }
 
     final rows = <AiPricingRow>[];

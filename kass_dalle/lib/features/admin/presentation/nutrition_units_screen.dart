@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'admin_providers.dart';
 import '../data/nutrition_units_repository.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/error_message.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -94,7 +96,21 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
                     .where(_matchesSearch)
                     .toList(growable: false);
                 if (filtered.isEmpty) {
-                  return const Center(child: Text('Aucune unité trouvée.'));
+                  return items.isEmpty
+                      // Pas de second bouton de semis ici : une écriture de
+                      // masse n'a pas sa place dans l'écran du référentiel
+                      // (CLAUDE.md, « Admin › Backfills »). L'icône de la
+                      // barre est un écart hérité, à porter en backfill.
+                      ? const AppEmptyState(
+                          icon: Icons.straighten_outlined,
+                          title: 'Aucune unité',
+                          message: 'Ajoutez-en une avec « Nouvelle unité ».',
+                        )
+                      : const AppEmptyState(
+                          icon: Icons.search_off,
+                          title: 'Aucune unité ne correspond',
+                          message: 'Modifiez ou effacez la recherche.',
+                        );
                 }
                 return ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -144,8 +160,10 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       messenger,
       () async {
         await ref.read(nutritionUnitsRepositoryProvider).create(result);
+        return null;
       },
       success: 'Unité créée.',
+      failure: 'Unité non créée',
       feature: 'admin_nutrition_units_create',
     );
   }
@@ -161,8 +179,10 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       messenger,
       () async {
         await ref.read(nutritionUnitsRepositoryProvider).update(doc.id, result);
+        return null;
       },
       success: 'Unité mise à jour.',
+      failure: 'Unité non mise à jour',
       feature: 'admin_nutrition_units_update',
       context: {'docId': doc.id},
     );
@@ -197,8 +217,10 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       messenger,
       () async {
         await ref.read(nutritionUnitsRepositoryProvider).delete(doc.id);
+        return null;
       },
       success: 'Unité supprimée.',
+      failure: 'Unité non supprimée',
       feature: 'admin_nutrition_units_delete',
       context: {'docId': doc.id, 'normalizedUnit': doc.normalizedUnit},
     );
@@ -233,27 +255,31 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
         final r = await ref
             .read(nutritionUnitsRepositoryProvider)
             .seedDefaultUnits();
-        final msg = (r.created == 0 && r.patched == 0)
+        return (r.created == 0 && r.patched == 0)
             ? 'Tout était déjà à jour.'
             : '${r.created} créée(s), ${r.patched} mise(s) à jour.';
-        messenger.showSnackBar(SnackBar(content: Text(msg)));
       },
-      success: '',
+      failure: 'Unités par défaut non initialisées',
       feature: 'admin_nutrition_units_seed',
     );
   }
 
   Future<void> _runCrudAction(
     ScaffoldMessengerState messenger,
-    Future<void> Function() action, {
-    required String success,
+    Future<String?> Function() action, {
+    String? success,
+    required String failure,
     required String feature,
     Map<String, dynamic> context = const {},
   }) async {
+    // Lu avant l'attente : l'écran peut avoir été quitté au retour.
+    final scheme = Theme.of(this.context).colorScheme;
     try {
-      await action();
-      if (success.isNotEmpty) {
-        messenger.showSnackBar(SnackBar(content: Text(success)));
+      // L'action peut rendre son propre message de succès (compte rendu de
+      // l'initialisation) ; sinon, [success].
+      final message = await action() ?? success;
+      if (message != null) {
+        messenger.showSuccessMessage(message, scheme: scheme);
       }
     } catch (e, st) {
       try {
@@ -272,7 +298,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
           stackTrace: stackTrace,
         );
       }
-      messenger.showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      messenger.showErrorMessage(failureMessage(failure, e), scheme: scheme);
     }
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/error_message.dart';
 import '../data/ai_budget_repository.dart';
 import '../data/feature_catalog.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -387,7 +388,10 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Enregistrement impossible : $error');
+      // Aucun message du serveur repris : sous `invalid-argument`,
+      // `setAiBudgetFn` écrit aussi « policy est requis. », un texte de
+      // développeur.
+      context.showFailureSnackBar('Plafonds non enregistrés', error);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -439,9 +443,12 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
             Card(
               color: theme.colorScheme.errorContainer,
               child: ListTile(
+                iconColor: theme.colorScheme.onErrorContainer,
+                textColor: theme.colorScheme.onErrorContainer,
                 leading: const Icon(Icons.error_outline),
-                title: const Text('Lecture impossible'),
-                subtitle: Text('$_error'),
+                title: const Text('Dépenses non chargées'),
+                // Le texte brut reste au rapport d'erreurs.
+                subtitle: Text('${describeError(_error).title}.'),
                 trailing: IconButton(
                   tooltip: 'Actualiser les dépenses',
                   icon: const Icon(Icons.refresh),

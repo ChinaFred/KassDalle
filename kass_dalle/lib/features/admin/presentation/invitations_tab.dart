@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
-import '../../../core/widgets/error_message.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/email_invitation.dart';
@@ -354,9 +353,11 @@ class _InvitationMenu extends ConsumerWidget {
         );
       }
       if (context.mounted) {
-        context.showErrorSnackBar(
-          'Action impossible : ${shortErrorMessage(e)}',
-        );
+        context.showFailureSnackBar(switch (action) {
+          _InvitationAction.resend => 'Invitation non renvoyée',
+          _InvitationAction.cancel => 'Invitation non annulée',
+          _InvitationAction.copyLink => 'Lien non copié',
+        }, e);
       }
     }
   }

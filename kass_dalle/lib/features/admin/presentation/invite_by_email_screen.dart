@@ -9,7 +9,6 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_shortcuts.dart';
 import '../../../core/widgets/app_states.dart';
-import '../../../core/widgets/error_message.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../groups/domain/family_group.dart';
@@ -212,9 +211,7 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
     } catch (e) {
       // Déjà rapportée par `InvitationsRepository` (`admin.invitations`).
       if (mounted) {
-        context.showErrorSnackBar(
-          'Invitation non envoyée : ${shortErrorMessage(e)}',
-        );
+        context.showFailureSnackBar('Invitation non envoyée', e);
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -256,7 +253,7 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
             context: {'step': 'grant_role_now', 'target_uid': uid},
           );
       if (mounted) {
-        context.showErrorSnackBar('Rôle non modifié : ${shortErrorMessage(e)}');
+        context.showFailureSnackBar('Rôle non modifié', e);
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -292,9 +289,7 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
     } catch (e) {
       // Déjà rapportée par `InvitationsRepository` (`admin.invitations`).
       if (mounted) {
-        context.showErrorSnackBar(
-          'Invitation non renvoyée : ${shortErrorMessage(e)}',
-        );
+        context.showFailureSnackBar('Invitation non renvoyée', e);
       }
     } finally {
       if (mounted) setState(() => _sending = false);

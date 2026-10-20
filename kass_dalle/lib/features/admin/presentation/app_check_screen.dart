@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/app_states.dart';
 import '../data/app_check_repository.dart';
 import 'admin_providers.dart';
-import '../../../core/theme/app_icon_size.dart';
+import 'admin_server_message.dart';
 
 /// Attestation de l'application — App Check.
 ///
@@ -68,7 +69,15 @@ class _AppCheckScreenState extends ConsumerState<AppCheckScreen> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Changement impossible : $error');
+      // `failed-precondition` : `setAppCheckPolicyFn` refuse d'exiger
+      // l'attestation depuis un appel qui n'est pas attesté, et le dit.
+      context.showErrorSnackBar(
+        adminFailureMessage(
+          'Politique App Check non modifiée',
+          error,
+          codes: const {'failed-precondition'},
+        ),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -110,9 +119,13 @@ class _AppCheckScreenState extends ConsumerState<AppCheckScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Attestation de l\'application')),
       body: _loadError != null
-          ? _ErrorState(error: _loadError!, onRetry: _load)
+          ? AppErrorState(
+              error: _loadError,
+              title: 'Politique App Check non chargée',
+              onRetry: _load,
+            )
           : snapshot == null
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoadingState(label: 'Chargement de la politique…')
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -213,35 +226,6 @@ class _AppCheckScreenState extends ConsumerState<AppCheckScreen> {
                 ),
               ],
             ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final Object error;
-  final VoidCallback onRetry;
-  const _ErrorState({required this.error, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: AppIconSize.large),
-            const SizedBox(height: 12),
-            Text('Politique illisible : $error', textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Réessayer'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
