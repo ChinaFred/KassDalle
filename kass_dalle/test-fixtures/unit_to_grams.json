@@ -86,7 +86,16 @@
     { "ingredient": "vin",   "qty": "2", "unit": "verre_a_vin", "grams": 240, "why": "alias verre à vin → verre_vin (120 ml)" },
     { "ingredient": "huile", "qty": "1", "unit": "c. à s.", "grams": 13.8, "why": "alias ponctué de la cuillère à soupe" },
     { "ingredient": "sel",   "qty": "1", "unit": "tbsp",    "grams": 18,  "why": "alias anglais de la cuillère à soupe (15 ml × 1.2)" },
-    { "ingredient": "sucre", "qty": "1", "unit": "cuillère à dessert", "grams": 8.5, "why": "10 ml × densité sucre 0.85" }
+    { "ingredient": "sucre", "qty": "1", "unit": "cuillère à dessert", "grams": 8.5, "why": "10 ml × densité sucre 0.85" },
+    { "ingredient": "muscade", "qty": "1", "unit": "", "grams": 0.5, "why": "assaisonnement avec quantité sans unité : le nombre se lit en pincées (ticket 190)" },
+    { "ingredient": "noix de muscade", "qty": "1", "unit": "", "grams": 0.5, "why": "même règle, nom composé" },
+    { "ingredient": "sel", "qty": "2", "unit": "", "grams": 1, "why": "deux pincées de sel" },
+    { "ingredient": "muscade", "qty": "1", "unit": "noix", "grams": 3, "why": "la noix dépend de l'ingrédient : une noix de muscade pèse 3 g (ticket 190)" },
+    { "ingredient": "beurre", "qty": "1", "unit": "noix", "grams": 10, "why": "une noix de beurre pèse 10 g" },
+    { "ingredient": "poivre", "qty": "1", "unit": "noix", "grams": null, "why": "couple noix + ingrédient inconnu : toujours sans poids, pas de valeur plausible inventée" },
+    { "ingredient": "œufs", "qty": "3", "unit": "blancs", "grams": 90, "why": "« 3 blancs d'œufs » découpé en unité + ingrédient : 30 g le blanc (ticket 190)" },
+    { "ingredient": "oeufs", "qty": "1", "unit": "blanc", "grams": 30, "why": "singulier, sans accent" },
+    { "ingredient": "œufs", "qty": "3", "unit": "jaunes", "grams": 54, "why": "18 g le jaune" }
   ],
   "_usual_portion_comment": [
     "Portion usuelle d'un ingrédient écrit sans quantité ni unité (« roquette », « parmesan »).",

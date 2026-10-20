@@ -6701,7 +6701,7 @@ Functions.
 |---|---|---|---|
 | `cooklang_parsing.json` | parseur CookLang, index, type de page, durées, durées lues d'une recette (`readDurations` : `tags` puis métadonnées du brouillon et du texte validé) | `core/services/cooklang_parser.dart` | `cooklang/parser.ts` |
 | `quantity_parsing.json` | parsing d'une quantité | `core/utils/nutrition_quantity_converter.dart` | `nutrition/quantityConversion.ts` |
-| `unit_to_grams.json` | conversion en grammes, quantité absente | idem | idem |
+| `unit_to_grams.json` | conversion en grammes, quantité absente, couples unité/ingrédient (noix de muscade, blanc d'œuf) | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | résolution d'un modèle, coût d'un appel | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
 | `planning_slot_rules.json` | règles de créneau et présélection du planning, dont la pénalité de refus — serveur ; le client rejoue les constantes de la mémoire des refus (21 jours, 300 entrées, un jour de tolérance dans le futur) et le prédicat d'activité d'un refus, pour élaguer le document qu'il écrit et compter les refus actifs | `features/planning/domain/planning_refusals.dart` (constantes et prédicat d'activité) | `gemini/planning.ts` |
