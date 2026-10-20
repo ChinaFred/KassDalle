@@ -7464,7 +7464,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 |---|---|---|
 | `/admin` | `AdminHubScreen` | le sommaire de l'administration |
 | `/admin/users` | `AdminScreen` | onglets « Comptes » (nommer, changer de rôle, révoquer) et « Invitations » (liste, renvoi, annulation) |
-| `/admin/users/invite` | `InviteByEmailScreen` | inviter un proche par e-mail (`manageInvitationFn`, §5) ; formulaire, donc exclu de la pleine largeur de `/admin` (`_wantsFullWidth`, `app_shell.dart`) : la coquille pose `ReadableWidth` |
+| `/admin/users/invite` | `InviteByEmailScreen` | inviter un proche par e-mail (`manageInvitationFn`, §5) |
 | `/admin/costs` | `MonthlyCostsScreen` | la dépense d'IA par mois et par poste |
 | `/admin/ai-spend` | `AiSpendScreen` | la dépense par compte et par service, et le plafond |
 | `/admin/ai-routing` | `AiRoutingScreen` | quel moteur sert quel poste |
@@ -7482,6 +7482,26 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/tickets/:ticketId` | `AdminTicketsScreen`, ticket sélectionné | auteur, capture, lien vers l'Issue, analyses (`tickets/{id}/admin/analysis`), « Relancer l'envoi » d'un ticket en anomalie (`retryTicketSend`), « Valider » (`validateTicket`), « Refuser » (`refuseTicket`), « Clore » (`closeTicket`), « Répondre » (`answerTicketAnalysis`), « Lancer l'analyse » (`launchTicketAnalysis`) et « Lancer le développement » (`launchTicketDevelopment`), section « Lancements » (`tickets/{id}/admin/launches`) |
 | `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
 | `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
+
+**Largeur des écrans.** `AppShell`, en présentation large, pose `ReadableWidth`
+(`kReadableMaxWidth`, 1 200 px) sur tout écran de la coquille, sauf ceux que
+`wantsFullWidth` (`app_shell.dart`, testée par `test/app_shell_full_width_test.dart`)
+reconnaît : une liste fermée de cinq tableaux — `/logs`, `/error-reports`, `/dead-letters`,
+`/planning/batch`, `/admin/costs` —, la route elle-même ou une de ses sous-routes. Aucun
+préfixe large comme `/admin` : les Tickets des membres, la Dépense par utilisateur et les
+formulaires d'administration sont bornés. Une page poussée hors de la coquille pose
+`ReadableWidth` elle-même : l'Explorer en mode choix (`SearchScreen` avec `pick`) l'enveloppe
+autour du corps, sous une barre de titre pleine largeur.
+
+**Garde de sortie et déconnexion.** Un écran qui retient l'utilisateur pose son garde dans
+`leaveGuardProvider` et un `PopScope(canPop: false)` : préférences du planning, création d'un
+planning, « Suggérer un plat », invitation par e-mail, scan, Explorer, idée de l'IA, ticket, formulaire de livre
+(`BookFormScreen` : instantané des champs, de la langue, de la confidentialité et de la
+couverture à l'ouverture ; une couverture choisie et non envoyée compte comme une
+modification). La navigation passe par `goGuarded`, la déconnexion par `signOutGuarded`
+(`leave_guard.dart`, écran du compte et menu du compte) : un garde qui refuse annule la
+déconnexion, sans garde elle part sans question. Un échec de `signOut` est remonté
+(`leaveGuard.signOutGuarded`) et affiché en une phrase.
 
 ### 13.2 La redirection — la seule fonction qui décide qui voit quoi
 
@@ -7519,10 +7539,6 @@ routeur recréé perdrait la pile de navigation à chaque rafraîchissement du c
 > données : les callables qu'ils appellent exigent le rôle `admin` (`requireAdmin`) et les
 > règles Firestore filtrent le reste. La garde utile est celle du backend, pas celle du
 > routeur — à garder en tête en ajoutant un écran d'administration.
-
-`AppRoutes.tokenUsage` (`/token-usage`) est **déclarée sans être routée** : l'écran de
-consommation de jetons a été fondu dans `/admin/ai-spend`. La constante subsiste sans
-appelant.
 
 ### 13.3 Le bac à sable dans l'arborescence
 

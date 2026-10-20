@@ -2,6 +2,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/admin/presentation/admin_providers.dart'
+    show errorReportServiceProvider;
+import '../../features/auth/presentation/auth_providers.dart';
+import '../services/error_reporting.dart';
+import '../utils/context_extensions.dart';
+import '../widgets/error_message.dart';
+
 /// Ce qu'un écran répond quand on veut le quitter : vrai si on peut partir,
 /// faux s'il retient l'utilisateur.
 ///
@@ -58,4 +65,30 @@ Future<void> goGuarded(
   final guard = ref.read(leaveGuardProvider);
   if (guard != null && !await guard()) return;
   if (context.mounted) context.go(route);
+}
+
+/// Déconnecte le compte après avoir demandé à l'écran courant s'il peut être
+/// quitté.
+///
+/// Se déconnecter ferme tous les écrans : un formulaire en cours de saisie
+/// sous l'écran du compte perdait sa saisie sans question. Si le garde refuse,
+/// rien ne se passe ; sans garde, la déconnexion part sans confirmation.
+Future<void> signOutGuarded(BuildContext context, WidgetRef ref) async {
+  try {
+    final guard = ref.read(leaveGuardProvider);
+    if (guard != null && !await guard()) return;
+    if (!context.mounted) return;
+    await ref.read(authRepositoryProvider).signOut();
+  } catch (error, stackTrace) {
+    reportUnexpectedError(
+      feature: 'leaveGuard.signOutGuarded',
+      error: error,
+      stackTrace: stackTrace,
+      service: ref.read(errorReportServiceProvider),
+    );
+    if (!context.mounted) return;
+    context.showErrorSnackBar(
+      'Déconnexion impossible : ${shortErrorMessage(error)}',
+    );
+  }
 }

@@ -17,6 +17,7 @@ import '../../../core/theme/app_icon_size.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/widgets/readable_width.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/recipe_filter.dart';
@@ -716,29 +717,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         appBar: AppBar(
           title: Text(_picking ? 'Choisir une recette' : 'Explorer'),
         ),
-        body: prefsAsync.when(
-          loading: () =>
-              const AppLoadingState(label: 'Chargement des filtres…'),
-          // Le dépôt rend les valeurs par défaut sur une lecture en échec :
-          // cette branche ne sert qu'à une erreur inattendue.
-          error: (error, _) => AppErrorState(
-            error: error,
-            onRetry: () => ref.invalidate(_prefsProvider),
-          ),
-          data: (prefs) {
-            final body = _buildForPrefs(prefs);
-            final pick = widget.pick;
-            if (pick == null) return body;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _PickBanner(text: pick.banner),
-                Expanded(child: body),
-              ],
-            );
-          },
-        ),
+        // En mode choix, l'Explorer est poussé hors du shell, qui ne lui
+        // pose donc pas `ReadableWidth` : il le pose lui-même sous la barre,
+        // qui garde toute la largeur.
+        body: _picking
+            ? ReadableWidth(child: _buildBody(prefsAsync))
+            : _buildBody(prefsAsync),
       ),
+    );
+  }
+
+  Widget _buildBody(AsyncValue<ExplorePreferences> prefsAsync) {
+    return prefsAsync.when(
+      loading: () => const AppLoadingState(label: 'Chargement des filtres…'),
+      // Le dépôt rend les valeurs par défaut sur une lecture en échec :
+      // cette branche ne sert qu'à une erreur inattendue.
+      error: (error, _) => AppErrorState(
+        error: error,
+        onRetry: () => ref.invalidate(_prefsProvider),
+      ),
+      data: (prefs) {
+        final body = _buildForPrefs(prefs);
+        final pick = widget.pick;
+        if (pick == null) return body;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _PickBanner(text: pick.banner),
+            Expanded(child: body),
+          ],
+        );
+      },
     );
   }
 

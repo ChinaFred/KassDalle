@@ -20,6 +20,50 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.20 — fonctionnel
+
+Lot 4 de l'audit d'ergonomie (#151) : six tickets, #165 à #169 et #178.
+
+- **Largeur des écrans (#165).** Sur grand écran, tout écran tient dans une colonne de
+  1 200 px, administration comprise : Tickets des membres, Dépense par utilisateur et
+  formulaires ne s'étirent plus sur toute la largeur. Seuls cinq tableaux la gardent :
+  journaux, rapports d'erreurs, dead letters, création d'un planning, coûts mensuels.
+- **Profil et compte (#166).** Libellés en français accentué (« Identité », « Nom du compte
+  Google », « Adresse e-mail », « Activité du compte », « Se déconnecter »), rôle en toutes
+  lettres (« Lecteur », « Éditeur »…), puces « Lecture », « Édition », « Administration ». La
+  photo s'annonce « Photo du compte Google » au lieu de son adresse ; l'identifiant du compte
+  n'est montré qu'à l'administrateur ; la ligne « Compte révoqué », toujours « Non » sur cet
+  écran, est retirée. Un compte Google sans nom faisait planter le menu du compte, et avec
+  lui toute l'application : l'initiale vient maintenant du nom affiché à la famille, avec
+  repli sur l'adresse. Se déconnecter depuis l'écran ou le menu du compte demande d'abord à
+  l'écran ouvert s'il peut être quitté.
+- **Connexion (#167).** Une connexion qui échoue affiche un titre et un conseil, et non plus
+  le texte technique (« Erreur de connexion: [firebase_auth/…] Exception… »). L'écran défile
+  quand la hauteur manque ; le numéro de version est lisible, en couleur secondaire.
+- **Formulaire de livre (#168).** Accents rétablis (« Français », « Éditeur », « Série »…).
+  Quitter avec une saisie non enregistrée demande « Quitter sans enregistrer ? ». Un livre
+  supprimé affiche « Livre introuvable » et « Retour à la bibliothèque » ; une lecture en
+  échec propose « Réessayer ». Les erreurs s'affichent en une phrase courte.
+- **Bibliothèque (#169).** L'écran vide dit quoi faire selon le rôle : ajouter un premier
+  livre, rejoindre un groupe, ou attendre qu'un proche du groupe en ajoute un ; tirer pour
+  rafraîchir y fonctionne. Un compte sans groupe
+  voit sous « Mes livres » une carte qui l'envoie vers Groupes familiaux.
+- **Explorer en mode choix (#178).** Ouvert depuis une suggestion du planning, son contenu
+  tient dans la même colonne de 1 200 px que l'Explorer du menu.
+
+### v0.24.20 — technique
+
+`wantsFullWidth` (`app_shell.dart`) devient une liste fermée de routes, testée ; la
+constante `AppRoutes.tokenUsage` (`/token-usage`), déclarée sans route ni appelant, est
+supprimée avec sa mention dans la documentation. Nouveaux points partagés :
+`userRoleLabel` et `AppUser.initial` (`app_user.dart`), `signOutGuarded`
+(`leave_guard.dart`) ; le libellé du rôle en attente devient « En attente » aussi dans
+l'administration. L'écran de connexion et `signOutGuarded` remontent leurs erreurs par
+`errorReportServiceProvider`, ce qui les rend testables. Aucun changement de données, de
+règles ni de Cloud Function. Nouveaux tests : `app_shell_full_width_test`,
+`account_screen_test`, `login_screen_error_test`, `book_form_leave_test`,
+`book_list_empty_state_test`, et un cas de largeur dans `search_pick_mode_test`.
+
 ### v0.24.19 — fonctionnel
 
 Quatrième palier de la refonte plat / menu : les critères écrits en texte libre sont

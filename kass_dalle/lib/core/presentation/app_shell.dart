@@ -10,6 +10,7 @@ import '../services/app_update_service.dart';
 import '../services/push_registration_service.dart';
 import 'app_update_dialog.dart';
 import 'leave_guard.dart';
+import '../../features/auth/domain/app_user.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
@@ -180,7 +181,7 @@ class _WideShell extends ConsumerWidget {
                   ),
                 ),
                 Expanded(
-                  child: _wantsFullWidth(location)
+                  child: wantsFullWidth(location)
                       ? child
                       : ReadableWidth(child: child),
                 ),
@@ -196,19 +197,22 @@ class _WideShell extends ConsumerWidget {
 /// Écrans qui ont besoin de toute la largeur : ce sont des tableaux.
 ///
 /// Borner la lecture sert la prose d'une recette ; ça dessert un journal de
-/// logs ou une réconciliation comptable, où chaque pixel est une colonne.
-bool _wantsFullWidth(String location) {
-  // Un formulaire, pas un tableau : le shell lui pose `ReadableWidth`.
-  if (location.startsWith('/admin/users/invite')) return false;
-  const fullWidthPrefixes = [
-    '/admin',
-    '/logs',
-    '/token-usage',
-    '/error-reports',
-    '/dead-letters',
-    '/planning/batch',
+/// logs ou une réconciliation comptable, où chaque pixel est une colonne. La
+/// liste est fermée : tout autre écran, administration comprise, est borné par
+/// `ReadableWidth`. Un préfixe `/admin` mettait auparavant en pleine largeur
+/// des formulaires et des listes (Tickets des membres, Dépense IA).
+@visibleForTesting
+bool wantsFullWidth(String location) {
+  const fullWidthRoutes = [
+    AppRoutes.logs,
+    AppRoutes.errorReports,
+    AppRoutes.deadLetters,
+    AppRoutes.batchPlanning,
+    AppRoutes.adminCosts,
   ];
-  return fullWidthPrefixes.any(location.startsWith);
+  return fullWidthRoutes.any(
+    (route) => location == route || location.startsWith('$route/'),
+  );
 }
 
 // Layout étroit : BottomNavigationBar (Mobile)
@@ -400,7 +404,7 @@ class _AccountBadge extends ConsumerWidget {
           context.push(AppRoutes.changelog);
           return;
         }
-        ref.read(authRepositoryProvider).signOut();
+        signOutGuarded(context, ref);
       },
       child: _AccountDot(
         child: Chip(
@@ -417,15 +421,13 @@ class _AccountBadge extends ConsumerWidget {
                     width: 32,
                     height: 32,
                     fit: BoxFit.cover,
-                    placeholder: (_, _) => CircleAvatar(
-                      child: Text(user.displayName[0].toUpperCase()),
-                    ),
-                    errorWidget: (_, _, _) => CircleAvatar(
-                      child: Text(user.displayName[0].toUpperCase()),
-                    ),
+                    placeholder: (_, _) =>
+                        CircleAvatar(child: Text(user.initial)),
+                    errorWidget: (_, _, _) =>
+                        CircleAvatar(child: Text(user.initial)),
                   ),
                 )
-              : CircleAvatar(child: Text(user.displayName[0].toUpperCase())),
+              : CircleAvatar(child: Text(user.initial)),
           label: Text(user.displayName, overflow: TextOverflow.ellipsis),
         ),
       ),
@@ -441,7 +443,7 @@ class _AccountBadge extends ConsumerWidget {
               ),
               Text(user.email, style: Theme.of(context).textTheme.bodySmall),
               Text(
-                'Rôle : ${user.role.name}',
+                'Rôle : ${userRoleLabel(user.role)}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               Text(

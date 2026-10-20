@@ -29,7 +29,7 @@ L'application est destinée à un cercle familial restreint :
 
 Les plateformes construites partagent le même backend Firebase et la même codebase Flutter. **Le scan n'est pas réservé au mobile** : la caméra fonctionne aussi sur le web par `getUserMedia`, et l'import de fichier est disponible partout.
 
-**Ce qui change n'est pas la plateforme, c'est la largeur.** Toutes les routes — y compris l'administration complète — sont ouvertes sur mobile. La bascule se fait sur trois seuils (`PlatformUtils`) : navigation latérale ou barre basse à 800 px, présentation compacte du détail à 700 px, raccourci galerie à 900 px. Un navigateur de bureau rétréci passe donc en présentation compacte, et un mobile en paysage large peut recevoir la présentation étendue. Aucune fonctionnalité n'est réservée à un format : la présentation compacte réorganise, elle ne retire pas. Dépendent réellement de la plateforme, et d'elle seule : la caméra (mobile et web), la mise à jour par APK et le lien de téléchargement de l'APK (Android natif / grand écran), le partage du PDF (feuille de partage sur mobile, téléchargement dans le navigateur), les raccourcis clavier, sans effet là où il n'y a pas de clavier, et le pavé d'écriture au stylet (4.5), ouvert par un stylet posé sur un champ de texte libre — Android 14 et plus, et iPad. Une seule fonctionnalité dépend des deux à la fois, plateforme et largeur : le zoom du texte de la recette (4.4), proposé sur l'APK Android en présentation étendue — la tablette posée sur le plan de travail.
+**Ce qui change n'est pas la plateforme, c'est la largeur.** Toutes les routes — y compris l'administration complète — sont ouvertes sur mobile. La bascule se fait sur trois seuils (`PlatformUtils`) : navigation latérale ou barre basse à 800 px, présentation compacte du détail à 700 px, raccourci galerie à 900 px. Un navigateur de bureau rétréci passe donc en présentation compacte, et un mobile en paysage large peut recevoir la présentation étendue. Aucune fonctionnalité n'est réservée à un format : la présentation compacte réorganise, elle ne retire pas. Sur grand écran, le contenu de chaque écran tient dans une colonne centrée de 1 200 px au plus, administration comprise (Tickets des membres, Dépense par utilisateur, formulaires) ; cinq tableaux seuls prennent toute la largeur : journaux (`/logs`), rapports d'erreurs, dead letters, création d'un planning et coûts mensuels de l'IA. Dépendent réellement de la plateforme, et d'elle seule : la caméra (mobile et web), la mise à jour par APK et le lien de téléchargement de l'APK (Android natif / grand écran), le partage du PDF (feuille de partage sur mobile, téléchargement dans le navigateur), les raccourcis clavier, sans effet là où il n'y a pas de clavier, et le pavé d'écriture au stylet (4.5), ouvert par un stylet posé sur un champ de texte libre — Android 14 et plus, et iPad. Une seule fonctionnalité dépend des deux à la fois, plateforme et largeur : le zoom du texte de la recette (4.4), proposé sur l'APK Android en présentation étendue — la tablette posée sur le plan de travail.
 
 **Le thème se choisit dans Préférences › Apparence** : « Appareil » (le défaut), « Clair » ou « Sombre ». « Appareil » suit le mode clair ou sombre du téléphone, de l'ordinateur ou du navigateur, et change avec lui. Le choix s'applique tout de suite à toute l'application. Il est mémorisé sur l'appareil (`SharedPreferences`, clé `theme_mode`), pas dans le compte : une tablette de cuisine peut rester claire pendant que le téléphone passe en sombre. La section s'affiche et reste réglable même quand les préférences du compte sont illisibles.
 
@@ -44,6 +44,27 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
 - À la première ouverture, l'utilisateur est invité à se connecter avec son compte Google.
 - **Écran de démarrage.** À chaque lancement à froid, sur toutes les plateformes, un écran affiche le logo, une formule d'accueil avec le prénom (le nom préféré du compte, sinon le prénom Google) et, en seconde ligne, la date et l'heure du lancement, puis une phrase d'ambiance en italique. La formule dépend de l'heure locale : matin (5 h à 11 h 59), après-midi (12 h à 17 h 59), soir (18 h à 4 h 59), avec trois variantes par tranche dont une est tirée au lancement ; la phrase d'ambiance suit la même tranche et le même tirage. Il reste 5 secondes, ou jusqu'à un appui. Si le profil n'est pas lu au bout de 5 secondes, l'écran attend, avec un plafond de 10 secondes, puis affiche la formule sans prénom. Un compte non connecté ou en attente voit la formule sans prénom. L'écran est un calque au-dessus du routeur : la route demandée (lien profond compris) s'ouvre derrière lui. Il suit le thème clair ou sombre et n'a pas de fondu quand le système demande de réduire les animations.
 - **Une adresse ouverte sans session est retenue.** La page de connexion la reçoit dans `?next=` et l'ouvre une fois la connexion faite ; c'est ce qui ramène sur la recette le lien d'un événement Google Calendar. Seule une route interne de l'application est acceptée : une adresse vers un autre site, `/login` ou `/pending` est ignorée, et l'utilisateur arrive sur l'accueil. L'accueil seul ne produit pas de `?next=`. Un compte en attente va dans la salle d'attente, quelle que soit l'adresse demandée.
+- **Échec de la connexion.** L'écran de connexion affiche un titre et un conseil, jamais le
+  texte technique de l'erreur (code, « Exception »), qui part dans les rapports d'erreurs. Un
+  refus d'accès ou une erreur inattendue conseille : « Réessayez. Si le problème persiste,
+  prévenez l'administrateur de la famille. » ; une connexion perdue garde son propre conseil, et
+  un délai dépassé (30 s) son message. L'écran défile quand la hauteur manque (téléphone en
+  paysage, grande police). Le numéro de version, en bas de l'écran de connexion et de la salle
+  d'attente, s'écrit en petit, en couleur secondaire du thème.
+- **Profil et compte** (`/account`, menu du compte › « Profil et compte »). En tête, l'avatar,
+  le nom et le rôle en français (« Administrateur », « Éditeur », « Lecteur », « En attente »,
+  les mots de l'administration). L'initiale de l'avatar est celle du nom affiché à la famille ;
+  un compte Google sans nom prend l'initiale de son adresse, puis « M » de « Membre ». Section
+  « Identité » : « Nom du compte Google » (« Aucun nom » s'il est vide), « Nom préféré » (modifiable), « Adresse e-mail »,
+  « Photo de profil » (« Photo du compte Google » ou « Aucune photo », jamais l'adresse de
+  l'image). L'Admin seul voit en plus « Identifiant du compte ». Section « Accès et
+  permissions » : le rôle, et les puces « Lecture », « Édition », « Administration ». Section
+  « Activité du compte » : création et dernière activité. Pendant la lecture du compte,
+  « Chargement du profil… ».
+- **Se déconnecter** (écran du compte et menu du compte) demande d'abord à l'écran ouvert s'il
+  peut être quitté : un formulaire en cours de saisie pose sa question « Quitter sans
+  enregistrer ? », et « Rester » annule la déconnexion. Sans saisie en cours, la déconnexion
+  part sans confirmation. Un échec affiche « Déconnexion impossible : … ».
 - **Un compte neuf naît en attente (`pending`) et n'accède à rien.** Il voit une salle d'attente qui affiche son adresse et l'invite à la communiquer ; l'écran se referme de lui-même dès qu'un rôle lui est attribué.
 - **Le rôle n'est jamais choisi par l'application.** Les règles Firestore imposent `pending` à la création, et seul un Admin le change ensuite.
 - **Exception : le compte invité par e-mail.** Si un Admin a invité l'adresse Google du compte neuf (3.3) et que l'invitation est active, le serveur (`applyEmailInvitation`) lui donne à sa première connexion le rôle de l'invitation et l'ajoute aux membres du groupe choisi, sans invitation de groupe à accepter. C'est le serveur qui décide, sur l'adresse vérifiée du compte **Auth** ; le client ne lit pas les invitations et ne peut pas se donner de rôle. Le compte naît toujours `pending` : la salle d'attente s'affiche le temps que le serveur réponde (quelques secondes), puis se referme seule. L'adresse doit être celle de l'invitation, comparée sans casse et, pour Gmail, sans points ni suffixe `+…` ; une autre adresse reste en attente d'un rôle donné à la main.
@@ -328,6 +349,29 @@ Un import par lien se relance **deux fois au plus** : chaque relance refait des 
   enregistré et retrouvé à la session suivante, sur tous les appareils. C'est un choix de **lecteur** : il ne modifie pas les livres, que toute la
   famille partage, et ne change donc rien à ce que voient les autres membres. Un livre créé après
   coup se range à la fin, un livre supprimé disparaît sans laisser de trou.
+- **Bibliothèque vide.** « Aucun livre pour le moment », avec un message selon le rôle. Editor
+  et Admin : « Ajoutez votre premier livre : scan de la couverture, fichier PDF ou EPUB, ou
+  saisie. » et le bouton « Ajouter un livre ». Reader sans groupe : « Les livres de votre
+  famille apparaissent ici quand vous rejoignez un groupe. Un proche vous y invite. » et le
+  bouton « Ouvrir Groupes familiaux ». Reader déjà dans un groupe : « Les livres de votre
+  famille apparaîtront ici dès qu'un proche en ajoutera un. », sans bouton. Tirer vers le bas
+  rafraîchit aussi cet écran vide.
+- **Aucun groupe.** Un compte qui a des livres mais n'est relié à aucun proche par un groupe (aucun groupe, seul
+  dans son groupe, ou groupes en pause) voit, sous
+  « Mes livres », une carte « Vous ne voyez que vos livres. Rejoignez un groupe familial pour
+  voir ceux de vos proches. » avec « Ouvrir Groupes familiaux ». Tous les rôles la voient ; elle
+  disparaît dès qu'un groupe relie le compte à un proche.
+- **Formulaire de livre** (« Nouveau livre », « Modifier le livre »). Champs « Sous-titre /
+  Légende », « Éditeur », « Série », langue « Français », « Anglais » ou « Néerlandais » ; un
+  livre importé par l'IA rappelle son fichier sous « Source IA : … ». Quitter avec une saisie
+  non enregistrée — un champ, la langue, la confidentialité ou la couverture changés — demande
+  confirmation : « Quitter sans enregistrer ? », « Les modifications de ce livre seront
+  perdues. » (« Ce livre ne sera pas créé. » en création), « Rester » ou « Quitter ». La
+  question est posée au retour comme à un changement d'écran par la navigation ; un formulaire
+  intact se quitte sans question. Un livre absent affiche « Livre introuvable », « Ce livre a
+  peut-être été supprimé. » et « Retour à la bibliothèque » ; une lecture en échec affiche
+  l'erreur et « Réessayer ». Les erreurs s'affichent en une phrase courte, sans texte
+  technique : « Enregistrement impossible : … », « Envoi de la couverture impossible : … ».
 - Accès à la liste des recettes d'un livre.
 - Vue globale "Toutes les recettes" (sans filtre de livre).
 
@@ -495,7 +539,9 @@ un lien » (4.6). Aucune ne part toute seule : ni à la frappe, ni sur Entrée.
 
 **Mode choix.** Le bouton « Chercher » d'une suggestion de membre (5.8) ouvre Explorer en
 plein écran, sans menu latéral, sous le titre « Choisir une recette » et un bandeau « Recette
-pour <jour>, <groupe> ». Le champ est pré-rempli du titre de la suggestion. Un appui sur une
+pour <jour>, <groupe> ». Sur grand écran, la barre de titre garde toute la largeur ; le
+bandeau, le champ et la liste tiennent dans une colonne centrée de 1 200 px au plus, comme
+dans Explorer ouvert depuis le menu. Le champ est pré-rempli du titre de la suggestion. Un appui sur une
 recette la rend au planning au lieu d'ouvrir sa fiche ; un brouillon est rendu en texte libre.
 Les filtres changés dans ce mode restent en mémoire pour l'ouverture : ils ne sont ni lus ni
 enregistrés sous les filtres habituels. Les actions du tableau gardent leurs droits ; une idée
