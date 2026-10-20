@@ -149,12 +149,32 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: kass_dalle/functions/package-lock.json
+          cache-dependency-path: |
+            kass_dalle/functions/package-lock.json
+            kass_dalle/deploy-tools/package-lock.json
 
       - name: Dépendances
         run: |
           flutter pub get
           npm ci --prefix functions
+
+      - name: Firebase CLI
+        # Avant l'authentification Google Cloud : rien de ce qui s'installe ici ne
+        # s'exécute avec le jeton du compte de service. La version et l'arbre de
+        # dépendances sont verrouillés par deploy-tools/package-lock.json, et
+        # --ignore-scripts n'exécute aucun script d'installation (firebase-tools
+        # n'en a pas besoin : re2 est optionnel, le postinstall de protobufjs ne
+        # fait qu'avertir). Issue #161 : `npm install -g firebase-tools` tournait
+        # après l'authentification, dépendances transitives non verrouillées.
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --prefix deploy-tools
+          # Seul « firebase » rejoint le PATH : node_modules/.bin contient 32
+          # autres exécutables (semver, rimraf, glob…) qui masqueraient, pour
+          # toutes les étapes suivantes, une commande du même nom.
+          mkdir -p "$RUNNER_TEMP/firebase-cli"
+          ln -s "$GITHUB_WORKSPACE/kass_dalle/deploy-tools/node_modules/.bin/firebase" "$RUNNER_TEMP/firebase-cli/firebase"
+          echo "$RUNNER_TEMP/firebase-cli" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/firebase-cli/firebase" --version
 
       - name: Nouveautés — générer l'asset
         # L'écran « Nouveautés » embarque les six dernières versions du
@@ -204,8 +224,11 @@ jobs:
           workload_identity_provider: projects/867114764221/locations/global/workloadIdentityPools/github/providers/kassdalle-deploy
           service_account: github-deploy@kassdale-6d948.iam.gserviceaccount.com
 
-      - name: Firebase CLI
-        run: npm install -g firebase-tools@15.32.1
+      - name: CLI Firebase locale
+        # firebase-deploy.sh appelle « firebase » : il doit résoudre vers la CLI
+        # verrouillée installée avant l'authentification, et pas vers une autre.
+        run: |
+          test "$(command -v firebase)" = "$RUNNER_TEMP/firebase-cli/firebase"
 
       - name: Déployer les Functions
         # Budget de découverte du bundle, comme dans deploy.ps1.

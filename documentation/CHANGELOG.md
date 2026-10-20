@@ -20,6 +20,24 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-19
 
+### v0.24.18 — technique
+
+Déploiement (#161) : la CLI Firebase du workflow « Déploiement » vient de
+`kass_dalle/deploy-tools/`, version et dépendances verrouillées par son `package-lock.json`.
+Elle s'installe par `npm ci --ignore-scripts` avant l'authentification Google Cloud :
+plus aucune dépendance n'est résolue ni exécutée à l'installation avec le jeton du compte
+de service.
+
+Sécurité du web (#160) : la Content Security Policy, toujours en rapport seul, envoie ses
+rapports à `/csp-report`, que Hosting réécrit vers la nouvelle fonction `cspReportFn`. Elle
+journalise chaque violation (directive, origine bloquée, chemin du document), sans écriture
+ni appel d'IA. La politique a été vérifiée sur le build réel en mode bloquant. Elle
+admettait mal trois chargements, qui auraient empêché le démarrage : les scripts en ligne de
+`index.html` et de FlutterFire (désormais autorisés par empreinte) et `canvaskit.wasm`
+depuis `www.gstatic.com`. Elle admet aussi Google Identity Services, le chargeur de
+connexion Google et les cadres de reCAPTCHA. Le passage en mode bloquant viendra après
+lecture des rapports de production.
+
 ### v0.24.17 — fonctionnel
 
 Un import de recette compte 21 pages au plus : la première et 20 pages supplémentaires.
