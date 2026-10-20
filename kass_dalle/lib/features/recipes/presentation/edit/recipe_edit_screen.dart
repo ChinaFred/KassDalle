@@ -159,14 +159,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             .updateRecipeIllustrations(recipe.id, result.urls);
         if (mounted) {
           context.showSuccessSnackBar(
-            '${result.urls.length} illustration(s) extraite(s) ✓',
+            RecipeAiUiCopy.illustrationsExtracted(result.urls.length),
           );
         }
       } else {
         if (mounted) {
-          context.showSuccessSnackBar(
-            'Aucune illustration trouvée dans le scan',
-          );
+          context.showSnackBar(RecipeAiUiCopy.noIllustrationFound);
         }
       }
     } on ForeignImageUrl catch (e) {

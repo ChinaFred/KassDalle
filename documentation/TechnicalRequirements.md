@@ -3823,8 +3823,13 @@ lui exclu), puis les recettes de ces comptes `review_status == validated` et `is
 (pages de type recette seulement), et rend `{titles: [{id, titre, bookTitre, createdBy}]}`, 500 au
 plus, triés par titre. Aucun autre champ de la recette ne sort ; les règles Firestore restent
 inchangées (la recette privée reste illisible côté client). Appelée par l'écran « Suggérer un
-plat » (`suggestablePrivateTitlesProvider`) ; un échec est rapporté
-(`meal_suggestions.load_private_titles`) et la section est omise. La suggestion copie déjà le titre
+plat » et sa recherche avancée (`suggestablePrivateTitlesProvider`). Un échec est rapporté
+par `PrivateTitlesRepository.list` (`meal_suggestions.load_private_titles`), puis l'erreur
+remonte : le provider reste en erreur, la liste habituelle reste affichée sans ces titres, et
+`PrivateTitlesErrorLine` affiche sous le champ « Titres des livres privés non chargés. » avec
+« Réessayer » (`ref.invalidate`), dans « Suggérer un plat » comme dans la recherche avancée.
+Quand les recettes elles-mêmes sont en erreur, cette ligne est masquée : le « Réessayer » des
+recettes relance les deux lectures. La suggestion copie déjà le titre
 (`recipe_titre`). Aucun appel de modèle : pas de poste d'IA. Testé : `tests/privateTitles.test.ts`.
 
 **`findMemberByEmailFn`** (`callable/memberSearchCallable.ts`, `onCall`, `requireEditor` —

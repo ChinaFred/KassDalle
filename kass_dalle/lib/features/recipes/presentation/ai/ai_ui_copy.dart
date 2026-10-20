@@ -31,6 +31,16 @@ class RecipeAiUiCopy {
   static const successRecipePolished = 'Recette corrigée et harmonisée !';
   static const successRecipeTransformed = 'Recette convertie en CookLang !';
 
+  /// Compte rendu de l'extraction des illustrations d'un scan, accordé en
+  /// nombre : « 1 illustration extraite ✓ », « 3 illustrations extraites ✓ ».
+  static String illustrationsExtracted(int count) => count == 1
+      ? '1 illustration extraite ✓'
+      : '$count illustrations extraites ✓';
+
+  /// Message neutre : l'extraction a abouti, la page n'avait pas de photo.
+  static const noIllustrationFound =
+      'Aucune illustration trouvée dans le scan.';
+
   static const processingTitle = 'Traitement IA en cours';
   static const processingMessage =
       'Patientez quelques secondes, nous appliquons vos consignes.';

@@ -504,7 +504,10 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
                   _EmailInvitedTile(invitation: invitation),
                 if (emailError)
                   ListTile(
-                    leading: const Icon(Icons.error_outline),
+                    leading: Icon(
+                      Icons.error_outline,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                     title: const Text('Invitations par e-mail indisponibles'),
                     trailing: TextButton(
                       onPressed: () => ref.invalidate(

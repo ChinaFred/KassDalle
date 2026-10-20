@@ -4,6 +4,7 @@ import '../../domain/plating_advice.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/utils/app_image_url.dart';
+import '../../../../core/utils/platform_utils.dart';
 
 /// Briques d'affichage du conseil de dressage.
 ///
@@ -183,7 +184,7 @@ class PlatingStepCard extends StatelessWidget {
                 : PlatingImage(url: step.imageUrl!);
             if (image == null) return texte;
 
-            if (constraints.maxWidth < 480) {
+            if (constraints.maxWidth < PlatformUtils.narrowContentBreakpoint) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [texte, const SizedBox(height: 12), image],

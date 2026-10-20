@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
@@ -1514,7 +1515,7 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
                   ExcludeSemantics(
                     child: Icon(
                       infoIcon,
-                      size: 20,
+                      size: AppIconSize.small,
                       color:
                           deliveryBar?.kind == TicketDeliveryLineKind.ready ||
                               deliveryBar?.kind ==
@@ -2088,7 +2089,9 @@ class _LaunchCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ExcludeSemantics(child: Icon(icon, size: 20, color: color)),
+              ExcludeSemantics(
+                child: Icon(icon, size: AppIconSize.small, color: color),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -2870,7 +2873,7 @@ class _DeliveryReportCard extends StatelessWidget {
               ExcludeSemantics(
                 child: Icon(
                   blocked ? Icons.error_outline : Icons.check_circle_outline,
-                  size: 20,
+                  size: AppIconSize.small,
                   color: fg ?? cs.primary,
                 ),
               ),
@@ -3055,7 +3058,9 @@ class _AnalysisCard extends StatelessWidget {
       header = Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ExcludeSemantics(child: Icon(Icons.reply, size: 20, color: fg)),
+          ExcludeSemantics(
+            child: Icon(Icons.reply, size: AppIconSize.small, color: fg),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Semantics(

@@ -95,17 +95,15 @@ final privateTitlesRepositoryProvider = Provider<PrivateTitlesRepository>(
 );
 
 /// Les recettes validées des livres privés des membres de mes groupes, en
-/// titre seul (recettes creuses, `isPrivate`). Si la lecture échoue, la liste
-/// habituelle reste proposée sans cette section : l'erreur est déjà au
-/// rapport (`meal_suggestions.load_private_titles`).
+/// titre seul (recettes creuses, `isPrivate`). Une lecture qui échoue reste
+/// en erreur : l'écran garde la liste habituelle et affiche, sous le champ,
+/// « Titres des livres privés non chargés. » avec « Réessayer ». Le rapport
+/// est déjà envoyé par `PrivateTitlesRepository.list`
+/// (`meal_suggestions.load_private_titles`).
 final suggestablePrivateTitlesProvider =
     FutureProvider.autoDispose<List<Recipe>>((ref) async {
-      try {
-        final titles = await ref.watch(privateTitlesRepositoryProvider).list();
-        return [for (final t in titles) t.toRecipe()];
-      } catch (_) {
-        return const [];
-      }
+      final titles = await ref.watch(privateTitlesRepositoryProvider).list();
+      return [for (final t in titles) t.toRecipe()];
     });
 
 /// Les recettes qu'un membre peut suggérer : les siennes validées et celles,

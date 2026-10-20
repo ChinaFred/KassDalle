@@ -12,6 +12,7 @@ import '../../search/domain/search_models.dart';
 import '../../search/presentation/explore_filter_panel.dart';
 import '../../search/presentation/search_widgets.dart';
 import 'meal_suggestion_providers.dart';
+import 'private_titles_error_line.dart';
 
 /// Ce que la route `/planning/suggest/search` reçoit en `extra`.
 class AdvancedDishSearchArgs {
@@ -174,7 +175,12 @@ class _AdvancedDishSearchScreenState
     if (recipesAsync.hasError) {
       body = AppErrorState(
         error: recipesAsync.error,
-        onRetry: () => ref.invalidate(suggestableRecipesProvider),
+        // Relance aussi les titres privés : leur ligne d'erreur est masquée
+        // tant que celle des recettes s'affiche.
+        onRetry: () {
+          ref.invalidate(suggestableRecipesProvider);
+          ref.invalidate(suggestablePrivateTitlesProvider);
+        },
       );
     } else if (!recipesAsync.hasValue) {
       body = const AppLoadingState();
@@ -184,6 +190,10 @@ class _AdvancedDishSearchScreenState
     final withField = Column(
       children: [
         _searchField(),
+        if (!recipesAsync.hasError)
+          const PrivateTitlesErrorLine(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+          ),
         Expanded(child: body),
       ],
     );
@@ -348,7 +358,6 @@ class _AdvancedDishSearchScreenState
           ? Icon(
               Icons.lock_outline,
               size: AppIconSize.small,
-              semanticLabel: 'Seul le titre est visible',
               color: theme.colorScheme.onSurfaceVariant,
             )
           : null,

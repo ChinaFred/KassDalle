@@ -10,6 +10,7 @@ import '../../../core/theme/app_icon_size.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_shortcuts.dart';
+import '../../../core/widgets/error_message.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../groups/domain/family_group.dart';
@@ -19,6 +20,7 @@ import '../data/meal_suggestion_repository.dart';
 import '../domain/meal_suggestion.dart';
 import 'advanced_dish_search_screen.dart';
 import 'meal_suggestion_providers.dart';
+import 'private_titles_error_line.dart';
 
 /// « Suggérer pour… » sur une fiche recette : l'action, ou `null` si
 /// l'utilisateur n'est membre d'aucun groupe actif dont il n'est pas le
@@ -272,10 +274,10 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
         _error = message;
       });
       context.showErrorSnackBar(message);
-    } catch (_) {
+    } catch (e) {
       // Remontée au rapport par le repository ; la saisie reste en place.
       if (!mounted) return;
-      const message = 'Suggestion non envoyée. Réessayez.';
+      final message = failureMessage('Suggestion non envoyée', e);
       setState(() {
         _sending = false;
         _error = message;
@@ -490,6 +492,12 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
                                     _advancedSearchButton(),
                                   ],
                                 ),
+                                // Masquée quand les recettes sont en erreur :
+                                // leur « Réessayer » relance les deux lectures.
+                                if (!recipesAsync.hasError)
+                                  const PrivateTitlesErrorLine(
+                                    padding: EdgeInsets.only(top: 4),
+                                  ),
                                 if (_freeNameTooLong)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
@@ -555,9 +563,14 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
                                           ),
                                         ),
                                         TextButton(
-                                          onPressed: () => ref.invalidate(
-                                            suggestableRecipesProvider,
-                                          ),
+                                          onPressed: () {
+                                            ref.invalidate(
+                                              suggestableRecipesProvider,
+                                            );
+                                            ref.invalidate(
+                                              suggestablePrivateTitlesProvider,
+                                            );
+                                          },
                                           child: const Text('Réessayer'),
                                         ),
                                       ],

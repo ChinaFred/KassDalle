@@ -4,6 +4,7 @@ import 'cooklang_syntax_controller.dart';
 import 'cooklang_visual_editor.dart';
 import 'cooklang_help_page.dart';
 import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/utils/platform_utils.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // HybridRecipeEditor
@@ -203,7 +204,8 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
     final theme = Theme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 480;
+        final compact =
+            constraints.maxWidth < PlatformUtils.narrowContentBreakpoint;
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
