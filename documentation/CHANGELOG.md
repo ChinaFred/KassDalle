@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
-### v0.24.24 — fonctionnel
+### v0.24.25 — fonctionnel
 
 Le calcul de nutrition pèse maintenant « 1 noix de muscade », « 1 noix de beurre » et
 « 3 blancs d'œufs » (ou « jaunes »). Ces lignes restaient sans poids : la couverture restait
@@ -29,7 +29,7 @@ beurre 10 g, un blanc d'œuf 30 g et un jaune 18 g. Une épice écrite avec un n
 unité (« 1 muscade ») se lit en pincées. Une recette déjà calculée se corrige au prochain
 recalcul de sa nutrition.
 
-### v0.24.24 — technique
+### v0.24.25 — technique
 
 Ticket #190. `getKnownUnitMetadata` consulte une table de couples unité/ingrédient
 (`UNIT_INGREDIENT_PROFILES`, `_unitIngredientProfiles` en Dart) : `noix` + muscade 3 g, `noix` +
@@ -40,6 +40,42 @@ rejoués par les deux suites. Aucun backfill. La reprise automatique de la nutri
 pas les recettes dont `missing_weight` porte `unite_sans_poids` ou `comptage_sans_poids`
 (`UNFIXABLE_BY_CATCH_UP`) : une recette déjà bloquée se recalcule depuis son écran ou à sa
 prochaine modification.
+
+Messages d'erreur du planning, deuxième sous-lot du lot 8 de l'audit #151 (tickets #170 et
+#171, à suivre).
+
+Un échec dans le planning s'affiche en deux phrases, comme dans les recettes depuis la
+v0.24.23 : ce qui n'a pas eu lieu, puis la cause lisible. Exemples : « Repas non planifiés.
+Connexion perdue. », « Préférences non enregistrées. Accès refusé. », « Idées non proposées.
+Connexion perdue. ». Le texte technique de l'exception (« Erreur Calendar : Exception… »,
+« L'IA n'a pas répondu : GeminiCallableException… ») n'apparaît plus ; il reste dans les
+rapports d'erreurs. Sont concernés le nouveau planning, l'écran du planning, ses préférences,
+« Générer avec l'IA » et « Mes garnitures ». Dans « Générer avec l'IA », seul le message de
+plafond écrit par le serveur (`resource-exhausted`) reste affiché tel quel ; un autre code
+n'affiche plus son texte, souvent en anglais sur mobile (« UNAVAILABLE »).
+
+Les échecs de l'export vers Google Calendar, affichés jusqu'ici dans un message neutre,
+prennent la couleur d'erreur. Un refus d'autorisation Google (fenêtre fermée, jeton absent)
+s'affiche « Accès au calendrier non accordé. » suivi de la cause. Un export partiel compte ce
+qui manque, accordé au nombre : « 2 repas sur 5 non exportés vers le calendrier. », « 1 repas
+sur 2 non exporté vers le calendrier. », et « Repas non exportés vers le calendrier. » quand
+aucun n'est parti. Le nouveau planning dit de même « 12 repas planifiés. 2 repas sur 5 non
+ajoutés au calendrier. ». Aucun de ces messages ne propose « Réessayer » : un second envoi
+doublerait dans l'agenda les événements déjà posés. Les succès s'accordent aussi (« 1 repas
+exporté vers le calendrier ✓ », « 1 repas planifié »), et « Repas ajouté au calendrier ✓ »
+prend la couleur d'un succès.
+
+Les chargements en page entière des préférences du planning et du nouveau planning disent ce
+qu'ils attendent (« Chargement de vos préférences… », « Chargement de vos groupes… »,
+« Préparation des créneaux… ») ; ceux des préférences gardent la barre de titre de l'écran.
+
+À l'import (correction de la v0.24.23), un échec du serveur n'affiche plus son texte que pour
+trois codes dont les messages sont écrits en français pour l'utilisateur dans
+`scanAndPromoteUploadFn` et `analyzeBookFileFn` : `resource-exhausted` (plafond, budget),
+`failed-precondition` (fichier bloqué par le scan de sécurité, livre illisible) et
+`permission-denied` (rôle, chemin refusé). Les autres codes affichent les deux phrases
+habituelles : `invalid-argument` (« storagePath est requis. », un texte de développeur),
+`unavailable` et `deadline-exceeded` (texte anglais du SDK sur mobile), `internal` et `unknown`.
 
 ### v0.24.23 — fonctionnel
 
