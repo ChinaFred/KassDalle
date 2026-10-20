@@ -20,6 +20,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.27 — technique
+
+Le scan d'une couverture de livre passe dans sa propre file Cloud Tasks (ticket #193).
+Cloud Tasks n'a pas de priorité : une couverture attendait derrière toutes les tranches d'un
+import de livre. `jobDispatcher` choisit la fonction de file selon le type du job
+(`taskQueueFunctionFor`) : `coverProcessor` pour `bookCoverScan`, `recipeProcessor` pour le
+reste. Le traitement est partagé (`processJob`) : mêmes secrets, délai de 540 s et reprises.
+`coverProcessor` garde 2 Gio de mémoire, traite 3 jobs en parallèle et 1 par seconde. Une tâche de couverture déjà dans
+l'ancienne file au déploiement reste traitée par `recipeProcessor`. Aucun écran ne change.
+
 ### v0.24.26 — fonctionnel
 
 Messages d'erreur des livres, des groupes, de l'Explorer, du compte et de l'atelier de

@@ -169,8 +169,8 @@ flowchart TB
   ST[("Cloud Storage")]
   CALL["HTTPS callable&lt;br/&gt;gemini · nutrition · billing · logs"]
   DISP["jobDispatcher&lt;br/&gt;entrée en queued"]
-  CT["Cloud Tasks&lt;br/&gt;recipe-processing-queue"]
-  WRK["recipeProcessor&lt;br/&gt;worker 540s · 2 GiB"]
+  CT["Cloud Tasks&lt;br/&gt;recipe-processing-queue · couvertures : file à part"]
+  WRK["recipeProcessor · coverProcessor&lt;br/&gt;worker 540s · 2 GiB"]
   TRG["onRecipeWritten&lt;br/&gt;confidentialité · clé de titre · rôle · durées estimées · nutrition · courses"]
   DLQ[("dead_letters")]
   SM["Secret Manager&lt;br/&gt;GEMINI_API_KEY · ANTHROPIC_API_KEY&lt;br/&gt;GMAIL_SENDER · GMAIL_APP_PASSWORD&lt;br/&gt;GITHUB_TICKETS_TOKEN · GITHUB_WEBHOOK_SECRET&lt;br/&gt;TICKETS_ROUTINE_* (identifiant et jeton des routines)"]
@@ -456,6 +456,7 @@ stateDiagram-v2
         </thead>
         <tbody>
           <tr><td><code>jobDispatcher</code></td><td>Trigger onWrite</td><td>Met un job d'import dans Cloud Tasks à son entrée en <code>queued</code> — création comme relance</td><td>—</td></tr>
+          <tr><td><code>coverProcessor</code></td><td>Cloud Tasks</td><td>Scan d'une couverture de livre (<code>bookCoverScan</code>), dans sa propre file : une couverture n'attend plus derrière les tranches d'un import de livre. Même traitement que <code>recipeProcessor</code>, 2 Gio, 3 jobs en parallèle</td><td>—</td></tr>
           <tr><td><code>recipeProcessor</code></td><td>Cloud Tasks</td><td>Déroule le pipeline d'import complet — fichier, ou page web pour un job <code>recipeUrlImport</code> (<code>pipeline/urlImport.ts</code>). Vérifie d'abord que le livre cible du job appartient à l'importateur, ou que l'importateur est administrateur (<code>assertJobTargetBook</code>) ; sinon dead letter sans nouvelle tentative. Traduit en français une recette transcrite dans une autre langue, avant le balisage, et enregistre son texte d'origine dans <code>recipes/{id}/origine/texte</code></td><td>OIDC</td></tr>
           <tr><td><code>relaunchDeadLetterFn</code> · <code>deleteDeadLetterFn</code></td><td>Callable</td><td>Reprise ou purge d'un job échoué</td><td>admin</td></tr>
           <tr><td><code>extractRecipeFromTextFn</code></td><td>Callable</td><td>Texte libre → CookLang, par la chaîne d'import : transcription, traduction si le texte n'est pas en français, balisage, contrôle de fidélité</td><td>editor / admin</td></tr>

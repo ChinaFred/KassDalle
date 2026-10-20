@@ -114,6 +114,20 @@ export const PROJECT_ID =
 /** Nom de la fonction Cloud Tasks (handler du worker). */
 export const TASK_QUEUE_FUNCTION = "recipeProcessor";
 
+/** Fonction Cloud Tasks du scan de couverture : sa file ne partage rien avec les pages. */
+export const TASK_QUEUE_COVER_FUNCTION = "coverProcessor";
+
+/**
+ * La fonction Cloud Tasks qui traite un type de job. Pure, pour être testée.
+ *
+ * Une couverture (`bookCoverScan`) a sa propre file : Cloud Tasks n'a pas de
+ * priorité, et elle attendait derrière les tranches d'un import de livre. Tout
+ * autre type, y compris un type absent, reste dans la file des pages.
+ */
+export function taskQueueFunctionFor(jobType: unknown): string {
+  return jobType === "bookCoverScan" ? TASK_QUEUE_COVER_FUNCTION : TASK_QUEUE_FUNCTION;
+}
+
 // ── Gemini ───────────────────────────────────────────────────────────────────
 
 export const GEMINI_MODEL = "gemini-2.5-flash";
@@ -155,6 +169,15 @@ export const MAX_CONCURRENT_DISPATCHES = 5;
 
 /** Nombre de dispatches par seconde (rate limit pour préserver le quota Gemini). */
 export const MAX_DISPATCHES_PER_SECOND = 2;
+
+/** Couvertures traitées en parallèle : la file des pages n'en limite plus l'accès. */
+export const COVER_MAX_CONCURRENT_DISPATCHES = 3;
+
+/**
+ * Dispatches par seconde de la file des couvertures. S'ajoute à la file des
+ * pages : le quota Gemini voit jusqu'à 3 dispatches par seconde au total.
+ */
+export const COVER_MAX_DISPATCHES_PER_SECOND = 1;
 
 /** Nombre maximal de tentatives avant passage en DLQ. */
 export const MAX_RETRY_ATTEMPTS = 3;

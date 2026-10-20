@@ -14,7 +14,7 @@
  *  - timeout 540s, mémoire 1GiB (pour Sharp + Gemini)
  */
 
-import { onTaskDispatched } from "firebase-functions/v2/tasks";
+import { onTaskDispatched, type Request } from "firebase-functions/v2/tasks";
 import { getStorage } from "firebase-admin/storage";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
@@ -24,6 +24,8 @@ import {
   REGION,
   QUEUE_RECIPE_PROCESSING,
   MAX_CONCURRENT_DISPATCHES,
+  COVER_MAX_CONCURRENT_DISPATCHES,
+  COVER_MAX_DISPATCHES_PER_SECOND,
   MAX_DISPATCHES_PER_SECOND,
   MAX_RETRY_ATTEMPTS,
   COLL_PROCESSING_JOBS,
@@ -181,6 +183,909 @@ function titreDeSuivi(transcription: PageTranscription): string | null {
   return titre.length > 0 ? titre : null;
 }
 
+async function processJob(req: Request<ProcessorPayload>): Promise<void> {
+  const payload = req.data as ProcessorPayload;
+  const { jobId, userId } = payload;
+  const correlationId = payload.correlationId ?? newCorrelationId("import_recette");
+  const ctx = { jobId, userId, correlationId, scanId: payload.scanId };
+
+  if (!jobId || !userId) {
+    logError({
+      message: "Payload invalide (jobId/userId manquant)",
+      moduleType: "IMPORT",
+      ...ctx,
+    });
+    return; // no retry — payload broken
+  }
+
+  const db = getFirestore();
+  const jobRef = db.collection(COLL_PROCESSING_JOBS).doc(jobId);
+  const snap = await jobRef.get();
+  if (!snap.exists) {
+    logError({ message: `Job ${jobId} introuvable`, moduleType: "IMPORT", ...ctx });
+    return;
+  }
+  const job = snap.data() as Record<string, unknown>;
+  const jobType = (job.type as string | undefined) ?? "recipeScan";
+  // Le payload de la tâche est écrit une fois, à la mise en file ; le job,
+  // lui, est relu à chaque tentative. Une tâche partie avant l'existence du
+  // champ retrouve ainsi son scan, écrit depuis par le dispatcher.
+  if (!ctx.scanId && typeof job.scan_id === "string" && job.scan_id) {
+    ctx.scanId = job.scan_id;
+  }
+  const attempt = Number(req.retryCount ?? 0);
+  let createdBookId: string | null = (job.created_book_id as string | undefined) ?? null;
+  let bookTouchedInRun = false;
+
+  // Si le job est déjà terminé, on ne retraite pas.
+  if (job.status === "done") {
+    logInfo({ message: "Job déjà terminé, retry ignoré", moduleType: "IMPORT", ...ctx });
+    return;
+  }
+
+  // L'utilisateur a demandé l'arrêt. Le drapeau n'était honoré que par le
+  // pipeline d'import côté client ; depuis sa suppression, « annuler » ne
+  // faisait plus qu'écrire un statut que ce traitement écrasait ensuite.
+  if (job.cancel_requested === true) {
+    logInfo({
+      message: "Job annulé par l'utilisateur, traitement abandonné",
+      moduleType: "IMPORT",
+      ...ctx,
+    });
+    await jobRef.update({
+      status: "error",
+      error_message: "Job annulé manuellement.",
+      current_step: null,
+      updated_at: Timestamp.now(),
+    });
+    return;
+  }
+
+  const currentStep = (job.current_step as PipelineStep | undefined) ?? "queued";
+  const apiKey = GEMINI_API_KEY.value();
+  const start = Date.now();
+
+  try {
+    await jobRef.update({
+      status: "processing",
+      updated_at: Timestamp.now(),
+      attempt_count: attempt + 1,
+      correlation_id: correlationId,
+      // Le code d'un échec précédent ne doit pas rester affiché pendant la
+      // nouvelle tentative.
+      error_code: FieldValue.delete(),
+    });
+
+    // Le livre cible doit appartenir à l'importateur (ou l'importateur être
+    // administrateur) : l'écriture qui suit se fait hors règles.
+    await assertJobTargetBook(job.book_id, (job.created_by as string | undefined) ?? userId);
+
+    // ── Import depuis un lien ─────────────────────────────────────────────
+    //
+    // Aucun fichier à télécharger : la source est une page web. La lecture,
+    // la projection et le balisage vivent dans `urlImport.ts` ; l'écriture
+    // passe par `saveDraft`, comme pour tout import.
+    if (jobType === URL_IMPORT_JOB_TYPE) {
+      const owner = (job.created_by as string | undefined) ?? userId;
+      const prepared = await prepareUrlImport({
+        sourceUrl: job.source_url,
+        ctx,
+        onStep: async (step, fields) => {
+          await jobRef.update({
+            current_step: step,
+            ...(fields ?? {}),
+            updated_at: Timestamp.now(),
+          });
+        },
+      });
+      const book = await findOrCreateWebBook(owner, ctx);
+      const original = await uploadOriginalText({
+        uid: owner,
+        jobId,
+        site: prepared.parsed.site,
+        text: prepared.originalText,
+      });
+      const id = await saveDraft({
+        cooklang: prepared.cooklang,
+        pageType: "recipe",
+        ingredients: prepared.tagged.ingredients,
+        cuisines: prepared.tagged.cuisines,
+        dishTypes: prepared.tagged.dishTypes,
+        mealRole: prepared.tagged.mealRole,
+        contains: prepared.tagged.contains,
+        suggestedSides: prepared.tagged.suggestedSides,
+        mainProtein: prepared.tagged.mainProtein,
+        mainStarch: prepared.tagged.mainStarch,
+        mainIngredientsChecked: prepared.tagged.mainIngredientsChecked,
+        userId: owner,
+        bookId: book.id,
+        bookTitre: book.titre,
+        illustrationUrls: [],
+        thumbnailUrls: [],
+        correlationId,
+        sourceFileUrl: original.url,
+        sourceFileName: original.name,
+        additionalSourceFileUrls: [],
+        apiKey,
+        ctx,
+        fidelity: prepared.fidelity,
+        traduction: prepared.recette.traduction,
+        origin: "web",
+        sourceUrl: prepared.parsed.normalized,
+        sourceSite: prepared.parsed.site,
+        sourceAuthor: prepared.sourceAuthor,
+        sourceNutrition: prepared.sourceNutrition,
+        onStep: async (step) => {
+          await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
+        },
+        normalizationDeadlineMs: start + 420_000,
+      });
+      await jobRef.update({
+        created_recipe_ids: [id],
+        book_id: book.id,
+        book_titre: book.titre,
+        current_step: "design",
+        updated_at: Timestamp.now(),
+      });
+      // Après l'écriture : la photo s'attache à une recette qui existe, et
+      // une photo refusée ou injoignable ne fait pas échouer l'import.
+      const photo = await attachWebPhoto({ imageUrl: prepared.imageUrl, recipeId: id, ctx });
+      const elapsed = Date.now() - start;
+      await jobRef.update({
+        status: "done",
+        current_step: "done",
+        created_recipe_ids: [id],
+        photo_status: photo,
+        updated_at: Timestamp.now(),
+        execution_time_ms: elapsed,
+      });
+      logInfo({
+        message: "Import depuis un lien terminé",
+        moduleType: "IMPORT",
+        executionTimeMs: elapsed,
+        ...ctx,
+        extra: {
+          recipeId: id,
+          site: prepared.parsed.site,
+          path: prepared.path,
+          recettesTrouvees: prepared.recettesTrouvees,
+          photo,
+        },
+      });
+      return;
+    }
+
+    // ── IMPORT ────────────────────────────────────────────────────────────
+    const fileUrl = job.file_url as string;
+    // 20 pages supplémentaires au plus (ticket #156) : au-delà, le job est
+    // refusé avant tout téléchargement et tout appel de modèle.
+    const additionalFileUrls = readAdditionalFileUrls(job.additional_file_urls);
+    const mimeType = (job.mime_type as string | undefined) ?? "image/jpeg";
+
+    // Le fichier source vient du client : seul le dossier promu du
+    // propriétaire du job est lisible. Vérifié avant tout téléchargement et
+    // tout appel de modèle — un refus part en dead letter sans retry.
+    const sourceOwner = (job.created_by as string | undefined) ?? userId;
+    const primaryPath = resolveJobSourcePath(fileUrl, sourceOwner);
+    const additionalPaths = additionalFileUrls.map((u) => resolveJobSourcePath(u, sourceOwner));
+
+    if (stepIndex(currentStep) <= stepIndex("import")) {
+      await jobRef.update({ current_step: "import", updated_at: Timestamp.now() });
+    }
+    // Poids total lu sur les métadonnées, avant tout téléchargement : 200 Mo
+    // pour une recette ou une couverture. Un livre entier garde sa borne
+    // d'envoi (300 Mo), un seul fichier.
+    await assertImportSizeWithin(
+      [primaryPath, ...additionalPaths],
+      storageObjectSize,
+      jobType === "bookDocumentScan" ? MAX_BOOK_UPLOAD_SIZE_BYTES : MAX_IMPORT_TOTAL_BYTES,
+    );
+    const primaryBytes = await downloadFromStorage(primaryPath);
+    // En séquence : une page en cours de téléchargement à la fois.
+    const additionalBytes = await downloadInSequence(additionalPaths, downloadFromStorage);
+
+    logInfo({
+      message: "Fichiers téléchargés",
+      moduleType: "IMPORT",
+      ...ctx,
+      extra: { primaryBytes: primaryBytes.length, additional: additionalBytes.length },
+    });
+
+    // ── Branchement selon le type de job ──────────────────────────────────
+
+    if (jobType === "bookCoverScan") {
+      // ── Pipeline couverture de livre ────────────────────────────────────
+      await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
+      const extracted = await extractBookCover(apiKey, primaryBytes, mimeType, {
+        ...ctx,
+        feature: "book_cover",
+        moduleType: "IMPORT",
+      });
+
+      // Le titre du livre remplace le nom de fichier sur la ligne de suivi.
+      await jobRef.update({
+        current_step: "save",
+        titre: extracted.titre.trim() || null,
+        updated_at: Timestamp.now(),
+      });
+      const now = Timestamp.now();
+      // ID déterministe pour éviter les doublons en cas de retry partiel.
+      const bookRef = getFirestore().collection(COLL_BOOKS).doc(`book_cover_${jobId}`);
+      await bookRef.set({
+        titre: extracted.titre,
+        sous_titre: extracted.sous_titre ?? null,
+        editeur: extracted.editeur ?? null,
+        serie: extracted.serie ?? null,
+        auteur: extracted.auteur,
+        annee: extracted.annee ?? null,
+        langue: extracted.langue,
+        isbn: extracted.isbn ?? null,
+        description: extracted.description ?? null,
+        url_couverture: fileUrl,
+        tags: extracted.tags ?? [],
+        review_status: "validated",
+        created_by: userId,
+        created_at: now,
+        updated_at: now,
+        source_file_url: fileUrl,
+        source_file_name: (job.file_name as string | undefined) ?? null,
+        ai_processed_at: now,
+        is_private: false,
+      });
+      createdBookId = bookRef.id;
+      bookTouchedInRun = true;
+
+      const elapsed = Date.now() - start;
+      await jobRef.update({
+        status: "done",
+        current_step: "done",
+        created_book_id: bookRef.id,
+        updated_at: Timestamp.now(),
+        execution_time_ms: elapsed,
+      });
+
+      logInfo({
+        message: "Pipeline couverture de livre terminé",
+        moduleType: "IMPORT",
+        executionTimeMs: elapsed,
+        ...ctx,
+        extra: { bookId: bookRef.id },
+      });
+      return;
+    }
+
+    if (jobType === "bookDocumentScan") {
+      // ── Pipeline livre entier ───────────────────────────────────────────
+      //
+      // Ce job ne transcrit rien : il crée le livre puis un job d'import par
+      // tranche, qui suivent le pipeline ci-dessous comme une page scannée.
+      const imported = await runBookImport({
+        job,
+        bytes: primaryBytes,
+        apiKey,
+        ctx,
+        onProgress: async (fields) => {
+          await jobRef.update({ ...fields, updated_at: Timestamp.now() });
+        },
+      });
+      const elapsed = Date.now() - start;
+      await jobRef.update({
+        status: "done",
+        current_step: "done",
+        titre: imported.bookTitre,
+        created_book_id: imported.createdBook ? imported.bookId : null,
+        windows_total: imported.windows,
+        updated_at: Timestamp.now(),
+        execution_time_ms: elapsed,
+      });
+      logInfo({
+        message: "Pipeline livre entier terminé",
+        moduleType: "IMPORT",
+        executionTimeMs: elapsed,
+        ...ctx,
+        extra: { bookId: imported.bookId, windows: imported.windows },
+      });
+      return;
+    }
+
+    // ── PASSE 1 : transcription de la page ────────────────────────────────
+    //
+    // Un seul appel là où trois se succédaient : classifier, extraire une
+    // recette, extraire un document. Le premier posait une question à
+    // laquelle les deux autres répondaient déjà, et l'extraction faisait deux
+    // travaux à la fois — transcrire et restructurer — en perdant le premier.
+    await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
+    const extraPages = additionalBytes.map((b) => ({ bytes: b, mimeType }));
+    // Présent quand ce job lit une tranche d'un livre entier : le modèle sait
+    // alors quelles pages lui appartiennent et lesquelles ne servent que de
+    // contexte. Absent pour une page scannée ordinaire.
+    const bookWindow = parseBookWindow(job.book_window);
+
+    // Une tentative qui suit un échec relit la transcription déjà obtenue au
+    // lieu de la refaire : c'est l'appel le plus cher du job, et le balisage
+    // qui a échoué ne le remet pas en cause.
+    let transcription = await readTranscriptionCheckpoint(job, ctx);
+    if (transcription) {
+      logInfo({
+        message:
+          "Transcription reprise du point de reprise du job : l'appel de modèle n'est pas refait",
+        moduleType: "IMPORT",
+        ...ctx,
+      });
+    } else {
+      // Le plafond de l'import se vérifie avant le premier appel de la tranche.
+      // Une page scannée ordinaire n'a pas de plafond propre : elle relève du
+      // plafond du jour, que le routeur contrôle.
+      if (bookWindow) await assertWithinImportBudget(ctx.scanId, "transcription_page");
+      transcription = await transcribePage(
+        primaryBytes,
+        mimeType,
+        { ...ctx, feature: "transcription_page", moduleType: "IMPORT" },
+        extraPages,
+        bookWindow,
+      );
+      await saveTranscriptionCheckpoint(jobRef, transcription, ctx);
+    }
+
+    logInfo({
+      message: `Page transcrite: ${transcription.pageType} — "${transcription.titre}"`,
+      moduleType: "IMPORT",
+      ...ctx,
+      extra: {
+        pageType: transcription.pageType,
+        titre: transcription.titre,
+        recettes: transcription.recettes.length,
+        raison: transcription.raison,
+      },
+    });
+
+    await jobRef.update({ titre: titreDeSuivi(transcription), updated_at: Timestamp.now() });
+
+    // Page vide, de garde, index : rien à créer.
+    if (transcription.pageType === "no_recipe") {
+      const elapsed = Date.now() - start;
+      await jobRef.update({
+        status: "done",
+        current_step: "done",
+        created_recipe_ids: [],
+        transcription_checkpoint: FieldValue.delete(),
+        updated_at: Timestamp.now(),
+        execution_time_ms: elapsed,
+      });
+      logInfo({
+        message: "Page sans contenu exploitable — job terminé sans brouillon",
+        moduleType: "IMPORT",
+        ...ctx,
+      });
+      return;
+    }
+
+    const isRecipePage = transcription.pageType === "recipe";
+
+    if (!isRecipePage && transcription.document.trim().length === 0) {
+      logError({
+        message: "Page non-recette sans texte transcrit",
+        moduleType: "IMPORT",
+        ...ctx,
+        extra: { pageType: transcription.pageType },
+      });
+      const elapsed = Date.now() - start;
+      await jobRef.update({
+        status: "done",
+        current_step: "done",
+        created_recipe_ids: [],
+        transcription_checkpoint: FieldValue.delete(),
+        updated_at: Timestamp.now(),
+        execution_time_ms: elapsed,
+      });
+      return;
+    }
+
+    // ── TRADUCTION d'une recette écrite dans une autre langue ─────────────
+    //
+    // La langue est lue par la transcription, sans appel de plus : une page
+    // française ne passe jamais ici. Une recette étrangère est traduite avant
+    // le balisage, et toute la suite travaille sur la traduction. Le point de
+    // reprise est réécrit avec elle : une relance après un balisage en échec
+    // ne la refait pas.
+    if (transcription.recettes.some(needsTranslation)) {
+      // `translated` reste sur le job après l'étape : le fil d'icônes du
+      // client garde ainsi le jalon « Traduction » jusqu'à la fin.
+      await jobRef.update({
+        current_step: "translate",
+        translated: true,
+        updated_at: Timestamp.now(),
+      });
+      const recettes: TranscribedRecipe[] = [...transcription.recettes];
+      for (let i = 0; i < recettes.length; i++) {
+        if (!needsTranslation(recettes[i])) continue;
+        if (bookWindow) await assertWithinImportBudget(ctx.scanId, "recipe_translation");
+        recettes[i] = await translateRecipe(recettes[i], {
+          ...ctx,
+          feature: "recipe_translation",
+          moduleType: "IMPORT",
+        });
+        // Point de reprise après chaque recette : si la suivante échoue, la
+        // relance ne retraduit pas celle-ci.
+        transcription = { ...transcription, recettes: [...recettes] };
+        await saveTranscriptionCheckpoint(jobRef, transcription, ctx);
+      }
+      logInfo({
+        message: "Recette(s) traduite(s) en français avant balisage",
+        moduleType: "IMPORT",
+        ...ctx,
+        extra: {
+          langues: recettes.map((r) => r.traduction?.langue).filter((l): l is string => l != null),
+        },
+      });
+      await jobRef.update({ titre: titreDeSuivi(transcription), updated_at: Timestamp.now() });
+    }
+
+    // ── DOUBLONS : la recette existe-t-elle déjà dans le livre ? ──────────
+    //
+    // Après la transcription (et la traduction : le titre comparé est celui
+    // qu'on enregistrera), avant le balisage, les illustrations et la
+    // nutrition. Une page scannée en double s'arrête ici, en attente d'une
+    // décision : « Ce n'est pas un doublon » la reprend sans relire la page,
+    // la transcription restant sur le job. Une tranche de livre ne s'arrête
+    // pas — des dizaines de lignes en attente rendraient la file illisible :
+    // son brouillon est créé et marqué, et la validation en lot l'écarte.
+    const bookId = job.book_id as string | undefined;
+    const bookTitre = job.book_titre as string | undefined;
+    const items: DuplicateCandidate[] = isRecipePage
+      ? transcription.recettes.map((r) => ({
+          titre: r.titre,
+          page: r.page ?? transcription.page,
+        }))
+      : [{ titre: transcription.titre, page: transcription.page }];
+    const resuming = job.duplicate_override === true;
+    // Les brouillons déjà créés par ce job : une page à plusieurs recettes
+    // dont une seule était en double les a écrits avant l'attente.
+    const createdIds: string[] = resuming ? readStringList(job.created_recipe_ids) : [];
+    const pending = resuming ? readIndexList(job.pending_items) : null;
+    let toProcess = items.map((_, i) => i).filter((i) => pending == null || pending.includes(i));
+    const duplicateOf = new Map<number, DuplicateMatch>();
+    if (bookId) {
+      await jobRef.update({ ...jobTitleKeyFields(items), updated_at: Timestamp.now() });
+    }
+    if (bookId && !resuming && items.some((c) => titleKey(c.titre))) {
+      const matches = await findDuplicates({
+        bookId,
+        candidates: items,
+        self: {
+          jobId,
+          createdAtMs: job.created_at instanceof Timestamp ? job.created_at.toMillis() : Date.now(),
+          createdRecipeIds: readStringList(job.created_recipe_ids),
+          ownerUid: typeof job.created_by === "string" ? job.created_by : "",
+        },
+      });
+      matches.forEach((m, i) => {
+        if (m) duplicateOf.set(i, m);
+      });
+      if (duplicateOf.size > 0) {
+        logInfo({
+          message: `Doublon possible : ${duplicateOf.size} recette(s) sur ${items.length} déjà dans le livre`,
+          moduleType: "IMPORT",
+          ...ctx,
+          extra: {
+            bookId,
+            trancheDeLivre: bookWindow != null,
+            references: [...duplicateOf.values()].map((m) => ({
+              recipeId: m.recipeId,
+              jobId: m.jobId,
+            })),
+          },
+        });
+      }
+    }
+    // Une page scannée : les doublons attendent, le reste continue.
+    const held = bookWindow ? [] : toProcess.filter((i) => duplicateOf.has(i));
+    if (held.length > 0) {
+      toProcess = toProcess.filter((i) => !held.includes(i));
+    }
+    const holdJob = async () => {
+      const elapsed = Date.now() - start;
+      await jobRef.update({
+        status: "duplicate",
+        current_step: null,
+        created_recipe_ids: createdIds,
+        duplicates: held.map((i) => duplicateJobEntry(duplicateOf.get(i)!)),
+        pending_items: held,
+        updated_at: Timestamp.now(),
+        execution_time_ms: elapsed,
+      });
+      logInfo({
+        message: "Import en attente : doublon possible",
+        moduleType: "IMPORT",
+        executionTimeMs: elapsed,
+        ...ctx,
+        extra: { createdIds, enAttente: held.length },
+      });
+    };
+    if (toProcess.length === 0 && held.length > 0) {
+      await holdJob();
+      return;
+    }
+
+    // ── PARSE + DESIGN + SAVE ─────────────────────────────────────────────
+    //
+    // `duplicate_checked` dit aux imports du même livre que celui-ci a passé
+    // sa vérification et va écrire ses brouillons : un scan plus ancien dont
+    // la transcription finit après lui le prendra pour référence.
+    await jobRef.update({
+      current_step: "parse",
+      ...(bookId ? { duplicate_checked: true } : {}),
+      updated_at: Timestamp.now(),
+    });
+
+    // ── ILLUSTRATIONS ─────────────────────────────────────────────────────
+    //
+    // Deux chemins, selon ce que l'utilisateur a coché à l'import.
+    //
+    // **Coché** : la chaîne complète, mise au point dans le bac à sable —
+    // pré-contrôle, cadrage, mise à plat, remise à l'endroit, zones, découpe.
+    // Elle rend des images attachées à la recette, et coûte jusqu'à cinq
+    // appels de modèle par page.
+    //
+    // **Décoché** : ce qui existait avant, et rien de plus — un appel par
+    // page qui COMPTE les photographies sans les extraire. Le bilan de
+    // relecture continue de dire s'il y avait quelque chose à prendre, et
+    // l'atelier manuel fait le reste.
+    //
+    // Les deux ne se cumulent jamais : le pré-contrôle de la chaîne complète
+    // pose exactement la même question que la détection seule, et les facturer
+    // toutes les deux ne rendrait rien.
+    //
+    // ── DÉTECTION SEULE : on repère, on n'extrait plus ────────────────────
+    //
+    // L'extraction automatique a été retirée. Elle enchaînait détection,
+    // découpage, trois filtres de qualité, correction de perspective,
+    // modération Cloud Vision et publication — et rendait des images que
+    // personne ne gardait. Chaque maillon a été corrigé tour à tour :
+    // l'orientation EXIF, le seuil de subdivision, le cadrage, le repère de
+    // coordonnées, l'homographie. Le résultat restait en deçà de ce qu'un
+    // recadrage à la main donne en dix secondes.
+    //
+    // Ce qui reste vaut, lui, son appel : SAVOIR qu'il y a une photo. Sans
+    // cette ligne, une recette part sans image et rien ne dit s'il y en avait
+    // une à prendre. L'écran de relecture le dit maintenant, et l'atelier
+    // manuel — qui n'a jamais démérité — fait le reste.
+    await jobRef.update({ current_step: "design", updated_at: Timestamp.now() });
+    const illustrationUrls: string[] = [];
+    const thumbnailUrls: string[] = [];
+    let illustrationReport: IllustrationReport | undefined;
+    const wantsIllustrations = job.import_illustrations === true;
+    try {
+      // Toutes les pages, pas seulement la première : une recette étalée sur
+      // trois pages a ses photographies sur les trois.
+      const pages = [primaryBytes, ...additionalBytes];
+
+      if (wantsIllustrations) {
+        const stored = await extractAndStorePageIllustrations({
+          pages,
+          mimeType,
+          userId,
+          jobId,
+          correlationId,
+          scanId: ctx.scanId,
+          fileName: (job.file_name as string | undefined) ?? undefined,
+        });
+        illustrationUrls.push(...stored.urls);
+        illustrationReport = {
+          detectees: stored.detectees,
+          retenues: stored.retenues,
+          publiees: stored.publiees,
+          pagesEnEchec: stored.pagesEnEchec,
+        };
+      } else if (!bookWindow) {
+        // Une tranche de livre n'a pas de comptage de photographies : c'est un
+        // appel d'IA de plus par tranche, sur un livre qui en compte des
+        // centaines, pour une information que l'atelier manuel n'attend pas.
+        illustrationReport = await countPageImages({
+          pages,
+          mimeType,
+          jobId,
+          userId,
+          correlationId,
+          scanId: ctx.scanId,
+          fileName: (job.file_name as string | undefined) ?? undefined,
+        });
+      }
+    } catch (err) {
+      // Best-effort : une recette sans photo vaut mieux qu'un import échoué.
+      logError({
+        message: "Détection illustrations échouée (continue sans)",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        moduleType: "DESIGN",
+        ...ctx,
+      });
+    }
+
+    const fileName = (job.file_name as string | undefined) ?? null;
+    const pageTypeSaved = transcription.pageType as CookLangPageType;
+
+    // Une page non-recette n'a rien à baliser : son texte part tel quel.
+    if (!isRecipePage && toProcess.includes(0)) {
+      await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
+      const id = await saveDraft({
+        cooklang: documentCooklang(transcription),
+        pageType: pageTypeSaved,
+        ingredients: [],
+        cuisines: [],
+        dishTypes: [],
+        mealRole: null,
+        contains: [],
+        suggestedSides: [],
+        mainProtein: null,
+        mainStarch: null,
+        mainIngredientsChecked: false,
+        userId,
+        bookId,
+        bookTitre,
+        illustrationUrls,
+        thumbnailUrls,
+        correlationId,
+        sourceFileUrl: fileUrl,
+        sourceFileName: fileName,
+        additionalSourceFileUrls: additionalFileUrls,
+        apiKey,
+        ctx,
+        illustrationReport,
+        duplicateOf: duplicateOf.get(0),
+      });
+      createdIds.push(id);
+      await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
+    }
+
+    for (const [index, recette] of transcription.recettes.entries()) {
+      if (!isRecipePage || !toProcess.includes(index)) continue;
+      // ── PASSE 2 : balisage et normalisation ─────────────────────────────
+      //
+      // Cette passe ne voit pas l'image : elle travaille sur ce que la passe 1
+      // a recopié. C'est ce qui rend la fidélité vérifiable — et vérifiée,
+      // juste en dessous, sans un appel de plus.
+      await jobRef.update({ current_step: "tagging", updated_at: Timestamp.now() });
+      if (bookWindow) await assertWithinImportBudget(ctx.scanId, "recipe_tagging");
+      const tagged = await tagAndNormalize(recette, {
+        ...ctx,
+        feature: "recipe_tagging",
+        moduleType: "IMPORT",
+      });
+
+      const fidelity = checkFidelity(recette, tagged);
+      if (fidelity.findings.length > 0) {
+        const resume = fidelity.findings.map((f) => f.message).join(" ");
+        const entree = {
+          message: `Contrôle de fidélité (${fidelity.level}) : ${resume}`,
+          moduleType: "IMPORT" as const,
+          ...ctx,
+          extra: {
+            titre: recette.titre,
+            niveau: fidelity.level,
+            codes: fidelity.findings.map((f) => f.code),
+          },
+        };
+        // Une rupture est une erreur : la recette balisée est écartée, et
+        // l'utilisateur doit pouvoir le savoir depuis l'écran des journaux
+        // sans avoir à comparer avec le livre.
+        if (fidelity.rejette) logError(entree);
+        else logInfo(entree);
+      }
+
+      // Repli : mieux vaut une recette exacte et non balisée qu'une recette
+      // balisée et fausse. Les ingrédients, eux, restent ceux de la passe 2 —
+      // ils viennent de la liste du livre, que le balisage n'a pas touchée.
+      const cooklang = fidelity.rejette ? verbatimCooklang(recette) : tagged.cooklang;
+
+      // Plus aucune image n'est attachée à l'import.
+      //
+      // Il y avait ici la copie des illustrations pour la seconde recette
+      // d'une même page — deux recettes ne pouvaient pas partager un objet
+      // Storage sans que la suppression de l'une vide l'autre. Ce soin n'a
+      // plus d'objet : l'import ne publie rien. Le garder aurait laissé
+      // croire, au prochain lecteur, qu'une extraction se produit encore.
+      const id = await saveDraft({
+        cooklang,
+        pageType: "recipe",
+        ingredients: tagged.ingredients,
+        cuisines: tagged.cuisines,
+        dishTypes: tagged.dishTypes,
+        mealRole: tagged.mealRole,
+        contains: tagged.contains,
+        suggestedSides: tagged.suggestedSides,
+        mainProtein: tagged.mainProtein,
+        mainStarch: tagged.mainStarch,
+        mainIngredientsChecked: tagged.mainIngredientsChecked,
+        userId,
+        bookId,
+        bookTitre,
+        illustrationUrls,
+        thumbnailUrls,
+        correlationId,
+        sourceFileUrl: fileUrl,
+        sourceFileName: fileName,
+        additionalSourceFileUrls: additionalFileUrls,
+        apiKey,
+        ctx,
+        fidelity,
+        illustrationReport,
+        traduction: recette.traduction,
+        duplicateOf: duplicateOf.get(index),
+        onStep: async (step) => {
+          await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
+        },
+        // La normalisation contre les référentiels a lieu AVANT l'écriture :
+        // la recette est écrite une fois, avec sa liste définitive. Elle
+        // était faite après, ce qui obligeait à réécrire le document et
+        // réveillait deux fois le déclencheur — qui calculait courses et
+        // nutrition d'abord sur la liste brute, puis sur la normalisée, en
+        // jetant le premier travail.
+        normalizationDeadlineMs: start + 420_000,
+      });
+      createdIds.push(id);
+      await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
+    }
+
+    if (held.length > 0) {
+      // Les autres recettes de la page sont écrites ; celles en double
+      // attendent, et la transcription reste sur le job pour la reprise.
+      await holdJob();
+      return;
+    }
+
+    const elapsed = Date.now() - start;
+    await jobRef.update({
+      status: "done",
+      current_step: "done",
+      created_recipe_ids: createdIds,
+      transcription_checkpoint: FieldValue.delete(),
+      ...(resuming ? { pending_items: FieldValue.delete(), duplicates: FieldValue.delete() } : {}),
+      updated_at: Timestamp.now(),
+      execution_time_ms: elapsed,
+    });
+
+    logInfo({
+      message: "Pipeline terminé avec succès",
+      moduleType: "IMPORT",
+      executionTimeMs: elapsed,
+      ...ctx,
+      extra: { createdIds, illustrationCount: illustrationUrls.length },
+    });
+  } catch (err) {
+    const isQuota = err instanceof GeminiQuotaExceededError;
+    // Un plafond de dépense ne se réessaie pas : il ne se rouvrira pas dans
+    // les minutes qui viennent, et chaque tentative refait tout le travail
+    // qui précède l'appel d'IA. Le job part directement en dead letter, d'où
+    // un administrateur le relancera demain — ou après avoir relevé le
+    // plafond.
+    // Seule exception : trop d'appels simultanés (`concurrency`) se libère
+    // en quelques secondes, et se réessaie comme une panne passagère.
+    const isBudget = err instanceof BudgetExceededError && err.reason !== "concurrency";
+    // Un livre illisible — PDF chiffré, EPUB sans texte — le reste à chaque
+    // tentative, et chacune retélécharge le fichier en entier.
+    const isUnreadableBook = err instanceof BookFileError;
+    // Un balisage coupé au plafond à tous les efforts essayés se rejouerait à
+    // l'identique : les deux appels ont déjà eu lieu.
+    const isTruncatedTagging = err instanceof TaggingTruncatedError;
+    // Le livre d'un autre le restera à chaque tentative.
+    const isForeignBook = err instanceof TargetBookNotOwned;
+    // Un fichier source hors du dossier du propriétaire le restera.
+    const isForbiddenSource = err instanceof StoragePathRefusedError;
+    // Une archive (DOCX, EPUB) au-delà des bornes de lecture le restera :
+    // chaque tentative la retéléchargerait pour la refuser au même endroit.
+    const isZipLimit = err instanceof ZipLimitError;
+    // Trop de pages supplémentaires : la liste ne raccourcira pas d'elle-même.
+    const isTooManyPages = err instanceof TooManyPagesError;
+    // Un import trop lourd le restera.
+    const isTooLarge = err instanceof ImportTooLargeError;
+    // Un import par lien : un échec lisible (page bloquée, sans recette,
+    // adresse refusée) ne se rejoue pas ; un délai dépassé, si.
+    const urlError = err instanceof UrlImportError ? err : null;
+    const isFinalUrlError = urlError != null && !urlError.retryable;
+    const message = err instanceof Error ? err.message : String(err);
+
+    if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
+      try {
+        await getFirestore().collection(COLL_BOOKS).doc(createdBookId).delete();
+        createdBookId = null;
+      } catch (cleanupErr) {
+        logError({
+          message: "Rollback livre échoué après erreur pipeline couverture",
+          errorDescription: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+          moduleType: "IMPORT",
+          ...ctx,
+          extra: { createdBookId },
+        });
+      }
+    }
+
+    logError({
+      message: "Échec pipeline",
+      errorDescription: message,
+      moduleType: "IMPORT",
+      executionTimeMs: Date.now() - start,
+      ...ctx,
+      extra: {
+        attempt,
+        isQuota,
+        isBudget,
+        isUnreadableBook,
+        isTruncatedTagging,
+        isForeignBook,
+        isForbiddenSource,
+        isZipLimit,
+        isTooManyPages,
+        isTooLarge,
+        urlErrorCode: urlError?.code ?? null,
+      },
+    });
+
+    // Dernière tentative — ou plafond atteint, fichier illisible, balisage
+    // coupé, livre cible d'un autre (`foreign_book`), fichier source hors du
+    // dossier du propriétaire (`forbidden_source_path`), archive au-delà des
+    // bornes de lecture (`archive_limit_exceeded`), plus de 20 pages
+    // supplémentaires (`too_many_pages`), plus de 200 Mo au total
+    // (`too_large`) : ces huit cas se rejouent à l'identique, il est inutile
+    // de les réessayer.
+    if (
+      attempt + 1 >= MAX_RETRY_ATTEMPTS ||
+      isBudget ||
+      isUnreadableBook ||
+      isTruncatedTagging ||
+      isForeignBook ||
+      isForbiddenSource ||
+      isZipLimit ||
+      isTooManyPages ||
+      isTooLarge ||
+      isFinalUrlError
+    ) {
+      await moveToDeadLetter({
+        jobId,
+        userId,
+        correlationId,
+        failureReason: isBudget
+          ? "budget_exceeded"
+          : isUnreadableBook
+            ? "book_file_unreadable"
+            : isTruncatedTagging
+              ? "tagging_truncated"
+              : isForeignBook
+                ? "foreign_book"
+                : isForbiddenSource
+                  ? "forbidden_source_path"
+                  : isZipLimit
+                    ? "archive_limit_exceeded"
+                    : isTooManyPages
+                      ? "too_many_pages"
+                      : isTooLarge
+                        ? "too_large"
+                        : urlError
+                          ? `url_${urlError.code}`
+                          : isQuota
+                            ? "quota_exceeded"
+                            : "pipeline_error",
+        lastError: message,
+        retryCount: attempt + 1,
+        filePath:
+          (job.file_url as string | undefined) || (job.source_url as string | undefined) || "",
+      });
+      await jobRef.update({
+        status: "error",
+        // Un import par lien porte un message lisible et son code : la tuile
+        // du client choisit ses actions sur le code.
+        error_message: urlError ? URL_IMPORT_MESSAGES[urlError.code] : message,
+        ...(urlError ? { error_code: urlError.code } : {}),
+        created_book_id: createdBookId,
+        updated_at: Timestamp.now(),
+      });
+      return; // success-return (no retry) — DLQ handler takes over
+    }
+
+    // Sinon on rethrow pour que Cloud Tasks retry.
+    throw new HttpsError("internal", message);
+  }
+}
+
 export const recipeProcessor = onTaskDispatched(
   {
     region: REGION,
@@ -203,913 +1108,37 @@ export const recipeProcessor = onTaskDispatched(
       maxDispatchesPerSecond: MAX_DISPATCHES_PER_SECOND,
     },
   },
-  async (req) => {
-    const payload = req.data as ProcessorPayload;
-    const { jobId, userId } = payload;
-    const correlationId = payload.correlationId ?? newCorrelationId("import_recette");
-    const ctx = { jobId, userId, correlationId, scanId: payload.scanId };
+  processJob,
+);
 
-    if (!jobId || !userId) {
-      logError({
-        message: "Payload invalide (jobId/userId manquant)",
-        moduleType: "IMPORT",
-        ...ctx,
-      });
-      return; // no retry — payload broken
-    }
-
-    const db = getFirestore();
-    const jobRef = db.collection(COLL_PROCESSING_JOBS).doc(jobId);
-    const snap = await jobRef.get();
-    if (!snap.exists) {
-      logError({ message: `Job ${jobId} introuvable`, moduleType: "IMPORT", ...ctx });
-      return;
-    }
-    const job = snap.data() as Record<string, unknown>;
-    const jobType = (job.type as string | undefined) ?? "recipeScan";
-    // Le payload de la tâche est écrit une fois, à la mise en file ; le job,
-    // lui, est relu à chaque tentative. Une tâche partie avant l'existence du
-    // champ retrouve ainsi son scan, écrit depuis par le dispatcher.
-    if (!ctx.scanId && typeof job.scan_id === "string" && job.scan_id) {
-      ctx.scanId = job.scan_id;
-    }
-    const attempt = Number(req.retryCount ?? 0);
-    let createdBookId: string | null = (job.created_book_id as string | undefined) ?? null;
-    let bookTouchedInRun = false;
-
-    // Si le job est déjà terminé, on ne retraite pas.
-    if (job.status === "done") {
-      logInfo({ message: "Job déjà terminé, retry ignoré", moduleType: "IMPORT", ...ctx });
-      return;
-    }
-
-    // L'utilisateur a demandé l'arrêt. Le drapeau n'était honoré que par le
-    // pipeline d'import côté client ; depuis sa suppression, « annuler » ne
-    // faisait plus qu'écrire un statut que ce traitement écrasait ensuite.
-    if (job.cancel_requested === true) {
-      logInfo({
-        message: "Job annulé par l'utilisateur, traitement abandonné",
-        moduleType: "IMPORT",
-        ...ctx,
-      });
-      await jobRef.update({
-        status: "error",
-        error_message: "Job annulé manuellement.",
-        current_step: null,
-        updated_at: Timestamp.now(),
-      });
-      return;
-    }
-
-    const currentStep = (job.current_step as PipelineStep | undefined) ?? "queued";
-    const apiKey = GEMINI_API_KEY.value();
-    const start = Date.now();
-
-    try {
-      await jobRef.update({
-        status: "processing",
-        updated_at: Timestamp.now(),
-        attempt_count: attempt + 1,
-        correlation_id: correlationId,
-        // Le code d'un échec précédent ne doit pas rester affiché pendant la
-        // nouvelle tentative.
-        error_code: FieldValue.delete(),
-      });
-
-      // Le livre cible doit appartenir à l'importateur (ou l'importateur être
-      // administrateur) : l'écriture qui suit se fait hors règles.
-      await assertJobTargetBook(job.book_id, (job.created_by as string | undefined) ?? userId);
-
-      // ── Import depuis un lien ─────────────────────────────────────────────
-      //
-      // Aucun fichier à télécharger : la source est une page web. La lecture,
-      // la projection et le balisage vivent dans `urlImport.ts` ; l'écriture
-      // passe par `saveDraft`, comme pour tout import.
-      if (jobType === URL_IMPORT_JOB_TYPE) {
-        const owner = (job.created_by as string | undefined) ?? userId;
-        const prepared = await prepareUrlImport({
-          sourceUrl: job.source_url,
-          ctx,
-          onStep: async (step, fields) => {
-            await jobRef.update({
-              current_step: step,
-              ...(fields ?? {}),
-              updated_at: Timestamp.now(),
-            });
-          },
-        });
-        const book = await findOrCreateWebBook(owner, ctx);
-        const original = await uploadOriginalText({
-          uid: owner,
-          jobId,
-          site: prepared.parsed.site,
-          text: prepared.originalText,
-        });
-        const id = await saveDraft({
-          cooklang: prepared.cooklang,
-          pageType: "recipe",
-          ingredients: prepared.tagged.ingredients,
-          cuisines: prepared.tagged.cuisines,
-          dishTypes: prepared.tagged.dishTypes,
-          mealRole: prepared.tagged.mealRole,
-          contains: prepared.tagged.contains,
-          suggestedSides: prepared.tagged.suggestedSides,
-          mainProtein: prepared.tagged.mainProtein,
-          mainStarch: prepared.tagged.mainStarch,
-          mainIngredientsChecked: prepared.tagged.mainIngredientsChecked,
-          userId: owner,
-          bookId: book.id,
-          bookTitre: book.titre,
-          illustrationUrls: [],
-          thumbnailUrls: [],
-          correlationId,
-          sourceFileUrl: original.url,
-          sourceFileName: original.name,
-          additionalSourceFileUrls: [],
-          apiKey,
-          ctx,
-          fidelity: prepared.fidelity,
-          traduction: prepared.recette.traduction,
-          origin: "web",
-          sourceUrl: prepared.parsed.normalized,
-          sourceSite: prepared.parsed.site,
-          sourceAuthor: prepared.sourceAuthor,
-          sourceNutrition: prepared.sourceNutrition,
-          onStep: async (step) => {
-            await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
-          },
-          normalizationDeadlineMs: start + 420_000,
-        });
-        await jobRef.update({
-          created_recipe_ids: [id],
-          book_id: book.id,
-          book_titre: book.titre,
-          current_step: "design",
-          updated_at: Timestamp.now(),
-        });
-        // Après l'écriture : la photo s'attache à une recette qui existe, et
-        // une photo refusée ou injoignable ne fait pas échouer l'import.
-        const photo = await attachWebPhoto({ imageUrl: prepared.imageUrl, recipeId: id, ctx });
-        const elapsed = Date.now() - start;
-        await jobRef.update({
-          status: "done",
-          current_step: "done",
-          created_recipe_ids: [id],
-          photo_status: photo,
-          updated_at: Timestamp.now(),
-          execution_time_ms: elapsed,
-        });
-        logInfo({
-          message: "Import depuis un lien terminé",
-          moduleType: "IMPORT",
-          executionTimeMs: elapsed,
-          ...ctx,
-          extra: {
-            recipeId: id,
-            site: prepared.parsed.site,
-            path: prepared.path,
-            recettesTrouvees: prepared.recettesTrouvees,
-            photo,
-          },
-        });
-        return;
-      }
-
-      // ── IMPORT ────────────────────────────────────────────────────────────
-      const fileUrl = job.file_url as string;
-      // 20 pages supplémentaires au plus (ticket #156) : au-delà, le job est
-      // refusé avant tout téléchargement et tout appel de modèle.
-      const additionalFileUrls = readAdditionalFileUrls(job.additional_file_urls);
-      const mimeType = (job.mime_type as string | undefined) ?? "image/jpeg";
-
-      // Le fichier source vient du client : seul le dossier promu du
-      // propriétaire du job est lisible. Vérifié avant tout téléchargement et
-      // tout appel de modèle — un refus part en dead letter sans retry.
-      const sourceOwner = (job.created_by as string | undefined) ?? userId;
-      const primaryPath = resolveJobSourcePath(fileUrl, sourceOwner);
-      const additionalPaths = additionalFileUrls.map((u) => resolveJobSourcePath(u, sourceOwner));
-
-      if (stepIndex(currentStep) <= stepIndex("import")) {
-        await jobRef.update({ current_step: "import", updated_at: Timestamp.now() });
-      }
-      // Poids total lu sur les métadonnées, avant tout téléchargement : 200 Mo
-      // pour une recette ou une couverture. Un livre entier garde sa borne
-      // d'envoi (300 Mo), un seul fichier.
-      await assertImportSizeWithin(
-        [primaryPath, ...additionalPaths],
-        storageObjectSize,
-        jobType === "bookDocumentScan" ? MAX_BOOK_UPLOAD_SIZE_BYTES : MAX_IMPORT_TOTAL_BYTES,
-      );
-      const primaryBytes = await downloadFromStorage(primaryPath);
-      // En séquence : une page en cours de téléchargement à la fois.
-      const additionalBytes = await downloadInSequence(additionalPaths, downloadFromStorage);
-
-      logInfo({
-        message: "Fichiers téléchargés",
-        moduleType: "IMPORT",
-        ...ctx,
-        extra: { primaryBytes: primaryBytes.length, additional: additionalBytes.length },
-      });
-
-      // ── Branchement selon le type de job ──────────────────────────────────
-
-      if (jobType === "bookCoverScan") {
-        // ── Pipeline couverture de livre ────────────────────────────────────
-        await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
-        const extracted = await extractBookCover(apiKey, primaryBytes, mimeType, {
-          ...ctx,
-          feature: "book_cover",
-          moduleType: "IMPORT",
-        });
-
-        // Le titre du livre remplace le nom de fichier sur la ligne de suivi.
-        await jobRef.update({
-          current_step: "save",
-          titre: extracted.titre.trim() || null,
-          updated_at: Timestamp.now(),
-        });
-        const now = Timestamp.now();
-        // ID déterministe pour éviter les doublons en cas de retry partiel.
-        const bookRef = getFirestore().collection(COLL_BOOKS).doc(`book_cover_${jobId}`);
-        await bookRef.set({
-          titre: extracted.titre,
-          sous_titre: extracted.sous_titre ?? null,
-          editeur: extracted.editeur ?? null,
-          serie: extracted.serie ?? null,
-          auteur: extracted.auteur,
-          annee: extracted.annee ?? null,
-          langue: extracted.langue,
-          isbn: extracted.isbn ?? null,
-          description: extracted.description ?? null,
-          url_couverture: fileUrl,
-          tags: extracted.tags ?? [],
-          review_status: "validated",
-          created_by: userId,
-          created_at: now,
-          updated_at: now,
-          source_file_url: fileUrl,
-          source_file_name: (job.file_name as string | undefined) ?? null,
-          ai_processed_at: now,
-          is_private: false,
-        });
-        createdBookId = bookRef.id;
-        bookTouchedInRun = true;
-
-        const elapsed = Date.now() - start;
-        await jobRef.update({
-          status: "done",
-          current_step: "done",
-          created_book_id: bookRef.id,
-          updated_at: Timestamp.now(),
-          execution_time_ms: elapsed,
-        });
-
-        logInfo({
-          message: "Pipeline couverture de livre terminé",
-          moduleType: "IMPORT",
-          executionTimeMs: elapsed,
-          ...ctx,
-          extra: { bookId: bookRef.id },
-        });
-        return;
-      }
-
-      if (jobType === "bookDocumentScan") {
-        // ── Pipeline livre entier ───────────────────────────────────────────
-        //
-        // Ce job ne transcrit rien : il crée le livre puis un job d'import par
-        // tranche, qui suivent le pipeline ci-dessous comme une page scannée.
-        const imported = await runBookImport({
-          job,
-          bytes: primaryBytes,
-          apiKey,
-          ctx,
-          onProgress: async (fields) => {
-            await jobRef.update({ ...fields, updated_at: Timestamp.now() });
-          },
-        });
-        const elapsed = Date.now() - start;
-        await jobRef.update({
-          status: "done",
-          current_step: "done",
-          titre: imported.bookTitre,
-          created_book_id: imported.createdBook ? imported.bookId : null,
-          windows_total: imported.windows,
-          updated_at: Timestamp.now(),
-          execution_time_ms: elapsed,
-        });
-        logInfo({
-          message: "Pipeline livre entier terminé",
-          moduleType: "IMPORT",
-          executionTimeMs: elapsed,
-          ...ctx,
-          extra: { bookId: imported.bookId, windows: imported.windows },
-        });
-        return;
-      }
-
-      // ── PASSE 1 : transcription de la page ────────────────────────────────
-      //
-      // Un seul appel là où trois se succédaient : classifier, extraire une
-      // recette, extraire un document. Le premier posait une question à
-      // laquelle les deux autres répondaient déjà, et l'extraction faisait deux
-      // travaux à la fois — transcrire et restructurer — en perdant le premier.
-      await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
-      const extraPages = additionalBytes.map((b) => ({ bytes: b, mimeType }));
-      // Présent quand ce job lit une tranche d'un livre entier : le modèle sait
-      // alors quelles pages lui appartiennent et lesquelles ne servent que de
-      // contexte. Absent pour une page scannée ordinaire.
-      const bookWindow = parseBookWindow(job.book_window);
-
-      // Une tentative qui suit un échec relit la transcription déjà obtenue au
-      // lieu de la refaire : c'est l'appel le plus cher du job, et le balisage
-      // qui a échoué ne le remet pas en cause.
-      let transcription = await readTranscriptionCheckpoint(job, ctx);
-      if (transcription) {
-        logInfo({
-          message:
-            "Transcription reprise du point de reprise du job : l'appel de modèle n'est pas refait",
-          moduleType: "IMPORT",
-          ...ctx,
-        });
-      } else {
-        // Le plafond de l'import se vérifie avant le premier appel de la tranche.
-        // Une page scannée ordinaire n'a pas de plafond propre : elle relève du
-        // plafond du jour, que le routeur contrôle.
-        if (bookWindow) await assertWithinImportBudget(ctx.scanId, "transcription_page");
-        transcription = await transcribePage(
-          primaryBytes,
-          mimeType,
-          { ...ctx, feature: "transcription_page", moduleType: "IMPORT" },
-          extraPages,
-          bookWindow,
-        );
-        await saveTranscriptionCheckpoint(jobRef, transcription, ctx);
-      }
-
-      logInfo({
-        message: `Page transcrite: ${transcription.pageType} — "${transcription.titre}"`,
-        moduleType: "IMPORT",
-        ...ctx,
-        extra: {
-          pageType: transcription.pageType,
-          titre: transcription.titre,
-          recettes: transcription.recettes.length,
-          raison: transcription.raison,
-        },
-      });
-
-      await jobRef.update({ titre: titreDeSuivi(transcription), updated_at: Timestamp.now() });
-
-      // Page vide, de garde, index : rien à créer.
-      if (transcription.pageType === "no_recipe") {
-        const elapsed = Date.now() - start;
-        await jobRef.update({
-          status: "done",
-          current_step: "done",
-          created_recipe_ids: [],
-          transcription_checkpoint: FieldValue.delete(),
-          updated_at: Timestamp.now(),
-          execution_time_ms: elapsed,
-        });
-        logInfo({
-          message: "Page sans contenu exploitable — job terminé sans brouillon",
-          moduleType: "IMPORT",
-          ...ctx,
-        });
-        return;
-      }
-
-      const isRecipePage = transcription.pageType === "recipe";
-
-      if (!isRecipePage && transcription.document.trim().length === 0) {
-        logError({
-          message: "Page non-recette sans texte transcrit",
-          moduleType: "IMPORT",
-          ...ctx,
-          extra: { pageType: transcription.pageType },
-        });
-        const elapsed = Date.now() - start;
-        await jobRef.update({
-          status: "done",
-          current_step: "done",
-          created_recipe_ids: [],
-          transcription_checkpoint: FieldValue.delete(),
-          updated_at: Timestamp.now(),
-          execution_time_ms: elapsed,
-        });
-        return;
-      }
-
-      // ── TRADUCTION d'une recette écrite dans une autre langue ─────────────
-      //
-      // La langue est lue par la transcription, sans appel de plus : une page
-      // française ne passe jamais ici. Une recette étrangère est traduite avant
-      // le balisage, et toute la suite travaille sur la traduction. Le point de
-      // reprise est réécrit avec elle : une relance après un balisage en échec
-      // ne la refait pas.
-      if (transcription.recettes.some(needsTranslation)) {
-        // `translated` reste sur le job après l'étape : le fil d'icônes du
-        // client garde ainsi le jalon « Traduction » jusqu'à la fin.
-        await jobRef.update({
-          current_step: "translate",
-          translated: true,
-          updated_at: Timestamp.now(),
-        });
-        const recettes: TranscribedRecipe[] = [...transcription.recettes];
-        for (let i = 0; i < recettes.length; i++) {
-          if (!needsTranslation(recettes[i])) continue;
-          if (bookWindow) await assertWithinImportBudget(ctx.scanId, "recipe_translation");
-          recettes[i] = await translateRecipe(recettes[i], {
-            ...ctx,
-            feature: "recipe_translation",
-            moduleType: "IMPORT",
-          });
-          // Point de reprise après chaque recette : si la suivante échoue, la
-          // relance ne retraduit pas celle-ci.
-          transcription = { ...transcription, recettes: [...recettes] };
-          await saveTranscriptionCheckpoint(jobRef, transcription, ctx);
-        }
-        logInfo({
-          message: "Recette(s) traduite(s) en français avant balisage",
-          moduleType: "IMPORT",
-          ...ctx,
-          extra: {
-            langues: recettes
-              .map((r) => r.traduction?.langue)
-              .filter((l): l is string => l != null),
-          },
-        });
-        await jobRef.update({ titre: titreDeSuivi(transcription), updated_at: Timestamp.now() });
-      }
-
-      // ── DOUBLONS : la recette existe-t-elle déjà dans le livre ? ──────────
-      //
-      // Après la transcription (et la traduction : le titre comparé est celui
-      // qu'on enregistrera), avant le balisage, les illustrations et la
-      // nutrition. Une page scannée en double s'arrête ici, en attente d'une
-      // décision : « Ce n'est pas un doublon » la reprend sans relire la page,
-      // la transcription restant sur le job. Une tranche de livre ne s'arrête
-      // pas — des dizaines de lignes en attente rendraient la file illisible :
-      // son brouillon est créé et marqué, et la validation en lot l'écarte.
-      const bookId = job.book_id as string | undefined;
-      const bookTitre = job.book_titre as string | undefined;
-      const items: DuplicateCandidate[] = isRecipePage
-        ? transcription.recettes.map((r) => ({
-            titre: r.titre,
-            page: r.page ?? transcription.page,
-          }))
-        : [{ titre: transcription.titre, page: transcription.page }];
-      const resuming = job.duplicate_override === true;
-      // Les brouillons déjà créés par ce job : une page à plusieurs recettes
-      // dont une seule était en double les a écrits avant l'attente.
-      const createdIds: string[] = resuming ? readStringList(job.created_recipe_ids) : [];
-      const pending = resuming ? readIndexList(job.pending_items) : null;
-      let toProcess = items.map((_, i) => i).filter((i) => pending == null || pending.includes(i));
-      const duplicateOf = new Map<number, DuplicateMatch>();
-      if (bookId) {
-        await jobRef.update({ ...jobTitleKeyFields(items), updated_at: Timestamp.now() });
-      }
-      if (bookId && !resuming && items.some((c) => titleKey(c.titre))) {
-        const matches = await findDuplicates({
-          bookId,
-          candidates: items,
-          self: {
-            jobId,
-            createdAtMs:
-              job.created_at instanceof Timestamp ? job.created_at.toMillis() : Date.now(),
-            createdRecipeIds: readStringList(job.created_recipe_ids),
-            ownerUid: typeof job.created_by === "string" ? job.created_by : "",
-          },
-        });
-        matches.forEach((m, i) => {
-          if (m) duplicateOf.set(i, m);
-        });
-        if (duplicateOf.size > 0) {
-          logInfo({
-            message: `Doublon possible : ${duplicateOf.size} recette(s) sur ${items.length} déjà dans le livre`,
-            moduleType: "IMPORT",
-            ...ctx,
-            extra: {
-              bookId,
-              trancheDeLivre: bookWindow != null,
-              references: [...duplicateOf.values()].map((m) => ({
-                recipeId: m.recipeId,
-                jobId: m.jobId,
-              })),
-            },
-          });
-        }
-      }
-      // Une page scannée : les doublons attendent, le reste continue.
-      const held = bookWindow ? [] : toProcess.filter((i) => duplicateOf.has(i));
-      if (held.length > 0) {
-        toProcess = toProcess.filter((i) => !held.includes(i));
-      }
-      const holdJob = async () => {
-        const elapsed = Date.now() - start;
-        await jobRef.update({
-          status: "duplicate",
-          current_step: null,
-          created_recipe_ids: createdIds,
-          duplicates: held.map((i) => duplicateJobEntry(duplicateOf.get(i)!)),
-          pending_items: held,
-          updated_at: Timestamp.now(),
-          execution_time_ms: elapsed,
-        });
-        logInfo({
-          message: "Import en attente : doublon possible",
-          moduleType: "IMPORT",
-          executionTimeMs: elapsed,
-          ...ctx,
-          extra: { createdIds, enAttente: held.length },
-        });
-      };
-      if (toProcess.length === 0 && held.length > 0) {
-        await holdJob();
-        return;
-      }
-
-      // ── PARSE + DESIGN + SAVE ─────────────────────────────────────────────
-      //
-      // `duplicate_checked` dit aux imports du même livre que celui-ci a passé
-      // sa vérification et va écrire ses brouillons : un scan plus ancien dont
-      // la transcription finit après lui le prendra pour référence.
-      await jobRef.update({
-        current_step: "parse",
-        ...(bookId ? { duplicate_checked: true } : {}),
-        updated_at: Timestamp.now(),
-      });
-
-      // ── ILLUSTRATIONS ─────────────────────────────────────────────────────
-      //
-      // Deux chemins, selon ce que l'utilisateur a coché à l'import.
-      //
-      // **Coché** : la chaîne complète, mise au point dans le bac à sable —
-      // pré-contrôle, cadrage, mise à plat, remise à l'endroit, zones, découpe.
-      // Elle rend des images attachées à la recette, et coûte jusqu'à cinq
-      // appels de modèle par page.
-      //
-      // **Décoché** : ce qui existait avant, et rien de plus — un appel par
-      // page qui COMPTE les photographies sans les extraire. Le bilan de
-      // relecture continue de dire s'il y avait quelque chose à prendre, et
-      // l'atelier manuel fait le reste.
-      //
-      // Les deux ne se cumulent jamais : le pré-contrôle de la chaîne complète
-      // pose exactement la même question que la détection seule, et les facturer
-      // toutes les deux ne rendrait rien.
-      //
-      // ── DÉTECTION SEULE : on repère, on n'extrait plus ────────────────────
-      //
-      // L'extraction automatique a été retirée. Elle enchaînait détection,
-      // découpage, trois filtres de qualité, correction de perspective,
-      // modération Cloud Vision et publication — et rendait des images que
-      // personne ne gardait. Chaque maillon a été corrigé tour à tour :
-      // l'orientation EXIF, le seuil de subdivision, le cadrage, le repère de
-      // coordonnées, l'homographie. Le résultat restait en deçà de ce qu'un
-      // recadrage à la main donne en dix secondes.
-      //
-      // Ce qui reste vaut, lui, son appel : SAVOIR qu'il y a une photo. Sans
-      // cette ligne, une recette part sans image et rien ne dit s'il y en avait
-      // une à prendre. L'écran de relecture le dit maintenant, et l'atelier
-      // manuel — qui n'a jamais démérité — fait le reste.
-      await jobRef.update({ current_step: "design", updated_at: Timestamp.now() });
-      const illustrationUrls: string[] = [];
-      const thumbnailUrls: string[] = [];
-      let illustrationReport: IllustrationReport | undefined;
-      const wantsIllustrations = job.import_illustrations === true;
-      try {
-        // Toutes les pages, pas seulement la première : une recette étalée sur
-        // trois pages a ses photographies sur les trois.
-        const pages = [primaryBytes, ...additionalBytes];
-
-        if (wantsIllustrations) {
-          const stored = await extractAndStorePageIllustrations({
-            pages,
-            mimeType,
-            userId,
-            jobId,
-            correlationId,
-            scanId: ctx.scanId,
-            fileName: (job.file_name as string | undefined) ?? undefined,
-          });
-          illustrationUrls.push(...stored.urls);
-          illustrationReport = {
-            detectees: stored.detectees,
-            retenues: stored.retenues,
-            publiees: stored.publiees,
-            pagesEnEchec: stored.pagesEnEchec,
-          };
-        } else if (!bookWindow) {
-          // Une tranche de livre n'a pas de comptage de photographies : c'est un
-          // appel d'IA de plus par tranche, sur un livre qui en compte des
-          // centaines, pour une information que l'atelier manuel n'attend pas.
-          illustrationReport = await countPageImages({
-            pages,
-            mimeType,
-            jobId,
-            userId,
-            correlationId,
-            scanId: ctx.scanId,
-            fileName: (job.file_name as string | undefined) ?? undefined,
-          });
-        }
-      } catch (err) {
-        // Best-effort : une recette sans photo vaut mieux qu'un import échoué.
-        logError({
-          message: "Détection illustrations échouée (continue sans)",
-          errorDescription: err instanceof Error ? err.message : String(err),
-          moduleType: "DESIGN",
-          ...ctx,
-        });
-      }
-
-      const fileName = (job.file_name as string | undefined) ?? null;
-      const pageTypeSaved = transcription.pageType as CookLangPageType;
-
-      // Une page non-recette n'a rien à baliser : son texte part tel quel.
-      if (!isRecipePage && toProcess.includes(0)) {
-        await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
-        const id = await saveDraft({
-          cooklang: documentCooklang(transcription),
-          pageType: pageTypeSaved,
-          ingredients: [],
-          cuisines: [],
-          dishTypes: [],
-          mealRole: null,
-          contains: [],
-          suggestedSides: [],
-          mainProtein: null,
-          mainStarch: null,
-          mainIngredientsChecked: false,
-          userId,
-          bookId,
-          bookTitre,
-          illustrationUrls,
-          thumbnailUrls,
-          correlationId,
-          sourceFileUrl: fileUrl,
-          sourceFileName: fileName,
-          additionalSourceFileUrls: additionalFileUrls,
-          apiKey,
-          ctx,
-          illustrationReport,
-          duplicateOf: duplicateOf.get(0),
-        });
-        createdIds.push(id);
-        await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
-      }
-
-      for (const [index, recette] of transcription.recettes.entries()) {
-        if (!isRecipePage || !toProcess.includes(index)) continue;
-        // ── PASSE 2 : balisage et normalisation ─────────────────────────────
-        //
-        // Cette passe ne voit pas l'image : elle travaille sur ce que la passe 1
-        // a recopié. C'est ce qui rend la fidélité vérifiable — et vérifiée,
-        // juste en dessous, sans un appel de plus.
-        await jobRef.update({ current_step: "tagging", updated_at: Timestamp.now() });
-        if (bookWindow) await assertWithinImportBudget(ctx.scanId, "recipe_tagging");
-        const tagged = await tagAndNormalize(recette, {
-          ...ctx,
-          feature: "recipe_tagging",
-          moduleType: "IMPORT",
-        });
-
-        const fidelity = checkFidelity(recette, tagged);
-        if (fidelity.findings.length > 0) {
-          const resume = fidelity.findings.map((f) => f.message).join(" ");
-          const entree = {
-            message: `Contrôle de fidélité (${fidelity.level}) : ${resume}`,
-            moduleType: "IMPORT" as const,
-            ...ctx,
-            extra: {
-              titre: recette.titre,
-              niveau: fidelity.level,
-              codes: fidelity.findings.map((f) => f.code),
-            },
-          };
-          // Une rupture est une erreur : la recette balisée est écartée, et
-          // l'utilisateur doit pouvoir le savoir depuis l'écran des journaux
-          // sans avoir à comparer avec le livre.
-          if (fidelity.rejette) logError(entree);
-          else logInfo(entree);
-        }
-
-        // Repli : mieux vaut une recette exacte et non balisée qu'une recette
-        // balisée et fausse. Les ingrédients, eux, restent ceux de la passe 2 —
-        // ils viennent de la liste du livre, que le balisage n'a pas touchée.
-        const cooklang = fidelity.rejette ? verbatimCooklang(recette) : tagged.cooklang;
-
-        // Plus aucune image n'est attachée à l'import.
-        //
-        // Il y avait ici la copie des illustrations pour la seconde recette
-        // d'une même page — deux recettes ne pouvaient pas partager un objet
-        // Storage sans que la suppression de l'une vide l'autre. Ce soin n'a
-        // plus d'objet : l'import ne publie rien. Le garder aurait laissé
-        // croire, au prochain lecteur, qu'une extraction se produit encore.
-        const id = await saveDraft({
-          cooklang,
-          pageType: "recipe",
-          ingredients: tagged.ingredients,
-          cuisines: tagged.cuisines,
-          dishTypes: tagged.dishTypes,
-          mealRole: tagged.mealRole,
-          contains: tagged.contains,
-          suggestedSides: tagged.suggestedSides,
-          mainProtein: tagged.mainProtein,
-          mainStarch: tagged.mainStarch,
-          mainIngredientsChecked: tagged.mainIngredientsChecked,
-          userId,
-          bookId,
-          bookTitre,
-          illustrationUrls,
-          thumbnailUrls,
-          correlationId,
-          sourceFileUrl: fileUrl,
-          sourceFileName: fileName,
-          additionalSourceFileUrls: additionalFileUrls,
-          apiKey,
-          ctx,
-          fidelity,
-          illustrationReport,
-          traduction: recette.traduction,
-          duplicateOf: duplicateOf.get(index),
-          onStep: async (step) => {
-            await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
-          },
-          // La normalisation contre les référentiels a lieu AVANT l'écriture :
-          // la recette est écrite une fois, avec sa liste définitive. Elle
-          // était faite après, ce qui obligeait à réécrire le document et
-          // réveillait deux fois le déclencheur — qui calculait courses et
-          // nutrition d'abord sur la liste brute, puis sur la normalisée, en
-          // jetant le premier travail.
-          normalizationDeadlineMs: start + 420_000,
-        });
-        createdIds.push(id);
-        await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
-      }
-
-      if (held.length > 0) {
-        // Les autres recettes de la page sont écrites ; celles en double
-        // attendent, et la transcription reste sur le job pour la reprise.
-        await holdJob();
-        return;
-      }
-
-      const elapsed = Date.now() - start;
-      await jobRef.update({
-        status: "done",
-        current_step: "done",
-        created_recipe_ids: createdIds,
-        transcription_checkpoint: FieldValue.delete(),
-        ...(resuming
-          ? { pending_items: FieldValue.delete(), duplicates: FieldValue.delete() }
-          : {}),
-        updated_at: Timestamp.now(),
-        execution_time_ms: elapsed,
-      });
-
-      logInfo({
-        message: "Pipeline terminé avec succès",
-        moduleType: "IMPORT",
-        executionTimeMs: elapsed,
-        ...ctx,
-        extra: { createdIds, illustrationCount: illustrationUrls.length },
-      });
-    } catch (err) {
-      const isQuota = err instanceof GeminiQuotaExceededError;
-      // Un plafond de dépense ne se réessaie pas : il ne se rouvrira pas dans
-      // les minutes qui viennent, et chaque tentative refait tout le travail
-      // qui précède l'appel d'IA. Le job part directement en dead letter, d'où
-      // un administrateur le relancera demain — ou après avoir relevé le
-      // plafond.
-      // Seule exception : trop d'appels simultanés (`concurrency`) se libère
-      // en quelques secondes, et se réessaie comme une panne passagère.
-      const isBudget = err instanceof BudgetExceededError && err.reason !== "concurrency";
-      // Un livre illisible — PDF chiffré, EPUB sans texte — le reste à chaque
-      // tentative, et chacune retélécharge le fichier en entier.
-      const isUnreadableBook = err instanceof BookFileError;
-      // Un balisage coupé au plafond à tous les efforts essayés se rejouerait à
-      // l'identique : les deux appels ont déjà eu lieu.
-      const isTruncatedTagging = err instanceof TaggingTruncatedError;
-      // Le livre d'un autre le restera à chaque tentative.
-      const isForeignBook = err instanceof TargetBookNotOwned;
-      // Un fichier source hors du dossier du propriétaire le restera.
-      const isForbiddenSource = err instanceof StoragePathRefusedError;
-      // Une archive (DOCX, EPUB) au-delà des bornes de lecture le restera :
-      // chaque tentative la retéléchargerait pour la refuser au même endroit.
-      const isZipLimit = err instanceof ZipLimitError;
-      // Trop de pages supplémentaires : la liste ne raccourcira pas d'elle-même.
-      const isTooManyPages = err instanceof TooManyPagesError;
-      // Un import trop lourd le restera.
-      const isTooLarge = err instanceof ImportTooLargeError;
-      // Un import par lien : un échec lisible (page bloquée, sans recette,
-      // adresse refusée) ne se rejoue pas ; un délai dépassé, si.
-      const urlError = err instanceof UrlImportError ? err : null;
-      const isFinalUrlError = urlError != null && !urlError.retryable;
-      const message = err instanceof Error ? err.message : String(err);
-
-      if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
-        try {
-          await getFirestore().collection(COLL_BOOKS).doc(createdBookId).delete();
-          createdBookId = null;
-        } catch (cleanupErr) {
-          logError({
-            message: "Rollback livre échoué après erreur pipeline couverture",
-            errorDescription: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-            moduleType: "IMPORT",
-            ...ctx,
-            extra: { createdBookId },
-          });
-        }
-      }
-
-      logError({
-        message: "Échec pipeline",
-        errorDescription: message,
-        moduleType: "IMPORT",
-        executionTimeMs: Date.now() - start,
-        ...ctx,
-        extra: {
-          attempt,
-          isQuota,
-          isBudget,
-          isUnreadableBook,
-          isTruncatedTagging,
-          isForeignBook,
-          isForbiddenSource,
-          isZipLimit,
-          isTooManyPages,
-          isTooLarge,
-          urlErrorCode: urlError?.code ?? null,
-        },
-      });
-
-      // Dernière tentative — ou plafond atteint, fichier illisible, balisage
-      // coupé, livre cible d'un autre (`foreign_book`), fichier source hors du
-      // dossier du propriétaire (`forbidden_source_path`), archive au-delà des
-      // bornes de lecture (`archive_limit_exceeded`), plus de 20 pages
-      // supplémentaires (`too_many_pages`), plus de 200 Mo au total
-      // (`too_large`) : ces huit cas se rejouent à l'identique, il est inutile
-      // de les réessayer.
-      if (
-        attempt + 1 >= MAX_RETRY_ATTEMPTS ||
-        isBudget ||
-        isUnreadableBook ||
-        isTruncatedTagging ||
-        isForeignBook ||
-        isForbiddenSource ||
-        isZipLimit ||
-        isTooManyPages ||
-        isTooLarge ||
-        isFinalUrlError
-      ) {
-        await moveToDeadLetter({
-          jobId,
-          userId,
-          correlationId,
-          failureReason: isBudget
-            ? "budget_exceeded"
-            : isUnreadableBook
-              ? "book_file_unreadable"
-              : isTruncatedTagging
-                ? "tagging_truncated"
-                : isForeignBook
-                  ? "foreign_book"
-                  : isForbiddenSource
-                    ? "forbidden_source_path"
-                    : isZipLimit
-                      ? "archive_limit_exceeded"
-                      : isTooManyPages
-                        ? "too_many_pages"
-                        : isTooLarge
-                          ? "too_large"
-                          : urlError
-                            ? `url_${urlError.code}`
-                            : isQuota
-                              ? "quota_exceeded"
-                              : "pipeline_error",
-          lastError: message,
-          retryCount: attempt + 1,
-          filePath:
-            (job.file_url as string | undefined) || (job.source_url as string | undefined) || "",
-        });
-        await jobRef.update({
-          status: "error",
-          // Un import par lien porte un message lisible et son code : la tuile
-          // du client choisit ses actions sur le code.
-          error_message: urlError ? URL_IMPORT_MESSAGES[urlError.code] : message,
-          ...(urlError ? { error_code: urlError.code } : {}),
-          created_book_id: createdBookId,
-          updated_at: Timestamp.now(),
-        });
-        return; // success-return (no retry) — DLQ handler takes over
-      }
-
-      // Sinon on rethrow pour que Cloud Tasks retry.
-      throw new HttpsError("internal", message);
-    }
+/**
+ * Seconde file, réservée au scan d'une couverture de livre (`bookCoverScan`).
+ *
+ * Cloud Tasks n'a pas de priorité : une couverture mise dans la file des pages
+ * attendait derrière toutes les tranches d'un import de livre. Elle a sa propre
+ * file et sa propre limite de concurrence, et reprend le même traitement, les
+ * mêmes secrets, le même délai et les mêmes reprises. Elle garde les 2 Gio : le
+ * traitement commun télécharge aussi les pages supplémentaires du job, jusqu'au
+ * plafond d'import de 200 Mo, avant d'entrer dans la branche couverture.
+ */
+export const coverProcessor = onTaskDispatched(
+  {
+    region: REGION,
+    secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
+    memory: "2GiB",
+    timeoutSeconds: 540,
+    retryConfig: {
+      maxAttempts: MAX_RETRY_ATTEMPTS,
+      minBackoffSeconds: 10,
+      maxBackoffSeconds: 300,
+      maxDoublings: 4,
+    },
+    rateLimits: {
+      maxConcurrentDispatches: COVER_MAX_CONCURRENT_DISPATCHES,
+      maxDispatchesPerSecond: COVER_MAX_DISPATCHES_PER_SECOND,
+    },
   },
+  processJob,
 );
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
