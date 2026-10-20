@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
-### v0.24.25 — fonctionnel
+### v0.24.26 — fonctionnel
 
 Messages d'erreur des livres, des groupes, de l'Explorer, du compte et de l'atelier de
 retouche, troisième sous-lot du lot 8 de l'audit #151 (tickets #170 et #171).
@@ -65,6 +65,27 @@ libère à sa fermeture.
 
 Le message d'erreur de la connexion, cité dans l'audit, avait déjà quitté le texte technique
 en v0.24.20.
+
+### v0.24.25 — fonctionnel
+
+Le calcul de nutrition pèse maintenant « 1 noix de muscade », « 1 noix de beurre » et
+« 3 blancs d'œufs » (ou « jaunes »). Ces lignes restaient sans poids : la couverture restait
+partielle et le calcul semblait ne pas partir. Une noix de muscade compte 3 g, une noix de
+beurre 10 g, un blanc d'œuf 30 g et un jaune 18 g. Une épice écrite avec un nombre mais sans
+unité (« 1 muscade ») se lit en pincées. Une recette déjà calculée se corrige au prochain
+recalcul de sa nutrition.
+
+### v0.24.25 — technique
+
+Ticket #190. `getKnownUnitMetadata` consulte une table de couples unité/ingrédient
+(`UNIT_INGREDIENT_PROFILES`, `_unitIngredientProfiles` en Dart) : `noix` + muscade 3 g, `noix` +
+beurre 10 g, `blanc` + œuf 30 g, `jaune` + œuf 18 g, pluriels compris. Ces trois unités
+rejoignent `INGREDIENT_DEPENDENT_UNITS`. `resolveWeighingInput` lit en pincées la quantité d'un
+assaisonnement sans unité ni poids à la pièce. Fixture `unit_to_grams.json` : neuf cas ajoutés,
+rejoués par les deux suites. Aucun backfill. La reprise automatique de la nutrition ne reprend
+pas les recettes dont `missing_weight` porte `unite_sans_poids` ou `comptage_sans_poids`
+(`UNFIXABLE_BY_CATCH_UP`) : une recette déjà bloquée se recalcule depuis son écran ou à sa
+prochaine modification.
 
 ### v0.24.24 — fonctionnel
 
