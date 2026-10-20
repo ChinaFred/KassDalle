@@ -279,7 +279,7 @@ beforeEach(async () => {
     "group_reach/reader-no-claim": { uids: [EDITOR] },
     "app_config/usage": { storage_bytes: 10, updated_at: 1 },
     "app_config/ai_pricing": { models: {} },
-    "app_config/nutrition_policy": { mode: "strict" },
+    "app_config/nutrition_source_policy": { mode: "strict" },
     "app_config/backfill_schedules": {
       nutrition: { enabled: true, days: [1, 2, 3, 4, 5, 6, 7], hour: 5 },
     },
@@ -1139,7 +1139,7 @@ describe("users — rôle lu sur le document", () => {
       })
       .firestore();
     await assertFails(ctx.doc("app_config/usage").get());
-    await assertFails(ctx.doc("app_config/nutrition_policy").get());
+    await assertFails(ctx.doc("app_config/nutrition_source_policy").get());
   });
 
   it("le fondateur reste administrateur", async () => {
@@ -3178,7 +3178,7 @@ describe("app_config", () => {
   });
 
   it("un lecteur ne lit pas la politique nutrition", async () => {
-    await assertFails(db("reader").doc("app_config/nutrition_policy").get());
+    await assertFails(db("reader").doc("app_config/nutrition_source_policy").get());
   });
 
   it("un compte en attente ne lit pas ai_pricing", async () => {
@@ -3193,7 +3193,7 @@ describe("app_config", () => {
 
   it("un éditeur n'écrit pas la politique nutrition", async () => {
     await assertFails(
-      db("editor").doc("app_config/nutrition_policy").set({ mode: "open" }),
+      db("editor").doc("app_config/nutrition_source_policy").set({ mode: "open" }),
     );
   });
 
@@ -3211,9 +3211,62 @@ describe("app_config", () => {
     );
   });
 
-  it("un administrateur écrit la configuration", async () => {
+  // `nutrition_source_policy` passe par `setNutritionSourcePolicyFn` (#162).
+  it("un administrateur n'écrit pas la politique nutrition", async () => {
+    await assertFails(
+      db("admin").doc("app_config/nutrition_source_policy").set({ mode: "open" }),
+    );
+  });
+
+  // Politiques, caches et points de reprise lus par les Cloud Functions comme
+  // autorité : écrits par leur callable ou par le serveur seul (#162).
+  const SERVER_ONLY_CONFIG = [
+    "ai_pricing",
+    "ai_routing_policy",
+    "ai_budget_policy",
+    "app_check_policy",
+    "nutrition_source_policy",
+    "image_moderation",
+    "currency_rate",
+    "anthropic_costs",
+    "nutrition_catch_up_checkpoint",
+    "recipe_roles_backfill_checkpoint",
+    "backfill_cursor_refresh_sodium_ingredients",
+  ];
+
+  it("un administrateur n'écrit aucune politique ni point de reprise serveur", async () => {
+    for (const id of SERVER_ONLY_CONFIG) {
+      await assertFails(
+        db("admin").doc(`app_config/${id}`).set({ ecrit_par: "client" }),
+      );
+    }
+  });
+
+  it("un administrateur ne modifie ni ne supprime une politique serveur", async () => {
+    for (const id of SERVER_ONLY_CONFIG) {
+      await seedDocs(env, { [`app_config/${id}`]: { valeur: 1 } });
+      await assertFails(
+        db("admin").doc(`app_config/${id}`).update({ valeur: 2 }),
+      );
+      await assertFails(db("admin").doc(`app_config/${id}`).delete());
+    }
+  });
+
+  it("un administrateur lit les politiques et points de reprise serveur", async () => {
+    for (const id of SERVER_ONLY_CONFIG) {
+      await seedDocs(env, { [`app_config/${id}`]: { valeur: 1 } });
+      await assertSucceeds(db("admin").doc(`app_config/${id}`).get());
+    }
+  });
+
+  it("un administrateur écrit toujours un document de configuration ouvert", async () => {
     await assertSucceeds(
-      db("admin").doc("app_config/nutrition_policy").set({ mode: "open" }),
+      db("admin")
+        .doc("app_config/tickets")
+        .set({ per_member_per_day: 3, global_per_day: 20 }),
+    );
+    await assertSucceeds(
+      db("admin").doc("app_config/tickets").update({ global_per_day: 40 }),
     );
   });
 
