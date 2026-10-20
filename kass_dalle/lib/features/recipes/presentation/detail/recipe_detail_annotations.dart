@@ -9,6 +9,7 @@ import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../../core/presentation/stylus_pad_text_field.dart';
+import '../../../../core/widgets/tappable_pill.dart';
 
 // ── Couleurs badge annotation ──────────────────────────────────────────────
 
@@ -20,45 +21,135 @@ Color annotNoteFg(ThemeData theme) => theme.brightness == Brightness.dark
     ? Colors.white
     : const Color(0xFF0D47A1); // blue.shade900
 
-// ── Badge annotation (avec onTap, pour AppBar) ────────────────────────────
+// ── Pastilles d'annotation ───────────────────────────────────────────────
 
-class DetailAnnotBadge extends StatelessWidget {
+/// Nombre d'annotations de chaque type, pour les pastilles.
+typedef AnnotationCounts = ({int notes, int tips, int corrections});
+
+/// Compte les annotations par type.
+AnnotationCounts countAnnotations(Iterable<Annotation> annotations) {
+  var notes = 0, tips = 0, corrections = 0;
+  for (final a in annotations) {
+    switch (a.type) {
+      case AnnotationType.note:
+        notes++;
+      case AnnotationType.tip:
+        tips++;
+      case AnnotationType.correction:
+        corrections++;
+    }
+  }
+  return (notes: notes, tips: tips, corrections: corrections);
+}
+
+/// « 2 remarques, 1 astuce, 1 correction » ; les types à zéro sont omis.
+///
+/// Chaîne vide quand il n'y a aucune annotation.
+String annotationCountsLabel(AnnotationCounts counts) {
+  String part(int n, String singular, String plural) =>
+      '$n ${n > 1 ? plural : singular}';
+  return [
+    if (counts.notes > 0) part(counts.notes, 'remarque', 'remarques'),
+    if (counts.tips > 0) part(counts.tips, 'astuce', 'astuces'),
+    if (counts.corrections > 0)
+      part(counts.corrections, 'correction', 'corrections'),
+  ].join(', ');
+}
+
+/// Les pastilles d'annotation d'une recette (remarques, astuces, corrections).
+///
+/// Avec [onTap] (la fiche), le groupe forme une seule cible de 48 px :
+/// « 2 remarques, 1 astuce. Voir les annotations ». Sans [onTap] (la liste),
+/// le groupe ne fait que décrire, et son texte est lu avec la tuile.
+/// Rien n'est dessiné quand la recette n'a aucune annotation.
+class AnnotationPills extends StatelessWidget {
+  final AnnotationCounts counts;
+  final VoidCallback? onTap;
+
+  const AnnotationPills({super.key, required this.counts, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = annotationCountsLabel(counts);
+    if (label.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final pills = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (counts.notes > 0)
+          _AnnotationPill(
+            icon: Icons.sticky_note_2_outlined,
+            count: counts.notes,
+            color: annotNoteColor(theme),
+            foregroundColor: annotNoteFg(theme),
+          ),
+        if (counts.tips > 0)
+          _AnnotationPill(
+            icon: Icons.lightbulb_outline,
+            count: counts.tips,
+            color: cs.tertiaryContainer,
+            foregroundColor: cs.onTertiaryContainer,
+          ),
+        if (counts.corrections > 0)
+          _AnnotationPill(
+            icon: Icons.build_circle_outlined,
+            count: counts.corrections,
+            color: cs.errorContainer,
+            foregroundColor: cs.onErrorContainer,
+          ),
+      ],
+    );
+    final tap = onTap;
+    if (tap == null) {
+      return Semantics(
+        label: label,
+        child: ExcludeSemantics(child: pills),
+      );
+    }
+    return TappablePill(
+      label: '$label. Voir les annotations',
+      onTap: tap,
+      customBorder: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: pills,
+    );
+  }
+}
+
+class _AnnotationPill extends StatelessWidget {
   final IconData icon;
   final int count;
   final Color color;
   final Color foregroundColor;
-  final VoidCallback onTap;
-  const DetailAnnotBadge({
-    super.key,
+
+  const _AnnotationPill({
     required this.icon,
     required this.count,
     required this.color,
     required this.foregroundColor,
-    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(left: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: AppIconSize.badge, color: foregroundColor),
-            const SizedBox(width: 3),
-            Text(
-              '$count',
-              style: TextStyle(fontSize: 11, color: foregroundColor),
-            ),
-          ],
-        ),
+    return Container(
+      margin: const EdgeInsets.only(left: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: AppIconSize.badge, color: foregroundColor),
+          const SizedBox(width: 3),
+          Text(
+            '$count',
+            style: TextStyle(fontSize: 11, color: foregroundColor),
+          ),
+        ],
       ),
     );
   }

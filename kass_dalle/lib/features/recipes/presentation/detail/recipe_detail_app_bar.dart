@@ -9,7 +9,6 @@ import '../original_text_viewer.dart';
 import '../source_viewer.dart';
 import '../../../auth/domain/app_user.dart';
 import '../../../auth/presentation/auth_providers.dart';
-import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../ai/ai_ui_copy.dart';
@@ -96,44 +95,14 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
     final ownerAsync = ref.watch(userProfileProvider(recipe.createdBy));
     final freeRecipeCoverUrl = ownerAsync.value?.freeRecipeCoverUrl ?? '';
     final annotations = ref.watch(annotationsProvider(recipe.id)).value ?? [];
-    final noteCount = annotations
-        .where((a) => a.type == AnnotationType.note)
-        .length;
-    final tipCount = annotations
-        .where((a) => a.type == AnnotationType.tip)
-        .length;
-    final corrCount = annotations
-        .where((a) => a.type == AnnotationType.correction)
-        .length;
-    // Les puces d'annotation se lisent d'un coup d'œil : combien de remarques,
-    // d'astuces, de corrections. Elles sont les mêmes des deux côtés — seule
-    // la place qu'on leur donne change.
-    final annotBadges = <Widget>[
-      if (noteCount > 0)
-        DetailAnnotBadge(
-          icon: Icons.sticky_note_2_outlined,
-          count: noteCount,
-          color: annotNoteColor(Theme.of(context)),
-          foregroundColor: annotNoteFg(Theme.of(context)),
-          onTap: onScrollToAnnotations,
-        ),
-      if (tipCount > 0)
-        DetailAnnotBadge(
-          icon: Icons.lightbulb_outline,
-          count: tipCount,
-          color: Theme.of(context).colorScheme.tertiaryContainer,
-          foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
-          onTap: onScrollToAnnotations,
-        ),
-      if (corrCount > 0)
-        DetailAnnotBadge(
-          icon: Icons.build_circle_outlined,
-          count: corrCount,
-          color: Theme.of(context).colorScheme.errorContainer,
-          foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
-          onTap: onScrollToAnnotations,
-        ),
-    ];
+    // Les pastilles d'annotation se lisent d'un coup d'œil : combien de
+    // remarques, d'astuces, de corrections. Elles forment une seule cible, qui
+    // mène aux annotations. Elles sont les mêmes des deux côtés — seule la
+    // place qu'on leur donne change.
+    final annotPills = AnnotationPills(
+      counts: countAnnotations(annotations),
+      onTap: onScrollToAnnotations,
+    );
 
     final bookListLocation = Uri(
       path: '/recipes',
@@ -256,7 +225,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
             ),
             const SizedBox(width: 6),
             RecipeRatingBadge(recipeId: recipe.id),
-            ...annotBadges,
+            annotPills,
           ],
         ),
         bottom: PreferredSize(
@@ -355,20 +324,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        recipe.titre,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    RecipeRatingBadge(recipeId: recipe.id),
-                    ...annotBadges,
-                  ],
-                ),
+                Text(recipe.titre, overflow: TextOverflow.ellipsis),
                 // La mention de traduction partage la ligne du livre : une ligne
                 // de plus déborderait la barre, qui garde sa hauteur standard.
                 Row(
@@ -420,6 +376,12 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
               ],
             ),
           ),
+          // Note et annotations à droite du bloc titre/livre, centrées dans la
+          // barre : leurs cibles de 48 px ne tiennent pas dans la ligne du
+          // titre, qui partage 56 px avec la ligne du livre.
+          const SizedBox(width: 8),
+          RecipeRatingBadge(recipeId: recipe.id),
+          annotPills,
         ],
       ),
       actions: [

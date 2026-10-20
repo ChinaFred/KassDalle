@@ -8,59 +8,84 @@ import '../../../core/theme/app_icon_size.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
+import '../../../core/widgets/tappable_pill.dart';
+import 'recipe_rating_colors.dart';
 import '../../groups/presentation/group_providers.dart';
 
-/// Badge compact affichant la note de l'utilisateur (ex : ★ 8).
-/// Appuyez dessus pour ouvrir le sélecteur de note.
+/// Pastille compacte affichant la note de l'utilisateur (ex : ★ 8).
+///
+/// Sur la fiche, l'appui ouvre le sélecteur de note ; la cible fait 48 px.
+/// En lecture seule ([readOnly], liste et recherche), la pastille n'a pas
+/// d'action propre : son texte est lu avec la tuile, dont l'appui ouvre la
+/// fiche.
 class RecipeRatingBadge extends ConsumerWidget {
   final String recipeId;
+  final bool readOnly;
 
-  const RecipeRatingBadge({super.key, required this.recipeId});
+  const RecipeRatingBadge({
+    super.key,
+    required this.recipeId,
+    this.readOnly = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ratingAsync = ref.watch(myRatingProvider(recipeId));
     final rating = ratingAsync.value?.rating;
+    final pill = RatingPill(rating: rating);
 
-    return GestureDetector(
-      onTap: () => _showRatingDialog(context, ref, rating),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: rating != null
-              ? _ratingColor(rating, Theme.of(context))
-              : Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              rating != null ? Icons.star_rounded : Icons.star_outline_rounded,
-              size: AppIconSize.badge,
-              color: rating != null
-                  ? _ratingFg(rating, Theme.of(context))
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 3),
-            Text(
-              rating != null ? '$rating' : '–',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: rating != null
-                    ? _ratingFg(rating, Theme.of(context))
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
+    if (readOnly) {
+      return Semantics(
+        label: ratingBadgeLabel(rating, editable: false),
+        child: ExcludeSemantics(child: pill),
+      );
+    }
+    return TappablePill(
+      label: ratingBadgeLabel(rating, editable: true),
+      onTap: () => showRecipeRatingDialog(context, recipeId, rating),
+      child: pill,
     );
   }
+}
 
-  void _showRatingDialog(BuildContext context, WidgetRef ref, int? current) {
-    showRecipeRatingDialog(context, recipeId, current);
+/// Dessin de la pastille de note, sans action.
+class RatingPill extends StatelessWidget {
+  final int? rating;
+
+  const RatingPill({super.key, required this.rating});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final value = rating;
+    final colors = value != null ? ratingColors(value, cs) : null;
+    final fg = colors?.foreground ?? cs.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: colors?.background ?? cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            value != null ? Icons.star_rounded : Icons.star_outline_rounded,
+            size: AppIconSize.badge,
+            color: fg,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            value != null ? '$value' : '–',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: fg,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -300,11 +325,11 @@ class _RatingChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colors = ratingColors(rating, Theme.of(context).colorScheme);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: _ratingColor(rating, theme),
+        color: colors.background,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -312,7 +337,7 @@ class _RatingChip extends StatelessWidget {
         style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.bold,
-          color: _ratingFg(rating, theme),
+          color: colors.foreground,
         ),
       ),
     );
@@ -602,18 +627,4 @@ class _MemberRatingTile extends StatelessWidget {
       ),
     );
   }
-}
-
-// ── Helpers couleur ───────────────────────────────────────────────────────────
-
-Color _ratingColor(int rating, ThemeData theme) {
-  if (rating >= 8) return Colors.green.shade100;
-  if (rating >= 5) return Colors.orange.shade100;
-  return Colors.red.shade100;
-}
-
-Color _ratingFg(int rating, ThemeData theme) {
-  if (rating >= 8) return Colors.green.shade800;
-  if (rating >= 5) return Colors.orange.shade800;
-  return Colors.red.shade800;
 }

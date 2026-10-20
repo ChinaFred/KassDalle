@@ -4,13 +4,6 @@ import 'package:flutter/services.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
 
-// ── Palette (consistent with editor) ─────────────────────────────────────────
-const _kSectionColor = Color(0xFF3949AB);
-const _kCommentColor = Color(0xFF6A9955);
-const _kMetaColor = Color(0xFF9E9E9E);
-const _kImageColor = Color(0xFF00838F); // teal 700
-const _kContinuationColor = Color(0xFF607D8B); // blue-grey 600
-
 /// Standalone help page explaining the Cooklang + Markdown syntax.
 ///
 /// Can be pushed as a full route or wrapped in a BottomSheet / Dialog.
@@ -58,7 +51,7 @@ class CooklangHelpPage extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade400,
+                  color: Theme.of(ctx).colorScheme.outline,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -99,6 +92,8 @@ class _HelpContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = CooklangPalette.ofContext(context);
+    final cs = Theme.of(context).colorScheme;
     return ListView(
       controller: scrollController,
       padding: const EdgeInsets.all(20),
@@ -112,7 +107,7 @@ class _HelpContent extends StatelessWidget {
           number: '1',
           title: 'Les Ingrédients',
           icon: '🥬',
-          color: kCooklangIngredientColor,
+          color: p.ingredient,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -124,28 +119,28 @@ class _HelpContent extends StatelessWidget {
           raw: '@farine',
           hint: 'Un seul mot (s\'arrête au premier espace)',
           chipLabel: 'farine',
-          chipColor: kCooklangIngredientColor,
+          chipColor: p.ingredient,
           chipIcon: '🥬',
         ),
         _RuleRow(
           raw: '@sucre vanillé{}',
           hint: 'Plusieurs mots : accolades vides',
           chipLabel: 'sucre vanillé',
-          chipColor: kCooklangIngredientColor,
+          chipColor: p.ingredient,
           chipIcon: '🥬',
         ),
         _RuleRow(
           raw: '@lait{500%ml}',
           hint: 'Quantité et unité : @nom{qté%unité}',
           chipLabel: 'lait 500 ml',
-          chipColor: kCooklangIngredientColor,
+          chipColor: p.ingredient,
           chipIcon: '🥬',
         ),
         _RuleRow(
           raw: '@œufs{3}',
           hint: 'Quantité seule (sans unité)',
           chipLabel: 'œufs 3',
-          chipColor: kCooklangIngredientColor,
+          chipColor: p.ingredient,
           chipIcon: '🥬',
         ),
         const SizedBox(height: 24),
@@ -155,7 +150,7 @@ class _HelpContent extends StatelessWidget {
           number: '2',
           title: 'Les Ustensiles',
           icon: '🍳',
-          color: kCooklangUtensilColor,
+          color: p.utensil,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -167,14 +162,14 @@ class _HelpContent extends StatelessWidget {
           raw: '#mixeur',
           hint: 'Un seul mot',
           chipLabel: 'mixeur',
-          chipColor: kCooklangUtensilColor,
+          chipColor: p.utensil,
           chipIcon: '🍳',
         ),
         _RuleRow(
           raw: '#moule à cake{}',
           hint: 'Plusieurs mots : accolades vides',
           chipLabel: 'moule à cake',
-          chipColor: kCooklangUtensilColor,
+          chipColor: p.utensil,
           chipIcon: '🍳',
         ),
         const SizedBox(height: 24),
@@ -184,7 +179,7 @@ class _HelpContent extends StatelessWidget {
           number: '3',
           title: 'Les Durées et Minuteurs',
           icon: '⏱',
-          color: kCooklangTimerColor,
+          color: p.timer,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -197,14 +192,14 @@ class _HelpContent extends StatelessWidget {
           raw: '~{30%minutes}',
           hint: 'Minuteur simple : ~{durée%unité}',
           chipLabel: '30 minutes',
-          chipColor: kCooklangTimerColor,
+          chipColor: p.timer,
           chipIcon: '⏱',
         ),
         _RuleRow(
           raw: '~pétrissage{10%minutes}',
           hint: 'Minuteur nommé : ~nom{durée%unité}',
           chipLabel: 'pétrissage 10 minutes',
-          chipColor: kCooklangTimerColor,
+          chipColor: p.timer,
           chipIcon: '⏱',
         ),
         const SizedBox(height: 24),
@@ -214,7 +209,7 @@ class _HelpContent extends StatelessWidget {
           number: '4',
           title: 'Organiser avec des Sections',
           icon: '📌',
-          color: _kSectionColor,
+          color: p.section,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -227,19 +222,19 @@ class _HelpContent extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.amber.shade50,
+            color: cs.tertiaryContainer,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.amber.shade300),
+            border: Border.all(color: cs.tertiary),
           ),
-          child: const Row(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('⚠️ ', style: TextStyle(fontSize: 15)),
+              const Text('⚠️ ', style: TextStyle(fontSize: 15)),
               Expanded(
                 child: Text(
                   'N\'oubliez pas l\'espace après ##. '
                   'Sans espace, l\'application pense que vous parlez d\'un ustensile !',
-                  style: TextStyle(fontSize: 13),
+                  style: TextStyle(fontSize: 13, color: cs.onTertiaryContainer),
                 ),
               ),
             ],
@@ -252,7 +247,7 @@ class _HelpContent extends StatelessWidget {
           number: '5',
           title: 'Mise en forme du texte (Markdown)',
           icon: '✍️',
-          color: Colors.blueGrey,
+          color: p.continuation,
         ),
         const SizedBox(height: 10),
         _RuleRow(
@@ -263,7 +258,7 @@ class _HelpContent extends StatelessWidget {
             'Mélanger vigoureusement',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
           ),
-          chipColor: Colors.blueGrey,
+          chipColor: p.continuation,
           chipIcon: null,
         ),
         _RuleRow(
@@ -274,7 +269,7 @@ class _HelpContent extends StatelessWidget {
             'Servir préchauffé',
             style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 13),
           ),
-          chipColor: Colors.blueGrey,
+          chipColor: p.continuation,
           chipIcon: null,
         ),
         _RuleRow(
@@ -290,7 +285,7 @@ class _HelpContent extends StatelessWidget {
               const Text('Ma remarque', style: TextStyle(fontSize: 13)),
             ],
           ),
-          chipColor: Colors.blueGrey,
+          chipColor: p.continuation,
           chipIcon: null,
         ),
         const SizedBox(height: 24),
@@ -300,7 +295,7 @@ class _HelpContent extends StatelessWidget {
           number: '6',
           title: 'Notes secrètes (Commentaires)',
           icon: '💬',
-          color: _kCommentColor,
+          color: p.comment,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -316,19 +311,19 @@ class _HelpContent extends StatelessWidget {
           preview: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: _kCommentColor.withValues(alpha: 0.08),
-              border: Border(left: BorderSide(color: _kCommentColor, width: 3)),
+              color: p.comment.withValues(alpha: 0.08),
+              border: Border(left: BorderSide(color: p.comment, width: 3)),
             ),
             child: Text(
               '💬 Recette de grand-mère, sept. 2024',
               style: TextStyle(
                 fontSize: 12,
                 fontStyle: FontStyle.italic,
-                color: _kCommentColor,
+                color: p.comment,
               ),
             ),
           ),
-          chipColor: _kCommentColor,
+          chipColor: p.comment,
           chipIcon: null,
         ),
         const SizedBox(height: 24),
@@ -338,7 +333,7 @@ class _HelpContent extends StatelessWidget {
           number: '7',
           title: 'Métadonnées de la recette',
           icon: '⚙️',
-          color: _kMetaColor,
+          color: p.meta,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -361,7 +356,7 @@ class _HelpContent extends StatelessWidget {
           number: '8',
           title: 'Insérer une Image',
           icon: '🖼️',
-          color: _kImageColor,
+          color: p.image,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -380,20 +375,20 @@ class _HelpContent extends StatelessWidget {
               Icon(
                 Icons.image_outlined,
                 size: AppIconSize.small,
-                color: _kImageColor,
+                color: p.image,
               ),
               const SizedBox(width: 6),
               Text(
                 'Image — pleine largeur',
                 style: TextStyle(
                   fontSize: 12,
-                  color: _kImageColor,
+                  color: p.image,
                   fontStyle: FontStyle.italic,
                 ),
               ),
             ],
           ),
-          chipColor: _kImageColor,
+          chipColor: p.image,
         ),
         _RuleRow(
           raw: '![left](https://...)',
@@ -404,28 +399,28 @@ class _HelpContent extends StatelessWidget {
               Icon(
                 Icons.image_outlined,
                 size: AppIconSize.small,
-                color: _kImageColor,
+                color: p.image,
               ),
               const SizedBox(width: 6),
               Text(
                 'Image — gauche',
                 style: TextStyle(
                   fontSize: 12,
-                  color: _kImageColor,
+                  color: p.image,
                   fontStyle: FontStyle.italic,
                 ),
               ),
             ],
           ),
-          chipColor: _kImageColor,
+          chipColor: p.image,
         ),
         Container(
           margin: const EdgeInsets.only(top: 10),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: _kImageColor.withValues(alpha: 0.06),
+            color: p.image.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: _kImageColor.withValues(alpha: 0.3)),
+            border: Border.all(color: p.image.withValues(alpha: 0.3)),
           ),
           child: const Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -449,7 +444,7 @@ class _HelpContent extends StatelessWidget {
           number: '9',
           title: 'Continuation d’étape',
           icon: '↳',
-          color: _kContinuationColor,
+          color: p.continuation,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -467,17 +462,17 @@ class _HelpContent extends StatelessWidget {
             decoration: BoxDecoration(
               border: Border(
                 left: BorderSide(
-                  color: _kContinuationColor.withValues(alpha: 0.5),
+                  color: p.continuation.withValues(alpha: 0.5),
                   width: 2,
                 ),
               ),
             ),
             child: Text(
               '↳ La pâte doit être lisse et souple.',
-              style: TextStyle(fontSize: 12, color: _kContinuationColor),
+              style: TextStyle(fontSize: 12, color: p.continuation),
             ),
           ),
-          chipColor: _kContinuationColor,
+          chipColor: p.continuation,
         ),
         const SizedBox(height: 8),
         _CodeBlock(
@@ -490,11 +485,9 @@ class _HelpContent extends StatelessWidget {
           margin: const EdgeInsets.only(top: 10),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: _kContinuationColor.withValues(alpha: 0.06),
+            color: p.continuation.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: _kContinuationColor.withValues(alpha: 0.3),
-            ),
+            border: Border.all(color: p.continuation.withValues(alpha: 0.3)),
           ),
           child: const Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -594,8 +587,8 @@ class _SectionTitle extends StatelessWidget {
           child: Center(
             child: Text(
               number,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.surface,
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
               ),
@@ -680,12 +673,12 @@ class _RuleRow extends StatelessWidget {
               ),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Icon(
               Icons.arrow_forward,
               size: AppIconSize.inline,
-              color: Colors.grey,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           // Preview side
@@ -702,7 +695,7 @@ class _RuleRow extends StatelessWidget {
                       hint,
                       style: TextStyle(
                         fontSize: 10,
-                        color: Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -794,7 +787,10 @@ Laisser cuire la pâte environ ~{2%minutes} par crêpe.
         const SizedBox(height: 8),
         Text(
           '💡 Maintenez appuyé pour copier dans le presse-papier',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+          style: TextStyle(
+            fontSize: 11,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );

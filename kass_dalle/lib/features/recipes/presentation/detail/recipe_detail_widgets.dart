@@ -291,13 +291,15 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
               SliverToBoxAdapter(child: AppErrorState(error: e, compact: true)),
           data: (annotations) {
             if (annotations.isEmpty) {
-              return const SliverToBoxAdapter(
+              return SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Center(
                     child: Text(
                       'Aucune annotation. Soyez le premier !',
-                      style: TextStyle(color: Colors.grey),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),

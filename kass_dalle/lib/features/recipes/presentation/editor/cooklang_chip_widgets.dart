@@ -141,12 +141,15 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
         children: [
           Row(
             children: [
-              const Icon(Icons.eco_outlined, color: kCooklangIngredientColor),
+              Icon(
+                Icons.eco_outlined,
+                color: CooklangPalette.ofContext(context).ingredient,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Ingrédient',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: kCooklangIngredientColor,
+                  color: CooklangPalette.ofContext(context).ingredient,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -207,9 +210,6 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: () => _confirm(context),
-                style: FilledButton.styleFrom(
-                  backgroundColor: kCooklangIngredientColor,
-                ),
                 child: const Text('Valider'),
               ),
             ],
@@ -247,12 +247,15 @@ class UtensilChipWidget extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            const Icon(Icons.kitchen_outlined, color: kCooklangUtensilColor),
+            Icon(
+              Icons.kitchen_outlined,
+              color: CooklangPalette.ofContext(context).utensil,
+            ),
             const SizedBox(width: 8),
             Text(
               'Ustensile',
               style: TextStyle(
-                color: kCooklangUtensilColor,
+                color: CooklangPalette.ofContext(context).utensil,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -279,9 +282,6 @@ class UtensilChipWidget extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            style: FilledButton.styleFrom(
-              backgroundColor: kCooklangUtensilColor,
-            ),
             child: const Text('Valider'),
           ),
         ],
@@ -482,12 +482,15 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
         children: [
           Row(
             children: [
-              const Icon(Icons.timer_outlined, color: kCooklangTimerColor),
+              Icon(
+                Icons.timer_outlined,
+                color: CooklangPalette.ofContext(context).timer,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Minuteur',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: kCooklangTimerColor,
+                  color: CooklangPalette.ofContext(context).timer,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -550,9 +553,6 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: () => _confirm(context),
-                style: FilledButton.styleFrom(
-                  backgroundColor: kCooklangTimerColor,
-                ),
                 child: const Text('Valider'),
               ),
             ],

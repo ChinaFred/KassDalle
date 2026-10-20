@@ -75,7 +75,7 @@ class _FidelityBannerState extends State<FidelityBanner> {
     // apprend à ignorer les vraies.
     final couleur = sansEcartDeTexte
         ? theme.colorScheme.primary
-        : (rupture ? theme.colorScheme.error : Colors.orange);
+        : (rupture ? theme.colorScheme.error : theme.colorScheme.tertiary);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),

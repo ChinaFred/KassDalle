@@ -192,14 +192,15 @@ class _KpiGrid extends StatelessWidget {
               label: 'Enrichis (per100g)',
               value: '$enriched ($enrichedPct\u202f%)',
               icon: Icons.check_circle_outline,
-              color: Colors.green,
             ),
             const SizedBox(width: 8),
             _KpiChip(
               label: 'En attente',
               value: '$pending',
               icon: Icons.hourglass_empty_outlined,
-              color: pending > 0 ? Colors.orange : Colors.green,
+              color: pending > 0
+                  ? theme.colorScheme.tertiary
+                  : theme.colorScheme.primary,
             ),
           ],
         ),
@@ -211,7 +212,6 @@ class _KpiGrid extends StatelessWidget {
               value: total > 0 ? enriched / total : 0,
               minHeight: 6,
               backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
             ),
           ),
         ],

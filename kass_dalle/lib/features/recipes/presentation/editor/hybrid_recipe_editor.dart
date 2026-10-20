@@ -284,12 +284,6 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
                 IconButton(
                   icon: const Icon(Icons.help_outline, size: AppIconSize.small),
                   tooltip: 'Guide de rédaction Cooklang',
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 30,
-                    minHeight: 30,
-                  ),
                   onPressed: () => CooklangHelpPage.showAsSheet(context),
                 ),
 
@@ -311,18 +305,19 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
   // ── Text mode ─────────────────────────────────────────────────────────────
 
   Widget _buildTextMode() {
+    final cs = Theme.of(context).colorScheme;
     return Container(
-      color: Colors.white,
+      color: cs.surfaceContainerLowest,
       child: TextField(
         controller: _syntaxCtrl,
         enabled: widget.enabled,
         maxLines: null,
         expands: true,
         textAlignVertical: TextAlignVertical.top,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'monospace',
           fontSize: 13,
-          color: Colors.black87,
+          color: cs.onSurface,
         ),
         decoration: InputDecoration(
           hintText: widget.showHelp
@@ -334,7 +329,7 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
           alignLabelWithHint: widget.showHelp,
           border: const OutlineInputBorder(borderRadius: BorderRadius.zero),
           contentPadding: const EdgeInsets.all(12),
-          fillColor: Colors.white,
+          fillColor: cs.surfaceContainerLowest,
           filled: true,
         ),
       ),
