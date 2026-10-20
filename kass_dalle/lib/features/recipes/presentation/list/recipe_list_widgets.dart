@@ -480,12 +480,12 @@ class RecipeActionsMenu extends ConsumerWidget {
             context.showSuccessSnackBar('Recette détachée du livre.');
           } catch (e, stackTrace) {
             reportUnexpectedError(
-              feature: 'recipeListWidgets.build',
+              feature: 'recipeListWidgets.detachFromBook',
               error: e,
               stackTrace: stackTrace,
             );
             if (!context.mounted) return;
-            context.showErrorSnackBar('Erreur : $e');
+            context.showFailureSnackBar('Recette non détachée du livre', e);
           }
         } else if (action == _RecipeAction.edit) {
           if (!context.mounted) return;
@@ -523,12 +523,12 @@ class RecipeActionsMenu extends ConsumerWidget {
             context.showSuccessSnackBar('Recette supprimée.');
           } catch (e, stackTrace) {
             reportUnexpectedError(
-              feature: 'recipeListWidgets.build',
+              feature: 'recipeListWidgets.deleteRecipe',
               error: e,
               stackTrace: stackTrace,
             );
             if (!context.mounted) return;
-            context.showErrorSnackBar('Erreur : $e');
+            context.showFailureSnackBar('Recette non supprimée', e);
           }
         }
       },

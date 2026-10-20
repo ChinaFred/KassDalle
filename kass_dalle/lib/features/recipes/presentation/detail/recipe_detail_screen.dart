@@ -275,7 +275,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur upload : $e');
+        context.showFailureSnackBar('Couverture non mise à jour', e);
       }
     } finally {
       if (mounted) setState(() => _uploadingFreeCover = false);
@@ -435,7 +435,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
               stackTrace: stackTrace,
             );
             if (!context.mounted) return;
-            context.showErrorSnackBar('Erreur enregistrement portions : $e');
+            context.showFailureSnackBar('Portions non enregistrées', e);
           }
         }
 
@@ -741,7 +741,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur export PDF : $e');
+      context.showFailureSnackBar('PDF non exporté', e);
     }
   }
 
@@ -790,7 +790,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         stackTrace: stackTrace,
       );
       if (!context.mounted) return;
-      context.showErrorSnackBar('Erreur : $e');
+      context.showFailureSnackBar('Recette non copiée', e);
     }
   }
 
@@ -836,7 +836,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur : $e');
+      context.showFailureSnackBar('Copie à améliorer non créée', e);
     }
   }
 
@@ -875,7 +875,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur suppression : $e');
+      context.showFailureSnackBar('Recette non supprimée', e);
     }
   }
 
@@ -912,7 +912,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         stackTrace: stackTrace,
       );
       if (!context.mounted) return;
-      context.showErrorSnackBar('Erreur : $e');
+      context.showFailureSnackBar('Recette non détachée du livre', e);
     }
   }
 

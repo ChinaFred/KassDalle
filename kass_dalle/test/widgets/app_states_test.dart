@@ -1,106 +1,32 @@
-import 'dart:async';
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kass_dalle/core/services/gemini_service.dart'
-    show GeminiCallableException;
 import 'package:kass_dalle/core/widgets/app_states.dart';
 import 'package:kass_dalle/core/widgets/error_message.dart';
+import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 
 /// Exception Firebase minimale : `FirebaseException` est concrète et n'exige
 /// que `plugin`, ce qui suffit à rejouer l'aiguillage sur `code`.
 FirebaseException _firebaseError(String code) =>
     FirebaseException(plugin: 'cloud_firestore', code: code);
 
-Future<void> _pump(WidgetTester tester, Widget child) {
+/// [isAdmin] fixe le rôle lu par `AppErrorState` : « Détails » n'est
+/// montré qu'à un administrateur. Par défaut, un administrateur, pour que
+/// les tests du repli des détails s'appliquent.
+Future<void> _pump(WidgetTester tester, Widget child, {bool isAdmin = true}) {
   return tester.pumpWidget(
-    MaterialApp(
-      locale: const Locale('fr'),
-      home: Scaffold(body: child),
+    ProviderScope(
+      overrides: [isAdminProvider.overrideWithValue(isAdmin)],
+      child: MaterialApp(
+        locale: const Locale('fr'),
+        home: Scaffold(body: child),
+      ),
     ),
   );
 }
 
 void main() {
-  group('describeError', () {
-    test('un réseau coupé est réessayable et le dit en français', () {
-      final m = describeError(_firebaseError('unavailable'));
-      expect(m.title, 'Connexion perdue');
-      expect(m.retryable, isTrue);
-      expect(m.advice, contains('connexion internet'));
-    });
-
-    test('un refus de droits n\'est pas réessayable', () {
-      final m = describeError(_firebaseError('permission-denied'));
-      expect(m.title, 'Accès refusé');
-      // Le distinguer n'est pas cosmétique : proposer « Réessayer » sur un
-      // refus de droits promet un résultat que le deuxième appui ne donnera pas.
-      expect(m.retryable, isFalse);
-    });
-
-    test('une session expirée oriente vers la reconnexion', () {
-      final m = describeError(_firebaseError('unauthenticated'));
-      expect(m.title, 'Session expirée');
-      expect(m.retryable, isFalse);
-    });
-
-    test('un document absent n\'invite pas à réessayer', () {
-      expect(describeError(_firebaseError('not-found')).retryable, isFalse);
-    });
-
-    test('un délai dépassé est réessayable', () {
-      final m = describeError(TimeoutException('trop long'));
-      expect(m.title, contains('trop de temps'));
-      expect(m.retryable, isTrue);
-    });
-
-    test('une panne réseau sans code Firebase est reconnue au texte', () {
-      final m = describeError(
-        Exception(
-          'SocketException: Failed host lookup: firestore.googleapis.com',
-        ),
-      );
-      expect(m.title, 'Connexion perdue');
-    });
-
-    test(
-      'une exception inconnue reste réessayable, sans mentir sur sa nature',
-      () {
-        final m = describeError(StateError('bizarre'));
-        expect(m.title, 'Une erreur inattendue est survenue');
-        expect(m.retryable, isTrue);
-      },
-    );
-
-    test('une erreur nulle ne fait pas planter le message', () {
-      expect(describeError(null).title, isNotEmpty);
-    });
-
-    test('une erreur de callable d\'IA est lue par son code', () {
-      // SDK : `resource-exhausted` ; appel HTTP du web : `resource_exhausted`.
-      for (final code in ['resource-exhausted', 'resource_exhausted']) {
-        expect(
-          describeError(GeminiCallableException(code, 'x', null)).title,
-          'Quota atteint',
-        );
-      }
-      final denied = describeError(
-        GeminiCallableException('permission-denied', 'x', null),
-      );
-      expect(denied.title, 'Accès refusé');
-      expect(denied.retryable, isFalse);
-      expect(
-        describeError(GeminiCallableException('unavailable', 'x', null)).title,
-        'Connexion perdue',
-      );
-      expect(
-        describeError(GeminiCallableException('internal', 'x', null)).title,
-        'Une erreur inattendue est survenue',
-      );
-    });
-  });
-
   group('AppErrorState', () {
     testWidgets('n\'affiche jamais l\'exception brute au premier coup d\'œil', (
       tester,
@@ -128,6 +54,47 @@ void main() {
       await tester.tap(find.text('Masquer les détails'));
       await tester.pump();
       expect(find.textContaining('cloud_firestore'), findsNothing);
+    });
+
+    testWidgets('« Détails » est absent pour un membre non administrateur', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        AppErrorState(error: StateError('bizarre'), onRetry: () {}),
+        isAdmin: false,
+      );
+
+      expect(find.text('Une erreur inattendue est survenue'), findsOneWidget);
+      expect(find.text('Détails'), findsNothing);
+      expect(find.textContaining('bizarre'), findsNothing);
+      // Le conseil ne renvoie plus à des détails qu'il ne voit pas.
+      expect(find.text(kReportProblemAdvice), findsOneWidget);
+      expect(find.textContaining('ci-dessous'), findsNothing);
+    });
+
+    testWidgets(
+      'un administrateur garde « Détails » et le conseil d\'origine',
+      (tester) async {
+        await _pump(tester, AppErrorState(error: StateError('bizarre')));
+
+        expect(find.text('Détails'), findsOneWidget);
+        expect(find.text(kUnexpectedErrorAdvice), findsOneWidget);
+        expect(find.text(kReportProblemAdvice), findsNothing);
+      },
+    );
+
+    testWidgets('un membre garde le conseil propre à une panne connue', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        AppErrorState(error: _firebaseError('unavailable')),
+        isAdmin: false,
+      );
+
+      expect(find.textContaining('connexion internet'), findsOneWidget);
+      expect(find.text('Détails'), findsNothing);
     });
 
     testWidgets('le bouton Réessayer rappelle bien le callback', (

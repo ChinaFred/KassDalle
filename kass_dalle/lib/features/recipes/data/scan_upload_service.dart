@@ -13,6 +13,7 @@ import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
 import '../../../core/utils/page_name_order.dart';
 import '../../../core/utils/platform_utils.dart';
+import '../../../core/widgets/error_message.dart';
 import '../../processing/data/processing_job_repository.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../books/data/book_repository.dart';
@@ -334,7 +335,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       );
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: 'Impossible d\'importer la couverture : $e',
+        errorMessage: failureMessage('Couverture non importée', e),
       );
     }
   }
@@ -397,7 +398,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       );
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: 'Impossible d\'ouvrir le livre : $e',
+        errorMessage: failureMessage('Livre non ouvert', e),
         clearBook: true,
       );
       return 0;
@@ -495,7 +496,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       );
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: 'L\'envoi du livre a échoué : $e',
+        errorMessage: failureMessage('Livre non envoyé', e),
         clearBook: true,
       );
       return;
@@ -551,10 +552,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       }
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: _scanErrorMessage(
-          e,
-          'Échec du scan de sécurité du livre.',
-        ),
+        errorMessage: _scanErrorMessage(e, 'Livre non vérifié.'),
         clearBook: true,
       );
       return;
@@ -608,9 +606,8 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       await _discardPromotedBook(promoted.storagePath);
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: e is GeminiCallableException && e.message.isNotEmpty
-            ? e.message
-            : 'Le livre n\'a pas pu être lu : $e',
+        errorMessage:
+            _serverWrittenMessage(e) ?? failureMessage('Livre non lu', e),
         clearBook: true,
       );
     }
@@ -709,7 +706,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       _pendingBook = chosen;
       state = state.copyWith(
         status: ScanStatus.pendingBookConfirmation,
-        errorMessage: 'L\'import n\'a pas pu démarrer : $e',
+        errorMessage: failureMessage('Import non démarré', e),
       );
     }
   }
@@ -826,7 +823,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       );
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: 'Impossible d\'ouvrir le fichier : $e',
+        errorMessage: failureMessage('Fichier non ouvert', e),
       );
       return 0;
     }
@@ -943,7 +940,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       );
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: 'Numérisation impossible : $e',
+        errorMessage: failureMessage('Page non numérisée', e),
       );
     } finally {
       _videLeCacheDuScanner();
@@ -988,7 +985,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       );
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: 'Numérisation impossible : $e',
+        errorMessage: failureMessage('Couverture non numérisée', e),
       );
     } finally {
       _videLeCacheDuScanner();
@@ -1096,7 +1093,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       );
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: 'Impossible de prendre la photo : $e',
+        errorMessage: failureMessage('Photo non prise', e),
       );
     }
   }
@@ -1278,10 +1275,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       _endImport(importId);
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: _scanErrorMessage(
-          e,
-          'Échec du scan de sécurité du fichier.',
-        ),
+        errorMessage: _scanErrorMessage(e, 'Fichier non vérifié.'),
       );
       return;
     }
@@ -1349,10 +1343,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             _endImport(importId);
             state = state.copyWith(
               status: ScanStatus.error,
-              errorMessage: _scanErrorMessage(
-                e,
-                'Échec du scan de sécurité sur la page ${i + 2}.',
-              ),
+              errorMessage: _scanErrorMessage(e, 'Page ${i + 2} non vérifiée.'),
             );
             return;
           }
@@ -1615,13 +1606,21 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   }
 
   String _scanErrorMessage(Object error, String fallback) {
-    if (error is GeminiCallableException) {
-      if (error.code == 'failed-precondition') {
-        return 'Fichier bloqué par le scan de sécurité : ${error.message}';
-      }
-      if (error.message.isNotEmpty) return error.message;
+    if (error is GeminiCallableException &&
+        error.code == 'failed-precondition') {
+      return 'Fichier bloqué par le scan de sécurité : ${error.message}';
     }
-    return '$fallback Details: $error';
+    return _serverWrittenMessage(error) ?? failureMessage(fallback, error);
+  }
+
+  /// Message d'une erreur callable que le serveur écrit lui-même pour
+  /// l'utilisateur. Un `internal` ou un `unknown` recopie le texte brut de
+  /// l'exception (Storage, Firestore, SDK du modèle) : il n'est pas affiché.
+  String? _serverWrittenMessage(Object error) {
+    if (error is! GeminiCallableException) return null;
+    if (error.message.isEmpty) return null;
+    if (error.code == 'internal' || error.code == 'unknown') return null;
+    return error.message;
   }
 
   /// Vrai si l'erreur correspond à un rejet par le scan de sécurité

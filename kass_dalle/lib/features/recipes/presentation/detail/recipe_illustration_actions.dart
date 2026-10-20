@@ -75,7 +75,7 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
         },
       );
       if (mounted) {
-        context.showErrorSnackBar('Impossible de prendre la photo : $e');
+        context.showFailureSnackBar('Photo non prise', e);
       }
       return;
     }
@@ -108,7 +108,7 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
         context: {'etape': 'upload', 'recipeId': recipeId},
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur Storage : $e');
+        context.showFailureSnackBar('Illustration non envoyée', e);
       }
       if (mounted) setState(() => uploadingIllustration = false);
       return;
@@ -124,7 +124,7 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
         context: {'etape': 'rattachement', 'recipeId': recipeId},
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur Firestore : $e');
+        context.showFailureSnackBar('Illustration non ajoutée à la recette', e);
       }
     } finally {
       if (mounted) setState(() => uploadingIllustration = false);
@@ -150,7 +150,7 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
         context: {'recipeId': recipeId},
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur suppression : $e');
+      context.showFailureSnackBar('Illustration non supprimée', e);
     }
   }
 }

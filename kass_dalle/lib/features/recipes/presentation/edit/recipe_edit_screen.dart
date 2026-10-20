@@ -89,7 +89,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           .polishCooklang(text);
       if (!mounted) return;
       if (cooklang == null) {
-        context.showSnackBar('L\'IA n\'a pas pu corriger la recette');
+        context.showErrorSnackBar('Recette non corrigée.');
         return;
       }
       cooklangCtrl.text = cooklang;
@@ -119,7 +119,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur IA : $e');
+      context.showFailureSnackBar('Recette non corrigée', e);
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
@@ -178,7 +178,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         error: e,
         stackTrace: stackTrace,
       );
-      if (mounted) context.showSnackBar('Erreur extraction : $e');
+      if (mounted) {
+        context.showFailureSnackBar('Illustrations non extraites', e);
+      }
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
@@ -215,7 +217,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       );
       if (mounted) {
         setState(() => _aiProcessing = false);
-        context.showSnackBar('Erreur chargement source : $e');
+        context.showFailureSnackBar('Scan non chargé', e);
       }
     }
   }
@@ -256,7 +258,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       );
       if (mounted) {
         setState(() => _aiProcessing = false);
-        context.showSnackBar('Erreur chargement image : $e');
+        context.showFailureSnackBar('Photo non chargée', e);
       }
     }
   }
@@ -313,7 +315,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         error: e,
         stackTrace: stackTrace,
       );
-      if (mounted) context.showSnackBar('Erreur : $e');
+      if (mounted) context.showFailureSnackBar('Photo non enregistrée', e);
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
@@ -387,7 +389,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        context.showFailureSnackBar('Recette non enregistrée', e);
       }
     } finally {
       if (mounted) setSaving(false);
@@ -428,7 +430,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       );
       if (!mounted) return;
       setSaving(false);
-      context.showErrorSnackBar('Erreur suppression : $e');
+      context.showFailureSnackBar('Page non supprimée', e);
       return;
     }
     if (!mounted) return;
@@ -452,8 +454,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
     return recipeAsync.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () => const Scaffold(
+        body: AppLoadingState(label: 'Chargement de la recette…'),
+      ),
       error: (e, _) => Scaffold(
         appBar: AppBar(),
         body: AppErrorState(

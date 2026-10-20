@@ -81,7 +81,7 @@ Future<void> _deleteBookPage(
       stackTrace: stackTrace,
     );
     if (!context.mounted) return;
-    context.showErrorSnackBar('Erreur suppression : $e');
+    context.showFailureSnackBar('Page non supprimée', e);
     return;
   }
   if (!context.mounted) return;
@@ -136,7 +136,7 @@ Future<void> _detachBookPage(
       stackTrace: stackTrace,
     );
     if (!context.mounted) return;
-    context.showErrorSnackBar('Erreur : $e');
+    context.showFailureSnackBar('Page non détachée du livre', e);
   }
 }
 

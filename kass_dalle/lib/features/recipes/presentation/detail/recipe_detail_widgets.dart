@@ -96,7 +96,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
         context: {'etape': 'capture', 'source': source.name},
       );
       if (mounted) {
-        context.showErrorSnackBar('Impossible de prendre la photo : $e');
+        context.showFailureSnackBar('Photo non prise', e);
       }
       return;
     }
@@ -128,7 +128,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur Storage : $e');
+        context.showFailureSnackBar('Illustration non envoyée', e);
       }
       if (mounted) setState(() => _uploadingIllustration = false);
       return;
@@ -145,7 +145,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur Firestore : $e');
+        context.showFailureSnackBar('Illustration non ajoutée à la recette', e);
       }
     } finally {
       if (mounted) setState(() => _uploadingIllustration = false);
@@ -172,7 +172,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur suppression : $e');
+      context.showFailureSnackBar('Illustration non supprimée', e);
     }
   }
 

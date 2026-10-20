@@ -127,7 +127,7 @@ ErrorMessage describeError(Object? error) {
 
   if (code.contains('resource-exhausted') || code.contains('quota')) {
     return const ErrorMessage(
-      title: 'Quota atteint',
+      title: 'Limite du jour atteinte',
       advice:
           'Le service a atteint sa limite pour aujourd\'hui. Réessayez plus '
           'tard.',
@@ -145,12 +145,40 @@ ErrorMessage describeError(Object? error) {
 
   return const ErrorMessage(
     title: 'Une erreur inattendue est survenue',
-    advice:
-        'Réessayez. Si le problème persiste, transmettez les détails '
-        'techniques ci-dessous à un administrateur.',
+    advice: kUnexpectedErrorAdvice,
     retryable: true,
   );
 }
 
+/// Conseil d'une erreur inattendue. Il renvoie aux « Détails » de
+/// `AppErrorState`, que seul un administrateur voit.
+const kUnexpectedErrorAdvice =
+    'Réessayez. Si le problème persiste, transmettez les détails '
+    'techniques ci-dessous à un administrateur.';
+
+/// Conseil d'une erreur inattendue pour un membre qui n'est pas
+/// administrateur : il n'a pas de « Détails » à transmettre, il signale le
+/// problème par un ticket (menu du compte › « Signaler ou proposer »).
+const kReportProblemAdvice =
+    'Si le problème persiste, signalez-le depuis le menu du compte.';
+
 /// Version courte, pour un SnackBar où il n'y a pas la place d'expliquer.
 String shortErrorMessage(Object? error) => describeError(error).title;
+
+/// Le texte d'un échec, pour un SnackBar (`showFailureSnackBar` de
+/// `context_extensions.dart`) ou le message d'erreur d'un écran : deux
+/// phrases, ce qui n'a pas eu lieu ([what]) puis le titre de
+/// [describeError]. Exemple : « Photo non enregistrée. Connexion perdue. »
+///
+/// Un [what] qui finit déjà par un point n'en reçoit pas un second. Le texte
+/// brut de l'exception n'y figure jamais : il reste dans le rapport d'erreur.
+/// Un message écrit par le serveur pour l'écran ne passe pas par ici :
+/// l'appelant l'affiche tel quel, dans sa propre branche `on … catch`.
+String failureMessage(String what, Object? error) =>
+    '${_sentence(what.trimRight())} ${_sentence(describeError(error).title)}';
+
+/// Termine [text] par un point, sauf s'il finit déjà par une ponctuation.
+String _sentence(String text) {
+  const endings = ['.', '!', '?', '…'];
+  return endings.any(text.endsWith) ? text : '$text.';
+}
