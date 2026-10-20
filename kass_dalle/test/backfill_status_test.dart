@@ -419,7 +419,7 @@ void main() {
 
     test('clé retirée du registre : son état resté en base est ignoré', () {
       // `app_config/backfill_run_<clé>` des ponctuels retirés en v0.23.52 et
-      // en v0.24.33.
+      // en v0.24.32.
       final sections = backfillSections(kBackfillRegistry, {
         for (final key in [
           'recipe_protein',
@@ -503,7 +503,7 @@ void main() {
       expect(
         text,
         'illustration_folders — Dossiers des illustrations — terminé le '
-        '20/10/2026 en v0.24.33 — automatique — dernier compte rendu : '
+        '20/10/2026 en v0.24.32 — automatique — dernier compte rendu : '
         '616 recettes examinées, 616 conformes, 0 à revoir — à revoir : 0\n'
         'refresh_sodium — Reprendre le sel des ingrédients — terminé le '
         '12/10/2026 (version inconnue) — marqué à la main — dernier compte '
