@@ -39,6 +39,15 @@ jour par le titulaire, mise à jour par un administrateur (`role`, `is_revoked`,
 caractères. 23 tests de règles ajoutés (personas `demotedAdmin` et `promotedReader`), un test
 Dart sur `watchAllUsers`.
 
+Imputation de l'huile absorbée, lot 9 de l'audit #151 (ticket #163). L'estimation de l'huile
+absorbée à la friture (`estimate_fry_absorption`) est imputée au propriétaire de la recette
+(`recipeBudgetUserId(created_by)`). Avant, elle tombait sur le compte `system`, dont le plafond
+d'un seul membre (2 € et 400 appels par jour) servait à toute la famille. Un appel en échec ne
+mémorise plus sa signature : `fry_signature` reste vide et le calcul suivant redemande le
+verdict. Avant, la recette restait sans huile absorbée jusqu'à ce que son texte change.
+L'écriture de ce champ ne relance pas `onRecipeWritten`, dont la garde ne lit que les entrées de
+la recette.
+
 ### v0.24.28 — fonctionnel
 
 Messages d'erreur de l'administration et de la modération, quatrième et dernier sous-lot du

@@ -11,7 +11,10 @@ import assert from "node:assert/strict";
 
 import {
   computeAbsorbedOilGrams,
+  FAILED_FRY_ABSORPTION,
+  fryFieldsToPersist,
   fryingSignature,
+  NO_FRY_ABSORPTION,
   looksFried,
   MAX_FRY_ABSORPTION_RATIO,
 } from "../nutrition/fryAbsorption";
@@ -143,5 +146,43 @@ describe("fryingSignature", () => {
       rawCooklang: "Frire.",
     });
     assert.notEqual(withoutOil, withOil);
+  });
+});
+
+describe("fryFieldsToPersist", () => {
+  const signature = fryingSignature({ ingredientsKey: "poulet|panko", rawCooklang: "Frire." });
+
+  test("un verdict en échec ne mémorise pas la signature : le calcul suivant rappelle", () => {
+    const fields = fryFieldsToPersist(FAILED_FRY_ABSORPTION, signature);
+    assert.deepEqual(fields, { fry_verdict: null, fry_signature: "" });
+    // Une signature réelle n'est jamais vide : la comparaison du calcul
+    // suivant échoue donc toujours, et l'appel est refait.
+    assert.notEqual(fields.fry_signature, signature);
+    assert.ok(signature.length > 0);
+  });
+
+  test("un échec reste un échec même s'il porte des indices", () => {
+    const fields = fryFieldsToPersist(
+      { friedIndices: [0], absorptionRatio: 0.1, failed: true },
+      signature,
+    );
+    assert.deepEqual(fields, { fry_verdict: null, fry_signature: "" });
+  });
+
+  test("« rien n'est frit » réussi mémorise la signature, sans verdict", () => {
+    assert.deepEqual(fryFieldsToPersist(NO_FRY_ABSORPTION, signature), {
+      fry_verdict: null,
+      fry_signature: signature,
+    });
+  });
+
+  test("un verdict réussi mémorise la signature et le verdict", () => {
+    assert.deepEqual(
+      fryFieldsToPersist({ friedIndices: [0, 1], absorptionRatio: 0.1 }, signature),
+      {
+        fry_verdict: { fried_indices: [0, 1], absorption_ratio: 0.1 },
+        fry_signature: signature,
+      },
+    );
   });
 });

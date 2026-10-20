@@ -559,6 +559,8 @@ la recette, pas un lecteur** — sauf `per_portion`, qui vaut pour `selected_por
 | `missing_profile_excluded` | `List<String>` | Parmi `missing_profile`, les ingrédients dont un document du référentiel porte `enrichment_failure_count` ≥ 3 : plus rien ne les redemande au modèle. Le rattrapage ne reprend pas une recette qui n'attend plus qu'eux et des lignes impossibles à peser |
 | `duplicate_ingredients` | `List<String>` | Lignes qui reprennent un ingrédient déjà listé — la pièce achetée, puis la même découpée au dressage. Le verdict vient du **serveur** : il demande de comprendre le texte, pas de comparer des noms |
 | `absorbed_oil` | `Map?` | `{grams, absorption_ratio, fried_weight_g, source_name, capped, per_ingredient}`. Huile passée du bain de friture dans l'assiette. `null` dès que rien n'est frit — le cas de presque toutes les recettes |
+| `fry_verdict` | `Map?` | `{fried_indices, absorption_ratio}` : verdict du poste `estimate_fry_absorption` (quels ingrédients passent au bain, part de leur poids absorbée). `null` quand rien n'est frit ou que l'appel a échoué. L'appel est imputé au propriétaire de la recette (`recipeBudgetUserId(created_by)`, compte des recettes orphelines à défaut) |
+| `fry_signature` | `String` | Empreinte (ingrédients + texte) qui a produit `fry_verdict` : tant qu'elle ne change pas, le verdict est réutilisé sans appel. Vide quand l'appel a échoué (`fryFieldsToPersist`) : le calcul suivant le refait. Le champ n'est pas une entrée de `onRecipeWritten`, son écriture ne relance donc pas la nutrition ; le prochain essai vient d'une entrée modifiée, d'un recalcul manuel ou du rattrapage nocturne (5 essais par liste d'ingrédients) |
 
 **Une valeur dérivable ne se stocke pas.** Les calories par portion valent `totals / N` : la
 division a lieu au moment de l'affichage, pour le nombre de parts que le lecteur a choisi. C'est
@@ -4537,7 +4539,7 @@ Trois comptes portent désormais ce qui n'est pas imputé à une personne :
 |---|---|---|
 | `system_unattributed` | un appel de modèle passé **sans aucun uid** (`reserveDailyBudget` → `budgetUserId`) ; `recordUsage` y ajoute la dépense du jour | ×100, comme le fondateur |
 | `system_recipe_without_owner` | une recette au `created_by` vide : déclencheurs nutrition, rôle de repas, produits de courses, **et le rattrapage nutrition nocturne**, qui impute chaque recette à son `created_by` (`recipeBudgetUserId`) | ×1, partagé par toutes les recettes orphelines |
-| `system` (littéral) | l'enrichissement des référentiels sans uid transmis (`nutrition/aiEnrichment.ts`, `nutrition/fryAbsorption.ts` remplacent l'uid absent par `"system"`) | ×1 — un compte ordinaire pour le plafond |
+| `system` (littéral) | un enrichissement des référentiels appelé sans uid (`nutrition/aiEnrichment.ts`, `nutrition/fryAbsorption.ts` remplacent l'uid absent par `"system"`). Aucun appelant actuel n'en arrive là : les callables transmettent l'uid authentifié, l'import celui du job, le déclencheur nutrition et le calcul de la nutrition (huile de friture comprise, depuis v0.24.29) `recipeBudgetUserId(created_by)` | ×1 — un compte ordinaire pour le plafond |
 
 Ces comptes apparaissent sous ces clés dans `ai_usage`, `ai_daily_spend` et l'écran des
 plafonds.
