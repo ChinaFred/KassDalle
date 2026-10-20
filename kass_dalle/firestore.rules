@@ -12,8 +12,8 @@ service cloud.firestore {
     // d'abord le document :
     //
     //  • Le RÔLE se lit sur le document, et sur le jeton seulement quand le
-    //    document n'en porte pas. Il se lisait dans le jeton jusqu'en
-    //    v0.24.29 : un administrateur rétrogradé gardait le claim `admin`
+    //    document n'en porte pas. Il se lisait dans le jeton avant la
+    //    v0.24.30 : un administrateur rétrogradé gardait le claim `admin`
     //    jusqu'au renouvellement de son jeton (une heure au plus), et pouvait
     //    pendant ce temps se renommer administrateur sur son propre document
     //    (ticket #162). La lecture du document ne coûte rien de plus :
@@ -28,7 +28,7 @@ service cloud.firestore {
     // — `getUserData()` échoue, et une erreur vaut refus : un tel compte n'a
     // que les droits qui ne demandent aucun rôle (créer son document,
     // `isKnownRevoked` pour les rapports d'erreur). C'était déjà le cas par
-    // `isRevoked()` avant v0.24.29.
+    // `isRevoked()` avant v0.24.30.
     //
     // Écart assumé et connu : sur Storage, le rôle et la révocation ne
     // changent qu'au renouvellement du jeton (une heure au plus). Ici ils
@@ -234,8 +234,10 @@ service cloud.firestore {
       }
 
       /// La photo Google (`photo_url`) est absente, nulle, ou une chaîne de
-      /// 2048 caractères au plus. Elle est recopiée dans le profil public :
-      /// sans borne, un compte y posait un texte de taille quelconque.
+      /// 2048 caractères au plus. Elle n'est lue que par son titulaire
+      /// (`account_screen`) et par l'administrateur, et n'est recopiée nulle
+      /// part : la borne empêche seulement qu'un compte grossisse son propre
+      /// document d'un texte de taille quelconque.
       function photoUrlOk() {
         let url = request.resource.data.get('photo_url', null);
         return url == null || (url is string && url.size() <= 2048);
@@ -251,7 +253,33 @@ service cloud.firestore {
                  'uid', 'email', 'display_name', 'preferred_name', 'photo_url',
                  'free_recipe_cover_url', 'role', 'created_at', 'last_seen_at',
                  'is_revoked'])
-               && (!('uid' in request.resource.data) || request.resource.data.uid == uid);
+               && (!('uid' in request.resource.data) || request.resource.data.uid == uid)
+               && request.resource.data.get('created_at', null) is timestamp
+               && request.resource.data.get('last_seen_at', null) is timestamp
+               && request.resource.data.get('display_name', null) is string;
+      }
+
+      /// Un champ que la mise à jour modifie, ajoute ou retire.
+      function changes(field) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
+      }
+
+      /// Types que lit `AppUser.fromFirestore` sans repli : un champ absent ou
+      /// d'un autre type lève une exception à la lecture. Les dates et le nom
+      /// Google sont obligatoires à la création (`createdKeysOk`) ; l'adresse,
+      /// le rôle et la révocation y sont fixés par égalité ; le nom préféré et
+      /// la couverture par `nameOk` et `coverUrlOk`. Il restait la mise à jour
+      /// (ticket #162, relecture sécurité) : `last_seen_at: "x"` ou
+      /// `display_name: null` faisaient tomber Admin › Comptes pour tous les
+      /// administrateurs. Un retrait de champ échoue aussi : la valeur
+      /// absente n'a pas le type demandé.
+      function updatedTypesOk() {
+        return (!changes('last_seen_at')
+                  || request.resource.data.get('last_seen_at', null) is timestamp)
+          && (!changes('display_name')
+                  || request.resource.data.get('display_name', null) is string)
+          && (!changes('role') || request.resource.data.get('role', null) is string)
+          && (!changes('is_revoked') || request.resource.data.get('is_revoked', null) is bool);
       }
 
       /// Les champs que le titulaire change lui-même : sa connexion
@@ -318,6 +346,7 @@ service cloud.firestore {
       // création (ticket #162).
       allow update: if !touchesEmail()
                       && touchedNamesBounded()
+                      && updatedTypesOk()
                       && (!request.resource.data.diff(resource.data).affectedKeys()
                              .hasAny(['free_recipe_cover_url'])
                           || coverUrlOk())

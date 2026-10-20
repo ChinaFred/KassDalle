@@ -36,6 +36,20 @@ const READER = PERSONAS.reader.uid;
 const OTHER = PERSONAS.otherReader.uid;
 const EDITOR = PERSONAS.editor.uid;
 
+// Les champs obligatoires d'un compte neuf, typés comme `AppUser.toFirestore`
+// les écrit : `AppUser.fromFirestore` lève une exception sans eux.
+const ACCOUNT_DATES = {
+  created_at: new Date("2026-10-20T08:00:00Z"),
+  last_seen_at: new Date("2026-10-20T08:00:00Z"),
+};
+const NEW_ACCOUNT = {
+  role: "pending",
+  is_revoked: false,
+  email: "new@example.com",
+  display_name: "Nouveau",
+  ...ACCOUNT_DATES,
+};
+
 before(async () => {
   env = await createEnv();
 });
@@ -370,7 +384,7 @@ describe("users — création de compte", () => {
     await assertFails(
       fresh({ email: "new@example.com", email_verified: false })
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -378,7 +392,7 @@ describe("users — création de compte", () => {
     await assertFails(
       fresh({ email: "new@example.com" })
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -386,7 +400,7 @@ describe("users — création de compte", () => {
     await assertSucceeds(
       fresh({ email: "new@example.com", email_verified: true })
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -394,7 +408,7 @@ describe("users — création de compte", () => {
     await assertSucceeds(
       fresh()
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -417,8 +431,7 @@ describe("users — création de compte", () => {
   it("refuse une adresse différente de celle du jeton", async () => {
     await assertFails(
       fresh().doc("users/newcomer").set({
-        role: "pending",
-        is_revoked: false,
+        ...NEW_ACCOUNT,
         email: "china.fred.75@gmail.com",
       }),
     );
@@ -428,7 +441,7 @@ describe("users — création de compte", () => {
     await assertFails(
       fresh()
         .doc("users/someone-else")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -436,7 +449,7 @@ describe("users — création de compte", () => {
     await assertFails(
       db("anonymous")
         .doc("users/newcomer")
-        .set({ role: "pending", is_revoked: false, email: "new@example.com" }),
+        .set({ ...NEW_ACCOUNT }),
     );
   });
 
@@ -445,9 +458,7 @@ describe("users — création de compte", () => {
       fresh()
         .doc("users/newcomer")
         .set({
-          role: "pending",
-          is_revoked: false,
-          email: "new@example.com",
+          ...NEW_ACCOUNT,
           display_name: "a".repeat(61),
         }),
     );
@@ -458,9 +469,7 @@ describe("users — création de compte", () => {
       fresh()
         .doc("users/newcomer")
         .set({
-          role: "pending",
-          is_revoked: false,
-          email: "new@example.com",
+          ...NEW_ACCOUNT,
           display_name: "a".repeat(60),
         }),
     );
@@ -474,9 +483,7 @@ describe("users — création de compte", () => {
       fresh()
         .doc("users/newcomer")
         .set({
-          role: "pending",
-          is_revoked: false,
-          email: "new@example.com",
+          ...NEW_ACCOUNT,
           display_name: "😀".repeat(30),
         }),
     );
@@ -487,9 +494,7 @@ describe("users — création de compte", () => {
       fresh()
         .doc("users/newcomer")
         .set({
-          role: "pending",
-          is_revoked: false,
-          email: "new@example.com",
+          ...NEW_ACCOUNT,
           display_name: "😀".repeat(31),
         }),
     );
@@ -816,11 +821,7 @@ describe("users — couverture « Recette libre »", () => {
         email_verified: true,
       })
       .firestore();
-    const base = {
-      role: "pending",
-      is_revoked: false,
-      email: "new@example.com",
-    };
+    const base = { ...NEW_ACCOUNT };
     await assertFails(
       ctx
         .doc("users/newcomer")
@@ -890,7 +891,7 @@ describe("users — champ uid et champs permis", () => {
         email_verified: true,
       })
       .firestore();
-  const base = { role: "pending", is_revoked: false, email: "new@example.com" };
+  const base = { ...NEW_ACCOUNT };
 
   it("un compte en attente ne crée pas son document avec l'uid d'un éditeur", async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
@@ -903,10 +904,9 @@ describe("users — champ uid et champs permis", () => {
       })
       .firestore();
     const ref = ctx.doc(`users/${PERSONAS.pending.uid}`);
-    await assertFails(ref.set({ ...PERSONAS.pending.doc, uid: EDITOR }));
-    await assertSucceeds(
-      ref.set({ ...PERSONAS.pending.doc, uid: PERSONAS.pending.uid }),
-    );
+    const doc = { ...PERSONAS.pending.doc, ...ACCOUNT_DATES, display_name: "P" };
+    await assertFails(ref.set({ ...doc, uid: EDITOR }));
+    await assertSucceeds(ref.set({ ...doc, uid: PERSONAS.pending.uid }));
   });
 
   it("un compte neuf crée son document avec son propre uid", async () => {
@@ -934,6 +934,61 @@ describe("users — champ uid et champs permis", () => {
 
   it("un compte neuf ne crée pas de champ hors liste", async () => {
     await assertFails(fresh().doc("users/newcomer").set({ ...base, foo: "x" }));
+  });
+
+  // Relecture sécurité : un champ absent ou mal typé fait lever
+  // `AppUser.fromFirestore`, et Admin › Comptes tombait pour tous.
+  it("un compte en attente ne crée pas son document avec created_at: \"x\"", async () => {
+    await assertFails(
+      fresh().doc("users/newcomer").set({ ...base, created_at: "x" }),
+    );
+  });
+
+  it("un compte en attente ne crée pas son document sans created_at", async () => {
+    const { created_at: _omitted, ...withoutCreatedAt } = base;
+    await assertFails(fresh().doc("users/newcomer").set(withoutCreatedAt));
+  });
+
+  it("un compte neuf ne crée pas son document sans last_seen_at ni display_name", async () => {
+    const { last_seen_at: _a, ...withoutLastSeen } = base;
+    const { display_name: _b, ...withoutName } = base;
+    await assertFails(fresh().doc("users/newcomer").set(withoutLastSeen));
+    await assertFails(fresh().doc("users/newcomer").set(withoutName));
+    await assertFails(
+      fresh().doc("users/newcomer").set({ ...base, display_name: null }),
+    );
+  });
+
+  it("le titulaire ne pose pas last_seen_at: \"x\"", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ last_seen_at: "x" }),
+    );
+  });
+
+  it("le titulaire ne pose pas display_name: null", async () => {
+    await assertFails(
+      db("reader").doc(`users/${READER}`).update({ display_name: null }),
+    );
+  });
+
+  it("le titulaire ne retire pas last_seen_at", async () => {
+    await seedDocs(env, {
+      [`users/${READER}`]: { ...PERSONAS.reader.doc, ...ACCOUNT_DATES },
+    });
+    await assertFails(
+      db("reader")
+        .doc(`users/${READER}`)
+        .update({ last_seen_at: deleteField() }),
+    );
+  });
+
+  it("un administrateur ne pose pas un rôle ou une révocation d'un autre type", async () => {
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ role: 3 }),
+    );
+    await assertFails(
+      db("admin").doc(`users/${READER}`).update({ is_revoked: "oui" }),
+    );
   });
 
   it("le titulaire ne change pas son champ uid", async () => {

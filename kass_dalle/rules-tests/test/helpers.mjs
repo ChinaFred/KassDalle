@@ -25,7 +25,7 @@ const rulesPath = (name) => new URL(`../../${name}`, import.meta.url);
 /// Les comptes de test. `claims` reprend ce que `syncUserClaims` frappe dans
 /// le jeton (`role`, `revoked`) plus l'adresse ; `doc` reprend `users/{uid}`,
 /// que les règles Firestore relisent pour la révocation et pour le rôle (le
-/// claim ne sert que si le document n'a pas de rôle, depuis v0.24.29).
+/// claim ne sert que si le document n'a pas de rôle, depuis v0.24.30).
 export const PERSONAS = {
   // Jeton d'une connexion Google à l'adresse vérifiée : `isFounder()` exige
   // `email_verified` et `firebase.sign_in_provider == 'google.com'`.

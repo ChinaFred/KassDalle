@@ -199,8 +199,11 @@ export const FAILED_FRY_ABSORPTION: FryAbsorptionVerdict = {
  * Aucune boucle de déclencheurs : `fry_signature` n'est pas une entrée de
  * `onRecipeWritten` (`recipeTriggerInputsFingerprint`), l'écriture du snapshot
  * n'y relance pas la nutrition. Le prochain essai attend un calcul demandé par
- * ailleurs — entrée modifiée, recalcul manuel, rattrapage nocturne (plafonné à
- * `MAX_CATCH_UP_ATTEMPTS` par liste d'ingrédients).
+ * ailleurs : une entrée modifiée, ou un recalcul manuel. Le rattrapage nocturne
+ * ne le redemande pas : `catchUpDecision` ignore une recette dont
+ * `nutritionIsIncomplete` est faux, et un verdict en échec ne rend pas la
+ * nutrition incomplète. Il ne le refait qu'en passant, sur une recette reprise
+ * pour une autre lacune.
  */
 export function fryFieldsToPersist(
   verdict: FryAbsorptionVerdict,

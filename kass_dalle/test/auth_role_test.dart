@@ -2,8 +2,26 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:kass_dalle/core/services/error_report_service.dart';
 import 'package:kass_dalle/features/admin/data/admin_repository.dart';
 import 'package:kass_dalle/features/auth/domain/app_user.dart';
+
+class _RecordingErrorReportService extends ErrorReportService {
+  final List<(String, Map<String, dynamic>)> reports = [];
+
+  @override
+  Future<String> reportError({
+    String? userId,
+    String? jobId,
+    required String feature,
+    required Object error,
+    StackTrace? stackTrace,
+    Map<String, dynamic> context = const {},
+  }) async {
+    reports.add((feature, context));
+    return 'test';
+  }
+}
 
 /// Le sas d'entrée et la révocation, vus du client.
 ///
@@ -167,6 +185,46 @@ void main() {
         final pending = users.singleWhere((u) => u.isPending);
         expect(pending.uid, 'intrus');
         expect(users.map((u) => u.uid).toSet(), {'intrus', 'editeur'});
+      },
+    );
+
+    // Relecture sécurité (#162) : un document mal formé faisait tomber la
+    // liste entière pour tous les administrateurs.
+    test(
+      'un document illisible est sauté, signalé une fois, et la liste continue',
+      () async {
+        final firestore = FakeFirebaseFirestore();
+        final reports = _RecordingErrorReportService();
+        await firestore
+            .collection('users')
+            .doc('sain')
+            .set(userDoc(uid: 'sain', role: 'reader'));
+        await firestore.collection('users').doc('casse').set({
+          ...userDoc(uid: 'casse', role: 'pending'),
+          'created_at': 'x',
+        });
+        await firestore.collection('users').doc('sans-nom').set({
+          ...userDoc(uid: 'sans-nom', role: 'pending'),
+          'display_name': null,
+        });
+
+        final repo = AdminRepository(
+          firestore: firestore,
+          errorReportService: reports,
+        );
+        final users = await repo.watchAllUsers().first;
+        expect(users.map((u) => u.uid), ['sain']);
+
+        // Un second instantané ne produit pas de second rapport.
+        await repo.watchAllUsers().first;
+        expect(reports.reports.map((r) => r.$1), [
+          'admin.watchAllUsers',
+          'admin.watchAllUsers',
+        ]);
+        expect(reports.reports.map((r) => r.$2['doc_id']).toSet(), {
+          'casse',
+          'sans-nom',
+        });
       },
     );
   });

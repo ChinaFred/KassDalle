@@ -560,7 +560,7 @@ la recette, pas un lecteur** — sauf `per_portion`, qui vaut pour `selected_por
 | `duplicate_ingredients` | `List<String>` | Lignes qui reprennent un ingrédient déjà listé — la pièce achetée, puis la même découpée au dressage. Le verdict vient du **serveur** : il demande de comprendre le texte, pas de comparer des noms |
 | `absorbed_oil` | `Map?` | `{grams, absorption_ratio, fried_weight_g, source_name, capped, per_ingredient}`. Huile passée du bain de friture dans l'assiette. `null` dès que rien n'est frit — le cas de presque toutes les recettes |
 | `fry_verdict` | `Map?` | `{fried_indices, absorption_ratio}` : verdict du poste `estimate_fry_absorption` (quels ingrédients passent au bain, part de leur poids absorbée). `null` quand rien n'est frit ou que l'appel a échoué. L'appel est imputé au propriétaire de la recette (`recipeBudgetUserId(created_by)`, compte des recettes orphelines à défaut) |
-| `fry_signature` | `String` | Empreinte (ingrédients + texte) qui a produit `fry_verdict` : tant qu'elle ne change pas, le verdict est réutilisé sans appel. Vide quand l'appel a échoué (`fryFieldsToPersist`) : le calcul suivant le refait. Le champ n'est pas une entrée de `onRecipeWritten`, son écriture ne relance donc pas la nutrition ; le prochain essai vient d'une entrée modifiée, d'un recalcul manuel ou du rattrapage nocturne (5 essais par liste d'ingrédients) |
+| `fry_signature` | `String` | Empreinte (ingrédients + texte) qui a produit `fry_verdict` : tant qu'elle ne change pas, le verdict est réutilisé sans appel. Vide quand l'appel a échoué (`fryFieldsToPersist`) : le calcul suivant le refait. Le champ n'est pas une entrée de `onRecipeWritten`, son écriture ne relance donc pas la nutrition ; le prochain essai vient d'une entrée modifiée ou d'un recalcul manuel. Le rattrapage nocturne ne le redemande pas : `catchUpDecision` ignore une recette dont `nutritionIsIncomplete` est faux, et un verdict en échec ne rend pas la nutrition incomplète ; il ne le refait que sur une recette reprise pour une autre lacune |
 
 **Une valeur dérivable ne se stocke pas.** Les calories par portion valent `totals / N` : la
 division a lieu au moment de l'affichage, pour le nombre de parts que le lecteur a choisi. C'est
@@ -2485,7 +2485,7 @@ le document :
 
 | | Source | Pourquoi |
 |---|---|---|
-| **Rôle** | document ; claim du jeton seulement si le document n'a pas de champ `role` | depuis v0.24.29 (ticket #162). Lu dans le jeton auparavant, il laissait à un administrateur rétrogradé son claim `admin` jusqu'au renouvellement du jeton (une heure au plus) : il pouvait se renommer administrateur sur son propre document. La lecture du document n'est pas facturée en plus : `isRevoked()` la fait déjà, et une requête ne facture qu'une lecture par document. Un compte nommé accède aussi sans attendre son jeton. Même ordre côté Functions (`callable/_auth.ts`) |
+| **Rôle** | document ; claim du jeton seulement si le document n'a pas de champ `role` | depuis v0.24.30 (ticket #162). Lu dans le jeton auparavant, il laissait à un administrateur rétrogradé son claim `admin` jusqu'au renouvellement du jeton (une heure au plus) : il pouvait se renommer administrateur sur son propre document. La lecture du document n'est pas facturée en plus : `isRevoked()` la fait déjà, et une requête ne facture qu'une lecture par document. Un compte nommé accède aussi sans attendre son jeton. Même ordre côté Functions (`callable/_auth.ts`) |
 | **Révocation** | document, le jeton pouvant seulement la **confirmer** | couper l'accès à quelqu'un et devoir attendre le renouvellement de son jeton n'est pas une révocation |
 
 Sans document `users/{uid}` (première connexion, avant que `_upsertUser` ne
@@ -2522,7 +2522,7 @@ service cloud.firestore {
     }
 
     // Le rôle en vigueur : celui du document, le claim du jeton seulement
-    // si le document n'en porte pas (v0.24.29, ticket #162).
+    // si le document n'en porte pas (v0.24.30, ticket #162).
     function roleOf() {
       let d = getUserData();
       return d.get('role', null) != null ? d.role : request.auth.token.get('role', null);
@@ -2645,12 +2645,13 @@ service cloud.firestore {
         return (!keys.hasAny(['display_name']) || nameOk('display_name'))
                && (!keys.hasAny(['preferred_name']) || nameOk('preferred_name'));
       }
-      // Photo Google : nulle, ou 2048 caractères au plus (v0.24.29).
+      // Photo Google : nulle, ou 2048 caractères au plus (v0.24.30). Lue par
+      // le titulaire (`account_screen`) et l'administrateur, recopiée nulle part.
       function photoUrlOk() {
         let url = request.resource.data.get('photo_url', null);
         return url == null || (url is string && url.size() <= 2048);
       }
-      // Champs permis (v0.24.29, ticket #162). `uid`, s'il est écrit, est
+      // Champs permis (v0.24.30, ticket #162). `uid`, s'il est écrit, est
       // l'uid du document, et ne change plus ensuite : aucune liste de mise
       // à jour ne le contient.
       function createdKeysOk() {   // AppUser.toFirestore
@@ -2658,7 +2659,23 @@ service cloud.firestore {
                  'uid', 'email', 'display_name', 'preferred_name', 'photo_url',
                  'free_recipe_cover_url', 'role', 'created_at', 'last_seen_at',
                  'is_revoked'])
-               && (!('uid' in request.resource.data) || request.resource.data.uid == uid);
+               && (!('uid' in request.resource.data) || request.resource.data.uid == uid)
+               && request.resource.data.get('created_at', null) is timestamp
+               && request.resource.data.get('last_seen_at', null) is timestamp
+               && request.resource.data.get('display_name', null) is string;
+      }
+      // Types lus sans repli par `AppUser.fromFirestore` : un champ modifié
+      // (ou retiré) doit garder son type, sinon Admin › Comptes ne se lit plus.
+      function changes(field) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
+      }
+      function updatedTypesOk() {
+        return (!changes('last_seen_at')
+                  || request.resource.data.get('last_seen_at', null) is timestamp)
+          && (!changes('display_name')
+                  || request.resource.data.get('display_name', null) is string)
+          && (!changes('role') || request.resource.data.get('role', null) is string)
+          && (!changes('is_revoked') || request.resource.data.get('is_revoked', null) is bool);
       }
       function ownerKeysOk() {     // _upsertUser, nom préféré, couverture, préférences
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -2690,6 +2707,7 @@ service cloud.firestore {
       // peut destituer. Chaque branche dit les champs qu'elle touche.
       allow update: if !touchesEmail()
                       && touchedNamesBounded()
+                      && updatedTypesOk()
                       && (!request.resource.data.diff(resource.data).affectedKeys()
                              .hasAny(['free_recipe_cover_url'])
                           || coverUrlOk())
@@ -2951,7 +2969,7 @@ service cloud.firestore {
 
 | Collection | Lecture | Écriture |
 |---|---|---|
-| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.29, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
+| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` |
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
@@ -2960,7 +2978,7 @@ service cloud.firestore {
 | `users/{uid}/shopping/current` | le titulaire seul, compte nommé (`isOwner(uid) && isApproved()`) ; un administrateur n'y a pas accès | le titulaire seul, compte nommé ; un seul document (`current`) ; création et modification exigent la forme `isShoppingCart` : `items` en carte de 300 articles au plus, `updated_at` en `timestamp`, aucun autre champ. Les règles ne parcourent pas une carte : les longueurs de chaque article sont bornées par le client (§3.8 quinquies), le document par la limite de 1 Mio de Firestore (`rules-tests/test/shopping.test.mjs`) |
 | `users/{uid}/planning_runs` | admin | **serveur seul** (`allow write: if false`) — `suggestMealPlanFn` l'écrit, `generateRecipeConceptFn` y incrémente le compteur de conceptions. Le titulaire ne le lit pas ; un client qui l'écrirait remettrait son plafond de conceptions à zéro |
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
-| `groups` | membres du groupe, et ses invités (`invited_ids`) | création par un editor ou un admin (`isEditor()`, v0.23.54 : plus le reader), à son nom, soi seul membre, sans invité, avec les seuls champs que `createGroup` écrit (`keys().hasOnly` : `name`, `owner_id`, `member_ids`, `invited_ids`, `created_at` — v0.24.29, ticket #162) ; `owner_id` figé ; cinq mises à jour et elles seules : **gestion** (`isManagement`) par le propriétaire s'il est editor (`isEditor()`, v0.23.54), ou par un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **réduction** (`isShrinking`, v0.23.54) par le propriétaire quel que soit son rôle — `invited_ids` et `member_ids` ne font que perdre des comptes, le propriétaire reste membre, rien d'autre ne change (ni nom, ni invitation nouvelle) ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Acceptation, refus et sortie restent ouverts à tout rôle approuvé. Suppression par le propriétaire quel que soit son rôle, ou par un admin : un reader propriétaire d'un groupe créé avant la v0.23.54 ne peut pas le quitter, la suppression est sa seule sortie. Testé dans `rules-tests` (« groupes — rôle éditeur requis ») |
+| `groups` | membres du groupe, et ses invités (`invited_ids`) | création par un editor ou un admin (`isEditor()`, v0.23.54 : plus le reader), à son nom, soi seul membre, sans invité, avec les seuls champs que `createGroup` écrit (`keys().hasOnly` : `name`, `owner_id`, `member_ids`, `invited_ids`, `created_at` — v0.24.30, ticket #162) ; `owner_id` figé ; cinq mises à jour et elles seules : **gestion** (`isManagement`) par le propriétaire s'il est editor (`isEditor()`, v0.23.54), ou par un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **réduction** (`isShrinking`, v0.23.54) par le propriétaire quel que soit son rôle — `invited_ids` et `member_ids` ne font que perdre des comptes, le propriétaire reste membre, rien d'autre ne change (ni nom, ni invitation nouvelle) ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Acceptation, refus et sortie restent ouverts à tout rôle approuvé. Suppression par le propriétaire quel que soit son rôle, ou par un admin : un reader propriétaire d'un groupe créé avant la v0.23.54 ne peut pas le quitter, la suppression est sa seule sortie. Testé dans `rules-tests` (« groupes — rôle éditeur requis ») |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide ; « Ce n'est pas un doublon » (`isDuplicateResume`) : le propriétaire **éditeur ou administrateur** fait passer un job de `duplicate` à `queued` avec `duplicate_override: true`, en ne touchant que `status`, `duplicate_override`, `error_message`, `current_step` et `updated_at` — `created_recipe_ids` reste en place, `duplicate_override` ne se pose sur aucun autre statut, un lecteur propriétaire ne reprend pas, un import par lien non plus ; à la création, le job naît en `queued` (statut absent admis) et sans aucun des champs que seul le pipeline écrit pour les doublons (`titre_keys`, `titre_key_pages`, `titre_key_titres`, `duplicate_checked`, `duplicates`, `pending_items`, `duplicate_override`) — posés par le client sur un job jamais mis en file, ils arrêteraient les imports suivants du même livre ; une relance par le propriétaire éditeur n'écrit que `queued` ou `error`, jamais `duplicate`, et ne part pas d'un job `duplicate` (seules la reprise et l'annulation en sortent) ; suppression par un admin, ou par le propriétaire **éditeur ou administrateur** d'un job au statut `duplicate` (rien n'y tourne, et la ligne n'a pas d'autre sortie que la reprise) ; `additional_file_urls`, quand il est présent, est une liste de **20 entrées au plus**, en création comme en mise à jour, administrateur compris (`additionalFileUrlsBounded`, v0.24.17) : le pipeline télécharge chaque page et l'envoie au modèle |
 | `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur sans le champ attend le backfill `group_planning_reach`) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
@@ -3129,7 +3147,7 @@ auparavant tout jeton n'affirmant pas être `reader` — précaution du temps o�
 encore de claim, et qui aurait suffi à un compte `pending` pour déposer des images dans les dossiers
 partagés.
 
-Écart documenté avec Firestore (v0.24.29, ticket #162) : Firestore lit le rôle sur le
+Écart documenté avec Firestore (v0.24.30, ticket #162) : Firestore lit le rôle sur le
 document, Storage ne lit que le claim. Un administrateur rétrogradé garde donc sur Storage,
 jusqu'au renouvellement de son jeton (une heure au plus), la lecture de `rejected/` ; un
 compte nommé n'y dépose rien avant que son jeton porte le rôle. `syncUserClaims` appelle
@@ -4539,7 +4557,7 @@ Trois comptes portent désormais ce qui n'est pas imputé à une personne :
 |---|---|---|
 | `system_unattributed` | un appel de modèle passé **sans aucun uid** (`reserveDailyBudget` → `budgetUserId`) ; `recordUsage` y ajoute la dépense du jour | ×100, comme le fondateur |
 | `system_recipe_without_owner` | une recette au `created_by` vide : déclencheurs nutrition, rôle de repas, produits de courses, **et le rattrapage nutrition nocturne**, qui impute chaque recette à son `created_by` (`recipeBudgetUserId`) | ×1, partagé par toutes les recettes orphelines |
-| `system` (littéral) | un enrichissement des référentiels appelé sans uid (`nutrition/aiEnrichment.ts`, `nutrition/fryAbsorption.ts` remplacent l'uid absent par `"system"`). Aucun appelant actuel n'en arrive là : les callables transmettent l'uid authentifié, l'import celui du job, le déclencheur nutrition et le calcul de la nutrition (huile de friture comprise, depuis v0.24.29) `recipeBudgetUserId(created_by)` | ×1 — un compte ordinaire pour le plafond |
+| `system` (littéral) | un enrichissement des référentiels appelé sans uid (`nutrition/aiEnrichment.ts`, `nutrition/fryAbsorption.ts` remplacent l'uid absent par `"system"`). Aucun appelant actuel n'en arrive là : les callables transmettent l'uid authentifié, l'import celui du job, le déclencheur nutrition et le calcul de la nutrition (huile de friture comprise, depuis v0.24.30) `recipeBudgetUserId(created_by)` | ×1 — un compte ordinaire pour le plafond |
 
 Ces comptes apparaissent sous ces clés dans `ai_usage`, `ai_daily_spend` et l'écran des
 plafonds.

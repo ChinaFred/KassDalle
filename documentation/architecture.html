@@ -557,10 +557,12 @@ stateDiagram-v2
       repli, et un document absent est refusé — un compte <code>pending</code>, révoqué ou
       supprimé ne doit pas atteindre une entrée qui dépense. Quand un compte perd l'accès,
       <code>syncUserClaims</code> révoque aussi ses jetons de rafraîchissement. Les
-      <b>Security Rules</b> s'appuient sur les mêmes <i>custom claims</i>, alimentés par
-      <code>syncUserClaims</code>, avec repli sur le document. Les deux mécanismes coexistent :
-      changer un rôle prend effet immédiatement côté callable et côté Firestore, mais seulement au
-      rafraîchissement du jeton côté Storage.
+      <b>Security Rules</b> Firestore suivent le même ordre depuis la v0.24.30 : le rôle et la
+      révocation se lisent sur <code>users/{uid}</code>, et le claim <code>role</code> du jeton
+      ne sert que si le document n'a pas de rôle. Les règles Storage ne lisent que les
+      <i>custom claims</i>, alimentés par <code>syncUserClaims</code>. Changer un rôle prend donc
+      effet immédiatement côté callable et côté Firestore, mais seulement au rafraîchissement du
+      jeton côté Storage.
     </span>
   </section>
 
