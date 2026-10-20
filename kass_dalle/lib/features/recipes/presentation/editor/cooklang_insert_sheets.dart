@@ -86,12 +86,15 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
         children: [
           Row(
             children: [
-              const Icon(Icons.image_outlined, color: kCooklangImageColor),
+              Icon(
+                Icons.image_outlined,
+                color: CooklangPalette.ofContext(context).image,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Insérer une image',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: kCooklangImageColor,
+                  color: CooklangPalette.ofContext(context).image,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -122,7 +125,7 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: selected
-                              ? kCooklangImageColor
+                              ? CooklangPalette.ofContext(context).image
                               : Colors.transparent,
                           width: 2,
                         ),
@@ -168,8 +171,10 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
                     ? const Text('Photo sélectionnée ✓')
                     : const Text('Choisir une photo'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: kCooklangImageColor,
-                  side: const BorderSide(color: kCooklangImageColor),
+                  foregroundColor: CooklangPalette.ofContext(context).image,
+                  side: BorderSide(
+                    color: CooklangPalette.ofContext(context).image,
+                  ),
                 ),
               ),
             const SizedBox(height: 16),
@@ -206,7 +211,7 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
                 Text(
                   '$_widthPercent%',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: kCooklangImageColor,
+                    color: CooklangPalette.ofContext(context).image,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -217,7 +222,7 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
               min: 5,
               max: 60,
               divisions: 11,
-              activeColor: kCooklangImageColor,
+              activeColor: CooklangPalette.ofContext(context).image,
               label: '$_widthPercent%',
               onChanged: (v) => setState(() => _widthPercent = v.round()),
             ),
@@ -235,9 +240,6 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
                 onPressed: (_selectedUrl != null && _selectedUrl!.isNotEmpty)
                     ? _confirm
                     : null,
-                style: FilledButton.styleFrom(
-                  backgroundColor: kCooklangImageColor,
-                ),
                 child: const Text('Insérer'),
               ),
             ],
@@ -303,12 +305,15 @@ class _CooklangIngredientInsertSheetState
         children: [
           Row(
             children: [
-              const Icon(Icons.eco_outlined, color: kCooklangIngredientColor),
+              Icon(
+                Icons.eco_outlined,
+                color: CooklangPalette.ofContext(context).ingredient,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Ajouter un ingrédient',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: kCooklangIngredientColor,
+                  color: CooklangPalette.ofContext(context).ingredient,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -369,9 +374,6 @@ class _CooklangIngredientInsertSheetState
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: () => _confirm(context),
-                style: FilledButton.styleFrom(
-                  backgroundColor: kCooklangIngredientColor,
-                ),
                 child: const Text('Insérer'),
               ),
             ],
@@ -429,12 +431,15 @@ class _CooklangTimerInsertSheetState extends State<CooklangTimerInsertSheet> {
         children: [
           Row(
             children: [
-              const Icon(Icons.timer_outlined, color: kCooklangTimerColor),
+              Icon(
+                Icons.timer_outlined,
+                color: CooklangPalette.ofContext(context).timer,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Ajouter un minuteur',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: kCooklangTimerColor,
+                  color: CooklangPalette.ofContext(context).timer,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -496,9 +501,6 @@ class _CooklangTimerInsertSheetState extends State<CooklangTimerInsertSheet> {
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: () => _confirm(context),
-                style: FilledButton.styleFrom(
-                  backgroundColor: kCooklangTimerColor,
-                ),
                 child: const Text('Insérer'),
               ),
             ],

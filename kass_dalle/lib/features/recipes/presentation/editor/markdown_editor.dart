@@ -303,7 +303,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
               icon: Icons.image_outlined,
               tooltip: 'Insérer une image',
               onTap: _showImageSheet,
-              color: const Color(0xFF0288D1),
+              color: Theme.of(context).colorScheme.primary,
             ),
           ],
         ),
@@ -314,6 +314,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
   // ── Champ texte brut (réutilisé dans visuel et texte) ────────────────────────
 
   Widget _buildEditorField() {
+    final cs = Theme.of(context).colorScheme;
     return TextField(
       controller: widget.ctrl,
       focusNode: _focusNode,
@@ -321,16 +322,16 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
       maxLines: null,
       expands: true,
       textAlignVertical: TextAlignVertical.top,
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'monospace',
         fontSize: 13,
         height: 1.5,
-        color: Colors.black87,
+        color: cs.onSurface,
       ),
-      decoration: const InputDecoration(
-        border: OutlineInputBorder(borderRadius: BorderRadius.zero),
-        contentPadding: EdgeInsets.all(12),
-        fillColor: Colors.white,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(borderRadius: BorderRadius.zero),
+        contentPadding: const EdgeInsets.all(12),
+        fillColor: cs.surfaceContainerLowest,
         filled: true,
         hintText:
             '# Titre de la section\n\n'
@@ -464,7 +465,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                     icon: Icons.image_outlined,
                     tooltip: 'Insérer une image',
                     onTap: _showImageSheet,
-                    color: const Color(0xFF0288D1),
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ],
               ),
@@ -663,8 +664,8 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
 
   @override
   Widget build(BuildContext context) {
-    const accentColor = Color(0xFF0288D1);
     final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -680,7 +681,7 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
           // Titre
           Row(
             children: [
-              const Icon(Icons.image_outlined, color: accentColor),
+              Icon(Icons.image_outlined, color: accentColor),
               const SizedBox(width: 8),
               Text(
                 'Insérer une image',
@@ -756,7 +757,7 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
                     : const Text('Choisir une photo'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: accentColor,
-                  side: const BorderSide(color: accentColor),
+                  side: BorderSide(color: accentColor),
                 ),
               ),
             const SizedBox(height: 16),
@@ -798,7 +799,7 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
                 selectedColor: accentColor.withValues(alpha: 0.15),
                 checkmarkColor: accentColor,
                 side: BorderSide(
-                  color: sel ? accentColor : Colors.grey.shade400,
+                  color: sel ? accentColor : theme.colorScheme.outline,
                 ),
                 labelStyle: TextStyle(
                   fontSize: 12,
@@ -822,7 +823,6 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
                 onPressed: (_selectedUrl != null && _selectedUrl!.isNotEmpty)
                     ? _confirm
                     : null,
-                style: FilledButton.styleFrom(backgroundColor: accentColor),
                 child: const Text('Insérer'),
               ),
             ],

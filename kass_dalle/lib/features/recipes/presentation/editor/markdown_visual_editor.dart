@@ -475,15 +475,8 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
     if (block.type == _BType.blank) {
       return Row(
         children: [
-          if (widget.enabled)
-            Padding(
-              padding: const EdgeInsets.only(left: 8, right: 4),
-              child: Icon(
-                Icons.drag_indicator,
-                size: AppIconSize.inline,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.3),
-              ),
-            ),
+          // Pas de poignée : l'éditeur Markdown ne réordonne pas les lignes.
+          const SizedBox(width: 8),
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -493,11 +486,9 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
           ),
           if (widget.enabled)
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: AppIconSize.inline),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              color: Colors.grey.shade400,
-              tooltip: 'Supprimer',
+              icon: const Icon(Icons.delete_outline, size: AppIconSize.small),
+              color: cs.onSurfaceVariant,
+              tooltip: 'Supprimer la ligne',
               onPressed: () => _deleteBlock(i),
             ),
         ],
@@ -723,15 +714,6 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (widget.enabled)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Icon(
-                Icons.drag_indicator,
-                size: AppIconSize.inline,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.3),
-              ),
-            ),
           // Seule la zone de contenu est cliquable pour éditer.
           // Le bouton supprimer est un sibling indépendant, sans GestureDetector commun.
           Expanded(
@@ -743,11 +725,9 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
           ),
           if (widget.enabled)
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: AppIconSize.inline),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              color: Colors.grey.shade400,
-              tooltip: 'Supprimer',
+              icon: const Icon(Icons.delete_outline, size: AppIconSize.small),
+              color: cs.onSurfaceVariant,
+              tooltip: 'Supprimer la ligne',
               onPressed: () => _deleteBlock(i),
             ),
         ],

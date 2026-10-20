@@ -614,7 +614,7 @@ class _ScanTile extends StatelessWidget {
     final color = group.hasError
         ? cs.error
         : group.hasWarning
-        ? Colors.orange
+        ? cs.tertiary
         : cs.primary;
     final icon = group.hasError
         ? Icons.error_outline
@@ -834,13 +834,13 @@ class _CostChip extends StatelessWidget {
       return const SizedBox.shrink();
     } else if (emphasized) {
       text = formatTotal(total, usdToEur);
-      color = total.unpricedCalls > 0 ? Colors.orange : cs.primary;
+      color = total.unpricedCalls > 0 ? cs.tertiary : cs.primary;
     } else {
       text = formatCost(
         total.unpricedCalls == total.calls ? null : total.costUsd,
         usdToEur,
       );
-      color = total.unpricedCalls > 0 ? Colors.orange : cs.primary;
+      color = total.unpricedCalls > 0 ? cs.tertiary : cs.primary;
     }
 
     return Container(
@@ -873,7 +873,7 @@ class _LogTile extends StatelessWidget {
       case 'ERROR':
         return cs.error;
       case 'WARNING':
-        return Colors.orange;
+        return cs.tertiary;
       case 'INFO':
         return cs.primary;
       case 'DEBUG':

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/domain/book.dart';
 import '../../../books/presentation/book_providers.dart';
@@ -14,6 +13,7 @@ import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/recipe_tag_sections.dart';
 import '../detail/book_reader_navigation.dart';
+import '../detail/recipe_detail_annotations.dart';
 import '../detail/recipe_detail_illustrations.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/theme/app_icon_size.dart';
@@ -327,50 +327,9 @@ class RecipeCard extends ConsumerWidget {
         screenWidth >= PlatformUtils.galleryShortcutBreakpoint;
     final tagsSummary = buildRecipeTagSummary(recipe.tags);
     final annotations = ref.watch(annotationsProvider(recipe.id)).value ?? [];
-    final noteCount = annotations
-        .where((a) => a.type == AnnotationType.note)
-        .length;
-    final tipCount = annotations
-        .where((a) => a.type == AnnotationType.tip)
-        .length;
-    final corrCount = annotations
-        .where((a) => a.type == AnnotationType.correction)
-        .length;
-
-    void goToAnnotations() => context.push(
-      buildReaderRecipeLocation(
-        recipe.id,
-        readingContext,
-        scrollToAnnotations: true,
-      ),
-    );
-
-    final badges = [
-      if (noteCount > 0)
-        AnnotBadge(
-          icon: Icons.sticky_note_2_outlined,
-          count: noteCount,
-          color: annotNoteColor(theme),
-          foregroundColor: annotNoteFg(theme),
-          onTap: goToAnnotations,
-        ),
-      if (tipCount > 0)
-        AnnotBadge(
-          icon: Icons.lightbulb_outline,
-          count: tipCount,
-          color: theme.colorScheme.tertiaryContainer,
-          foregroundColor: theme.colorScheme.onTertiaryContainer,
-          onTap: goToAnnotations,
-        ),
-      if (corrCount > 0)
-        AnnotBadge(
-          icon: Icons.build_circle_outlined,
-          count: corrCount,
-          color: theme.colorScheme.errorContainer,
-          foregroundColor: theme.colorScheme.onErrorContainer,
-          onTap: goToAnnotations,
-        ),
-    ];
+    // Pastilles en lecture seule : leur texte est lu avec la tuile, et l'appui
+    // ouvre la fiche. La note se modifie sur la fiche, où sa cible fait 48 px.
+    final annotPills = AnnotationPills(counts: countAnnotations(annotations));
 
     return Card(
       color: isSelected
@@ -431,8 +390,8 @@ class RecipeCard extends ConsumerWidget {
               ),
             ],
             const SizedBox(width: 4),
-            RecipeRatingBadge(recipeId: recipe.id),
-            if (badges.isNotEmpty) ...[const SizedBox(width: 4), ...badges],
+            RecipeRatingBadge(recipeId: recipe.id, readOnly: true),
+            annotPills,
           ],
         ),
         subtitle: _buildRecipeSubtitle(theme, tagsSummary),
@@ -471,52 +430,6 @@ class RecipeCard extends ConsumerWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-// ── Badge d'annotation ────────────────────────────────────────────────────────
-
-class AnnotBadge extends StatelessWidget {
-  final IconData icon;
-  final int count;
-  final Color color;
-  final Color foregroundColor;
-  final VoidCallback onTap;
-  const AnnotBadge({
-    super.key,
-    required this.icon,
-    required this.count,
-    required this.color,
-    required this.foregroundColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(left: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: AppIconSize.badge, color: foregroundColor),
-            if (count > 0) ...[
-              const SizedBox(width: 3),
-              Text(
-                '$count',
-                style: TextStyle(fontSize: 11, color: foregroundColor),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }
@@ -670,13 +583,3 @@ class RecipeActionsMenu extends ConsumerWidget {
 // ── Enums et helpers internes ─────────────────────────────────────────────────
 
 enum _RecipeAction { edit, annotate, detach, delete }
-
-/// Couleur de fond du badge "Remarque" (adapté dark/light).
-Color annotNoteColor(ThemeData theme) => theme.brightness == Brightness.dark
-    ? const Color(0xFF1565C0)
-    : const Color(0xFFBBDEFB);
-
-/// Couleur de texte/icône du badge "Remarque" (adapté dark/light).
-Color annotNoteFg(ThemeData theme) => theme.brightness == Brightness.dark
-    ? Colors.white
-    : const Color(0xFF0D47A1);

@@ -51,13 +51,8 @@ BookReadingPosition? resolveBookReadingPosition(
   return BookReadingPosition(items: items, currentIndex: currentIndex);
 }
 
-String buildReaderRecipeLocation(
-  String recipeId,
-  BookReadingContext context, {
-  bool scrollToAnnotations = false,
-}) {
+String buildReaderRecipeLocation(String recipeId, BookReadingContext context) {
   final query = context.toQueryParameters();
-  if (scrollToAnnotations) query['anchor'] = 'annotations';
   return Uri(
     path: '/recipes/$recipeId',
     queryParameters: query.isEmpty ? null : query,

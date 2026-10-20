@@ -200,7 +200,10 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
             child: const Text('Supprimer'),
           ),
         ],
@@ -344,11 +347,14 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.kitchen_outlined, color: kCooklangUtensilColor),
-            SizedBox(width: 8),
-            Text('Ajouter un ustensile'),
+            Icon(
+              Icons.kitchen_outlined,
+              color: CooklangPalette.ofContext(context).utensil,
+            ),
+            const SizedBox(width: 8),
+            const Text('Ajouter un ustensile'),
           ],
         ),
         content: TextField(
@@ -372,9 +378,6 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            style: FilledButton.styleFrom(
-              backgroundColor: kCooklangUtensilColor,
-            ),
             child: const Text('Insérer'),
           ),
         ],
@@ -433,7 +436,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         // ── Block list ────────────────────────────────────────────────────
         Expanded(
           child: Container(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surfaceContainerLowest,
             child: ReorderableListView.builder(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               buildDefaultDragHandles: false,
@@ -600,7 +603,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           decoration: BoxDecoration(
             border: Border(
               left: BorderSide(
-                color: const Color(0xFF607D8B).withAlpha(120),
+                color: Theme.of(context).colorScheme.outline,
                 width: 2,
               ),
             ),

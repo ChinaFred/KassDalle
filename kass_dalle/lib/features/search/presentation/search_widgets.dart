@@ -99,7 +99,7 @@ class SearchResultTile extends StatelessWidget {
                             ),
                           ),
                         ),
-                        RecipeRatingBadge(recipeId: recipe.id),
+                        RecipeRatingBadge(recipeId: recipe.id, readOnly: true),
                         if (isDraft)
                           Padding(
                             padding: const EdgeInsets.only(left: 4),

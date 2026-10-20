@@ -7,6 +7,7 @@ import '../../../core/services/error_report_service.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/widgets/tappable_pill.dart';
 
 class ErrorReportsScreen extends ConsumerWidget {
   const ErrorReportsScreen({super.key});
@@ -186,7 +187,12 @@ class _CopyableChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext outerContext) {
-    return GestureDetector(
+    return TappablePill(
+      tooltip: 'Copier l\'identifiant',
+      label: 'Copier l\'identifiant $label',
+      customBorder: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+      ),
       onTap: () {
         Clipboard.setData(ClipboardData(text: label));
         outerContext.showSuccessSnackBar('ID copié : $label');

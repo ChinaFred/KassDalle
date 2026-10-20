@@ -4,6 +4,7 @@ import 'cooklang_chip_widgets.dart';
 import 'cooklang_editor_colors.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../../core/widgets/app_network_image.dart';
+import '../../../../core/widgets/tappable_pill.dart';
 
 class CooklangInlineEditRow extends StatelessWidget {
   final TextEditingController controller;
@@ -136,7 +137,7 @@ class _CooklangMetadataBlockState extends State<CooklangMetadataBlock> {
               _localizeMetaKey(key),
               style: TextStyle(
                 fontSize: 12,
-                color: kCooklangMetaColor,
+                color: CooklangPalette.ofContext(context).meta,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -145,7 +146,10 @@ class _CooklangMetadataBlockState extends State<CooklangMetadataBlock> {
             child: TextField(
               controller: _ctrl,
               enabled: widget.enabled,
-              style: TextStyle(fontSize: 13, color: kCooklangMetaColor),
+              style: TextStyle(
+                fontSize: 13,
+                color: CooklangPalette.ofContext(context).meta,
+              ),
               decoration: InputDecoration(
                 isDense: true,
                 hintText: _hintForKey(key),
@@ -156,13 +160,17 @@ class _CooklangMetadataBlockState extends State<CooklangMetadataBlock> {
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
                   borderSide: BorderSide(
-                    color: kCooklangMetaColor.withValues(alpha: 0.4),
+                    color: CooklangPalette.ofContext(
+                      context,
+                    ).meta.withValues(alpha: 0.4),
                   ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
                   borderSide: BorderSide(
-                    color: kCooklangMetaColor.withValues(alpha: 0.3),
+                    color: CooklangPalette.ofContext(
+                      context,
+                    ).meta.withValues(alpha: 0.3),
                   ),
                 ),
               ),
@@ -424,7 +432,7 @@ class CooklangParagraphBlock extends StatelessWidget {
 
   Widget _buildSegment(BuildContext context, int segIdx, LineSegment seg) {
     return switch (seg) {
-      TextSegment(:final text) => _buildRichText(text),
+      TextSegment(:final text) => _buildRichText(context, text),
       IngredientSegment() => IngredientChipWidget(
         segment: seg,
         enabled: enabled,
@@ -447,7 +455,7 @@ class CooklangParagraphBlock extends StatelessWidget {
   }
 
   /// Render plain text supporting **bold** and *italic* Markdown inline.
-  Widget _buildRichText(String text) {
+  Widget _buildRichText(BuildContext context, String text) {
     if (text.isEmpty) return const SizedBox.shrink();
 
     // Split on bold (**…**) and italic (*…*) markers
@@ -484,7 +492,10 @@ class CooklangParagraphBlock extends StatelessWidget {
 
     return RichText(
       text: TextSpan(
-        style: const TextStyle(fontSize: 14, color: Color(0xFF212121)),
+        style: TextStyle(
+          fontSize: 14,
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
         children: spans,
       ),
     );
@@ -510,21 +521,25 @@ class CooklangBlockRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Drag handle (left)
+        // Poignée (gauche) : zone d'appui de 48 × 48 px pour le doigt.
         if (enabled)
           ReorderableDragStartListener(
             index: index,
             child: MouseRegion(
               cursor: SystemMouseCursors.grab,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Icon(
-                  Icons.drag_indicator,
-                  size: AppIconSize.inline,
-                  color: Colors.grey.shade300,
+              child: SizedBox(
+                width: kMinTapTarget,
+                height: kMinTapTarget,
+                child: Center(
+                  child: Icon(
+                    Icons.drag_indicator,
+                    size: AppIconSize.small,
+                    color: cs.outline,
+                  ),
                 ),
               ),
             ),
@@ -540,11 +555,9 @@ class CooklangBlockRow extends StatelessWidget {
         // Delete button (right)
         if (enabled)
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: AppIconSize.inline),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            color: Colors.grey.shade400,
-            tooltip: 'Supprimer',
+            icon: const Icon(Icons.delete_outline, size: AppIconSize.small),
+            color: cs.onSurfaceVariant,
+            tooltip: 'Supprimer la ligne',
             onPressed: onDelete,
           ),
       ],
@@ -607,10 +620,12 @@ class CooklangImageBlock extends StatelessWidget {
                     errorWidget: (_, _, _) => Container(
                       width: 64,
                       height: 48,
-                      color: kCooklangImageColor.withValues(alpha: 0.1),
-                      child: const Icon(
+                      color: CooklangPalette.ofContext(
+                        context,
+                      ).image.withValues(alpha: 0.1),
+                      child: Icon(
                         Icons.broken_image_outlined,
-                        color: kCooklangImageColor,
+                        color: CooklangPalette.ofContext(context).image,
                         size: AppIconSize.small,
                       ),
                     ),
@@ -634,9 +649,9 @@ class CooklangImageBlock extends StatelessWidget {
                             style: const TextStyle(fontSize: 11),
                           ),
                           selected: pos == p,
-                          selectedColor: kCooklangImageColor.withValues(
-                            alpha: 0.15,
-                          ),
+                          selectedColor: CooklangPalette.ofContext(
+                            context,
+                          ).image.withValues(alpha: 0.15),
                           onSelected: (_) => onPositionChanged(p),
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -651,9 +666,9 @@ class CooklangImageBlock extends StatelessWidget {
                       ImagePosition.right => 'Droite →',
                       ImagePosition.after => '↓ Après',
                     },
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: kCooklangImageColor,
+                      color: CooklangPalette.ofContext(context).image,
                     ),
                   ),
               ],
@@ -667,7 +682,9 @@ class CooklangImageBlock extends StatelessWidget {
                   return ChoiceChip(
                     label: Text('$pct%', style: const TextStyle(fontSize: 10)),
                     selected: currentWidth == pct,
-                    selectedColor: kCooklangImageColor.withValues(alpha: 0.15),
+                    selectedColor: CooklangPalette.ofContext(
+                      context,
+                    ).image.withValues(alpha: 0.15),
                     onSelected: (_) => onWidthChanged(pct),
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 2),

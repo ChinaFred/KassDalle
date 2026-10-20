@@ -20,6 +20,44 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.22 — fonctionnel
+
+Thème sombre et cibles tactiles, suite de l'audit #151 (tickets #172 à #175).
+
+Les éditeurs de recette suivent le thème sombre : fond foncé, texte clair, couleurs de syntaxe
+(ingrédients, ustensiles, minuteurs…) éclaircies pour rester lisibles. Les boutons « Valider »
+et « Insérer » des feuilles d'édition et d'insertion prennent la couleur du thème ; l'icône et le titre gardent celle du
+jeton. Les pastilles de note passent aux couleurs du thème (8 à 10, 5 à 7, 0 à 4) et restent
+lisibles en sombre. Les couleurs fixes vertes, orange, rouges et grises de l'administration
+(référentiels, journaux, révocation), du bandeau de fidélité et du texte « Aucune annotation »
+suivent aussi le thème.
+
+Sur la fiche, la pastille de note et les pastilles d'annotations deviennent des cibles de
+48 × 48 px, avec une infobulle lue par le lecteur d'écran (« Ma note : 8 sur 10. Modifier »,
+« 2 remarques, 1 astuce. Voir les annotations »). Les annotations forment une seule cible.
+Sur grand écran, ces pastilles se placent à droite du bloc titre et livre. Dans la liste d'un
+livre et dans Explorer, les pastilles ne sont plus cliquables : un appui sur la ligne ouvre la
+fiche, où la note se modifie, et le lecteur d'écran les lit avec la ligne. Dans l'éditeur, la
+poignée et le bouton « Supprimer la ligne » passent à 48 px, et l'éditeur Markdown perd ses
+deux poignées qui ne déplaçaient rien. Le bouton d'aide de l'éditeur, le bouton « Retirer »
+d'une illustration et l'identifiant copiable des rapports d'erreurs passent aussi à 48 px.
+
+### v0.24.22 — technique
+
+`TappablePill` (`core/widgets/tappable_pill.dart`) remplace `AnnotBadge`, `DetailAnnotBadge`
+et le `GestureDetector` de `RecipeRatingBadge`. `ratingColors` et `ratingBadgeLabel`
+(`recipe_rating_colors.dart`) sont des fonctions pures, testées : contraste d'au moins 4,5:1
+pour les notes 3, 6 et 9 dans les deux thèmes. `CooklangPalette.of(Brightness)`
+(`cooklang_editor_colors.dart`) devient la seule source des couleurs de syntaxe : tons HCT 40
+et 80 des couleurs d'origine, figés dans le code, sans dépendance directe à
+`material_color_utilities`. Les copies de `cooklang_syntax_controller.dart` et
+`cooklang_help_page.dart`, les constantes `kCooklang…Color`, la copie de `annotNoteColor` dans
+`recipe_list_widgets.dart` et le paramètre `scrollToAnnotations` de
+`buildReaderRecipeLocation` sont supprimés. Correction : `CooklangSyntaxController` levait
+une `RangeError` quand un jeton `@`, `#` ou `~` ouvrait le texte. Nouveau test de garde
+`feature_hardcoded_colors_test.dart` : `Colors.green`, `orange`, `red` et `grey` sont refusés
+dans `lib/features/`, hors bac à sable.
+
 ### v0.24.21 — fonctionnel
 
 « Compléter » et « Choisir » dans le planning ouvrent leur feuille dès l'appui. Elle affiche

@@ -244,7 +244,9 @@ Widget cooklangBuildImageWidget(
                   width: imageWidth,
                   height: isFloat ? 60 : 80,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Center(child: Icon(Icons.broken_image_outlined)),
@@ -288,7 +290,7 @@ Widget cooklangBuildFloatRow(
             width: imageWidth,
             height: 80,
             decoration: BoxDecoration(
-              color: Colors.grey.shade200,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Center(child: Icon(Icons.broken_image_outlined)),

@@ -11,6 +11,7 @@ import '../../recipes/presentation/ai/ai_ui_copy.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
 import '../../../core/widgets/app_network_image.dart';
+import '../../../core/widgets/tappable_pill.dart';
 
 /// Section photos d'une recette générée par l'IA, **avant** son enregistrement.
 ///
@@ -321,7 +322,7 @@ class _Thumbnail extends StatelessWidget {
               backgroundColor: Theme.of(
                 context,
               ).colorScheme.surface.withValues(alpha: 0.8),
-              minimumSize: const Size(28, 28),
+              minimumSize: const Size(kMinTapTarget, kMinTapTarget),
               padding: EdgeInsets.zero,
             ),
             onPressed: onRemove,

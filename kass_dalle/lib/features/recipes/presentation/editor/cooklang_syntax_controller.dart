@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'cooklang_editor_colors.dart';
+
 /// Custom [TextEditingController] that applies live syntax highlighting
 /// to CookLang + Markdown text using regex-based [TextSpan] rendering.
 ///
-/// Color palette (Material-aligned, readable on white background):
+/// Couleurs : [CooklangPalette], selon la luminosité du thème ; texte sans
+/// syntaxe en `onSurface`.
 ///   - Metadata  `>> …`    : grey          (discrete)
 ///   - Comments  `-- …`    : green-grey italic
 ///   - Sections  `## …`    : indigo bold   (enlarged via fontSize)
@@ -40,24 +43,10 @@ class CooklangSyntaxController extends TextEditingController {
   /// Continuation prefix:  + (just the leading "+ " marker)
   static final _reContinuation = RegExp(r'^\+\s', multiLine: true);
 
-  // ── Colors ────────────────────────────────────────────────────────────────
-
-  static const _colorMeta = Color(0xFF9E9E9E); // grey 500
-  static const _colorComment = Color(0xFF6A9955); // VS Code green
-  static const _colorSection = Color(0xFF3949AB); // indigo 600
-  static const _colorIngredient = Color(0xFF1565C0); // blue 800
-  static const _colorUtensil = Color(0xFFE64A19); // deep-orange 700
-  static const _colorTimer = Color(0xFF6A1B9A); // purple 800
-  static const _colorImage = Color(0xFF00838F); // teal 700
-  static const _colorContinuation = Color(0xFF607D8B); // blue-grey 600
-
   // ── Base style ────────────────────────────────────────────────────────────
 
-  static const _base = TextStyle(
-    fontFamily: 'monospace',
-    fontSize: 13,
-    color: Color(0xFF212121), // near-black
-  );
+  /// Style du texte sans syntaxe ; la couleur vient du thème, à l'appel.
+  static const _baseNoColor = TextStyle(fontFamily: 'monospace', fontSize: 13);
 
   // ── buildTextSpan ─────────────────────────────────────────────────────────
 
@@ -67,9 +56,12 @@ class CooklangSyntaxController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
+    final theme = Theme.of(context);
+    final palette = CooklangPalette.of(theme.brightness);
+    final base = _baseNoColor.copyWith(color: theme.colorScheme.onSurface);
     final fullText = text;
     if (fullText.isEmpty) {
-      return TextSpan(style: style ?? _base, text: '');
+      return TextSpan(style: style ?? base, text: '');
     }
 
     // We build a list of (start, end, style) spans covering the full string,
@@ -87,21 +79,21 @@ class CooklangSyntaxController extends TextEditingController {
     // ── Line-level patterns (applied first, cover the whole line) ──────────
 
     for (final m in _reMeta.allMatches(fullText)) {
-      add(m.start, m.end, _base.copyWith(color: _colorMeta));
+      add(m.start, m.end, base.copyWith(color: palette.meta));
     }
     for (final m in _reComment.allMatches(fullText)) {
       add(
         m.start,
         m.end,
-        _base.copyWith(color: _colorComment, fontStyle: FontStyle.italic),
+        base.copyWith(color: palette.comment, fontStyle: FontStyle.italic),
       );
     }
     for (final m in _reSection.allMatches(fullText)) {
       add(
         m.start,
         m.end,
-        _base.copyWith(
-          color: _colorSection,
+        base.copyWith(
+          color: palette.section,
           fontWeight: FontWeight.bold,
           fontSize: 15,
         ),
@@ -111,14 +103,14 @@ class CooklangSyntaxController extends TextEditingController {
       add(
         m.start,
         m.end,
-        _base.copyWith(color: _colorImage, fontStyle: FontStyle.italic),
+        base.copyWith(color: palette.image, fontStyle: FontStyle.italic),
       );
     }
     for (final m in _reContinuation.allMatches(fullText)) {
       add(
         m.start,
         m.end,
-        _base.copyWith(color: _colorContinuation, fontWeight: FontWeight.bold),
+        base.copyWith(color: palette.continuation, fontWeight: FontWeight.bold),
       );
     }
 
@@ -129,7 +121,7 @@ class CooklangSyntaxController extends TextEditingController {
         add(
           m.start,
           m.end,
-          _base.copyWith(color: _colorIngredient, fontWeight: FontWeight.w600),
+          base.copyWith(color: palette.ingredient, fontWeight: FontWeight.w600),
         );
       }
     }
@@ -138,7 +130,7 @@ class CooklangSyntaxController extends TextEditingController {
         add(
           m.start,
           m.end,
-          _base.copyWith(color: _colorUtensil, fontWeight: FontWeight.w600),
+          base.copyWith(color: palette.utensil, fontWeight: FontWeight.w600),
         );
       }
     }
@@ -147,7 +139,7 @@ class CooklangSyntaxController extends TextEditingController {
         add(
           m.start,
           m.end,
-          _base.copyWith(color: _colorTimer, fontWeight: FontWeight.w600),
+          base.copyWith(color: palette.timer, fontWeight: FontWeight.w600),
         );
       }
     }
@@ -170,7 +162,7 @@ class CooklangSyntaxController extends TextEditingController {
       if (span.start > cursor) {
         // Gap before this span → plain text
         children.add(
-          TextSpan(text: fullText.substring(cursor, span.start), style: _base),
+          TextSpan(text: fullText.substring(cursor, span.start), style: base),
         );
       }
       children.add(
@@ -184,10 +176,10 @@ class CooklangSyntaxController extends TextEditingController {
 
     // Remaining text after last span
     if (cursor < len) {
-      children.add(TextSpan(text: fullText.substring(cursor), style: _base));
+      children.add(TextSpan(text: fullText.substring(cursor), style: base));
     }
 
-    return TextSpan(style: style ?? _base, children: children);
+    return TextSpan(style: style ?? base, children: children);
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -196,7 +188,9 @@ class CooklangSyntaxController extends TextEditingController {
   /// with `>>`, `--`, or `##` — so inline tokens inside those lines are
   /// skipped (the line-level style takes precedence).
   static bool _isInLinePattern(String text, int pos) {
-    final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    // `lastIndexOf` refuse une position négative : un jeton en tête de texte
+    // (pos 0) commence la première ligne.
+    final lineStart = pos == 0 ? 0 : text.lastIndexOf('\n', pos - 1) + 1;
     final linePrefix = text.substring(lineStart, pos).trimLeft();
     return linePrefix.startsWith('>>') ||
         linePrefix.startsWith('--') ||

@@ -328,6 +328,7 @@ class _UserActionsMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.read(adminRepositoryProvider);
+    final cs = Theme.of(context).colorScheme;
 
     return PopupMenuButton<_Action>(
       icon: const Icon(Icons.more_vert),
@@ -372,13 +373,11 @@ class _UserActionsMenu extends ConsumerWidget {
           child: ListTile(
             leading: Icon(
               user.isRevoked ? Icons.lock_open : Icons.block,
-              color: user.isRevoked ? Colors.green : Colors.red,
+              color: user.isRevoked ? cs.primary : cs.error,
             ),
             title: Text(
               user.isRevoked ? 'Rétablir l\'accès' : 'Révoquer l\'accès',
-              style: TextStyle(
-                color: user.isRevoked ? Colors.green : Colors.red,
-              ),
+              style: TextStyle(color: user.isRevoked ? cs.primary : cs.error),
             ),
             dense: true,
           ),
