@@ -421,7 +421,7 @@ String nutritionAssumedUnitPhrase(NutritionContributionRow row) {
   return '$phrase (${grams.round()} g, estimée par l\'IA)';
 }
 
-/// Ce qu'affiche la colonne « Quantite ».
+/// Ce qu'affiche la colonne « Quantité ».
 ///
 /// D'abord ce que la recette écrit. Quand elle n'écrit rien — « poivre » tout
 /// court —, l'unité retenue par le calcul prend sa place : la ligne montrait

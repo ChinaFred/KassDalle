@@ -457,7 +457,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         stackTrace: stackTrace,
       );
       if (!context.mounted) return;
-      context.showErrorSnackBar('Erreur export PDF : $e');
+      context.showFailureSnackBar('Livre non exporté en PDF', e);
     }
   }
 

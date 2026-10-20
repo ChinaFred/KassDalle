@@ -570,7 +570,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     final allDraftsAsync = isAdmin ? ref.watch(allDraftsProvider) : null;
 
     if (myJobsAsync.isLoading || myDraftsAsync.isLoading || roleLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: AppLoadingState(label: 'Chargement des brouillons et imports…'),
+      );
     }
 
     final myJobs = myJobsAsync.value ?? [];

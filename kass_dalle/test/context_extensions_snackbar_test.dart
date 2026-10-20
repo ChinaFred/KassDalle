@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/utils/context_extensions.dart';
@@ -97,5 +98,37 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 6));
     expect(find.byType(SnackBar), findsOneWidget);
+  });
+
+  testWidgets('échec : deux phrases lisibles, sans texte technique', (
+    tester,
+  ) async {
+    final context = await pumpHost(tester);
+    final error = FirebaseException(
+      plugin: 'firebase_storage',
+      code: 'unavailable',
+      message: 'The service is currently unavailable.',
+    );
+    context.showFailureSnackBar('Photo non enregistrée', error);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Photo non enregistrée. Connexion perdue.'),
+      findsOneWidget,
+    );
+    final text = tester
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byType(SnackBar),
+            matching: find.byType(Text),
+          ),
+        )
+        .map((t) => t.data ?? '')
+        .join(' ');
+    expect(text, isNot(contains('[')));
+    expect(text.toLowerCase(), isNot(contains('firebase')));
+    expect(text, isNot(contains('Exception')));
+    // Variante d'erreur : fond et icône d'erreur.
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
   });
 }

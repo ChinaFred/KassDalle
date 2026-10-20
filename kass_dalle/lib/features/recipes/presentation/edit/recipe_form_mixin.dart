@@ -355,7 +355,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur IA : $e');
+        context.showFailureSnackBar('Tags non suggérés', e);
       }
     } finally {
       if (mounted) setState(() => suggestingTags = false);

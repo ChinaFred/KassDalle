@@ -352,7 +352,7 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        context.showFailureSnackBar('Annotation non enregistrée', e);
       }
     } finally {
       if (mounted) setState(() => _saving = false);

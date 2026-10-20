@@ -240,7 +240,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       );
       if (mounted) {
         setState(() => _aiRefining = false);
-        context.showErrorSnackBar('Erreur chargement : $e');
+        context.showFailureSnackBar('Photo non chargée', e);
       }
     }
   }
@@ -267,7 +267,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: st,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Échec de l\'amélioration AI : $e');
+      context.showFailureSnackBar('Photo non améliorée', e);
     } finally {
       if (mounted) setState(() => _enhancingAiIndex = null);
     }
@@ -367,7 +367,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showSnackBar('Erreur : $e');
+        context.showFailureSnackBar('Photo non enregistrée', e);
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -407,7 +407,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       );
       if (mounted) {
         setState(() => _aiRefining = false);
-        context.showSnackBar('Erreur chargement source : $e');
+        context.showFailureSnackBar('Scan non chargé', e);
       }
     }
   }
@@ -465,7 +465,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showSnackBar('Erreur extraction : $e');
+        context.showFailureSnackBar('Illustrations non extraites', e);
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -543,7 +543,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showSnackBar('Erreur IA : $e');
+        context.showFailureSnackBar('Recette non améliorée', e);
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -562,8 +562,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         MediaQuery.sizeOf(context).width >= _originalPanelMinWindowWidth;
 
     return recipeAsync.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () => const Scaffold(
+        body: AppLoadingState(label: 'Chargement du brouillon…'),
+      ),
       error: (e, _) => Scaffold(
         appBar: AppBar(),
         body: AppErrorState(
@@ -575,7 +576,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         if (recipe == null) {
           if (_isDeleting) {
             return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
+              body: AppLoadingState(label: 'Suppression du brouillon…'),
             );
           }
           return Scaffold(
@@ -914,7 +915,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         error: e,
         stackTrace: stackTrace,
       );
-      if (mounted) context.showSnackBar('Erreur : $e');
+      if (mounted) context.showFailureSnackBar('Type de page non modifié', e);
     }
   }
 
@@ -1044,7 +1045,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showSnackBar('Erreur : $e');
+        context.showFailureSnackBar('Recette non validée', e);
       }
     } finally {
       if (mounted) setSaving(false);
@@ -1085,10 +1086,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           error: e,
           stackTrace: st,
         );
-        debugPrint('deleteRecipe failed: $e\n$st');
         if (mounted) {
           setState(() => _isDeleting = false);
-          context.showErrorSnackBar('Échec de la suppression : $e');
+          context.showFailureSnackBar('Brouillon non supprimé', e);
         }
       }
     }
@@ -1169,7 +1169,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur : $e');
+      context.showFailureSnackBar('Brouillon non copié', e);
     }
   }
 }

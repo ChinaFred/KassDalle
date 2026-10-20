@@ -7956,7 +7956,7 @@ ni du repli « appels sans montant » : le montant est calculable, il doit être
   lu dans la grille), avant l'appel à Cloud Vision. Plafond atteint : `BudgetExceededError`,
   rendu au client en `resource-exhausted`. Le client ne lit pas son message :
   `describeError` (`core/widgets/error_message.dart`) traduit tout `resource-exhausted` en
-  « Quota atteint — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. ».
+  « Limite du jour atteinte — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. ».
   Chaque analyse est enregistrée dès qu'elle est faite, réussie ou non (`analyseAndRecord`,
   une ligne `ai_usage` par image, écrite avant que la réservation soit rendue) : l'image
   suivante du lot lit une dépense du jour à jour, et un lot interrompu ne perd aucune analyse

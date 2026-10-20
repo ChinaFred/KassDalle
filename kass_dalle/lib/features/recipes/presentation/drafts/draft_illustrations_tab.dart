@@ -185,7 +185,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
               thumbnailUrls: newThumbs,
             );
         if (mounted) {
-          context.showSnackBar(RecipeAiUiCopy.generateImageSuccess);
+          context.showSuccessSnackBar(RecipeAiUiCopy.generateImageSuccess);
         }
       } catch (e, stackTrace) {
         reportUnexpectedError(
@@ -194,7 +194,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
           stackTrace: stackTrace,
         );
         if (!mounted) return;
-        context.showErrorSnackBar('Erreur génération image : $e');
+        context.showFailureSnackBar('Image non générée', e);
       } finally {
         if (mounted) setState(() => _generatingAi = false);
       }
@@ -246,7 +246,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         context: {'etape': 'capture', 'source': source.name},
       );
       if (mounted) {
-        context.showErrorSnackBar('Impossible de prendre la photo : $e');
+        context.showFailureSnackBar('Photo non prise', e);
       }
       return;
     }
@@ -282,7 +282,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur upload : $e');
+      context.showFailureSnackBar('Photo non enregistrée', e);
     } finally {
       if (mounted) setState(() => _uploadingManual = false);
     }

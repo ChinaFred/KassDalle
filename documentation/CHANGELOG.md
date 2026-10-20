@@ -20,6 +20,50 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
+### v0.24.23 — fonctionnel
+
+Messages d'erreur des recettes, premier sous-lot du lot 8 de l'audit #151 (tickets #170 et
+#171, à suivre).
+
+Un échec dans les recettes, les brouillons et l'import s'affiche en deux phrases : ce qui n'a
+pas eu lieu, puis la cause lisible. Exemples : « Photo non enregistrée. Connexion perdue. »,
+« Recette non supprimée. Accès refusé. ». Le texte technique de l'exception (« Erreur
+Storage : [firebase_storage/…] », « Erreur IA : GeminiCallableException… ») n'apparaît plus ;
+il reste dans les rapports d'erreurs. 55 messages sont concernés : fiche, édition, création,
+relecture d'un brouillon, illustrations, liste d'un livre, et les messages d'erreur de l'écran
+d'import. Les échecs affichés jusqu'ici dans un message neutre prennent la couleur d'erreur,
+et « Image générée par l'IA ✓ » celle d'un succès.
+
+Sur une page d'erreur, le bouton « Détails », qui montre le texte technique, n'est plus
+visible que d'un administrateur. Pour les autres membres, une erreur inattendue conseille :
+« Si le problème persiste, signalez-le depuis le menu du compte. ».
+
+Les chargements en page entière de l'édition d'une recette, de la relecture d'un brouillon et
+de la file « Brouillons & Traitements » disent ce qu'ils attendent (« Chargement de la
+recette… », « Chargement du brouillon… », « Suppression du brouillon… », « Chargement des
+brouillons et imports… »). La colonne « Quantite » du détail nutritionnel s'écrit
+« Quantité ». Un plafond atteint s'intitule « Limite du jour atteinte » au lieu de « Quota
+atteint ». À l'import, une erreur technique du serveur ne s'affiche plus telle quelle : le
+message dit ce qui n'a pas eu lieu (« Livre non vérifié. », « Page 3 non vérifiée. »).
+
+### v0.24.23 — technique
+
+Nouveau `failureMessage(what, error)` (`core/widgets/error_message.dart`) : « what. Titre de
+`describeError`. », sans double point. `context.showFailureSnackBar(what, error)`
+(`core/utils/context_extensions.dart`) l'affiche par `showErrorSnackBar`. `scan_upload_service.dart`
+l'emploie pour `ScanState.errorMessage` ; `_scanErrorMessage` garde le message du serveur
+d'une `GeminiCallableException` (scan de sécurité en `failed-precondition`, message non vide),
+et l'analyse d'un livre garde le sien ; `_serverWrittenMessage` écarte les codes `internal` et
+`unknown`, dont le message recopie le texte brut de l'exception côté serveur. `AppErrorState` devient un `ConsumerStatefulWidget` qui
+lit `isAdminProvider` ; le conseil d'une erreur inattendue vit dans `kUnexpectedErrorAdvice`,
+celui des membres dans `kReportProblemAdvice`. Chaque `catch` touché rapportait déjà par
+`reportUnexpectedError` ou `ErrorReportService` ; le `debugPrint` doublon de
+`draftReviewScreen.confirmDelete` est retiré, et les deux rapports de `recipe_list_widgets.dart`
+passent de `recipeListWidgets.build` à `detachFromBook` et `deleteRecipe`. Tests : nouveau
+`error_message_test.dart` (les cas de `describeError` y quittent `app_states_test.dart`, plus
+`failureMessage`), « Détails » selon le rôle dans `app_states_test.dart`, message d'échec sans
+texte technique dans `context_extensions_snackbar_test.dart`.
+
 ### v0.24.22 — fonctionnel
 
 Thème sombre et cibles tactiles, suite de l'audit #151 (tickets #172 à #175).

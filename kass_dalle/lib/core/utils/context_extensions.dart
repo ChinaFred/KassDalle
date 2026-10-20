@@ -1,4 +1,5 @@
 import '../theme/app_icon_size.dart';
+import '../widgets/error_message.dart';
 import 'package:flutter/material.dart';
 
 /// Extensions pratiques sur [BuildContext] pour réduire le boilerplate
@@ -67,6 +68,21 @@ extension AppSnackBar on BuildContext {
       action: action,
       persist: _persists(action),
     );
+  }
+
+  /// Affiche l'échec d'une action en deux phrases (voir [failureMessage]) :
+  /// ce qui n'a pas eu lieu ([what], sans point final), puis la cause lisible
+  /// tirée de [error]. Exemple : « Photo non enregistrée. Connexion perdue. »
+  ///
+  /// Le texte brut de l'exception (`[cloud_firestore/unavailable] …`) n'est
+  /// jamais affiché : il reste dans le rapport d'erreur, que l'appelant
+  /// envoie lui-même.
+  void showFailureSnackBar(
+    String what,
+    Object? error, {
+    SnackBarAction? action,
+  }) {
+    showErrorSnackBar(failureMessage(what, error), action: action);
   }
 }
 

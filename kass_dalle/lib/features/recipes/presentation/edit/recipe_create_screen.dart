@@ -154,7 +154,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur IA : $e');
+      context.showFailureSnackBar('Recette non convertie', e);
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
@@ -259,7 +259,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        context.showFailureSnackBar('Brouillon non enregistré', e);
       }
     } finally {
       if (mounted) setSaving(false);
@@ -338,7 +338,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        context.showFailureSnackBar('Recette non créée', e);
       }
     } finally {
       if (mounted) setSaving(false);

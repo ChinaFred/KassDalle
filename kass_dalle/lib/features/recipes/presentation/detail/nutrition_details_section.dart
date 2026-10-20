@@ -553,7 +553,7 @@ class _NutritionDetailsSectionState
                       child: DataTable(
                         columns: const [
                           DataColumn(label: Text('Ingrédient')),
-                          DataColumn(label: Text('Quantite')),
+                          DataColumn(label: Text('Quantité')),
                           DataColumn(label: Text('Calories')),
                           DataColumn(label: Text('Protéines')),
                           DataColumn(label: Text('Glucides')),

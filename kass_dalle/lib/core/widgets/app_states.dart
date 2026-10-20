@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'error_message.dart';
+import '../../features/auth/presentation/auth_providers.dart';
 import '../theme/app_icon_size.dart';
 
 /// États transverses d'un écran : chargement, vide, erreur.
@@ -111,7 +112,11 @@ class AppEmptyState extends StatelessWidget {
 
 // ── Erreur ───────────────────────────────────────────────────────────────────
 
-class AppErrorState extends StatefulWidget {
+/// Le texte technique de l'erreur, derrière « Détails », n'est montré qu'à un
+/// administrateur ([isAdminProvider]). Un autre membre ne saurait qu'en
+/// faire : son conseil l'oriente vers « Signaler ou proposer » quand l'erreur
+/// est inattendue ([kReportProblemAdvice]).
+class AppErrorState extends ConsumerStatefulWidget {
   final Object? error;
 
   /// Rappelé par le bouton Réessayer. Sans lui, le bouton n'apparaît pas :
@@ -139,10 +144,10 @@ class AppErrorState extends StatefulWidget {
   });
 
   @override
-  State<AppErrorState> createState() => _AppErrorStateState();
+  ConsumerState<AppErrorState> createState() => _AppErrorStateState();
 }
 
-class _AppErrorStateState extends State<AppErrorState> {
+class _AppErrorStateState extends ConsumerState<AppErrorState> {
   bool _detailsOpen = false;
 
   @override
@@ -150,6 +155,12 @@ class _AppErrorStateState extends State<AppErrorState> {
     final theme = Theme.of(context);
     final described = describeError(widget.error);
     final showRetry = widget.onRetry != null && described.retryable;
+    final isAdmin = ref.watch(isAdminProvider);
+    final advice =
+        widget.advice ??
+        (!isAdmin && described.advice == kUnexpectedErrorAdvice
+            ? kReportProblemAdvice
+            : described.advice);
 
     // `liveRegion` : le lecteur d'écran annonce le basculement en erreur sans
     // que l'utilisateur ait à repartir explorer l'écran.
@@ -179,7 +190,7 @@ class _AppErrorStateState extends State<AppErrorState> {
           ),
           const SizedBox(height: 8),
           Text(
-            widget.advice ?? described.advice,
+            advice,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
@@ -193,7 +204,7 @@ class _AppErrorStateState extends State<AppErrorState> {
               label: const Text('Réessayer'),
             ),
           ],
-          if (widget.error != null) ...[
+          if (widget.error != null && isAdmin) ...[
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => setState(() => _detailsOpen = !_detailsOpen),

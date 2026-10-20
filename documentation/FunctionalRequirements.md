@@ -51,6 +51,11 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
   un délai dépassé (30 s) son message. L'écran défile quand la hauteur manque (téléphone en
   paysage, grande police). Le numéro de version, en bas de l'écran de connexion et de la salle
   d'attente, s'écrit en petit, en couleur secondaire du thème.
+- **Messages d'erreur.** Un échec s'affiche en deux phrases : ce qui n'a pas eu lieu, puis la
+  cause lisible (« Photo non enregistrée. Connexion perdue. »). Le texte technique de l'erreur
+  part dans les rapports d'erreurs. Sur une page d'erreur, le bouton « Détails », qui montre ce
+  texte, n'est visible que de l'Admin. Pour les autres membres, une erreur inattendue conseille :
+  « Si le problème persiste, signalez-le depuis le menu du compte. » (« Signaler ou proposer »).
 - **Profil et compte** (`/account`, menu du compte › « Profil et compte »). En tête, l'avatar,
   le nom et le rôle en français (« Administrateur », « Éditeur », « Lecteur », « En attente »,
   les mots de l'administration). L'initiale de l'avatar est celle du nom affiché à la famille ;
@@ -1245,7 +1250,7 @@ lui-même celles qu'il retient.
 - Trois issues : **approuvée** (le cas courant, quelques secondes), **refusée** (jamais publiée, motif annoncé, image conservée pour un administrateur), **à revoir** (attend une décision humaine).
 - Le contexte culinaire l'emporte sur la violence ; le contenu sexuel explicite ne bénéficie d'aucun contexte.
 - **Pas de repli** : moteur injoignable, l'image attend et l'écran le dit. Publier par défaut modérerait pour rien ; refuser par défaut accuserait à tort.
-- **Chaque analyse compte dans le plafond quotidien d'IA du compte** (une image, un appel). Plafond atteint : l'image n'est ni analysée ni publiée, et l'écran affiche « Quota atteint — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. », le message de tout plafond atteint côté serveur ; il ne dit pas que la cause est le plafond d'IA du compte. Une photo de page importée par lien est alors laissée de côté ; la recette est créée sans photo.
+- **Chaque analyse compte dans le plafond quotidien d'IA du compte** (une image, un appel). Plafond atteint : l'image n'est ni analysée ni publiée, et l'écran affiche « Limite du jour atteinte — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. », le message de tout plafond atteint côté serveur ; il ne dit pas que la cause est le plafond d'IA du compte. Une photo de page importée par lien est alors laissée de côté ; la recette est créée sans photo.
 - La revue vit dans *Admin › Modération*, et montre aussi bien ce qui est passé que ce qui a été bloqué.
 - **Seules les images de l'application s'affichent** (v0.23.13). Une image dont l'adresse ne pointe pas vers le stockage de l'application — photo de recette, couverture de livre, image insérée dans le texte d'une recette, visuel de dressage — n'est pas chargée : l'écran montre l'image de repli habituelle, sur toutes les plateformes, et l'export PDF part sans elle. Dans un éditeur, l'image insérée affiche « Image extérieure : importez-la depuis la galerie ». Une telle vignette ne s'ouvre pas en grand, et l'atelier de retouche ne la télécharge pas (« Cette image ne vient pas de Kass'Dalle : elle n'est pas téléchargée. »). Les images de l'ancien stockage du projet restent affichées. Ces images n'ont pas été modérées. Exception, décidée par l'utilisateur : la photo de profil du compte Google reste affichée.
 
@@ -2333,7 +2338,7 @@ endroits où l'on regarde déjà la dépense.
   compte pour un appel, et son coût pour sa part en euros. Elle en était exclue : un compte
   pouvait alors faire analyser des images sans limite en rappelant la publication en boucle
   (audit sécurité). Plafond atteint, l'image n'est pas publiée et l'écran affiche
-  « Quota atteint — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. », le message de tout plafond atteint côté serveur ; il ne dit pas que la cause est le plafond d'IA du compte ; la publication redevient possible le lendemain, ou dès qu'un administrateur
+  « Limite du jour atteinte — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. », le message de tout plafond atteint côté serveur ; il ne dit pas que la cause est le plafond d'IA du compte ; la publication redevient possible le lendemain, ou dès qu'un administrateur
   relève le plafond. La relance des images en attente, réservée à l'administrateur, n'y est
   pas soumise.
 - **Le quota offert est une ligne, pas un silence.** Le fournisseur offre mille unités par
