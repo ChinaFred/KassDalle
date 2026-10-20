@@ -11,6 +11,7 @@ import '../../../core/presentation/leave_guard.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
+import '../../moderation/data/image_moderation_service.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
@@ -221,9 +222,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         context: {'etape': 'capture', 'source': source.name},
       );
       if (mounted) {
-        context.showErrorSnackBar(
-          'Impossible de prendre la photo : ${shortErrorMessage(e)}',
-        );
+        context.showFailureSnackBar('Photo non prise', e);
       }
       return;
     }
@@ -246,6 +245,14 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         });
         ref.invalidate(myBooksProvider);
         ref.invalidate(accessibleBooksProvider);
+      } on ImageNotPublished catch (e) {
+        // Couverture retenue ou refusée par la modération : pas une panne,
+        // rien à rapporter.
+        if (mounted) {
+          context.showErrorSnackBar(
+            memberImageRefusal(e, what: 'Couverture non enregistrée'),
+          );
+        }
       } catch (e, stackTrace) {
         reportUnexpectedError(
           feature: 'bookFormScreen.pickCover',
@@ -253,9 +260,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           stackTrace: stackTrace,
         );
         if (mounted) {
-          context.showErrorSnackBar(
-            'Envoi de la couverture impossible : ${shortErrorMessage(e)}',
-          );
+          context.showFailureSnackBar('Couverture non enregistrée', e);
         }
       } finally {
         if (mounted) setState(() => _uploadingCover = false);
@@ -294,6 +299,14 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       });
       ref.invalidate(myBooksProvider);
       ref.invalidate(accessibleBooksProvider);
+    } on ImageNotPublished catch (e) {
+      // Couverture retenue ou refusée par la modération : pas une panne, rien
+      // à rapporter.
+      if (mounted) {
+        context.showErrorSnackBar(
+          memberImageRefusal(e, what: 'Couverture non enregistrée'),
+        );
+      }
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'bookFormScreen.replaceCoverBytes',
@@ -301,9 +314,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar(
-          'Envoi de la couverture impossible : ${shortErrorMessage(e)}',
-        );
+        context.showFailureSnackBar('Couverture non enregistrée', e);
       }
     } finally {
       if (mounted) setState(() => _uploadingCover = false);
@@ -385,6 +396,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     if (!mounted) return;
 
     setState(() => _saving = true);
+    // Message de l'échec de la couverture à la création, si elle n'est pas
+    // partie : il remplace le succès.
+    String? coverFailure;
     try {
       // ── Livres système : titre + description ────────────────────────────
       if (existing?.isSystemBook == true) {
@@ -455,12 +469,22 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                 .updateBook(
                   book.copyWith(urlCouverture: url, updatedAt: DateTime.now()),
                 );
+          } on ImageNotPublished catch (error) {
+            // Retenue ou refusée par la modération : pas une panne, rien à
+            // rapporter. Le livre existe : le message le dit avant l'échec.
+            coverFailure =
+                'Livre ajouté. '
+                '${memberImageRefusal(error, what: 'Couverture non enregistrée')}';
           } catch (error, stackTrace) {
             reportUnexpectedError(
               feature: 'bookFormScreen.save',
               error: error,
               stackTrace: stackTrace,
+              context: {'etape': 'couverture', 'book_id': newId},
             );
+            coverFailure =
+                'Livre ajouté. '
+                '${failureMessage('Couverture non enregistrée', error)}';
           }
         }
       } else {
@@ -496,9 +520,15 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
 
       _saved = true;
       if (mounted) {
-        context.showSuccessSnackBar(
-          existing == null ? 'Livre ajouté manuellement' : 'Livre mis à jour',
-        );
+        // Une couverture perdue à la création n'est pas un succès : le livre
+        // est créé, le message le dit, en erreur.
+        if (coverFailure != null) {
+          context.showErrorSnackBar(coverFailure);
+        } else {
+          context.showSuccessSnackBar(
+            existing == null ? 'Livre ajouté manuellement' : 'Livre mis à jour',
+          );
+        }
         context.pop();
       }
     } catch (e, stackTrace) {
@@ -508,8 +538,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar(
-          'Enregistrement impossible : ${shortErrorMessage(e)}',
+        context.showFailureSnackBar(
+          existing == null ? 'Livre non ajouté' : 'Livre non mis à jour',
+          e,
         );
       }
     } finally {

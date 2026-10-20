@@ -97,7 +97,7 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
       );
       await ref.read(bookRepositoryProvider).updateBook(validated);
       if (mounted) {
-        context.showSuccessSnackBar('"${widget.book.titre}" validé !');
+        context.showSuccessSnackBar('« ${widget.book.titre} » validé');
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -106,7 +106,7 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
+        context.showFailureSnackBar('« ${widget.book.titre} » non validé', e);
       }
     } finally {
       if (mounted) setState(() => _validating = false);

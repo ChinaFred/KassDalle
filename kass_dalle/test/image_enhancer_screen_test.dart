@@ -88,7 +88,9 @@ void main() {
     expect(results, isEmpty);
     expect(find.byType(ImageEnhancerScreen), findsOneWidget);
     expect(
-      find.text('La correction n\'a pas pu être appliquée.'),
+      find.text(
+        'Correction non appliquée. Une erreur inattendue est survenue.',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('isolat perdu'), findsNothing);
@@ -121,7 +123,10 @@ void main() {
     await tester.tap(find.text('Enregistrer'));
     await settleReal(tester);
 
-    expect(find.textContaining('Envoi impossible : '), findsOneWidget);
+    expect(
+      find.text('Photo non envoyée. Une erreur inattendue est survenue.'),
+      findsOneWidget,
+    );
     expect(find.textContaining('réseau'), findsNothing);
     expect(results, isEmpty);
     expect(reporter.features, contains('imageEnhancerScreen.deliverResult'));
@@ -148,7 +153,7 @@ void main() {
     await tester.tap(find.text('Enregistrer'));
     await settleReal(tester);
 
-    expect(find.text('Envoi impossible : Accès refusé'), findsOneWidget);
+    expect(find.text('Photo non envoyée. Accès refusé.'), findsOneWidget);
     expect(find.text('Réessayer'), findsNothing);
   });
 
@@ -162,9 +167,7 @@ void main() {
     );
 
     expect(
-      find.text(
-        'Cette photo ne peut pas être ouverte. Choisissez-en une autre.',
-      ),
+      find.text('Photo non ouverte. Choisissez-en une autre.'),
       findsOneWidget,
     );
     expect(find.textContaining('Exception'), findsNothing);

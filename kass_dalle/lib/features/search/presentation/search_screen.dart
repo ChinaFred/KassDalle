@@ -500,7 +500,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         error: e,
         stackTrace: stackTrace,
       );
-      if (mounted) context.showErrorSnackBar('Impossible de copier le lien.');
+      if (mounted) context.showErrorSnackBar('Lien non copié.');
     }
   }
 

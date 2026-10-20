@@ -56,6 +56,7 @@ import '../../features/tickets/presentation/my_tickets_screen.dart';
 import '../../features/tickets/presentation/ticket_launcher.dart';
 import '../../features/tickets/presentation/ticket_form_screen.dart';
 import '../presentation/app_shell.dart';
+import 'route_not_found_screen.dart';
 
 /// Notifie GoRouter sans exposer notifyListeners() comme protected.
 class _RouterNotifier extends ChangeNotifier {
@@ -614,8 +615,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
     ],
-    errorBuilder: (context, state) => Scaffold(
-      body: Center(child: Text('Page introuvable : ${state.error}')),
-    ),
+    errorBuilder: (context, state) => const RouteNotFoundScreen(),
   );
 });

@@ -132,9 +132,7 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar(
-        "L'ordre des livres n'a pas pu être enregistré : $e",
-      );
+      context.showFailureSnackBar('Ordre des livres non enregistré', e);
     }
   }
 
