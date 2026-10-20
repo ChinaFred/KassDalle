@@ -17,11 +17,12 @@ import { getStorage, getDownloadURL } from "firebase-admin/storage";
 import {
   ANTHROPIC_API_KEY,
   COLL_RECIPES,
+  COLL_SCAN_SPEND,
   GEMINI_API_KEY,
   MAX_CALLABLE_INSTANCES,
   REGION,
 } from "../config";
-import { requireAdmin, requireAuth, requireEditor } from "./_auth";
+import { requireAdmin, requireAuth, requireEditor, type AuthContext } from "./_auth";
 import { assertCanModifyRecipe } from "./_recipeAccess";
 import {
   readConceptInput,
@@ -98,6 +99,7 @@ import {
 import { PLATING_PROMPT_VERSION, suggestPlating } from "../gemini/plating";
 import { STORAGE_PROMPT_VERSION, suggestStorageAdvice } from "../gemini/storageAdvice";
 import { recordUsage } from "../ai/usage";
+import { isValidScanId, scanOwnerConflict } from "../ai/importBudget";
 import { BudgetExceededError } from "../ai/budget";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload, scanUploadHead, streamContainsEicar } from "../utils/uploadSecurity";
@@ -872,9 +874,59 @@ async function waitForSourceGone(storagePath: string): Promise<boolean> {
 }
 
 /**
+ * Le `scanId` fourni par le client, s'il peut être retenu, sinon `undefined`.
+ *
+ * Il nomme le document `scan_spend/{scanId}` auquel `recordUsage` ajoute le
+ * coût du contrôle. Deux refus, chacun journalisé : un identifiant qui n'a pas
+ * la forme produite par l'application (`isValidScanId`), et un compteur déjà
+ * posé au nom d'un autre compte (`scanOwnerConflict`). Le contrôle du fichier
+ * a lieu dans les deux cas ; son coût reste dans les journaux et la dépense du
+ * jour, sans compteur de scan.
+ */
+async function uploadScanId(raw: unknown, ctx: AuthContext): Promise<string | undefined> {
+  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  if (trimmed.length === 0) return undefined;
+  if (!isValidScanId(trimmed)) {
+    await logWarn({
+      message: "scanAndPromoteUploadFn : scanId mal formé, ignoré",
+      moduleType: "IMPORT",
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      extra: { scanIdLength: trimmed.length },
+    });
+    return undefined;
+  }
+  try {
+    const existing = await getFirestore().collection(COLL_SCAN_SPEND).doc(trimmed).get();
+    if (scanOwnerConflict(existing.get("user_id"), ctx.userId)) {
+      await logWarn({
+        message: "scanAndPromoteUploadFn : scanId d'un autre compte, ignoré",
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        extra: { scanId: trimmed },
+      });
+      return undefined;
+    }
+  } catch (err) {
+    // Propriétaire illisible : on ne fait pas confiance au client.
+    await logError({
+      message: "scanAndPromoteUploadFn : propriétaire du scan illisible, scanId ignoré",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "IMPORT",
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      extra: { scanId: trimmed },
+    });
+    return undefined;
+  }
+  return trimmed;
+}
+
+/**
  * Vérifie un upload en quarantaine puis le promeut vers scans/ si propre.
  *
- * Entrée: { storagePath: "quarantine/<uid>/<filename>" }
+ * Entrée: { storagePath: "quarantine/<uid>/<filename>", scanId?: "scan_<ms>_<suffixe>" }
  * Sortie: { status: "clean", downloadUrl, storagePath, mimeType, sizeBytes }
  *
  * Idempotente. Le SDK Android rejoue un appel dont la connexion est tombée
@@ -896,9 +948,6 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
     storagePath?: string;
     scanId?: string;
   };
-  const scanId =
-    typeof rawScanId === "string" && rawScanId.trim().length > 0 ? rawScanId.trim() : undefined;
-
   if (!storagePath || typeof storagePath !== "string") {
     throw new HttpsError("invalid-argument", "storagePath est requis.");
   }
@@ -915,6 +964,8 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
     });
     throw new HttpsError("permission-denied", "Chemin de quarantaine invalide.");
   }
+
+  const scanId = await uploadScanId(rawScanId, ctx);
 
   const bucket = getStorage().bucket();
   const sourceFile = bucket.file(storagePath);

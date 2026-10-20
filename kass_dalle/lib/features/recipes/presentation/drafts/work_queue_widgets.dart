@@ -670,7 +670,10 @@ class QueueJobTile extends StatelessWidget {
       case ProcessingJobStatus.rejected:
         // Un import par lien en échec porte ses actions dans son panneau,
         // « Relancer » compris quand il a un sens : pas de doublon à droite.
-        if (onRetry == null || urlFailure != null) return null;
+        // Propriétaire qui n'est plus éditeur : le même refus reviendrait.
+        if (onRetry == null || urlFailure != null || job.ownerNotEditor) {
+          return null;
+        }
         return _PrimaryJobAction(
           icon: Icons.refresh,
           label: 'Relancer',
@@ -1309,6 +1312,11 @@ class UrlImportFailure {
 /// règles admettent.
 UrlImportFailure? urlImportFailureFor(ProcessingJob job) {
   if (job.type != ProcessingJobType.recipeUrlImport) return null;
+  // Propriétaire qui n'est plus éditeur : le message du serveur, sans action.
+  // Relancer, ouvrir la page ou coller le texte mènerait au même refus.
+  if (job.ownerNotEditor) {
+    return UrlImportFailure(message: _ownerNotEditorMessage(job));
+  }
   final canRetry = job.urlRetryCount < ProcessingJob.maxUrlRetries;
   return switch (job.errorCode) {
     UrlImportErrorCode.pageBlocked => const UrlImportFailure(
@@ -1350,6 +1358,12 @@ UrlImportFailure? urlImportFailureFor(ProcessingJob job) {
     ),
   };
 }
+
+/// Le message d'un job arrêté parce que son propriétaire n'est plus éditeur.
+String _ownerNotEditorMessage(ProcessingJob job) =>
+    (job.errorMessage ?? '').isNotEmpty
+    ? job.errorMessage!
+    : 'Import arrêté : le compte qui l\'a lancé n\'a plus le rôle éditeur.';
 
 /// Le message d'échec d'un import par lien et ses actions.
 ///

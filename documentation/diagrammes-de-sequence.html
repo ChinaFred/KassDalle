@@ -230,6 +230,7 @@ sequenceDiagram
   participant G as Gemini
   participant R as recipes
   participant BK as books
+  participant US as users
   participant DL as dead_letters
 
   alt mobile — Android ou iOS
@@ -248,6 +249,7 @@ sequenceDiagram
   S->>ST: putData quarantine/uid/ts_fichier
   ST-->>S: progression puis storagePath
   S->>SP: scanAndPromoteUpload storagePath, scanId
+  SP->>SP: scanId retenu si isValidScanId et scan_spend sans autre propriétaire, sinon ignoré (logWarn)
   SP->>SP: type MIME, taille, signature du fichier
 
   alt fichier refusé
@@ -263,10 +265,17 @@ sequenceDiagram
   end
 
   J-->>D: entrée en queued (création ou relance)
+  D->>D: dispatchScanId — scan_id mal formé ou d'un autre compte : identifiant serveur
   D->>J: correlation_id, scan_id et dispatched_at
   D->>Q: enqueue jobId, userId, correlationId, scanId
   Q->>P: dispatch OIDC, 5 en parallèle, 2 par seconde
 
+  P->>US: assertJobOwnerEditor — lit users/created_by, à chaque tentative
+  alt révoqué, lecteur, en attente ou compte supprimé
+    P->>DL: failure_reason = owner_not_editor, dès cette tentative
+    P->>J: status error, error_code owner_not_editor, error_message
+    Note over P,DL: aucun appel de modèle, aucune nouvelle tentative
+  end
   P->>J: status processing, current_step import
   opt le job vise un livre (book_id)
     P->>BK: assertJobTargetBook — lit books/book_id
@@ -2428,6 +2437,9 @@ sequenceDiagram
   else livre cible d'un autre membre (assertJobTargetBook)
     P->>DL: failure_reason = foreign_book
     Note over P,DL: pas de réessai — on ne range une recette<br/>que dans ses propres livres, l'admin partout
+  else propriétaire plus éditeur (assertJobOwnerEditor, relu à chaque tentative)
+    P->>DL: failure_reason = owner_not_editor
+    Note over P,DL: pas de réessai — avant tout appel de modèle,<br/>error_code owner_not_editor sur le job
   else fichier source hors de scans/{created_by}/ (resolveJobSourcePath)
     P->>DL: failure_reason = forbidden_source_path
     Note over P,DL: pas de réessai — le chemin posé par le client ne changera pas
@@ -2443,9 +2455,18 @@ sequenceDiagram
   Note over P: retourne SANS lever — lever relancerait<br/>Cloud Tasks sur un job déjà classé
 
   A->>RH: Relancer, depuis Admin › File d'échecs
-  RH->>J: nouveau job, status = queued, attempt_count = 0
-  RH->>DL: relaunched_at, relaunched_by, relaunched_into_job_id
-  J->>CT: jobDispatcher réenfile
+  RH->>RH: deadLetterId — isValidDocumentId, sinon invalid-argument
+  Note over RH,DL: une seule runTransaction
+  RH->>DL: lit la dead letter et relaunched_at
+  alt déjà relancée (double appui, deux onglets)
+    RH-->>A: failed-precondition « Ce job a déjà été relancé. »
+  else job d'origine supprimé
+    RH-->>A: failed-precondition « Job original supprimé, relance impossible. »
+  else relance permise
+    RH->>J: nouveau job, status = queued, attempt_count = 0, error_code null
+    RH->>DL: relaunched_at, relaunched_by, relaunched_into_job_id
+    J->>CT: jobDispatcher réenfile
+  end
 </pre>
       </div>
       <figcaption>

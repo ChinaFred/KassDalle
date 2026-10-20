@@ -11,6 +11,7 @@ import type { Firestore } from "firebase-admin/firestore";
 import assert from "node:assert/strict";
 
 import { dispatchScanId } from "../pipeline/jobDispatcher";
+import { newScanId } from "../logging";
 import {
   DEFAULT_IMPORT_BUDGET_PER_WINDOW_USD,
   EMPTY_SCAN_SPEND,
@@ -21,6 +22,7 @@ import {
   effectiveImportLimitUsd,
   formatBudgetAmount,
   importBudgetDenial,
+  isValidScanId,
   maxImportBudgetPerWindowUsd,
   maxImportBudgetUsd,
   parseBudgetLimit,
@@ -321,9 +323,58 @@ describe("plafond d'import — le scan d'un autre compte", () => {
 
   test("dispatchScanId : un autre job garde son scan_id, sauf s'il est à un autre compte", () => {
     const generate = () => "serveur";
-    const base = { clientScanId: "client", jobType: "recipeScan", userId: "B", generate };
-    assert.equal(dispatchScanId({ ...base, existingOwner: undefined }), "client");
-    assert.equal(dispatchScanId({ ...base, existingOwner: "B" }), "client");
+    const client = "scan_1760000000000_1z141z3";
+    const base = { clientScanId: client, jobType: "recipeScan", userId: "B", generate };
+    assert.equal(dispatchScanId({ ...base, existingOwner: undefined }), client);
+    assert.equal(dispatchScanId({ ...base, existingOwner: "B" }), client);
     assert.equal(dispatchScanId({ ...base, existingOwner: "A" }), "serveur");
+  });
+
+  test("dispatchScanId : un scan_id mal formé est remplacé par un identifiant serveur", () => {
+    const generate = () => "serveur";
+    const base = { jobType: "recipeScan", existingOwner: undefined, userId: "B", generate };
+    assert.equal(dispatchScanId({ ...base, clientScanId: "client" }), "serveur");
+    assert.equal(dispatchScanId({ ...base, clientScanId: "scan_1/../x" }), "serveur");
+    assert.equal(dispatchScanId({ ...base, clientScanId: "" }), "serveur");
+  });
+});
+
+describe("isValidScanId", () => {
+  test("accepte la forme du client (`_newScanId`, scan_upload_service.dart)", () => {
+    // Millisecondes, puis `nextInt(0x100000000).toRadixString(36)` : 1 à 7 caractères.
+    assert.equal(isValidScanId("scan_1760000000000_1z141z3"), true);
+    assert.equal(isValidScanId("scan_1760000000000_0"), true);
+  });
+
+  test("accepte la forme du serveur (`newScanId`, logging.ts)", () => {
+    assert.equal(isValidScanId(newScanId()), true);
+    assert.equal(isValidScanId("scan_1760000000000_k3j9x0ab"), true);
+  });
+
+  test("refuse un identifiant hors forme", () => {
+    for (const bad of [
+      "",
+      "client",
+      "scan_",
+      "scan_123",
+      "scan__abc",
+      "scan_abc_def",
+      "scan_123_ABC",
+      "scan_123_abc/def",
+      "scan_123_abc ",
+      " scan_123_abc",
+      "scan_12345678901234567_abc",
+      "scan_123_abcdefghijklmnopq",
+      "../scan_123_abc",
+    ]) {
+      assert.equal(isValidScanId(bad), false, bad);
+    }
+  });
+
+  test("refuse une valeur qui n'est pas une chaîne", () => {
+    assert.equal(isValidScanId(undefined), false);
+    assert.equal(isValidScanId(null), false);
+    assert.equal(isValidScanId(123), false);
+    assert.equal(isValidScanId({ id: "scan_1_a" }), false);
   });
 });

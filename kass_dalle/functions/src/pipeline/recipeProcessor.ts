@@ -67,6 +67,12 @@ import type { JsonLdNutrition } from "../web/recipePage";
 import { BookFileError } from "../books/bookFile";
 import { TargetBookNotOwned, assertJobTargetBook } from "./targetBook";
 import {
+  JobOwnerNotEditor,
+  OWNER_NOT_EDITOR_CODE,
+  OWNER_NOT_EDITOR_MESSAGE,
+  assertJobOwnerEditor,
+} from "./jobOwner";
+import {
   StoragePathRefusedError,
   promotedScanPrefix,
   resolveAllowedStoragePath,
@@ -246,6 +252,12 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
   const start = Date.now();
 
   try {
+    // Le propriétaire est relu à chaque tentative, avant toute écriture et tout
+    // appel de modèle : un compte révoqué, rétrogradé ou supprimé depuis la
+    // mise en file ne dépense plus rien. Nouveaux essais de Cloud Tasks,
+    // tranches d'un livre et relance d'un dead letter passent tous ici.
+    await assertJobOwnerEditor((job.created_by as string | undefined) ?? userId);
+
     await jobRef.update({
       status: "processing",
       updated_at: Timestamp.now(),
@@ -969,6 +981,9 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
     const isTruncatedTagging = err instanceof TaggingTruncatedError;
     // Le livre d'un autre le restera à chaque tentative.
     const isForeignBook = err instanceof TargetBookNotOwned;
+    // Un propriétaire qui n'est plus éditeur ne le redeviendra pas d'ici le
+    // prochain essai ; un administrateur relancera le dead letter au besoin.
+    const isOwnerNotEditor = err instanceof JobOwnerNotEditor;
     // Un fichier source hors du dossier du propriétaire le restera.
     const isForbiddenSource = err instanceof StoragePathRefusedError;
     // Une archive (DOCX, EPUB) au-delà des bornes de lecture le restera :
@@ -1012,6 +1027,7 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
         isUnreadableBook,
         isTruncatedTagging,
         isForeignBook,
+        isOwnerNotEditor,
         isForbiddenSource,
         isZipLimit,
         isTooManyPages,
@@ -1021,18 +1037,19 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
     });
 
     // Dernière tentative — ou plafond atteint, fichier illisible, balisage
-    // coupé, livre cible d'un autre (`foreign_book`), fichier source hors du
-    // dossier du propriétaire (`forbidden_source_path`), archive au-delà des
-    // bornes de lecture (`archive_limit_exceeded`), plus de 20 pages
-    // supplémentaires (`too_many_pages`), plus de 200 Mo au total
-    // (`too_large`) : ces huit cas se rejouent à l'identique, il est inutile
-    // de les réessayer.
+    // coupé, livre cible d'un autre (`foreign_book`), propriétaire qui n'est
+    // plus éditeur (`owner_not_editor`), fichier source hors du dossier du
+    // propriétaire (`forbidden_source_path`), archive au-delà des bornes de
+    // lecture (`archive_limit_exceeded`), plus de 20 pages supplémentaires
+    // (`too_many_pages`), plus de 200 Mo au total (`too_large`) : ces neuf
+    // cas se rejouent à l'identique, il est inutile de les réessayer.
     if (
       attempt + 1 >= MAX_RETRY_ATTEMPTS ||
       isBudget ||
       isUnreadableBook ||
       isTruncatedTagging ||
       isForeignBook ||
+      isOwnerNotEditor ||
       isForbiddenSource ||
       isZipLimit ||
       isTooManyPages ||
@@ -1051,19 +1068,21 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
               ? "tagging_truncated"
               : isForeignBook
                 ? "foreign_book"
-                : isForbiddenSource
-                  ? "forbidden_source_path"
-                  : isZipLimit
-                    ? "archive_limit_exceeded"
-                    : isTooManyPages
-                      ? "too_many_pages"
-                      : isTooLarge
-                        ? "too_large"
-                        : urlError
-                          ? `url_${urlError.code}`
-                          : isQuota
-                            ? "quota_exceeded"
-                            : "pipeline_error",
+                : isOwnerNotEditor
+                  ? OWNER_NOT_EDITOR_CODE
+                  : isForbiddenSource
+                    ? "forbidden_source_path"
+                    : isZipLimit
+                      ? "archive_limit_exceeded"
+                      : isTooManyPages
+                        ? "too_many_pages"
+                        : isTooLarge
+                          ? "too_large"
+                          : urlError
+                            ? `url_${urlError.code}`
+                            : isQuota
+                              ? "quota_exceeded"
+                              : "pipeline_error",
         lastError: message,
         retryCount: attempt + 1,
         filePath:
@@ -1072,9 +1091,18 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
       await jobRef.update({
         status: "error",
         // Un import par lien porte un message lisible et son code : la tuile
-        // du client choisit ses actions sur le code.
-        error_message: urlError ? URL_IMPORT_MESSAGES[urlError.code] : message,
-        ...(urlError ? { error_code: urlError.code } : {}),
+        // du client choisit ses actions sur le code. Un propriétaire refusé
+        // aussi (`owner_not_editor`), quel que soit le type du job.
+        error_message: isOwnerNotEditor
+          ? OWNER_NOT_EDITOR_MESSAGE
+          : urlError
+            ? URL_IMPORT_MESSAGES[urlError.code]
+            : message,
+        ...(isOwnerNotEditor
+          ? { error_code: OWNER_NOT_EDITOR_CODE, current_step: null }
+          : urlError
+            ? { error_code: urlError.code }
+            : {}),
         created_book_id: createdBookId,
         updated_at: Timestamp.now(),
       });

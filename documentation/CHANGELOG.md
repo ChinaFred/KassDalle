@@ -35,6 +35,18 @@ règles vérifient le refus de `set`, `update` et `delete` sur chacun, la lectur
 administrateur, et l'écriture de `app_config/tickets` ; le test qui visait
 `app_config/nutrition_policy`, identifiant inexistant, vise `nutrition_source_policy`.
 
+Pipeline d'import, lot 9 de l'audit #151 (ticket #163). Le pipeline relit le compte du
+propriétaire d'un job à chaque tentative (`assertJobOwnerEditor`), avec la même décision que
+`requireEditor`. Un compte révoqué, lecteur, en attente ou supprimé voit son job passer en
+`error_code: owner_not_editor`, puis en dead letter, sans appel de modèle ; la file l'affiche sans
+proposer « Relancer ». Les nouveaux essais de Cloud Tasks, les tranches d'un livre et les
+relances de dead letter n'avaient aucun contrôle de rôle. `relaunchDeadLetterFn` valide son
+identifiant et fait tenir la relance dans une transaction : une seule relance par dead letter,
+la seconde reçoit « Ce job a déjà été relancé. ». Un `scanId` venu du client doit avoir la forme
+`scan_<ms>_<suffixe>` (`isValidScanId`) ; il est écarté par `scanAndPromoteUploadFn` et remplacé
+par `jobDispatcher` s'il est mal formé ou si son compteur `scan_spend` appartient à un autre
+compte.
+
 ### v0.24.30 — technique
 
 Règles Firestore des comptes et des groupes, lot 9 de l'audit #151 (ticket #162). Le rôle se
