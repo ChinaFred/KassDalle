@@ -20,6 +20,7 @@ library;
 import '../../recipes/domain/allergens.dart';
 import '../../recipes/domain/meal_role.dart';
 import '../../recipes/domain/recipe.dart';
+import 'meal_component.dart';
 import 'meal_staple.dart';
 import 'planning_preferences.dart';
 
@@ -220,7 +221,17 @@ class CriteriaItem {
   final String? mainProtein;
   final String? mainStarch;
 
-  const CriteriaItem({this.allergens, this.mainProtein, this.mainStarch});
+  /// Une garniture, dont les allergènes se saisissent à la main : absents,
+  /// ils sont « non renseignés ». Ceux d'une recette se calculent : absents
+  /// ou incomplets, ils sont « non vérifiés ».
+  final bool isStaple;
+
+  const CriteriaItem({
+    this.allergens,
+    this.mainProtein,
+    this.mainStarch,
+    this.isStaple = false,
+  });
 
   /// Une recette : son champ `allergens` (serveur seul) et ses protéine et
   /// féculent principaux.
@@ -244,6 +255,7 @@ class CriteriaItem {
           ? null
           : (present: allergens, complete: true),
       mainStarch: stapleMainStarch(s),
+      isStaple: true,
     );
   }
 }
@@ -359,9 +371,10 @@ bool violatesExclusion(PlanningCriteria c, CriteriaItem item) =>
 bool exclusionsVerified(PlanningCriteria c, CriteriaItem item) =>
     checkExclusions(c, item).every((r) => r.verdict == CriterionVerdict.ok);
 
-/// Le signal d'un choix fait à la main : « contient : gluten, porc », ou
-/// « allergènes non renseignés » quand rien ne viole mais qu'un allergène
-/// exclu n'a pas pu être vérifié. `null` sans rien à dire.
+/// Le signal d'un choix fait à la main : « contient : gluten, porc », ou,
+/// quand rien ne viole mais qu'un allergène exclu n'a pas pu être vérifié,
+/// « allergènes non renseignés » pour une garniture et « allergènes non
+/// vérifiés » pour une recette. `null` sans rien à dire.
 String? exclusionWarning(PlanningCriteria c, CriteriaItem item) {
   final checks = checkExclusions(c, item);
   final violated = [
@@ -380,7 +393,10 @@ String? exclusionWarning(PlanningCriteria c, CriteriaItem item) {
         r.key == CriterionKey.excludedAllergens &&
         r.verdict == CriterionVerdict.unknown,
   );
-  return allergensUnknown ? 'allergènes non renseignés' : null;
+  if (!allergensUnknown) return null;
+  return item.isStaple
+      ? 'allergènes non renseignés'
+      : 'allergènes non vérifiés';
 }
 
 // ── Traductions des textes ───────────────────────────────────────────────────
@@ -538,4 +554,57 @@ class UnmetCriterion {
 
   @override
   int get hashCode => Object.hash(key, regime, status, service, detail);
+}
+
+/// Les écarts d'un repas après « Autre suggestion » : ceux du plat proposé,
+/// puis ceux des autres services déjà posés sur le repas, qui n'ont pas
+/// changé.
+List<UnmetCriterion> unmetWithNewDish({
+  required List<UnmetCriterion> current,
+  required List<UnmetCriterion> proposed,
+}) => [
+  for (final u in proposed)
+    if (u.service == 'plat') u,
+  for (final u in current)
+    if (u.service != 'plat') u,
+];
+
+/// Le contenu du premier service de [role] : sa source, ou `null` s'il est
+/// absent ou « à choisir ».
+String? _firstCourseKey(
+  List<MealComponent> components,
+  MealComponentRole role,
+) {
+  for (final c in components) {
+    if (c.role != role) continue;
+    return c.isEmptyCourse ? null : c.sourceId;
+  }
+  return null;
+}
+
+/// Les écarts qui restent après un geste à la main sur les services d'un
+/// repas : l'entrée ou le dessert dont le contenu a changé — rempli, remplacé,
+/// vidé ou retiré — perd ses écarts : le choix est celui de la personne. Un
+/// service resté identique, « à choisir » compris, garde les siens. Le
+/// premier service de chaque type compte : c'est celui que le planning
+/// propose.
+List<UnmetCriterion> unmetAfterManualCourses({
+  required List<UnmetCriterion> unmet,
+  required List<MealComponent> before,
+  required List<MealComponent> after,
+}) {
+  if (unmet.isEmpty) return unmet;
+  final filled = <String>{
+    for (final (role, service) in const [
+      (MealComponentRole.entree, 'entree'),
+      (MealComponentRole.dessert, 'dessert'),
+    ])
+      if (_firstCourseKey(after, role) != _firstCourseKey(before, role))
+        service,
+  };
+  if (filled.isEmpty) return unmet;
+  return [
+    for (final u in unmet)
+      if (!filled.contains(u.service)) u,
+  ];
 }

@@ -16,6 +16,9 @@ import {
   buildConstraintsPrompt,
   constraintTextHash,
   parseConstraintsAnswer,
+  planningRunCost,
+  translationFitsCap,
+  translationSpentUsd,
   type TextUnderstanding,
 } from "../gemini/planningConstraints";
 import { readConstraintCache } from "../gemini/planningConstraintsStore";
@@ -114,6 +117,64 @@ describe("réponse du modèle", () => {
     assert.notEqual(constraintTextHash("sans porc"), constraintTextHash("sans boeuf"));
     assert.match(constraintTextHash("x"), /^[0-9a-f]{64}$/);
     assert.ok(CONSTRAINT_TEXT_MAX_CHARS >= 1000);
+  });
+});
+
+describe("plafond de la génération", () => {
+  test("la traduction part si son coût plafond tient dans le plafond", () => {
+    assert.equal(translationFitsCap({ capUsd: 0.5, estimateUsd: 0.02 }), true);
+    assert.equal(translationFitsCap({ capUsd: 0.5, estimateUsd: 0.5 }), true);
+    assert.equal(translationFitsCap({ capUsd: 0.01, estimateUsd: 0.02 }), false);
+  });
+
+  test("sans plafond ou sans estimation : aucun chiffre inventé, elle part", () => {
+    assert.equal(translationFitsCap({ capUsd: null, estimateUsd: 9 }), true);
+    assert.equal(translationFitsCap({ capUsd: 0.01, estimateUsd: null }), true);
+  });
+
+  test("retiré du plafond : coût enregistré, à défaut estimation, sans appel rien", () => {
+    assert.equal(
+      translationSpentUsd({ called: true, recordedUsd: 0.003, estimateUsd: 0.02 }),
+      0.003,
+    );
+    assert.equal(translationSpentUsd({ called: true, recordedUsd: null, estimateUsd: 0.02 }), 0.02);
+    assert.equal(translationSpentUsd({ called: true, recordedUsd: null, estimateUsd: null }), 0);
+    assert.equal(translationSpentUsd({ called: false, recordedUsd: 0.003, estimateUsd: 0.02 }), 0);
+  });
+});
+
+describe("coût du document de génération", () => {
+  test("traduction sans montant : son estimation entre dans cost_usd, et compte sans montant", () => {
+    const run = planningRunCost({
+      modelCall: { costUsd: 0.01 },
+      translation: { called: true, costUsd: null, spentUsd: 0.02 },
+    });
+    assert.ok(run.costUsd >= 0.02);
+    assert.ok(Math.abs(run.costUsd - 0.03) < 1e-12);
+    assert.equal(run.unpricedCalls, 1);
+  });
+
+  test("traduction avec montant : son coût, aucun appel sans montant", () => {
+    const run = planningRunCost({
+      modelCall: { costUsd: 0.01 },
+      translation: { called: true, costUsd: 0.004, spentUsd: 0.004 },
+    });
+    assert.ok(Math.abs(run.costUsd - 0.014) < 1e-12);
+    assert.equal(run.unpricedCalls, 0);
+  });
+
+  test("sans traduction ni appel de planning : rien", () => {
+    assert.deepEqual(
+      planningRunCost({
+        modelCall: null,
+        translation: { called: false, costUsd: null, spentUsd: 0 },
+      }),
+      { costUsd: 0, unpricedCalls: 0 },
+    );
+    assert.deepEqual(planningRunCost({ modelCall: { costUsd: null }, translation: null }), {
+      costUsd: 0,
+      unpricedCalls: 1,
+    });
   });
 });
 

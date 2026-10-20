@@ -310,7 +310,11 @@ List<SideChoice> chooseSides({
 
     taken.add(pick.id);
     final fromSuggestion = ordered.indexOf(pick) < suggestedCount;
-    final unverified = verified(pick) ? '' : ' Allergènes non renseignés.';
+    final unverified = verified(pick)
+        ? ''
+        : pick.isRecipe
+        ? ' Allergènes non vérifiés.'
+        : ' Allergènes non renseignés.';
     final justification = fromSuggestion
         ? 'Le plat n\'apporte pas de ${need.label} : ${pick.name}, '
               'accompagnement classique.$unverified'

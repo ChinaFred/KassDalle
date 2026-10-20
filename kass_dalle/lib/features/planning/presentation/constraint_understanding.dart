@@ -49,6 +49,7 @@ class ConstraintUnderstandingLines extends StatelessWidget {
             Icons.check_circle_outline,
             theme.colorScheme.primary,
             'Compris : ${labels.join(' · ')}',
+            maxLines: null,
           ),
         );
       }
@@ -85,6 +86,7 @@ class ConstraintUnderstandingLines extends StatelessWidget {
     Color color,
     String label, {
     bool italic = false,
+    int? maxLines = 3,
   }) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -97,8 +99,10 @@ class ConstraintUnderstandingLines extends StatelessWidget {
             color: color,
             fontStyle: italic ? FontStyle.italic : null,
           ),
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
+          // Les critères compris se lisent en entier ; le texte transmis à
+          // l'IA, souvent long, se coupe.
+          maxLines: maxLines,
+          overflow: maxLines == null ? null : TextOverflow.ellipsis,
         ),
       ),
     ],

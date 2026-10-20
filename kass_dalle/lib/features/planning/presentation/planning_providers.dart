@@ -73,8 +73,8 @@ class PlanningRepository {
   /// Ce que le serveur a compris des textes de l'utilisateur, en direct.
   ///
   /// Une lecture en échec est remontée au rapport ; le flux continue sans
-  /// rien rendre de plus : l'écran dit alors que le texte sera lu au
-  /// prochain « Planifier avec l'IA », ce qui reste vrai.
+  /// rien rendre de plus. Si aucune lecture n'a abouti, le fournisseur reste
+  /// en chargement, et rien ne s'affiche sous les champs.
   Stream<Map<String, ConstraintTranslation>> watchConstraintTranslations() =>
       _constraintTranslationsDoc
           .snapshots()
@@ -458,16 +458,23 @@ class PlanningRepository {
   /// Remplace les composants d'un repas planifié — accompagnements ajoutés,
   /// retirés ou choisis à la main, services d'un menu —, sans toucher au plat
   /// ni à sa recette. [mealKind] écrit `meal_kind` ; `null` le laisse.
+  /// [unmetCriteria] réécrit `unmet_criteria` — un service rempli à la main
+  /// perd ses écarts ; vide, le champ est retiré ; `null` le laisse.
   Future<void> updateMealComponents(
     String id,
     List<MealComponent> components, {
     MealKind? mealKind,
+    List<UnmetCriterion>? unmetCriteria,
   }) async {
     await _col.doc(id).update({
       'components': components.isEmpty
           ? FieldValue.delete()
           : [for (final c in components) c.toMap()],
       if (mealKind != null) 'meal_kind': mealKind.key,
+      if (unmetCriteria != null)
+        'unmet_criteria': unmetCriteria.isEmpty
+            ? FieldValue.delete()
+            : [for (final u in unmetCriteria) u.toMap()],
     });
   }
 

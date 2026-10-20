@@ -58,7 +58,7 @@ void main() {
     expect(find.byType(BatchSlotTile), findsWidgets);
     expect(find.text('Ajouter un jour'), findsOneWidget);
     // L'IA n'est plus dans la barre de titre.
-    expect(find.byTooltip('Suggérer avec l\'IA'), findsNothing);
+    expect(find.byTooltip('Planifier avec l\'IA'), findsNothing);
   });
 
   testWidgets('grand écran : plusieurs colonnes de cartes', (tester) async {
@@ -90,7 +90,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(VerticalDivider), findsNothing);
     expect(find.byType(PlanWithAiButton), findsNothing);
-    expect(find.byTooltip('Suggérer avec l\'IA'), findsOneWidget);
+    expect(find.byTooltip('Planifier avec l\'IA'), findsOneWidget);
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).first);
     expect(scaffold.bottomNavigationBar, isNotNull);
     expect(find.text('Consignes du cycle · aucune'), findsOneWidget);

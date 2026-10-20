@@ -24,8 +24,11 @@ import {
   CONSTRAINT_TEXTS_PER_CALL,
   CONSTRAINT_TEXT_MAX_CHARS,
   PLANNING_CONSTRAINTS_PROMPT_VERSION,
+  buildConstraintsPrompt,
   constraintTextHash,
   translateConstraintTexts,
+  translationFitsCap,
+  translationSpentUsd,
   type TextUnderstanding,
 } from "./planningConstraints";
 import { planningCriteriaToMap, readPlanningCriteria } from "./planningCriteria";
@@ -51,6 +54,13 @@ export interface PlanningUnderstanding {
   outcomes: ConstraintTextOutcome[];
   /** Le modèle a été appelé pour cette génération. */
   called: boolean;
+  /** Coût enregistré de l'appel ; `null` sans appel ou sans montant. */
+  costUsd: number | null;
+  /**
+   * Ce que la traduction retire du plafond de la génération : coût
+   * enregistré, à défaut l'estimation, 0 sans appel (`translationSpentUsd`).
+   */
+  spentUsd: number;
 }
 
 interface CacheEntry {
@@ -110,11 +120,19 @@ export async function understandPlanningTexts(args: {
   translate: boolean;
   ctx: ModelCallContext;
   nowMs: number;
+  /**
+   * Plafond de la génération en dollars (`cost_cap_eur_per_generation`) ;
+   * `null` : pas de plafond par génération (mode `code`, taux absent).
+   */
+  capUsd?: number | null;
+  /** Coût plafond d'un appel pour ce prompt ; `null` si la grille est illisible. */
+  estimateCeilingUsd?: (promptChars: number) => Promise<number | null>;
 }): Promise<PlanningUnderstanding> {
   const texts = [...new Set(args.texts.map((t) => t.trim()).filter((t) => t.length > 0))];
   const understood = new Map<string, TextUnderstanding>();
   const outcomes: ConstraintTextOutcome[] = [];
-  if (texts.length === 0) return { understood, outcomes, called: false };
+  const none = { understood, outcomes, called: false, costUsd: null, spentUsd: 0 };
+  if (texts.length === 0) return none;
   const logCtx = {
     correlationId: args.ctx.correlationId,
     userId: args.uid,
@@ -163,12 +181,33 @@ export async function understandPlanningTexts(args: {
   for (const text of missing) {
     if (!eligible.includes(text)) outcomes.push(outcome(text, null, "skipped"));
   }
-  if (eligible.length === 0) return { understood, outcomes, called: false };
+  if (eligible.length === 0) return none;
+
+  // La traduction entre dans le plafond de la génération : estimée avant,
+  // évitée si elle ne tient pas. Les textes partent alors tels quels.
+  const estimateUsd = args.estimateCeilingUsd
+    ? await args.estimateCeilingUsd(buildConstraintsPrompt(eligible).length)
+    : null;
+  if (!translationFitsCap({ capUsd: args.capUsd ?? null, estimateUsd })) {
+    await logWarn({
+      ...logCtx,
+      message: "Planning — traduction des préférences évitée : plafond de la génération",
+      extra: { texts: eligible.length, estimateUsd, capUsd: args.capUsd ?? null },
+    });
+    for (const text of eligible) outcomes.push(outcome(text, null, "skipped"));
+    return none;
+  }
 
   let answer: Map<number, TextUnderstanding> | null = null;
+  // Le coût enregistré de l'appel ; un refus du plafond du jour n'appelle
+  // aucun modèle et ne coûte rien.
+  const billed: { costUsd: number | null; refused: boolean } = { costUsd: null, refused: false };
   try {
-    answer = await translateConstraintTexts(eligible, args.ctx);
+    answer = await translateConstraintTexts(eligible, args.ctx, (cost) => {
+      billed.costUsd = cost;
+    });
   } catch (err) {
+    billed.refused = err instanceof BudgetExceededError;
     const payload = {
       ...logCtx,
       message:
@@ -230,5 +269,17 @@ export async function understandPlanningTexts(args: {
       });
     }
   }
-  return { understood, outcomes, called: true };
+  // Un appel parti sans réponse (panne réseau, délai) ou sans montant a pu
+  // être facturé : il compte pour son estimation.
+  return {
+    understood,
+    outcomes,
+    called: !billed.refused,
+    costUsd: billed.costUsd,
+    spentUsd: translationSpentUsd({
+      called: !billed.refused,
+      recordedUsd: billed.costUsd,
+      estimateUsd,
+    }),
+  };
 }

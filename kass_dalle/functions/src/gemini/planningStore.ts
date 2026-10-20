@@ -46,6 +46,8 @@ import {
   type RefusalEntry,
 } from "./planning";
 
+import { planningRunCost } from "./planningConstraints";
+
 /** Conservation d'un document de génération, par la politique TTL Firestore. */
 export const PLANNING_RUN_RETENTION_DAYS = 180;
 
@@ -316,6 +318,14 @@ export async function writePlanningRun(args: {
   costCapUsd: number | null;
   /** Le groupe dont le planning est généré, `null` pour le planning personnel. */
   groupId?: string | null;
+  /**
+   * La traduction des préférences (`planning_constraints`, v0.24.18) : ce
+   * qu'elle a retiré du plafond (`spentUsd` — coût enregistré, à défaut son
+   * estimation) entre dans `cost_usd` ; un appel sans montant compte en plus
+   * dans `unpriced_calls`. Les conceptions voient ainsi le plafond déjà entamé
+   * (`planningRunCost`).
+   */
+  translation?: { called: boolean; costUsd: number | null; spentUsd: number };
 }): Promise<number | null> {
   const { suggestion } = args;
   const conceptsMax = conceptsAllowance({
@@ -333,7 +343,10 @@ export async function writePlanningRun(args: {
     dessert_id: s.dessertId ?? null,
     source: s.source,
   });
-  const cost = suggestion.modelCall?.costUsd;
+  const runCost = planningRunCost({
+    modelCall: suggestion.modelCall,
+    translation: args.translation ?? null,
+  });
   try {
     await runRef(args.uid, args.runId).set({
       created_at: Timestamp.fromDate(now),
@@ -355,8 +368,8 @@ export async function writePlanningRun(args: {
       concepts_used: 0,
       reserved_usd: 0,
       cost_cap_usd: args.costCapUsd,
-      cost_usd: typeof cost === "number" ? cost : 0,
-      unpriced_calls: suggestion.modelCall && cost == null ? 1 : 0,
+      cost_usd: runCost.costUsd,
+      unpriced_calls: runCost.unpricedCalls,
     });
     return conceptsMax;
   } catch (err) {

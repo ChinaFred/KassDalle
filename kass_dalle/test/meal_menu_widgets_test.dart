@@ -7,11 +7,13 @@ import 'package:kass_dalle/core/services/error_report_service.dart';
 import 'package:kass_dalle/core/widgets/provider_retry.dart';
 import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
+import 'package:kass_dalle/features/planning/domain/meal_choice_source.dart';
 import 'package:kass_dalle/features/planning/domain/meal_component.dart';
 import 'package:kass_dalle/features/planning/domain/meal_composition.dart';
 import 'package:kass_dalle/features/planning/domain/meal_kind.dart';
 import 'package:kass_dalle/features/planning/domain/meal_staple.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
+import 'package:kass_dalle/features/planning/domain/planning_criteria.dart';
 import 'package:kass_dalle/features/planning/domain/planning_preferences.dart';
 import 'package:kass_dalle/features/planning/domain/planning_reach.dart';
 import 'package:kass_dalle/features/planning/domain/side_chooser.dart';
@@ -842,6 +844,8 @@ void main() {
       List<MealComponent> components, {
       UserRole role = UserRole.editor,
       AsyncValue<List<UserStaple>>? staples,
+      List<UnmetCriterion> unmet = const [],
+      MealChoiceSource? choiceSource,
     }) async {
       final backend = TestBackend(
         user: testUser(role: role),
@@ -860,6 +864,8 @@ void main() {
               durationMinutes: 60,
               mealKind: MealKind.menu,
               components: components,
+              choiceSource: choiceSource,
+              unmetCriteria: unmet,
               createdAt: now,
             ).toFirestore(),
           );
@@ -960,6 +966,52 @@ void main() {
       );
       expect(find.text('Réessayer'), findsOneWidget);
       expect(find.textContaining('Aucune garniture ni recette'), findsNothing);
+    });
+
+    testWidgets('« Choisir » un dessert : son écart quitte le repas et la '
+        "ligne d'origine", (tester) async {
+      const durationGap = UnmetCriterion(
+        key: 'max_duration',
+        regime: CriterionRegime.preference,
+        status: 'relaxed',
+        service: 'plat',
+        detail: "1 h 10, au-delà des 45 min demandées : peu d'autres choix",
+      );
+      const dessertGap = UnmetCriterion(
+        key: 'excluded_allergens',
+        regime: CriterionRegime.exclusion,
+        status: 'empty',
+        service: 'dessert',
+        detail: 'Aucun dessert sans fruits à coque.',
+      );
+      final backend = await pumpPlanning(
+        tester,
+        [_c('plat', 'Blanquette de veau', id: 'main'), _c('dessert', '')],
+        choiceSource: MealChoiceSource.ai,
+        unmet: const [durationGap, dessertGap],
+        staples: AsyncValue.data([
+          _staple('pomme', 'Pomme', StapleCategory.fruit),
+        ]),
+      );
+      expect(
+        find.textContaining('dessert : aucun dessert sans fruits à coque'),
+        findsOneWidget,
+      );
+      await tester.tap(find.widgetWithText(TextButton, 'Choisir'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pomme'));
+      await tester.pumpAndSettle();
+
+      final data = await stored(backend);
+      expect(data['unmet_criteria'], [durationGap.toMap()]);
+      expect(
+        find.textContaining('dessert : aucun dessert sans fruits à coque'),
+        findsNothing,
+      );
+      expect(
+        find.textContaining('au-delà des 45 min demandées'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('services tous vides : pas de question', (tester) async {

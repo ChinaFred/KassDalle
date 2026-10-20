@@ -257,6 +257,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     ..._translationOverrides,
   };
 
+  /// Le cache des traductions est lu, ou une génération en a rendu : avant,
+  /// rien ne s'affiche sous les champs, plutôt que « Sera lu au prochain… »
+  /// pour un texte déjà traduit.
+  bool get _translationsReady =>
+      ref.read(planningConstraintTranslationsProvider).hasValue ||
+      _translationOverrides.isNotEmpty;
+
   /// Les critères compris du créneau [i] : les consignes du cycle et sa
   /// contrainte spécifique, quand le serveur les a traduites.
   PlanningCriteria _criteriaForSlot(int i) => criteriaForTexts(_translations, [
@@ -2377,6 +2384,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     } else {
       _slotDesserts[index] = null;
     }
+    // Retirer un service à la main retire ses écarts, comme le choisir.
+    _dropUnmet(index, role == MealComponentRole.entree ? 'entree' : 'dessert');
   });
 
   /// La composition que le créneau [index] enregistrerait, ou `null` s'il
@@ -2525,6 +2534,16 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
     final starter = first(MealComponentRole.entree);
     final dessert = first(MealComponentRole.dessert);
+    // Comme un choix direct : l'entrée ou le dessert remplis à la main dans
+    // l'éditeur perdent leurs écarts.
+    _setSlotUnmet(
+      index,
+      unmetAfterManualCourses(
+        unmet: _slotUnmet[index] ?? const [],
+        before: [?_slotStarters[index], ?_slotDesserts[index]],
+        after: [?starter, ?dessert],
+      ),
+    );
     _slotStarters[index] = starter;
     _slotDesserts[index] = dessert;
     final current = _slotConstraints[index] ?? const DayConstraint();
@@ -2779,7 +2798,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             else
               PopupMenuButton<int>(
                 icon: const Icon(Icons.auto_awesome_outlined),
-                tooltip: 'Suggérer avec l\'IA',
+                // Le même nom que le bouton du grand écran : « Sera lu au
+                // prochain « Planifier avec l'IA » » renvoie à ce bouton.
+                tooltip: 'Planifier avec l\'IA',
                 enabled: _recipesLoaded,
                 onSelected: (value) =>
                     _generateWithAI(replaceExisting: value == 1),
@@ -3006,10 +3027,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         // traduction déjà faite : aucune traduction ne part d'ici.
         ValueListenableBuilder<TextEditingValue>(
           valueListenable: _globalConstraintsCtrl,
-          builder: (context, value, _) => ConstraintUnderstandingLines(
-            text: value.text,
-            translation: _translations[value.text.trim()],
-          ),
+          builder: (context, value, _) => _translationsReady
+              ? ConstraintUnderstandingLines(
+                  text: value.text,
+                  translation: _translations[value.text.trim()],
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
@@ -3308,7 +3331,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       needsWithoutCandidate: _needsWithoutCandidate,
       relaxed: _slotRelaxed[index] ?? const [],
       unmet: _slotUnmet[index] ?? const [],
-      understandingOf: (text) => _translations[text.trim()],
+      // Rien sous la contrainte spécifique tant que le cache charge.
+      understandingOf: _translationsReady
+          ? (text) => _translations[text.trim()]
+          : null,
       noStarterCandidate: _noRecipeWithRole('entree'),
       noDessertCandidate: _noRecipeWithRole('dessert'),
       starter: _slotStarters[index],

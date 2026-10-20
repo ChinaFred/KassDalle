@@ -14,14 +14,22 @@ class StapleAllergensField extends StatelessWidget {
   final List<String>? value;
   final ValueChanged<List<String>?> onChanged;
 
-  /// Rappel de la valeur du référentiel, pour une retouche.
-  final String? baseHint;
+  /// Pour la retouche d'une garniture du référentiel ([retouch]) : les
+  /// allergènes que le référentiel a saisis. Sans valeur propre, la garniture
+  /// les suit : « Suit le référentiel : Gluten. ». Si le référentiel n'en a
+  /// pas saisi (`null`), l'avertissement « Non renseignés » reste : rien ne
+  /// peut être vérifié.
+  final List<String>? baseAllergens;
+
+  /// Retouche d'une garniture du référentiel, et non garniture à soi.
+  final bool retouch;
 
   const StapleAllergensField({
     super.key,
     required this.value,
     required this.onChanged,
-    this.baseHint,
+    this.baseAllergens,
+    this.retouch = false,
   });
 
   @override
@@ -29,12 +37,19 @@ class StapleAllergensField extends StatelessWidget {
     final theme = Theme.of(context);
     final current = value;
     final none = current != null && current.isEmpty;
-    final helper = current == null
-        ? 'Non renseignés : une exclusion d\'allergène ne peut pas être '
-              'vérifiée sur cette garniture.'
-        : none
-        ? 'Aucun allergène majeur.'
+    final baseList = baseAllergens;
+    final base = retouch && baseList != null
+        ? stapleAllergensSummary(baseList)
         : null;
+    final helper = current == null
+        ? base != null
+              ? 'Suit le référentiel : ${_capitalized(base)}.'
+              : 'Non renseignés : une exclusion d\'allergène ne peut pas être '
+                    'vérifiée sur cette garniture.'
+        : [
+            if (none) 'Aucun allergène majeur.',
+            if (base != null) 'Référentiel : ${_capitalized(base)}.',
+          ].join(' ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -65,10 +80,10 @@ class StapleAllergensField extends StatelessWidget {
               ),
           ],
         ),
-        if (helper != null || baseHint != null) ...[
+        if (helper.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(
-            [?helper, ?baseHint].join(' '),
+            helper,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -78,6 +93,9 @@ class StapleAllergensField extends StatelessWidget {
     );
   }
 }
+
+String _capitalized(String s) =>
+    s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
 /// « Gluten, Œuf », « aucun allergène majeur » ou « allergènes non
 /// renseignés » : la ligne d'une garniture dans une liste.

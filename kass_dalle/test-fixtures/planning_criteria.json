@@ -1,5 +1,5 @@
 {
-  "_comment": "Critères structurés du planning (v0.24.17). Le texte libre des préférences générales et des notes du jour est traduit par le modèle (poste planning_constraints) en critères de ce vocabulaire ; le programme les vérifie. Décidés par functions/src/gemini/planningCriteria.ts, repris par lib/features/planning/domain/planning_criteria.dart. Le serveur applique le prédicat au plat, aux entrées et aux desserts ; le client l'applique aux accompagnements et aux choix faits à la main. Deux régimes : une exclusion ne se relâche jamais, une préférence se relâche, avec un message.",
+  "_comment": "Critères structurés du planning (v0.24.18). Le texte libre des préférences générales et des notes du jour est traduit par le modèle (poste planning_constraints) en critères de ce vocabulaire ; le programme les vérifie. Décidés par functions/src/gemini/planningCriteria.ts, repris par lib/features/planning/domain/planning_criteria.dart. Le serveur applique le prédicat au plat, aux entrées et aux desserts ; le client l'applique aux accompagnements et aux choix faits à la main. Deux régimes : une exclusion ne se relâche jamais, une préférence se relâche, avec un message.",
   "criteria": [
     { "key": "excluded_allergens", "regime": "exclusion", "values": "allergens" },
     { "key": "excluded_proteins", "regime": "exclusion", "values": "main_proteins" },

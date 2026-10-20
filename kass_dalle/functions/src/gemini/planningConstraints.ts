@@ -179,10 +179,62 @@ export function parseConstraintsAnswer(
   return out;
 }
 
-/** Traduit des textes en un appel. Une réponse illisible lève (`askJson`). */
+/**
+ * La traduction tient-elle dans le plafond de la génération ?
+ *
+ * Sans plafond (taux de change absent) ou sans estimation (grille
+ * illisible), aucun chiffre n'est inventé : la traduction part, bornée par le
+ * plafond du jour. Sinon, son coût plafond doit tenir dans le plafond.
+ */
+export function translationFitsCap(args: {
+  capUsd: number | null;
+  estimateUsd: number | null;
+}): boolean {
+  if (args.capUsd == null || args.estimateUsd == null) return true;
+  return args.estimateUsd <= args.capUsd;
+}
+
+/**
+ * Ce que la traduction retire du plafond de la génération : son coût
+ * enregistré, à défaut son estimation, à défaut rien.
+ */
+export function translationSpentUsd(args: {
+  called: boolean;
+  recordedUsd: number | null;
+  estimateUsd: number | null;
+}): number {
+  if (!args.called) return 0;
+  return args.recordedUsd ?? args.estimateUsd ?? 0;
+}
+
+/**
+ * Coût d'un document de génération : l'appel de planning, plus ce que la
+ * traduction a retiré du plafond (`spentUsd` : coût enregistré, à défaut son
+ * estimation). Un appel sans montant compte dans `unpricedCalls`, et son
+ * estimation reste dans `costUsd` : le plafond des conceptions ne la perd pas.
+ */
+export function planningRunCost(args: {
+  modelCall: { costUsd: number | null } | null;
+  translation: { called: boolean; costUsd: number | null; spentUsd: number } | null;
+}): { costUsd: number; unpricedCalls: number } {
+  const model = args.modelCall?.costUsd;
+  const t = args.translation;
+  const translated = t != null && t.called;
+  return {
+    costUsd: (typeof model === "number" ? model : 0) + (translated ? t.spentUsd : 0),
+    unpricedCalls:
+      (args.modelCall != null && model == null ? 1 : 0) + (translated && t.costUsd == null ? 1 : 0),
+  };
+}
+
+/**
+ * Traduit des textes en un appel. Une réponse illisible lève (`askJson`) ;
+ * [onCost] reçoit le coût enregistré dans tous les cas où le modèle a répondu.
+ */
 export async function translateConstraintTexts(
   texts: readonly string[],
   ctx: ModelCallContext,
+  onCost?: (costUsd: number | null) => void,
 ): Promise<Map<number, TextUnderstanding>> {
   return askJson({
     prompt: buildConstraintsPrompt(texts),
@@ -190,5 +242,6 @@ export async function translateConstraintTexts(
     outputSchema: { name: "planning_constraints", schema: CONSTRAINTS_SCHEMA },
     maxTokens: PLANNING_CONSTRAINTS_MAX_TOKENS,
     validate: (parsed) => parseConstraintsAnswer(parsed, texts),
+    ...(onCost ? { onCost } : {}),
   });
 }

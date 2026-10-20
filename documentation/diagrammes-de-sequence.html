@@ -1951,7 +1951,7 @@ sequenceDiagram
   Note over SP: requireEditor (v0.23.47) : le lecteur ne planifie pas
   SP->>FS: app_config/planning_policy · planned_meals 90 j (appelant)<br/>· recipe_ratings et preferences/planning_refusals (appelant seul)
   FS-->>SP: politique, dernière date servie par recette, notes, refus de moins de 21 j
-  SP->>SP: textes compris (v0.24.17, diagramme 50) :<br/>cache, puis un appel planning_constraints pour les textes modifiés
+  SP->>SP: textes compris (v0.24.18, diagramme 50) :<br/>cache, puis un appel planning_constraints pour les textes modifiés
   SP->>PL: applyRecentlyServed puis preselect (critères de chaque créneau)
   PL->>PL: filtres : rôle, exclusion comprise (jamais relâchée), prépa max,<br/>repos, note ≤ 3, écartées, déjà au cycle, préférence comprise
   PL->>PL: poids = fraîcheur × réchauffage × protéine répétée × note × refus<br/>× féculent d'un créneau voisin (×0,5) × protéine d'un créneau voisin (×0,5)<br/>× cuisine étrangère déjà au cycle (×0,5 par répétition, française jamais)<br/>(refus : ×0,5 sur 21 j, ×0,25 dès 3 refus, jamais exclue)<br/>protéine : main_protein, sinon dish_types<br/>tirage pondéré, 3 protéines en tête, relâchement si vide

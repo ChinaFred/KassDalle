@@ -324,7 +324,7 @@ export const PLANNING_REFUSALS_DOC_ID = "planning_refusals";
 
 /**
  * Préférences du planning comprises par le modèle —
- * `users/{uid}/preferences/planning_constraints` (v0.24.17). Cache par
+ * `users/{uid}/preferences/planning_constraints` (v0.24.18). Cache par
  * empreinte du texte, écrit par `suggestMealPlanFn` seul (le client ne
  * l'écrit pas : absent de `knownPreferenceIds` des règles), lu par son
  * titulaire pour afficher « Compris : … ».

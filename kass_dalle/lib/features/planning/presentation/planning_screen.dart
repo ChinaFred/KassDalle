@@ -381,6 +381,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         meal.id,
         components,
         mealKind: composition.kind,
+        // Une entrée ou un dessert remplis à la main perdent leurs écarts.
+        unmetCriteria: _unmetAfter(meal, components),
       );
       return;
     }
@@ -404,6 +406,20 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       setState(() => _mealRecipes[recipeId] = recipe);
     }
     _recordRefusal(meal, recipeId);
+  }
+
+  /// Les écarts de [meal] une fois ses services remplacés par [components] ;
+  /// `null` quand rien ne change, pour ne pas réécrire le champ.
+  static List<UnmetCriterion>? _unmetAfter(
+    PlannedMeal meal,
+    List<MealComponent> components,
+  ) {
+    final next = unmetAfterManualCourses(
+      unmet: meal.unmetCriteria,
+      before: meal.components,
+      after: components,
+    );
+    return next.length == meal.unmetCriteria.length ? null : next;
   }
 
   /// « Compléter » : un accompagnement de plus, choisi dans la feuille
@@ -719,15 +735,18 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       content = result?.toComponent(role: course.role);
     }
     if (content == null || !mounted) return;
+    final components = composition
+        .setCourseContent(index, content)
+        .toComponents(mainTitle: meal.recipeTitre);
     try {
       await ref
           .read(planningRepositoryProvider)
           ?.updateMealComponents(
             meal.id,
-            composition
-                .setCourseContent(index, content)
-                .toComponents(mainTitle: meal.recipeTitre),
+            components,
             mealKind: MealKind.menu,
+            // Le service rempli à la main perd ses écarts.
+            unmetCriteria: _unmetAfter(meal, components),
           );
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -1356,7 +1375,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         // Un écart de la présélection (déjà servi, note relâchée) reste
         // lisible sur le repas, comme les écarts aux critères compris.
         relaxedCriteria: result.rankings[0]?.relaxed ?? const [],
-        unmetCriteria: suggestion.unmet,
+        // Les écarts du plat proposé ; ceux de l'entrée et du dessert
+        // restent ceux du repas, qui n'ont pas changé.
+        unmetCriteria: unmetWithNewDish(
+          current: meal.unmetCriteria,
+          proposed: suggestion.unmet,
+        ),
       );
       _recordRefusal(meal, recipe.id.isEmpty ? null : recipe.id);
       if (mounted) {

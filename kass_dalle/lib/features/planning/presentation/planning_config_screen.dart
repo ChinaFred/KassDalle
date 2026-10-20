@@ -352,9 +352,11 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     // Ce que le serveur a compris de chaque texte : « Compris : … » sous les
     // champs. Rien ne se traduit ici ; la traduction part au clic sur
     // « Planifier avec l'IA ».
-    final translations =
-        ref.watch(planningConstraintTranslationsProvider).value ??
-        const <String, ConstraintTranslation>{};
+    // Rien sous les champs tant que le cache charge.
+    final translationsAsync = ref.watch(planningConstraintTranslationsProvider);
+    final translations = translationsAsync.hasValue
+        ? translationsAsync.value!
+        : null;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Préférences du planning'),
@@ -415,11 +417,12 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                   ),
                   ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _globalConstraintsCtrl,
-                    builder: (context, value, _) =>
-                        ConstraintUnderstandingLines(
-                          text: value.text,
-                          translation: translations[value.text.trim()],
-                        ),
+                    builder: (context, value, _) => translations == null
+                        ? const SizedBox.shrink()
+                        : ConstraintUnderstandingLines(
+                            text: value.text,
+                            translation: translations[value.text.trim()],
+                          ),
                   ),
                 ],
               ),
@@ -1087,8 +1090,9 @@ class _DayConstraintTile extends StatelessWidget {
   final DayConstraint constraint;
   final TextEditingController notesCtrl;
 
-  /// Ce que le serveur a compris des textes, pour la contrainte spécifique.
-  final Map<String, ConstraintTranslation> translations;
+  /// Ce que le serveur a compris des textes, pour la contrainte spécifique ;
+  /// `null` tant que le cache charge : rien ne s'affiche.
+  final Map<String, ConstraintTranslation>? translations;
   final TextEditingController maxPrepCtrl;
   final TextEditingController targetPortionsCtrl;
   final ValueChanged<bool> onBatchCookingChanged;
@@ -1107,7 +1111,7 @@ class _DayConstraintTile extends StatelessWidget {
     required this.weekday,
     required this.constraint,
     required this.notesCtrl,
-    this.translations = const {},
+    this.translations,
     required this.maxPrepCtrl,
     required this.targetPortionsCtrl,
     required this.onBatchCookingChanged,
@@ -1273,13 +1277,15 @@ class _DayConstraintTile extends StatelessWidget {
                     border: const OutlineInputBorder(),
                   ),
                 ),
-                ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: notesCtrl,
-                  builder: (context, value, _) => ConstraintUnderstandingLines(
-                    text: value.text,
-                    translation: translations[value.text.trim()],
+                if (translations case final known?)
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: notesCtrl,
+                    builder: (context, value, _) =>
+                        ConstraintUnderstandingLines(
+                          text: value.text,
+                          translation: known[value.text.trim()],
+                        ),
                   ),
-                ),
               ],
             ),
           ),

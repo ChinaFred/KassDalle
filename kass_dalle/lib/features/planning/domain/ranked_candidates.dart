@@ -24,7 +24,7 @@ class RankedCandidate {
   final String? resizeReason;
 
   /// Critères que ce plat ne tient pas, ou n'a pas pu vérifier : durée
-  /// relâchée, allergènes non vérifiés (v0.24.17).
+  /// relâchée, allergènes non vérifiés (v0.24.18).
   final List<UnmetCriterion> unmet;
 
   const RankedCandidate({
@@ -66,7 +66,7 @@ class SlotRanking {
   final List<String> relaxed;
 
   /// Services restés vides par une exclusion : « Aucun dessert sans fruits à
-  /// coque. » (v0.24.17).
+  /// coque. » (v0.24.18).
   final List<UnmetCriterion> unmet;
 
   const SlotRanking({

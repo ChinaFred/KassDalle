@@ -639,9 +639,8 @@ class _UserStapleDialogState extends State<_UserStapleDialog> {
                 StapleAllergensField(
                   value: _allergens,
                   onChanged: (v) => setState(() => _allergens = v),
-                  baseHint: base == null
-                      ? null
-                      : 'Référentiel : ${stapleAllergensSummary(base.allergens)}.',
+                  retouch: base != null,
+                  baseAllergens: base?.allergens,
                 ),
               ],
             ),

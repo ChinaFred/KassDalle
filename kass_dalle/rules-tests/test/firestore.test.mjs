@@ -4961,13 +4961,15 @@ describe("users/{uid}/preferences et nutrition_portion_overrides — compte nomm
   });
 
   it("planning_constraints : écrit par le serveur seul, lu par son titulaire", async () => {
-    // Le cache des préférences comprises (v0.24.17) : absent de
+    // Le cache des préférences comprises (v0.24.18) : absent de
     // `knownPreferenceIds`, le client ne l'écrit pas, administrateur compris.
     const path = `users/${READER}/preferences/planning_constraints`;
     await seedDocs(env, { [path]: { entries: {} } });
     await assertSucceeds(db("reader").doc(path).get());
     await assertFails(db("reader").doc(path).set({ entries: { h: { text: "x" } } }));
     await assertFails(db("admin").doc(path).set({ entries: {} }));
+    // Copie des textes de `planning_config`, que l'administrateur ne lit pas.
+    await assertFails(db("admin").doc(path).get());
     await assertFails(db("editor").doc(path).get());
   });
 

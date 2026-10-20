@@ -66,6 +66,12 @@ export async function askJson<T>(args: {
   validate: (parsed: unknown) => T | null;
   outputSchema?: ModelOutputSchema;
   maxTokens?: number;
+  /**
+   * Reçoit le coût enregistré de l'appel (`null` sans montant), avant la
+   * lecture de la réponse : une réponse illisible a été facturée aussi. Pour
+   * un appelant qui tient un plafond, comme la génération du planning.
+   */
+  onCost?: (costUsd: number | null) => void;
 }): Promise<T> {
   const result = await callModel({
     parts: [textPart(args.prompt)],
@@ -73,6 +79,7 @@ export async function askJson<T>(args: {
     outputSchema: args.outputSchema,
     maxTokens: args.maxTokens,
   });
+  args.onCost?.(result.recordedCostUsd ?? null);
 
   const raw = result.text.trim();
   const json = extractJsonObject(raw);

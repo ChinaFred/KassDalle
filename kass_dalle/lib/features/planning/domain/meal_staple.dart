@@ -72,7 +72,7 @@ class MealStaple {
   final String source;
 
   /// Allergènes majeurs de la garniture, clés de `allergens.dart`, saisis à
-  /// la main (`allergens`, v0.24.17). `null` : non renseignés — une
+  /// la main (`allergens`, v0.24.18). `null` : non renseignés — une
   /// garniture ancienne, ou que personne n'a encore regardée. Une liste vide
   /// dit « aucun allergène majeur ». Lus par le planning pour écarter un
   /// accompagnement qui contient un allergène exclu.

@@ -91,7 +91,7 @@ class PlannedMeal {
   final List<String> relaxedCriteria;
 
   /// Critères que le repas ne tient pas, ou n'a pas pu vérifier
-  /// (`unmet_criteria`, v0.24.17) : préférence relâchée (« 1 h 10, au-delà
+  /// (`unmet_criteria`, v0.24.18) : préférence relâchée (« 1 h 10, au-delà
   /// des 45 min demandées »), exclusion sans candidat (« Aucun dessert sans
   /// fruits à coque. »), allergènes non vérifiés. Phrases du serveur, posées
   /// par Nouveau planning et « Autre suggestion », retirées avec le plat

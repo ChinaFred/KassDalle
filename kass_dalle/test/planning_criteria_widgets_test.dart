@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:kass_dalle/features/planning/domain/meal_choice_source.dart';
+import 'package:kass_dalle/features/planning/domain/meal_component.dart';
 import 'package:kass_dalle/features/planning/domain/meal_staple.dart';
 import 'package:kass_dalle/features/planning/domain/planned_meal.dart';
 import 'package:kass_dalle/features/planning/domain/planning_criteria.dart';
@@ -322,6 +323,105 @@ void main() {
     });
   });
 
+  group('écarts après un geste à la main', () {
+    const platGap = UnmetCriterion(
+      key: 'max_duration',
+      regime: CriterionRegime.preference,
+      status: 'relaxed',
+      service: 'plat',
+      detail: 'plat',
+    );
+    const dessertGap = UnmetCriterion(
+      key: 'excluded_allergens',
+      regime: CriterionRegime.exclusion,
+      status: 'empty',
+      service: 'dessert',
+      detail: 'dessert',
+    );
+    const starterGap = UnmetCriterion(
+      key: 'excluded_allergens',
+      regime: CriterionRegime.exclusion,
+      status: 'unverified',
+      service: 'entree',
+      detail: 'entrée',
+    );
+    MealComponent course(String role, String label) =>
+        MealComponent.fromMap({'role': role, 'label': label});
+
+    test(
+      '« Autre suggestion » : écarts du plat proposé, les autres gardés',
+      () {
+        const newPlat = UnmetCriterion(
+          key: 'light',
+          regime: CriterionRegime.preference,
+          status: 'relaxed',
+          service: 'plat',
+          detail: 'nouveau',
+        );
+        expect(
+          unmetWithNewDish(
+            current: const [platGap, dessertGap],
+            proposed: const [newPlat, starterGap],
+          ),
+          const [newPlat, dessertGap],
+        );
+      },
+    );
+
+    test(
+      'un dessert rempli perd son écart, l\'entrée inchangée garde le sien',
+      () {
+        final before = [course('entree', 'Velouté'), course('dessert', '')];
+        final after = [course('entree', 'Velouté'), course('dessert', 'Pomme')];
+        expect(
+          unmetAfterManualCourses(
+            unmet: const [platGap, dessertGap, starterGap],
+            before: before,
+            after: after,
+          ),
+          const [platGap, starterGap],
+        );
+      },
+    );
+
+    test('un service resté « à choisir » garde son écart', () {
+      final same = [course('dessert', '')];
+      expect(
+        unmetAfterManualCourses(
+          unmet: const [dessertGap],
+          before: same,
+          after: same,
+        ),
+        const [dessertGap],
+      );
+    });
+
+    test('un dessert retiré ou vidé perd son écart', () {
+      final before = [course('dessert', 'Tarte aux noix')];
+      expect(
+        unmetAfterManualCourses(
+          unmet: const [platGap, dessertGap],
+          before: before,
+          after: const [],
+        ),
+        const [platGap],
+      );
+      expect(
+        unmetAfterManualCourses(
+          unmet: const [platGap, dessertGap],
+          before: before,
+          after: [course('dessert', '')],
+        ),
+        const [platGap],
+      );
+    });
+  });
+
+  test('une recette aux allergènes inconnus : « non vérifiés »', () {
+    final item = CriteriaItem.ofRecipe(_plat());
+    expect(exclusionWarning(_sansGluten, item), 'allergènes non vérifiés');
+  });
+
   group('écarts stockés sur le repas', () {
     test('le repas garde ses écarts, une version ancienne les ignore', () {
       final now = DateTime(2026, 10, 16, 19);
@@ -487,8 +587,54 @@ void main() {
         await tester.pump();
         expect(value, isNull);
         expect(stapleAllergensSummary(null), 'allergènes non renseignés');
-        expect(stapleAllergensSummary(const ['gluten', 'oeuf']), 'Gluten, Œuf');
       },
     );
+
+    testWidgets('retouche sans valeur propre : « Suit le référentiel »', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: StapleAllergensField(
+                value: null,
+                onChanged: (_) {},
+                retouch: true,
+                baseAllergens: const ['gluten'],
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Suit le référentiel : Gluten.'), findsOneWidget);
+      expect(find.textContaining('Non renseignés'), findsNothing);
+      expect(stapleAllergensSummary(const ['gluten', 'oeuf']), 'Gluten, Œuf');
+    });
+
+    testWidgets('retouche, référentiel sans allergènes saisis : '
+        'l\'avertissement reste', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: StapleAllergensField(
+                value: null,
+                onChanged: (_) {},
+                retouch: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(
+        find.text(
+          'Non renseignés : une exclusion d\'allergène ne peut pas être '
+          'vérifiée sur cette garniture.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Suit le référentiel'), findsNothing);
+    });
   });
 }

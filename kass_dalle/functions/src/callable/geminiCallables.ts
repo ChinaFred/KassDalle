@@ -57,6 +57,7 @@ import {
   type SlotRanking,
 } from "../gemini/planning";
 import { understandPlanningTexts } from "../gemini/planningConstraintsStore";
+import { PLANNING_CONSTRAINTS_MAX_TOKENS } from "../gemini/planningConstraints";
 import {
   PlanningRunDenied,
   addPlanningRunCost,
@@ -540,20 +541,26 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
       readUserRatings({ uid: ctx.userId, correlationId: ctx.correlationId }),
       readUserRefusals({ uid: ctx.userId, nowMs, correlationId: ctx.correlationId }),
     ]);
+    // Le mode « code » n'appelle aucun modèle : pas de génération à journaliser.
+    const runId = mode === "model" ? newPlanningRunId() : null;
+    const costCapUsd = mode === "model" ? await generationCapUsd(policy) : null;
     // Les préférences en texte libre, comprises en critères vérifiés : le
     // cache d'abord, un appel `planning_constraints` pour les seuls textes
     // modifiés, jamais en mode « code ». Un échec laisse le texte partir au
-    // prompt tel quel ; il s'affiche « non vérifié ».
+    // prompt tel quel ; il s'affiche « non vérifié ». La traduction entre
+    // dans le plafond de la génération : évitée si son estimation le
+    // dépasse, son coût retiré de ce qui reste au choix des plats.
     const understanding = await understandPlanningTexts({
       uid: ctx.userId,
       texts: planningTexts(input),
       translate: mode === "model",
       ctx: { ...ctx, feature: "planning_constraints", moduleType: "DESIGN" },
       nowMs,
+      capUsd: costCapUsd,
+      estimateCeilingUsd: ceilingEstimator("planning_constraints", PLANNING_CONSTRAINTS_MAX_TOKENS),
     });
-    // Le mode « code » n'appelle aucun modèle : pas de génération à journaliser.
-    const runId = mode === "model" ? newPlanningRunId() : null;
-    const costCapUsd = mode === "model" ? await generationCapUsd(policy) : null;
+    const remainingCapUsd =
+      costCapUsd == null ? null : Math.max(0, costCapUsd - understanding.spentUsd);
     const data = await suggestMealPlan(
       GEMINI_API_KEY.value(),
       input,
@@ -568,7 +575,7 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
         today,
         rng: seededRng(randomInt(0, 0xffffffff)),
         runId,
-        costCapUsd,
+        costCapUsd: remainingCapUsd,
         estimateCeilingUsd: ceilingEstimator("planning", PLANNING_MAX_TOKENS),
         understood: understanding.understood,
       },
@@ -587,6 +594,11 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
             policy,
             costCapUsd,
             groupId,
+            translation: {
+              called: understanding.called,
+              costUsd: understanding.costUsd,
+              spentUsd: understanding.spentUsd,
+            },
           });
     return {
       runId: conceptsMax != null ? runId : null,
