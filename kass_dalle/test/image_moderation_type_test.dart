@@ -74,4 +74,56 @@ void main() {
       expect(message, contains('PNG'));
     });
   });
+
+  group('message du membre pour une image non publiée', () {
+    ImageNotPublished held(String status, String reason) => ImageNotPublished(
+      ModerationOutcome(
+        moderationId: 'm1',
+        status: status,
+        reason: reason,
+        url: null,
+      ),
+    );
+
+    test('refusée : deux phrases, sans motif d\'administration', () {
+      expect(
+        memberImageRefusal(held('rejected', 'adult')),
+        'Photo non enregistrée. Elle a été refusée par la modération.',
+      );
+    });
+
+    test('à revoir ou en attente du moteur : vérification annoncée', () {
+      const attente =
+          'Couverture non enregistrée. Elle attend la vérification d\'un '
+          'administrateur. Elle ne sera pas ajoutée d\'elle-même.';
+      expect(
+        memberImageRefusal(
+          held('manual_review', ''),
+          what: 'Couverture non enregistrée',
+        ),
+        attente,
+      );
+      expect(
+        memberImageRefusal(
+          held('pending', 'engine_unavailable'),
+          what: 'Couverture non enregistrée',
+        ),
+        attente,
+      );
+    });
+
+    test('statut inconnu : ni clé brute ni tiret', () {
+      final message = memberImageRefusal(held('???', 'cle_brute'));
+      expect(message, 'Photo non enregistrée. Elle n\'a pas été publiée.');
+      expect(message, isNot(contains('—')));
+    });
+
+    test('format refusé : sans nom de fichier', () {
+      expect(
+        memberUnsupportedFormat(),
+        'Photo non enregistrée. Format non pris en charge : choisissez une '
+        'photo JPEG ou PNG.',
+      );
+    });
+  });
 }

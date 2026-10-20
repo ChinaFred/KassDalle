@@ -56,6 +56,9 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
   part dans les rapports d'erreurs. Sur une page d'erreur, le bouton « Détails », qui montre ce
   texte, n'est visible que de l'Admin. Pour les autres membres, une erreur inattendue conseille :
   « Si le problème persiste, signalez-le depuis le menu du compte. » (« Signaler ou proposer »).
+- **Adresse inconnue.** Un lien qui ne mène à aucune page de l'application (adresse mal
+  copiée, page déplacée) affiche « Page introuvable », une phrase d'explication et « Retour à
+  la bibliothèque ». Le message technique du routeur n'est pas affiché.
 - **Profil et compte** (`/account`, menu du compte › « Profil et compte »). En tête, l'avatar,
   le nom et le rôle en français (« Administrateur », « Éditeur », « Lecteur », « En attente »,
   les mots de l'administration). L'initiale de l'avatar est celle du nom affiché à la famille ;
@@ -65,11 +68,15 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
   l'image). L'Admin seul voit en plus « Identifiant du compte ». Section « Accès et
   permissions » : le rôle, et les puces « Lecture », « Édition », « Administration ». Section
   « Activité du compte » : création et dernière activité. Pendant la lecture du compte,
-  « Chargement du profil… ».
+  « Chargement du profil… ». Une lecture en échec affiche « Profil non chargé », le conseil
+  de la cause et « Réessayer » quand un nouvel essai peut aboutir ; un refus d'accès conseille
+  « Déconnectez-vous puis reconnectez-vous. Si le problème persiste, signalez-le depuis le menu
+  du compte. ».
 - **Se déconnecter** (écran du compte et menu du compte) demande d'abord à l'écran ouvert s'il
   peut être quitté : un formulaire en cours de saisie pose sa question « Quitter sans
   enregistrer ? », et « Rester » annule la déconnexion. Sans saisie en cours, la déconnexion
-  part sans confirmation. Un échec affiche « Déconnexion impossible : … ».
+  part sans confirmation. Un échec affiche « Déconnexion non effectuée. », suivi de la cause
+  (« Connexion perdue. »).
 - **Un compte neuf naît en attente (`pending`) et n'accède à rien.** Il voit une salle d'attente qui affiche son adresse et l'invite à la communiquer ; l'écran se referme de lui-même dès qu'un rôle lui est attribué.
 - **Le rôle n'est jamais choisi par l'application.** Les règles Firestore imposent `pending` à la création, et seul un Admin le change ensuite.
 - **Exception : le compte invité par e-mail.** Si un Admin a invité l'adresse Google du compte neuf (3.3) et que l'invitation est active, le serveur (`applyEmailInvitation`) lui donne à sa première connexion le rôle de l'invitation et l'ajoute aux membres du groupe choisi, sans invitation de groupe à accepter. C'est le serveur qui décide, sur l'adresse vérifiée du compte **Auth** ; le client ne lit pas les invitations et ne peut pas se donner de rôle. Le compte naît toujours `pending` : la salle d'attente s'affiche le temps que le serveur réponde (quelques secondes), puis se referme seule. L'adresse doit être celle de l'invitation, comparée sans casse et, pour Gmail, sans points ni suffixe `+…` ; une autre adresse reste en attente d'un rôle donné à la main.
@@ -377,8 +384,13 @@ Un import par lien se relance **deux fois au plus** : chaque relance refait des 
   question est posée au retour comme à un changement d'écran par la navigation ; un formulaire
   intact se quitte sans question. Un livre absent affiche « Livre introuvable », « Ce livre a
   peut-être été supprimé. » et « Retour à la bibliothèque » ; une lecture en échec affiche
-  l'erreur et « Réessayer ». Les erreurs s'affichent en une phrase courte, sans texte
-  technique : « Enregistrement impossible : … », « Envoi de la couverture impossible : … ».
+  l'erreur et « Réessayer ». Les erreurs s'affichent en deux phrases, sans texte
+  technique : « Livre non ajouté. », « Livre non mis à jour. », « Couverture non
+  enregistrée. », « Photo non prise. », suivis de la cause (« Connexion perdue. »). Une
+  couverture retenue par la modération affiche « Couverture non enregistrée. Elle a été
+  refusée par la modération. » ou « … Elle attend la vérification d'un administrateur. Elle ne sera pas ajoutée d'elle-même. ». À
+  la création, si la couverture ne part pas, le livre est créé et le message, en erreur, le
+  dit : « Livre ajouté. Couverture non enregistrée. <cause> ».
 - Accès à la liste des recettes d'un livre.
 - Vue globale "Toutes les recettes" (sans filtre de livre).
 
@@ -398,13 +410,13 @@ Un import par lien se relance **deux fois au plus** : chaque relance refait des 
   automatique qui a l'air d'un résultat, alors qu'il n'a rien trouvé, fait perdre plus de temps
   qu'un point de départ annoncé.
 - Recadrage et correction de perspective avant envoi. Une photo que l'atelier ne peut pas ouvrir
-  le referme avec « Cette photo ne peut pas être ouverte. Choisissez-en une autre. ». Une correction
-  qui échoue n'envoie rien : l'atelier reste ouvert avec ses réglages et affiche « La correction n'a
-  pas pu être appliquée. » avec « Réessayer ». Un envoi qui échoue affiche « Envoi impossible : … »
+  le referme avec « Photo non ouverte. Choisissez-en une autre. ». Une correction
+  qui échoue n'envoie rien : l'atelier reste ouvert avec ses réglages et affiche « Correction non
+  appliquée. » et la cause, avec « Réessayer ». Un envoi qui échoue affiche « Photo non envoyée. » et la cause
   avec « Réessayer », qui renvoie la photo déjà corrigée sans refaire la correction ; sans
   « Réessayer » quand un nouvel essai ne peut pas aboutir (accès refusé, session expirée). Le
   message se ferme dès qu'un réglage change. Une rotation
-  qui échoue affiche « La photo n'a pas pu être pivotée. Réessayez. ».
+  qui échoue affiche « Photo non pivotée. » et la cause.
 - **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages partent dans un **seul** appel multi-part, chez le moteur routé pour le poste. Un import compte **21 pages au plus** (la première et 20 pages supplémentaires) ; une recette part toujours en un seul import. Au-delà, la file reste telle quelle : le titre devient « Pages à analyser (25 sur 21 au plus) », une ligne en rouge dit « Retirez 4 pages pour lancer l'analyse. » (« Retirez 1 page… » au singulier), et « Analyser » est désactivé jusqu'à ce que la file revienne à 21 pages. Le serveur refuse aussi un import de plus de 200 Mo au total ; le job passe en erreur avec le message « Import refusé : … Mo au total, 200 Mo au plus par import. Réduisez la taille ou le nombre des pages. ».
 - **Extraction automatique d'illustrations** : l'IA identifie les photographies culinaires **sur chaque page** du scan, les découpe, et les propose comme illustrations de la recette.
   - **Six étapes par page**, détaillées dans les diagrammes de séquence : pré-contrôle (la page porte-t-elle des images ?), cadrage, mise à plat par homographie, remise à l'endroit, repérage des zones, découpe. Le pré-contrôle arrête la chaîne sur une page sans photo — une page de recette sur deux — et les quatre appels suivants n'ont pas lieu.
@@ -921,6 +933,7 @@ dans les réglages d'Android. Une version déjà notifiée ne l'est pas deux foi
 - Les membres ajoutés directement par un propriétaire avant la v0.23.19 restent membres.
 - **Un Editor ou un Admin peut partager son planning avec ses groupes**, en lecture seule (voir 5.8, « Partager son planning »). Le partage se coche groupe par groupe ; entrer dans un groupe ne partage pas son planning. Seuls les membres du groupe le lisent, pas les invités.
 - **Chaque groupe a son planning** (5.8, « Planning d'un groupe »). Son propriétaire y planifie ; tous les membres le lisent, Reader compris ; un invité ne le lit pas. Les autres membres y suggèrent des plats au propriétaire (5.8, « Suggestions de repas »). Supprimer le groupe supprime ses repas planifiés et ses suggestions ; un membre qui quitte le groupe, ou que le propriétaire en retire, emporte ses suggestions.
+- **Un échec s'affiche en deux phrases**, ce qui n'a pas eu lieu puis la cause : « Groupe non créé. », « Groupe non renommé. », « Groupe « X » non quitté. », « Groupe « X » non supprimé. », « Invitation non acceptée. », « Invitation non refusée. », « Invitation non envoyée à … », « Invitation de … non annulée. », « … non retiré du groupe. », « Membres non trouvés. » (recherche par nom), suivis par exemple de « Connexion perdue. ». La recherche par adresse garde ses propres messages, ci-dessus.
 - **Un groupe dont le propriétaire n'est plus Editor ni Admin est en pause** pour tous ses membres, propriétaire compris : ses livres et recettes cessent d'être partagés par lui, et son planning est masqué dans l'écran du planning. Il reste listé dans l'écran Groupes, sous « Mes groupes », avec le sous-titre « En pause · 3 membre(s) · 1 invitation(s) en attente ». Le propriétaire Reader y garde « Gérer les membres » (retirer un membre, annuler une invitation) et « Supprimer le groupe », sans renommer ni inviter ; la page des membres lui dit « Seul un éditeur invite de nouveaux membres et renomme le groupe. Ce groupe est en pause : son planning n'apparaît plus tant que vous n'êtes pas éditeur. ». Un membre peut le quitter. Rien n'est effacé ; il revient si son propriétaire redevient Editor. Les invitations en attente vers un groupe en pause sont masquées à l'invité, et réapparaissent avec le groupe.
 - Accès depuis le menu compte (icône en haut à droite) → "Groupes familiaux".
 - Une fois membre d'un groupe, les livres et recettes validés et non privés des autres membres deviennent visibles dans la bibliothèque et les recettes libres, organisés par sections. **Seuls les membres de mes groupes** : un compte nommé qui n'en partage aucun avec moi ne lit rien de moi, et je ne lis rien de lui. Les règles Firestore l'imposent, y compris à un compte qui interroge la base directement. Un Admin lit tout.
@@ -1247,7 +1260,7 @@ lui-même celles qu'il retient.
 
 - **Toute image passe par la quarantaine**, puis par Cloud Vision, avant d'être publiée. Les quatre portes qui publiaient en direct — couverture de livre, illustration de recette, illustration de brouillon, couverture de recette libre — sont fermées en écriture côté Storage.
 - **Deux exceptions assumées, toutes deux côté serveur.** Les illustrations découpées dans un scan par le pipeline d'import et les images produites par l'IA (illustration de recette, visuel de dressage) sont écrites en direct sous `illustrations/{uid}/`, avec les droits de l'Admin SDK. Pour les premières, le fichier source est déjà passé par le scan de sécurité à l'envoi et la découpe est un JPEG que le serveur vient d'encoder ; pour les secondes, aucune personne n'a choisi l'image. Ce qui reste modéré, c'est tout ce qu'une personne **envoie** depuis l'application.
-- Trois issues : **approuvée** (le cas courant, quelques secondes), **refusée** (jamais publiée, motif annoncé, image conservée pour un administrateur), **à revoir** (attend une décision humaine).
+- Trois issues : **approuvée** (le cas courant, quelques secondes), **refusée** (jamais publiée, refus annoncé, image conservée pour un administrateur), **à revoir** (attend une décision humaine).
 - Le contexte culinaire l'emporte sur la violence ; le contenu sexuel explicite ne bénéficie d'aucun contexte.
 - **Pas de repli** : moteur injoignable, l'image attend et l'écran le dit. Publier par défaut modérerait pour rien ; refuser par défaut accuserait à tort.
 - **Chaque analyse compte dans le plafond quotidien d'IA du compte** (une image, un appel). Plafond atteint : l'image n'est ni analysée ni publiée, et l'écran affiche « Limite du jour atteinte — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. », le message de tout plafond atteint côté serveur ; il ne dit pas que la cause est le plafond d'IA du compte. Une photo de page importée par lien est alors laissée de côté ; la recette est créée sans photo.
@@ -2230,7 +2243,7 @@ la supprime, elle a déjà été vue.
 | État | Ce qui se passe |
 |---|---|
 | **Approuvée** | Publiée, en quelques secondes. C'est le cas de presque toutes les images. |
-| **Refusée** | Jamais publiée. L'envoyeur l'apprend, avec le motif — et l'image est **conservée**, lisible des seuls administrateurs. |
+| **Refusée** | Jamais publiée. L'envoyeur l'apprend — et l'image est **conservée**, lisible des seuls administrateurs. Pour une couverture de livre et une illustration de l'Explorer, le message ne cite pas le motif : il se lit dans Admin › Modération. |
 | **À revoir** | Reste en attente jusqu'à la décision d'un administrateur. |
 
 ### Le contexte culinaire l'emporte sur la violence
@@ -2266,7 +2279,7 @@ une. Le suggestif marqué fait au plus passer l'image en revue.
 - **À revoir** — l'image apparaît en attente, à sa place, avec la mention de ce qui est
   attendu. Ni échec, ni disparition : une image qui s'évanouit sans un mot est pire qu'un
   refus.
-- **Refusée** — dit franchement, avec le motif.
+- **Refusée** — dit franchement ; le motif se lit dans Admin › Modération pour une couverture de livre et une illustration de l'Explorer.
 - **Moteur en panne** — l'image reste en attente et l'écran le dit. **Pas de repli** :
   publier par défaut, c'est modérer pour rien ; refuser par défaut, c'est accuser à tort.
   C'est la règle qui vaut déjà pour la grille tarifaire.

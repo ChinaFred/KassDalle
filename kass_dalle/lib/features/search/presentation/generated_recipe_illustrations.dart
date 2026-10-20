@@ -101,7 +101,7 @@ class _GeneratedRecipeIllustrationsState
         context: {'etape': 'capture', 'source': source.name},
       );
       if (mounted) {
-        context.showErrorSnackBar('Impossible de prendre la photo : $e');
+        context.showFailureSnackBar('Photo non prise', e);
       }
       return;
     }
@@ -124,10 +124,11 @@ class _GeneratedRecipeIllustrationsState
       // porte le motif, faute de quoi l'utilisateur croirait à un bug et
       // réessaierait indéfiniment.
       if (!mounted) return;
-      context.showErrorSnackBar('$e');
-    } on UnsupportedImageFormat catch (e) {
+      context.showErrorSnackBar(memberImageRefusal(e));
+    } on UnsupportedImageFormat {
+      // Refus avant l'envoi, sur le format : rien d'inattendu à rapporter.
       if (!mounted) return;
-      context.showErrorSnackBar('$e');
+      context.showErrorSnackBar(memberUnsupportedFormat());
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'generatedRecipeIllustrations.addPhoto',
@@ -135,7 +136,7 @@ class _GeneratedRecipeIllustrationsState
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar('Erreur upload : $e');
+      context.showFailureSnackBar('Photo non enregistrée', e);
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -180,7 +181,7 @@ class _GeneratedRecipeIllustrationsState
 
       final prompt = promptCtrl.text.trim();
       if (prompt.isEmpty) {
-        context.showErrorSnackBar('Le prompt est vide');
+        context.showErrorSnackBar('Décrivez ce que l\'image doit montrer.');
         return;
       }
 
@@ -196,7 +197,7 @@ class _GeneratedRecipeIllustrationsState
             );
         if (!mounted) return;
         _add(url);
-        context.showSnackBar(RecipeAiUiCopy.generateImageSuccess);
+        context.showSuccessSnackBar(RecipeAiUiCopy.generateImageSuccess);
       } catch (e, stackTrace) {
         reportUnexpectedError(
           feature: 'generatedRecipeIllustrations.generate',
@@ -204,7 +205,7 @@ class _GeneratedRecipeIllustrationsState
           stackTrace: stackTrace,
         );
         if (!mounted) return;
-        context.showErrorSnackBar('Erreur génération image : $e');
+        context.showFailureSnackBar('Image non générée', e);
       } finally {
         if (mounted) setState(() => _generating = false);
       }

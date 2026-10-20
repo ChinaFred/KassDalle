@@ -7501,7 +7501,15 @@ couverture à l'ouverture ; une couverture choisie et non envoyée compte comme 
 modification). La navigation passe par `goGuarded`, la déconnexion par `signOutGuarded`
 (`leave_guard.dart`, écran du compte et menu du compte) : un garde qui refuse annule la
 déconnexion, sans garde elle part sans question. Un échec de `signOut` est remonté
-(`leaveGuard.signOutGuarded`) et affiché en une phrase.
+(`leaveGuard.signOutGuarded`) et affiché en deux phrases (`showFailureSnackBar` :
+« Déconnexion non effectuée. Connexion perdue. »).
+
+**Adresse inconnue.** L'`errorBuilder` du routeur rend `RouteNotFoundScreen`
+(`core/router/route_not_found_screen.dart`, hors coquille) : un `AppEmptyState` « Page
+introuvable » (icône `link_off_outlined`) avec « Retour à la bibliothèque »
+(`go(AppRoutes.books)`). `GoRouterState.error`
+(« no routes for location: … », texte de développeur en anglais) n'est pas affiché ;
+`test/route_not_found_screen_test.dart` le vérifie.
 
 ### 13.2 La redirection — la seule fonction qui décide qui voit quoi
 

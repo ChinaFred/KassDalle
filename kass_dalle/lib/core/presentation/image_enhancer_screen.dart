@@ -103,7 +103,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   bool _sharpen = false;
   bool _processing = false;
 
-  /// Le message « Envoi impossible » et son « Réessayer » sont affichés.
+  /// Le message « Photo non envoyée » et son « Réessayer » sont affichés.
   bool _deliveryErrorShown = false;
   String _processingMessage = 'Correction en cours…';
   bool _detecting = false;
@@ -247,8 +247,10 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         context: {'octets': _currentBytes.length, ...etapes},
       );
       if (mounted) {
+        // Une photo illisible : la cause de `describeError` (« erreur
+        // inattendue ») n'aiderait pas, le conseil oui.
         context.showErrorSnackBar(
-          'Cette photo ne peut pas être ouverte. Choisissez-en une autre.',
+          'Photo non ouverte. Choisissez-en une autre.',
         );
       }
       _cancel();
@@ -672,8 +674,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       // à la place faisait croire que la correction avait été appliquée.
       if (!mounted) return;
       setState(() => _processing = false);
-      context.showErrorSnackBar(
-        'La correction n\'a pas pu être appliquée.',
+      context.showFailureSnackBar(
+        'Correction non appliquée',
+        error,
         action: SnackBarAction(
           label: 'Réessayer',
           onPressed: () {
@@ -755,8 +758,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       // « Réessayer » seulement quand un nouvel essai peut aboutir.
       final retryable = describeError(error).retryable;
       _deliveryErrorShown = true;
-      context.showErrorSnackBar(
-        'Envoi impossible : ${shortErrorMessage(error)}',
+      context.showFailureSnackBar(
+        'Photo non envoyée',
+        error,
         action: retryable
             ? SnackBarAction(
                 label: 'Réessayer',
@@ -770,7 +774,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     }
   }
 
-  /// Un réglage change : le message « Envoi impossible » se ferme, pour que
+  /// Un réglage change : le message « Photo non envoyée » se ferme, pour que
   /// son « Réessayer » n'envoie pas une photo corrigée avec les anciens
   /// réglages.
   void _dismissDeliveryError() {
@@ -854,9 +858,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar(
-          'La photo n\'a pas pu être pivotée. Réessayez.',
-        );
+        context.showFailureSnackBar('Photo non pivotée', e);
       }
     } finally {
       if (mounted) setState(() => _rotating = false);

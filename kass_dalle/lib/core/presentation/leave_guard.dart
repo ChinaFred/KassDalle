@@ -7,7 +7,6 @@ import '../../features/admin/presentation/admin_providers.dart'
 import '../../features/auth/presentation/auth_providers.dart';
 import '../services/error_reporting.dart';
 import '../utils/context_extensions.dart';
-import '../widgets/error_message.dart';
 
 /// Ce qu'un écran répond quand on veut le quitter : vrai si on peut partir,
 /// faux s'il retient l'utilisateur.
@@ -87,8 +86,6 @@ Future<void> signOutGuarded(BuildContext context, WidgetRef ref) async {
       service: ref.read(errorReportServiceProvider),
     );
     if (!context.mounted) return;
-    context.showErrorSnackBar(
-      'Déconnexion impossible : ${shortErrorMessage(error)}',
-    );
+    context.showFailureSnackBar('Déconnexion non effectuée', error);
   }
 }
