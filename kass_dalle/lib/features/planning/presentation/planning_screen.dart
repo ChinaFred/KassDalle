@@ -51,6 +51,7 @@ import 'planning_widgets.dart';
 import 'recipe_picker_sheet.dart';
 import '../../search/presentation/search_screen.dart'
     show ExploreChoice, ExplorePick, SearchScreen;
+import 'picker_loading_sheet.dart';
 import 'side_picker_sheet.dart';
 import 'storage_advice_sheet.dart';
 import 'suggest_meal_screen.dart';
@@ -430,26 +431,20 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     // La tuile masque « Compléter » au sixième accompagnement.
     final sideCount = meal.components.where((c) => c.isMainSide).length;
     if (sideCount >= kMaxSidesPerDish) return;
-    await _loadRecipesIfNeeded();
-    final familyRecipes = await _loadFamilySideRecipesIfNeeded();
-    if (!mounted) return;
-    final staples = ref.read(myStaplesProvider).value ?? const [];
-    final seen = <String>{};
+    // La feuille s'ouvre dès l'appui et lit recettes et garnitures elle-même.
     final result = await showModalBottomSheet<SidePickerResult>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => SidePickerSheet(
-        main: main,
-        candidates: sideCandidatesFrom(
-          staples: staples,
-          recipes: [
-            for (final r in [..._availableRecipes, ...familyRecipes])
-              if (seen.add(r.id)) r,
-          ],
+      builder: (_) => PickerLoadingSheet(
+        loadRecipes: _pickerRecipes,
+        initialRecipes: _pickerRecipesIfRead,
+        builder: (_, recipes, staples) => SidePickerSheet(
+          main: main,
+          candidates: sideCandidatesFrom(staples: staples, recipes: recipes),
+          initialNeed: need,
+          criteria: _criteriaForDate(meal.plannedAt),
         ),
-        initialNeed: need,
-        criteria: _criteriaForDate(meal.plannedAt),
       ),
     );
     final component = result?.toComponent(justification: 'Choisi à la main.');
@@ -472,6 +467,49 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         context.showErrorSnackBar('Repas non enregistré. Réessayez.');
       }
     }
+  }
+
+  /// Les recettes proposées par les feuilles de choix : les miennes, lues une
+  /// fois, puis celles de la famille, sans doublon. Lève quand les miennes ne
+  /// peuvent pas être lues — la feuille l'affiche avec « Réessayer » ; un
+  /// échec sur celles de la famille est signalé et ne bloque pas.
+  Future<List<Recipe>> _pickerRecipes() async {
+    if (!_recipesLoaded) {
+      final repo = ref.read(planningRepositoryProvider);
+      if (repo == null) return const [];
+      try {
+        final recipes = await repo.getValidatedRecipes();
+        _availableRecipes = recipes;
+        _recipesLoaded = true;
+        if (mounted) setState(() {});
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'planningScreen.loadRecipes',
+          error: e,
+          stackTrace: stackTrace,
+          context: {'action': 'picker_sheet'},
+        );
+        rethrow;
+      }
+    }
+    final familyRecipes = await _loadFamilySideRecipesIfNeeded();
+    return _mergePickerRecipes(familyRecipes);
+  }
+
+  /// [_pickerRecipes] quand tout est déjà lu, pour ouvrir la feuille de choix
+  /// sans écran d'attente ; `null` sinon.
+  List<Recipe>? get _pickerRecipesIfRead {
+    final family = _familySideRecipes;
+    if (!_recipesLoaded || family == null) return null;
+    return _mergePickerRecipes(family);
+  }
+
+  List<Recipe> _mergePickerRecipes(List<Recipe> familyRecipes) {
+    final seen = <String>{};
+    return [
+      for (final r in [..._availableRecipes, ...familyRecipes])
+        if (seen.add(r.id)) r,
+    ];
   }
 
   /// Recettes validées et non privées des autres membres de la famille, lues
@@ -623,62 +661,6 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     );
   }
 
-  /// Les garnitures du compte pour choisir un service : attendues si leur
-  /// lecture est en cours, sinon `null` après « Vos garnitures n'ont pas pu
-  /// être lues. » avec « Réessayer », comme dans l'éditeur. Sans elles, la
-  /// feuille dirait à tort qu'aucune garniture n'existe.
-  Future<List<UserStaple>?> _staplesForCourse(
-    PlannedMeal meal,
-    int index,
-  ) async {
-    var staples = ref.read(myStaplesProvider);
-    if (!staples.hasValue && !staples.hasError) {
-      final done = Completer<AsyncValue<List<UserStaple>>>();
-      final sub = ref.listenManual(myStaplesProvider, (_, next) {
-        if ((next.hasValue || next.hasError) && !done.isCompleted) {
-          done.complete(next);
-        }
-      });
-      try {
-        staples = await done.future.timeout(const Duration(seconds: 15));
-      } on TimeoutException catch (e, stackTrace) {
-        reportUnexpectedError(
-          feature: 'planningScreen.chooseCourse.staplesTimeout',
-          userId: ref.read(planningRepositoryProvider)?.uid,
-          error: e,
-          stackTrace: stackTrace,
-          context: {'meal_id': meal.id},
-        );
-      } finally {
-        sub.close();
-      }
-    }
-    if (staples.hasValue && !staples.hasError) return staples.value;
-    if (staples.hasError) {
-      reportUnexpectedError(
-        feature: 'planningScreen.chooseCourse.loadStaples',
-        userId: ref.read(planningRepositoryProvider)?.uid,
-        error: staples.error!,
-        stackTrace: staples.stackTrace,
-        context: {'meal_id': meal.id},
-      );
-    }
-    if (mounted) {
-      context.showErrorSnackBar(
-        'Vos garnitures n\'ont pas pu être lues.',
-        action: SnackBarAction(
-          label: 'Réessayer',
-          onPressed: () {
-            ref.invalidate(baseMealStaplesProvider);
-            ref.invalidate(myStapleOverridesProvider);
-            _chooseCourse(meal, index);
-          },
-        ),
-      );
-    }
-    return null;
-  }
-
   /// [Choisir] sur un service « à choisir » d'un menu : la feuille des
   /// recettes pour un plat, celle des garnitures et recettes du type sinon.
   /// Le plat principal se choisit comme « Changer la recette ».
@@ -690,24 +672,22 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       await _changeRecipe(meal);
       return;
     }
-    await _loadRecipesIfNeeded();
-    final familyRecipes = await _loadFamilySideRecipesIfNeeded();
-    if (!mounted) return;
-    final seen = <String>{};
-    final recipes = [
-      for (final r in [..._availableRecipes, ...familyRecipes])
-        if (seen.add(r.id)) r,
-    ];
+    // La feuille s'ouvre dès l'appui et lit recettes et garnitures elle-même.
     MealComponent? content;
     if (course.isDish) {
       final picked = await showModalBottomSheet<Recipe>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
-        builder: (_) => RecipePickerSheet(
-          recipes: recipes,
-          hintText: 'Rechercher ou saisir un nom libre…',
-          freeNameAlways: true,
+        builder: (_) => PickerLoadingSheet(
+          loadRecipes: _pickerRecipes,
+          initialRecipes: _pickerRecipesIfRead,
+          needsStaples: false,
+          builder: (_, recipes, _) => RecipePickerSheet(
+            recipes: recipes,
+            hintText: 'Rechercher ou saisir un nom libre…',
+            freeNameAlways: true,
+          ),
         ),
       );
       if (picked == null) return;
@@ -715,21 +695,23 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           ? MealComponent.free(picked.titre, role: MealComponentRole.plat)
           : MealComponent.recipe(picked, role: MealComponentRole.plat);
     } else {
-      final staples = await _staplesForCourse(meal, index);
-      if (staples == null || !mounted) return;
       final result = await showModalBottomSheet<SidePickerResult>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
-        builder: (_) => SidePickerSheet(
-          title: course.typeLabel,
-          role: course.role,
-          candidates: courseCandidatesFor(
-            course.role,
-            staples: staples,
-            recipes: recipes,
+        builder: (_) => PickerLoadingSheet(
+          loadRecipes: _pickerRecipes,
+          initialRecipes: _pickerRecipesIfRead,
+          builder: (_, recipes, staples) => SidePickerSheet(
+            title: course.typeLabel,
+            role: course.role,
+            candidates: courseCandidatesFor(
+              course.role,
+              staples: staples,
+              recipes: recipes,
+            ),
+            criteria: _criteriaForDate(meal.plannedAt),
           ),
-          criteria: _criteriaForDate(meal.plannedAt),
         ),
       );
       content = result?.toComponent(role: course.role);

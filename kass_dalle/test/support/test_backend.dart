@@ -66,10 +66,17 @@ class TestBackend {
   /// le cas « pas de compte » de l'écran, et [plannedMeals] rendus tels quels.
   final bool planningWrites;
 
-  late final PlanningRepository planning = PlanningRepository(
-    firestore,
-    user.uid,
-  );
+  /// Remplace le repository du planning, pour simuler une lecture lente ou
+  /// en échec ; le vrai repository sur le Firestore en mémoire par défaut.
+  final PlanningRepository Function(
+    FakeFirebaseFirestore firestore,
+    String uid,
+  )?
+  planningFactory;
+
+  late final PlanningRepository planning =
+      planningFactory?.call(firestore, user.uid) ??
+      PlanningRepository(firestore, user.uid);
 
   /// Mes groupes en pause (propriétaire qui n'est plus éditeur) : rendus par
   /// `myGroupsProvider` avec les autres, et nommés par
@@ -136,6 +143,7 @@ class TestBackend {
     this.groups = const [],
     this.pausedGroups = const [],
     this.planningWrites = false,
+    this.planningFactory,
   }) : recipes = RecipeRepository(firestore: firestore),
        books = BookRepository(firestore: firestore),
        annotations = AnnotationRepository(firestore: firestore),
@@ -150,6 +158,8 @@ class TestBackend {
     List<FamilyGroup> groups = const [],
     List<FamilyGroup> pausedGroups = const [],
     bool planningWrites = false,
+    PlanningRepository Function(FakeFirebaseFirestore firestore, String uid)?
+    planningFactory,
   }) => TestBackend._(
     FakeFirebaseFirestore(),
     user ?? testUser(),
@@ -157,6 +167,7 @@ class TestBackend {
     groups: groups,
     pausedGroups: pausedGroups,
     planningWrites: planningWrites,
+    planningFactory: planningFactory,
   );
 
   // ── Semis ──────────────────────────────────────────────────────────────────

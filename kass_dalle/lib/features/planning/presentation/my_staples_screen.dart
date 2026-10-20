@@ -32,6 +32,7 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final staples = ref.watch(myStaplesProvider);
+    final isAdmin = ref.watch(isAdminProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -79,18 +80,30 @@ class _MyStaplesScreenState extends ConsumerState<MyStaplesScreen> {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-              if (all.isEmpty)
+              if (all.isEmpty) ...[
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  padding: const EdgeInsets.only(top: 32),
                   child: Text(
-                    'Le référentiel est vide. Un administrateur peut semer la '
-                    'liste de base depuis Admin › Référentiels ; vous pouvez '
-                    'aussi ajouter les vôtres.',
+                    'Aucune garniture pour l\'instant. Ajoutez les vôtres '
+                    'avec le bouton « Ma garniture ».',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium,
                   ),
-                )
-              else
+                ),
+                if (isAdmin)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'La liste commune se tient dans Admin › Référentiels › '
+                      'Garnitures simples.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 32),
+              ] else
                 ..._grouped(context, shown),
               if (hiddenCount > 0 && !_showHidden)
                 Padding(

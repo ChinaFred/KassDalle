@@ -7,7 +7,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'image_enhancer_processing.dart';
+import '../../core/services/error_report_service.dart';
 import '../../core/services/error_reporting.dart';
+import '../widgets/error_message.dart';
 import '../utils/context_extensions.dart';
 import '../theme/app_icon_size.dart';
 
@@ -53,12 +55,23 @@ class ImageEnhancerScreen extends StatefulWidget {
   /// Peut être async : [ImageEnhancerScreen] attend la fin avant de fermer.
   final Future<void> Function(Uint8List?)? onResult;
 
+  /// La correction appliquée à la validation ; `compute(warpIsolate, …)` par
+  /// défaut. Remplacée dans les tests pour simuler un échec.
+  @visibleForTesting
+  final Future<Uint8List> Function(WarpParams params)? warp;
+
+  /// Remontée des erreurs ; `ErrorReportService()` par défaut.
+  @visibleForTesting
+  final ErrorReportService? errorReporter;
+
   const ImageEnhancerScreen({
     super.key,
     required this.imageBytes,
     this.title = 'Recadrer / améliorer',
     this.mode = EnhancerMode.studio,
     this.onResult,
+    this.warp,
+    this.errorReporter,
   });
 
   @override
@@ -224,18 +237,24 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       // Sans ce bloc, un décodage impossible laissait l'atelier sur son
       // indicateur, indéfiniment et sans un mot.
       reportUnexpectedError(
+        service: widget.errorReporter,
         feature: 'imageEnhancerScreen.loadImage',
         error: error,
         stackTrace: stackTrace,
         context: {'octets': _currentBytes.length, ...etapes},
       );
-      if (mounted) context.showErrorSnackBar('Image illisible : $error');
+      if (mounted) {
+        context.showErrorSnackBar(
+          'Cette photo ne peut pas être ouverte. Choisissez-en une autre.',
+        );
+      }
       _cancel();
       return;
     }
 
     if (total.elapsed > _ouvertureLente) {
       reportUnexpectedError(
+        service: widget.errorReporter,
         feature: 'imageEnhancerScreen.slowOpen',
         error: StateError(
           "Ouverture de l'atelier en ${total.elapsedMilliseconds} ms",
@@ -299,6 +318,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       // ou rien trouvé du tout ? Trois séances de diagnostic sont parties sur
       // des hypothèses plausibles faute de ces nombres.
       reportUnexpectedError(
+        service: widget.errorReporter,
         feature: 'imageEnhancerScreen.detection',
         error: StateError(
           'Détection : ${detection.diagnostic['sortie']}'
@@ -315,6 +335,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       );
     } catch (error, stackTrace) {
       reportUnexpectedError(
+        service: widget.errorReporter,
         feature: 'imageEnhancerScreen.runAutoDetect',
         error: error,
         stackTrace: stackTrace,
@@ -486,6 +507,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       setState(() => _suggestedPreset = suggested);
     } catch (error, stackTrace) {
       reportUnexpectedError(
+        service: widget.errorReporter,
         feature: 'imageEnhancerScreen.suggestPreset',
         error: error,
         stackTrace: stackTrace,
@@ -622,16 +644,38 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       // d'encoder en 97 : deux générations JPEG à la suite, pour une image qui
       // en avait déjà subi une à la remise d'aplomb.
       final rendu = Stopwatch()..start();
-      result = await compute(warpIsolate, params);
+      final warp = widget.warp;
+      result = warp != null
+          ? await warp(params)
+          : await compute(warpIsolate, params);
       _renduMs = rendu.elapsedMilliseconds;
     } catch (error, stackTrace) {
       reportUnexpectedError(
+        service: widget.errorReporter,
         feature: 'imageEnhancerScreen.confirm',
         error: error,
         stackTrace: stackTrace,
+        context: {
+          'cadre_arme': _cropArmed,
+          'octets_entree': _currentBytes.length,
+          'mode': widget.mode.name,
+          'web': kIsWeb,
+        },
       );
-      // Fallback : utilise l'image actuelle sans correction de perspective
-      result = _currentBytes;
+      // L'écran reste ouvert avec ses réglages : envoyer la photo d'origine
+      // à la place faisait croire que la correction avait été appliquée.
+      if (!mounted) return;
+      setState(() => _processing = false);
+      context.showErrorSnackBar(
+        'La correction n\'a pas pu être appliquée.',
+        action: SnackBarAction(
+          label: 'Réessayer',
+          onPressed: () {
+            if (mounted && !_processing) _confirm();
+          },
+        ),
+      );
+      return;
     }
 
     // Ce que la validation a réellement appliqué.
@@ -642,6 +686,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     // cadre n'était pas armé » de « le recadrage a été perdu en route ».
     final ecartCoins = _cropArmed ? _ecartAuCadreEntier() : 0.0;
     reportUnexpectedError(
+      service: widget.errorReporter,
       feature: 'imageEnhancerScreen.applied',
       error: StateError(
         _cropArmed
@@ -667,9 +712,17 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     );
 
     if (!mounted) return;
+    await _deliver(result);
+  }
 
+  /// Remet [result], la photo déjà corrigée : « Réessayer » après un envoi
+  /// impossible relance l'envoi seul, sans refaire la correction.
+  Future<void> _deliver(Uint8List result) async {
     // Mise à jour du message pendant l'upload
-    setState(() => _processingMessage = 'Envoi en cours…');
+    setState(() {
+      _processing = true;
+      _processingMessage = 'Envoi en cours…';
+    });
 
     // La remise du résultat n'était couverte par rien.
     //
@@ -685,6 +738,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       }
     } catch (error, stackTrace) {
       reportUnexpectedError(
+        service: widget.errorReporter,
         feature: 'imageEnhancerScreen.deliverResult',
         error: error,
         stackTrace: stackTrace,
@@ -692,7 +746,15 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       );
       if (!mounted) return;
       setState(() => _processing = false);
-      context.showErrorSnackBar('Envoi impossible : $error');
+      context.showErrorSnackBar(
+        'Envoi impossible : ${shortErrorMessage(error)}',
+        action: SnackBarAction(
+          label: 'Réessayer',
+          onPressed: () {
+            if (mounted && !_processing) _deliver(result);
+          },
+        ),
+      );
     }
   }
 
@@ -765,12 +827,15 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       });
     } catch (e, stackTrace) {
       reportUnexpectedError(
+        service: widget.errorReporter,
         feature: 'imageEnhancerScreen.rotate',
         error: e,
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar('Erreur rotation : $e');
+        context.showErrorSnackBar(
+          'La photo n\'a pas pu être pivotée. Réessayez.',
+        );
       }
     } finally {
       if (mounted) setState(() => _rotating = false);

@@ -289,10 +289,9 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: Text(
             widget._isSide
-                ? 'Aucune garniture ni recette d\'accompagnement disponible. '
-                      'Un administrateur peut semer les garnitures depuis '
-                      'Admin › Backfills ; vos recettes d\'accompagnement '
-                      'doivent porter leur rôle.'
+                ? 'Aucune garniture ni recette d\'accompagnement. '
+                      'Saisissez un nom ci-dessus, ou ajoutez vos garnitures '
+                      'dans Préférences › Mes garnitures.'
                 : 'Aucune garniture ni recette proposée pour ce service. '
                       'Saisissez un texte libre.',
             style: theme.textTheme.bodySmall?.copyWith(
@@ -374,6 +373,7 @@ class _SidePickerSheetState extends State<SidePickerSheet> {
               ],
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
+                labelText: 'Rechercher',
                 hintText: widget._isSide
                     ? 'Rechercher ou saisir un accompagnement'
                     : 'Rechercher ou saisir',
