@@ -314,4 +314,40 @@ void main() {
     expect(result?.freeLabel, 'Poêlée forestière');
     expect(result?.provides, isEmpty);
   });
+
+  testWidgets('aucun accompagnement : renvoyer à « Mes garnitures », sans '
+      'parler d\'administration', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SidePickerSheet(main: _main, candidates: const []),
+        ),
+      ),
+    );
+    expect(
+      find.text(
+        'Aucune garniture ni recette d\'accompagnement. Saisissez un nom '
+        'ci-dessus, ou ajoutez vos garnitures dans Préférences › Mes '
+        'garnitures.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Admin'), findsNothing);
+    expect(find.textContaining('semer'), findsNothing);
+    expect(find.textContaining('Backfills'), findsNothing);
+  });
+
+  testWidgets('le champ de recherche porte le libellé « Rechercher »', (
+    tester,
+  ) async {
+    await _pump(tester);
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.labelText == 'Rechercher',
+      ),
+      findsOneWidget,
+    );
+  });
 }

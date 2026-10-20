@@ -528,7 +528,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(ctx).pop(),
-                    child: const Text('OK'),
+                    child: const Text('Fermer'),
                   ),
                 ],
               ),

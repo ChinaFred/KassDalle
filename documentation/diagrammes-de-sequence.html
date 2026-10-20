@@ -3198,6 +3198,13 @@ sequenceDiagram
   P-->>U: tuile « Il manque : légume » — Compléter, ou « Apports du plat inconnus »
   alt Compléter
     U->>P: Compléter
+    P-->>U: PickerLoadingSheet ouverte — « Lecture des recettes et des garnitures… »
+    P->>PR: getValidatedRecipes (une fois), puis getFamilyValidatedRecipes
+    PR->>FS: recipes
+    alt lecture en échec
+      FS-->>P: erreur de lecture
+      P-->>U: « Les recettes n'ont pas pu être lues. » ou « Vos garnitures n'ont pas pu être lues. » — Réessayer relit dans la feuille
+    end
     P-->>U: SidePickerSheet filtrée « Pour le légume »
     U-->>P: garniture, recette, ou texte libre avec ses pastilles
     P->>PR: updateMealComponents — insertMainSide
