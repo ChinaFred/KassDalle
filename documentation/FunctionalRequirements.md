@@ -532,6 +532,15 @@ privait le titre de la place dont il manquait.
   Un échec n'arrête pas les suivants : il est compté dans le compte rendu. Une ligne « Doublon
   possible » n'entre que dans **Supprimer** : ce n'est pas un brouillon, et la relancer referait
   la comparaison. En mode sélection, ses boutons sont masqués et ses liens ne s'ouvrent pas.
+- **Ranger des brouillons dans un livre en lot.** Dès qu'un brouillon est coché, la barre propose
+  **Ranger (N)** (N : brouillons cochés ; les traitements cochés sont ignorés). Une feuille
+  « Ranger dans un livre » (boîte de dialogue de 480 px sur web et Windows) offre le sélecteur de
+  livres avec recherche par saisie : les livres de l'utilisateur, tous les livres pour
+  l'administrateur. Elle indique combien de brouillons changent de livre, avertit que le numéro de
+  page est conservé tel quel quand le livre change, et que les brouillons deviennent privés si le
+  livre l'est. Sans livre, l'action répond « Créez d'abord un livre. ». « Ranger (N) » écrit le
+  livre sur chaque brouillon sans le valider ; un échec n'arrête pas les suivants et le compte
+  rendu dit « N brouillons rangés dans « Titre », M en erreur ». La marque « Doublon possible » n'est pas modifiée.
 - **Un lot ne valide pas ce que personne n'a relu.** Un brouillon qui porte une réserve de
   fidélité, ou qui n'a pas de contenu, reste de côté, et le compte rendu le dit. Valider efface la
   réserve : cela se fait brouillon par brouillon, depuis l'écran de relecture, où le bandeau la

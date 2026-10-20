@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-20
 
-### v0.24.29 — technique
+### v0.24.30 — technique
 
 Règles Firestore des comptes et des groupes, lot 9 de l'audit #151 (ticket #162). Le rôle se
 lit désormais sur le document `users/{uid}`, et le claim du jeton seulement si le document n'a
@@ -47,6 +47,16 @@ mémorise plus sa signature : `fry_signature` reste vide et le calcul suivant re
 verdict. Avant, la recette restait sans huile absorbée jusqu'à ce que son texte change.
 L'écriture de ce champ ne relance pas `onRecipeWritten`, dont la garde ne lit que les entrées de
 la recette.
+
+### v0.24.29 — fonctionnel
+
+Ranger des brouillons dans un livre en lot (ticket #197).
+
+Dans « Brouillons & Traitements », la sélection propose une action « Ranger (N) » dès qu'un
+brouillon est coché. Une feuille « Ranger dans un livre » demande le livre, annonce combien de
+brouillons changent de livre, le numéro de page conservé et la confidentialité reprise du livre.
+Les brouillons restent des brouillons. Un échec n'arrête pas les suivants. Avant, le livre ne se
+changeait qu'un brouillon à la fois, dans l'écran de relecture. Aucune règle Firestore ne change.
 
 ### v0.24.28 — fonctionnel
 

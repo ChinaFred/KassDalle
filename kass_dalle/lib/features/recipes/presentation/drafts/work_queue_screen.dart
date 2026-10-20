@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'assign_book_sheet.dart';
 import 'work_queue_batch.dart';
 import 'work_queue_widgets.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../books/presentation/book_providers.dart';
 import '../../../processing/domain/processing_job.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../recipe_providers.dart';
@@ -365,6 +367,52 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
       ),
       failed: failed.length,
       partial: plan.emptyContent.isNotEmpty || plan.duplicates.isNotEmpty,
+    );
+  }
+
+  /// Range des brouillons dans un livre, sans les valider. Le livre se choisit
+  /// dans une feuille ; les brouillons restent des brouillons.
+  Future<void> _assignBook(List<Recipe> drafts) async {
+    if (_busy || drafts.isEmpty) return;
+    final booksAsync = ref.read(targetBooksProvider);
+    if (booksAsync.hasError) {
+      context.showErrorSnackBar('Les livres n\'ont pas pu être lus.');
+      return;
+    }
+    final books = booksAsync.value;
+    if (books == null) {
+      _report('Chargement des livres en cours.', failed: 0, partial: true);
+      return;
+    }
+    if (books.isEmpty) {
+      _report('Créez d\'abord un livre.', failed: 0, partial: true);
+      return;
+    }
+    final book = await showAssignBookSheet(
+      context,
+      books: books,
+      drafts: drafts,
+    );
+    if (book == null || !mounted) return;
+    final repo = ref.read(recipeRepositoryProvider);
+    final failed = await _runBatch<Recipe>(
+      label: 'Rangement',
+      items: drafts,
+      feature: 'workQueueScreen.assignBook',
+      errorContext: (r) => {'recipe_id': r.id, 'book_id': book.id},
+      action: (r) => repo.assignBookToDraft(
+        recipeId: r.id,
+        bookId: book.id,
+        bookTitre: book.titre,
+      ),
+    );
+    _report(
+      bookAssignmentSummary(
+        done: drafts.length,
+        failed: failed.length,
+        bookTitre: book.titre,
+      ),
+      failed: failed.length,
     );
   }
 
@@ -754,6 +802,11 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 ? null
                 : retryableJobs.length,
             deleteCount: selectedItems.length,
+            assignBookCount: selectedDrafts.isEmpty
+                ? null
+                : selectedDrafts.length,
+            onAssignBook: () =>
+                _assignBook(selectedDrafts.map((d) => d.recipe).toList()),
             onValidate: () => _validateDrafts(
               selectedDrafts.map((d) => d.recipe).toList(),
               confirm: true,
