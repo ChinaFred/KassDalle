@@ -57,6 +57,13 @@ bool _isOpenable(BackfillFailure f) =>
     f.kind == BackfillFailureKind.recipe ||
     f.kind == BackfillFailureKind.ticket;
 
+/// Ce que l'administrateur fait d'un compte à revoir : rien ne le corrige
+/// depuis l'application.
+const kAccountFailuresHelp =
+    'Ces fiches ne se corrigent pas depuis l\'application. Corrigez-les dans '
+    'la console Firebase (Firestore › users › identifiant affiché), puis '
+    'relancez le contrôle.';
+
 /// Tri par raison puis par nom : les éléments qui ont la même cause se suivent.
 List<BackfillFailure> _sorted(Iterable<BackfillFailure> items) {
   final list = items.toList();
@@ -102,12 +109,34 @@ class BackfillFailuresSheet extends StatelessWidget {
   String _subtitle() {
     final n = failures.total;
     final openable = failures.items.any(_isOpenable);
+    final String count;
     if (n == 1) {
-      return openable ? '1 élément. Touchez-le pour l\'ouvrir.' : '1 élément.';
+      count = openable ? '1 élément. Touchez-le pour l\'ouvrir.' : '1 élément.';
+    } else {
+      count = openable
+          ? '$n éléments. Touchez une ligne pour l\'ouvrir.'
+          : '$n éléments.';
     }
-    return openable
-        ? '$n éléments. Touchez une ligne pour l\'ouvrir.'
-        : '$n éléments.';
+    final accounts = failures.items.any(
+      (f) => f.kind == BackfillFailureKind.account,
+    );
+    return accounts ? '$count $kAccountFailuresHelp' : count;
+  }
+
+  /// Sous-titre d'une ligne : la raison, et pour un compte l'identifiant
+  /// complet du document, à chercher dans la console Firebase. L'identifiant
+  /// reste à l'écran : la ligne copiée (`copyLine`) n'en porte que le début,
+  /// déjà dans le nom, et aucun uid ne part sur GitHub.
+  Widget? _lineSubtitle(BackfillFailure f) {
+    final parts = [
+      if (f.reason.isNotEmpty) f.reason,
+      if (f.kind == BackfillFailureKind.account) 'Identifiant : ${f.id}',
+    ];
+    if (parts.isEmpty) return null;
+    // Sélectionnable : l'identifiant se recopie dans la console à la main.
+    return f.kind == BackfillFailureKind.account
+        ? SelectableText(parts.join('\n'))
+        : Text(parts.join('\n'));
   }
 
   void _open(BuildContext context, BackfillFailure f) {
@@ -211,7 +240,7 @@ class BackfillFailuresSheet extends StatelessWidget {
                   for (final f in entry.value)
                     ListTile(
                       title: Text(f.label),
-                      subtitle: f.reason.isEmpty ? null : Text(f.reason),
+                      subtitle: _lineSubtitle(f),
                       trailing: _isOpenable(f)
                           ? const Icon(
                               Icons.chevron_right,

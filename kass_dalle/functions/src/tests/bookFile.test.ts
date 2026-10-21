@@ -17,6 +17,8 @@ import sharp from "sharp";
 import {
   BookFileError,
   EPUB_INVALID_MESSAGE,
+  EPUB_NO_TEXT_MESSAGE,
+  DOCX_NO_TEXT_MESSAGE,
   buildPdfChunks,
   detectBookFileKind,
   htmlToParagraphs,
@@ -295,7 +297,7 @@ describe("openBookFile — EPUB", () => {
     zip.file("OEBPS/p1.xhtml", "<html><body><img src='a.jpg'/></body></html>");
     await assert.rejects(
       async () => openBookFile(await zip.generateAsync({ type: "nodebuffer" }), "epub"),
-      (err: unknown) => err instanceof BookFileError && /aucun texte/.test(err.message),
+      (err: unknown) => err instanceof BookFileError && err.message === EPUB_NO_TEXT_MESSAGE,
     );
   });
 });
@@ -426,5 +428,12 @@ describe("pdfFirstPageImage", () => {
   test("rend null quand la première page n'a aucune image", async () => {
     const source = await openPdf(await buildPdf(3, false));
     assert.equal(await pdfFirstPageImage(source), null);
+  });
+
+  test("un livre sans texte dit quoi faire : passer par un PDF", () => {
+    for (const message of [EPUB_NO_TEXT_MESSAGE, DOCX_NO_TEXT_MESSAGE]) {
+      assert.match(message, /PDF/);
+      assert.match(message, /importez/);
+    }
   });
 });

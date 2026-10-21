@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'admin_providers.dart';
+import 'admin_server_message.dart';
 import 'backfill_failures_sheet.dart';
 import 'backfill_schedule_editor.dart';
 import 'billing_providers.dart';
@@ -144,6 +145,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'sodium.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
+      case BackfillKeys.defaultUnits:
+        return 'Crée dans le référentiel les unités de mesure standard qui '
+            'manquent (gramme, cuillère à soupe, verre, pincée…), et complète '
+            'celles qui n\'ont pas encore leur grammage, leur volume, leur '
+            'libellé ou leur type. Une valeur déjà saisie n\'est jamais '
+            'remplacée.\n\n'
+            'Aucun appel d\'IA. Les quarante unités standard sont examinées '
+            'en un passage. Relancer ne réécrit pas une unité déjà complète.';
       case BackfillKeys.moveMealsToGroup:
         return 'Vos repas de « Mon planning » sur cette période passent dans '
             'le planning du groupe : ses membres les voient, et ils quittent '
@@ -151,6 +160,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'événements déjà exportés vers l\'agenda ne changent pas. Un repas '
             'déjà dans un groupe est laissé tel quel ; on peut relancer.\n\n'
             'Aucun appel d\'IA.';
+      case BackfillKeys.usersSchemaCheck:
+        return 'Lit la fiche de chaque compte et liste celles qui posent un '
+            'problème, avec la raison et son effet : un champ illisible '
+            '(absent ou de mauvais type) fait disparaître la fiche de '
+            'Comptes ; un rôle absent ou inconnu laisse le compte sans droit, '
+            'affiché « en attente » ; un indicateur de révocation absent fait '
+            'échouer toute règle qui le lit pour ce compte.\n\n'
+            'Lecture seule : aucun compte n\'est modifié. Aucun appel d\'IA. '
+            'Tous les comptes sont lus en un passage ; on peut relancer après '
+            'une correction.';
       default:
         return '';
     }
@@ -267,6 +286,18 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
+      case BackfillKeys.defaultUnits:
+        final r = await _repo.backfillDefaultUnits();
+        return _fromCounts(
+          r,
+          'Unités standard : examinées=${r['examinees']}, '
+          'créées=${r['creees']}, complétées=${r['completees']}, '
+          'déjà à jour=${r['dejaAJour']}, en erreur=${r['echouees']}, '
+          'restantes=${r['restantes']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
       case BackfillKeys.moveMealsToGroup:
         if (move == null) throw StateError('Paramètres manquants : ${def.key}');
         final r = await _repo.backfillMoveMealsToGroup(move);
@@ -281,6 +312,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.usersSchemaCheck:
+        final r = await _repo.backfillUsersSchemaCheck();
+        return _fromCounts(
+          r,
+          'Comptes : examinés=${r['examines']}, conformes=${r['conformes']}, '
+          'à revoir=${r['nonConformes']}, contrôles en échec=${r['echoues']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'stoppedByBudget', ' (plus de 5 000 comptes : lecture arrêtée)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer)')}',
         );
       default:
         throw StateError('Backfill inconnu : ${def.key}');
@@ -453,7 +495,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
     if (!mounted) return;
     setState(() {
-      _resultMessage = '${def.title} : ${callableFailureReason(error)}';
+      // Le message du serveur seulement s'il est écrit pour l'administrateur
+      // (liste blanche) ; jamais le texte brut d'une exception.
+      _resultMessage = adminFailureMessage(
+        'Passage « ${def.title} » non terminé',
+        error,
+        codes: kBackfillServerMessageCodes,
+      );
       _resultIsError = true;
       _failures = null;
       _failuresTitle = def.title;
@@ -523,7 +571,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       );
       if (!mounted) return;
       context.showErrorSnackBar(
-        'Changement non enregistré : ${callableFailureReason(e)}.',
+        adminFailureMessage(
+          'Changement non enregistré',
+          e,
+          codes: kBackfillServerMessageCodes,
+        ),
       );
     }
   }
@@ -1019,7 +1071,9 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.recipeRoles: Icons.restaurant_outlined,
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
+    BackfillKeys.defaultUnits: Icons.straighten_outlined,
     BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
+    BackfillKeys.usersSchemaCheck: Icons.manage_accounts_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

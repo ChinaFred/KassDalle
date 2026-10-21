@@ -29,7 +29,9 @@ abstract final class BackfillKeys {
   static const recipeRoles = 'recipe_roles';
   static const shoppingProducts = 'shopping_products';
   static const refreshSodium = 'refresh_sodium';
+  static const defaultUnits = 'default_units';
   static const moveMealsToGroup = 'move_meals_to_group';
+  static const usersSchemaCheck = 'users_schema_check';
 }
 
 class BackfillDefinition {
@@ -149,6 +151,21 @@ const List<BackfillDefinition> kBackfillRegistry = [
     passLimit: 'Chaque passage travaille au plus huit minutes.',
   ),
 
+  // Remplace l'icône « Initialiser les unités par défaut » de l'écran Unités
+  // de mesure (retirée en v0.24.40). Ponctuel : la liste est fixe.
+  BackfillDefinition(
+    key: BackfillKeys.defaultUnits,
+    kind: BackfillKind.ponctuel,
+    title: 'Semer les unités standard',
+    description:
+        'Crée les unités de mesure standard absentes du référentiel, et '
+        'complète celles qui n\'ont pas encore leur grammage, leur volume, '
+        'leur libellé ou leur type. Une valeur déjà saisie n\'est jamais '
+        'remplacée.',
+    usesAi: false,
+    passLimit: 'Chaque passage examine les quarante unités standard.',
+  ),
+
   // Paramétré (groupe, période) et réutilisable : le serveur ne le marque
   // jamais terminé tout seul, son reste n'est pas compté.
   BackfillDefinition(
@@ -162,6 +179,20 @@ const List<BackfillDefinition> kBackfillRegistry = [
     passLimit:
         'Chaque passage couvre 62 jours au plus et déplace au plus 500 repas.',
     reusable: true,
+  ),
+
+  // Lecture seule : liste les comptes dont le document s'écarte du schéma de
+  // `firestore.rules` (v0.24.30, v0.24.32). Terminé quand un passage complet
+  // ne trouve rien à revoir.
+  BackfillDefinition(
+    key: BackfillKeys.usersSchemaCheck,
+    kind: BackfillKind.ponctuel,
+    title: 'Contrôler les comptes',
+    description:
+        'Liste les comptes dont la fiche est illisible, sans droit ou bloque '
+        'les règles de sécurité, avec la raison. Ne modifie aucun compte.',
+    usesAi: false,
+    passLimit: 'Chaque passage lit tous les comptes, 5 000 au plus.',
   ),
 ];
 

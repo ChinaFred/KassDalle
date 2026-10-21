@@ -118,11 +118,6 @@ class CallableFailure implements Exception {
       'Callable $name failed: code=$code, message=$message, details=$details';
 }
 
-/// La raison d'un échec, lisible : le message du serveur pour une callable,
-/// le texte de l'exception sinon.
-String callableFailureReason(Object error) =>
-    error is CallableFailure ? error.message : '$error';
-
 class GcpBillingRepository {
   final FirebaseFunctions _functions;
 
@@ -485,6 +480,34 @@ class GcpBillingRepository {
     final dynamic raw = await _callViaSdk(
       'backfillShoppingFn',
       payload,
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
+  /// Sème les unités standard de `nutrition_units` : crée celles qui
+  /// manquent, complète grammage, volume, libellé ou type absents, sans
+  /// jamais écraser une valeur. Sans appel de modèle. Rend les compteurs tels
+  /// quels ; les drapeaux valent 1 ou 0. Les unités en échec sont dans
+  /// `failures`.
+  Future<BackfillCounts> backfillDefaultUnits() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillDefaultUnitsFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
+  /// Contrôle les comptes : liste les documents `users/{uid}` qui
+  /// s'écartent du schéma de `firestore.rules`, avec la raison. Lecture
+  /// seule, sans appel de modèle. Les comptes à revoir sont dans `failures`.
+  Future<BackfillCounts> backfillUsersSchemaCheck() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillUsersSchemaCheckFn',
+      <String, dynamic>{'appVersion': kAppVersion},
       timeout: const Duration(minutes: 9),
     );
 

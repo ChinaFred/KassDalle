@@ -43,6 +43,91 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
   classé `CREDITS_EXHAUSTED` et échoue tout de suite. Aucune tentative ne part plus avec un
   délai restant nul ou négatif (`quotaRetryDelayMs`).
 
+### v0.24.42 — fonctionnel
+
+- Admin › Backfills : nouveau ponctuel « Contrôler les comptes ». Il lit la fiche de chaque
+  compte écrite avant les règles de v0.24.30 et v0.24.32 (tickets #162, #163) et liste dans
+  « À revoir » celles qui posent un problème, avec la raison et son effet : un champ absent ou
+  de mauvais type fait disparaître la fiche de Comptes ; un rôle absent ou inconnu laisse le
+  compte sans droit, affiché « en attente » ; un indicateur de révocation absent fait échouer
+  toute règle qui le lit pour ce compte. Le compte est nommé par son prénom et le début de son
+  identifiant, jamais par son adresse. La feuille « À revoir » affiche sous chaque compte son
+  identifiant complet et dit de le corriger dans la console Firebase, puis de relancer le
+  contrôle ; « Copier la liste » ne recopie pas cet identifiant. Lecture seule, sans appel
+  d'IA ; il se marque terminé quand un passage ne trouve plus rien.
+
+### v0.24.42 — technique
+
+- Nouveau callable `backfillUsersSchemaCheckFn` (`callable/usersSchemaCheckBackfillCallable.ts`),
+  clé `users_schema_check`, ponctuel, sans IA, inscrit aux deux registres et à la fixture
+  `backfill_schedule.json`. Il n'écrit rien dans `users` ; seul son état
+  `app_config/backfill_run_users_schema_check` est écrit par `runBackfillFromCallable`.
+- Les contrôles vivent dans `security/userDocument.ts` (`userDocumentIssues`,
+  `userReviewLabel`). Ils ne signalent que ce qui casse, et chaque raison dit son effet : un
+  champ que `AppUser.fromFirestore` ne lit pas (fiche absente de Comptes), un rôle que
+  `readRole` lit « aucun rôle » (compte sans droit), `is_revoked` absent (`isRevoked()` lit le
+  champ sans valeur par défaut, et l'erreur vaut refus). `is_revoked: null` est conforme. Ne
+  sont pas contrôlés, parce qu'ils ne bloquent rien : un champ hors de la liste des règles, un
+  `uid` différent de l'identifiant, la longueur des noms et de `photo_url`, la forme de la
+  couverture. Une valeur citée qui contient « @ », et un prénom qui en contient un, sont
+  écartés du compte rendu. Testés dans `tests/userDocument.test.ts`.
+- `backfill_failures_sheet.dart` : pour une entrée de nature `account`, l'identifiant complet
+  du document s'affiche sous la raison, et le sous-titre de la feuille donne la consigne
+  (`kAccountFailuresHelp`). `copyLine` est inchangé et ne porte pas l'identifiant complet.
+- Sans point de reprise : un contrôle ne conclut « rien à revoir » que sur un parcours entier
+  fait en un passage (5 000 comptes au plus).
+
+### v0.24.41 — fonctionnel
+
+- Admin › Backfills : un passage, une programmation ou un « marquer terminé » qui échoue
+  affiche maintenant deux phrases, ce qui n'a pas eu lieu puis la cause (« Programmation non
+  enregistrée. Choisissez au moins un jour. »). Le message du serveur n'est repris que s'il
+  est écrit pour l'administrateur : paramètre refusé, droit refusé, verrou, élément
+  introuvable (`kBackfillServerMessageCodes`). Une panne affiche la cause lisible de
+  `describeError`. Avant, l'écran recopiait le texte brut de l'erreur, par exemple
+  « Error: 13 INTERNAL » (`callableFailureReason`, retiré ; suite de l'audit #151, tickets
+  #170 et #171).
+
+### v0.24.40 — fonctionnel
+
+- Le semis des unités de mesure standard passe dans *Admin › Backfills*, ponctuel « Semer
+  les unités standard ». L'icône « Initialiser les unités par défaut » quitte l'écran
+  *Unités de mesure*, qui garde la liste, la création, la modification et la suppression.
+  Le passage crée les quarante unités standard absentes et complète grammage, volume,
+  libellé ou type manquants, sans remplacer une valeur saisie et sans appel d'IA. Sa tuile
+  affiche un compte rendu chiffré (créées, complétées, déjà à jour, échecs) et la liste des
+  unités en échec. La règle de `CLAUDE.md` le demande : une écriture de masse ne part pas
+  de l'écran d'un référentiel.
+
+### v0.24.40 — technique
+
+- Nouveau callable `backfillDefaultUnitsFn` (`callable/defaultUnitsBackfillCallable.ts`),
+  clé `default_units`, ponctuel, sans IA, inscrit aux deux registres et à la fixture
+  `backfill_schedule.json`. Une transaction par unité ; la règle de complétion est celle de
+  l'ancien `NutritionUnitsRepository.seedDefaultUnits`, recopiée dans `defaultUnitPlan`.
+  Écart voulu : un libellé ou un type mal formé compte comme présent au lieu de lever une
+  exception de conversion.
+- La liste des quarante unités quitte le client pour `functions/src/nutrition/defaultUnits.ts`,
+  recopiée à l'identique. La table de repli de `quantityConversion.ts` n'a ni libellé ni
+  alias : elle ne pouvait pas servir de liste. `defaultUnits.test.ts` vérifie que chaque unité
+  y a le même type et le même facteur.
+- `seedDefaultUnits`, `seedResult` et `_def` sortent de `nutrition_units_repository.dart` ;
+  `_seedDefaults` sort de `nutrition_units_screen.dart`, dont `_runCrudAction` ne prend plus
+  de message de succès calculé.
+- `LOCK_GROUPS` gagne `["enrich_referentials", "default_units"]`, et `lockSiblings` réunit
+  les groupes d'un backfill : les deux écrivent `grams_per_unit` des unités.
+
+### v0.24.39 — fonctionnel
+
+- Un livre importé sans texte, dont les pages sont des images, dit maintenant quoi faire.
+  EPUB : « Ce fichier EPUB ne contient pas de texte : ses pages sont des images.
+  Convertissez-le en PDF, ou importez le livre en PDF si vous l'avez : les pages du PDF
+  seront lues comme des photos. » Word : « Ce document Word ne contient pas de texte,
+  seulement des images. Enregistrez-le en PDF depuis Word, puis importez le PDF : les pages
+  du PDF seront lues comme des photos. » Avant, le message constatait
+  l'absence de texte sans proposer de solution (`EPUB_NO_TEXT_MESSAGE`,
+  `DOCX_NO_TEXT_MESSAGE`, `books/bookFile.ts` ; suite de l'audit #151, tickets #170 et #171).
+
 ### v0.24.38 — fonctionnel
 
 - « Calculer » et « Recalculer » dans l'onglet Nutrition affichent maintenant l'échec du
