@@ -386,7 +386,7 @@ void main() {
           'dejaAJour': 36,
           'echouees': 0,
         }),
-        '3 créées, 1 complétée, 36 déjà à jour, 0 échec',
+        '3 unités créées, 1 complétée, 36 déjà à jour, 0 échec',
       );
     });
   });

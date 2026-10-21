@@ -159,7 +159,8 @@ const List<BackfillDefinition> kBackfillRegistry = [
     description:
         'Crée les unités de mesure standard absentes du référentiel, et '
         'complète celles qui n\'ont pas encore leur grammage, leur volume, '
-        'leur libellé ou leur type.',
+        'leur libellé ou leur type. Une valeur déjà saisie n\'est jamais '
+        'remplacée.',
     usesAi: false,
     passLimit: 'Chaque passage examine les quarante unités standard.',
   ),

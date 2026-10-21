@@ -150,8 +150,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'celles qui n\'ont pas encore leur grammage, leur volume, leur '
             'libellé ou leur type. Une valeur déjà saisie n\'est jamais '
             'remplacée.\n\n'
-            'Aucun appel d\'IA. Quarante unités par passage ; on peut '
-            'relancer, une unité complète n\'est pas réécrite.';
+            'Aucun appel d\'IA. Les quarante unités standard sont examinées '
+            'en un passage. Relancer ne réécrit pas une unité déjà complète.';
       case BackfillKeys.moveMealsToGroup:
         return 'Vos repas de « Mon planning » sur cette période passent dans '
             'le planning du groupe : ses membres les voient, et ils quittent '
