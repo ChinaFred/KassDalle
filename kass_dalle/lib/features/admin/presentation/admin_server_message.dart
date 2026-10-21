@@ -64,3 +64,14 @@ String adminFailureMessage(
 Object? readableError(Object? error) => error is CallableFailure
     ? FirebaseFunctionsException(code: error.code, message: error.message)
     : error;
+
+/// Codes dont le message est écrit par les callables de backfill pour
+/// l'administrateur : paramètre refusé (« Choisissez au moins un jour. »),
+/// passage refusé par le verrou ou la nature du backfill, plafond d'IA,
+/// élément introuvable. Les autres codes reçoivent la cause lisible.
+const kBackfillServerMessageCodes = {
+  'invalid-argument',
+  'failed-precondition',
+  'resource-exhausted',
+  'not-found',
+};

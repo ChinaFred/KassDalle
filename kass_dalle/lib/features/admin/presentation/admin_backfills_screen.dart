@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'admin_providers.dart';
+import 'admin_server_message.dart';
 import 'backfill_failures_sheet.dart';
 import 'backfill_schedule_editor.dart';
 import 'billing_providers.dart';
@@ -473,7 +474,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
     if (!mounted) return;
     setState(() {
-      _resultMessage = '${def.title} : ${callableFailureReason(error)}';
+      // Le message du serveur seulement s'il est écrit pour l'administrateur
+      // (liste blanche) ; jamais le texte brut d'une exception.
+      _resultMessage = adminFailureMessage(
+        '« ${def.title} » non terminé',
+        error,
+        codes: kBackfillServerMessageCodes,
+      );
       _resultIsError = true;
       _failures = null;
       _failuresTitle = def.title;
@@ -543,7 +550,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       );
       if (!mounted) return;
       context.showErrorSnackBar(
-        'Changement non enregistré : ${callableFailureReason(e)}.',
+        adminFailureMessage(
+          'Changement non enregistré',
+          e,
+          codes: kBackfillServerMessageCodes,
+        ),
       );
     }
   }
