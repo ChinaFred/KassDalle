@@ -7,7 +7,7 @@
  * `recipes/`, et enregistre dans son état la liste fermée des images
  * signalées (`signalees`). L'administrateur a regardé ces images et les garde
  * telles quelles. Seules les images de cette liste, sous `scans/{uid}/` ou
- * `users/{uid}/free_recipe_cover_*`, se rangent : une image ajoutée à une
+ * `users/{uid}/`, se rangent : une image ajoutée à une
  * recette après le contrôle n'a été vue par personne, et part dans « À
  * revoir ». Sans liste, le passage ne fait rien. Pour chacune, ce passage :
  *

@@ -3642,7 +3642,7 @@ sequenceDiagram
 
   A->>F: Lancer « Ranger les illustrations » (requireAdmin)
   F->>FS: liste fermée signalees du dernier contrôle complet<br/>(backfill_run_illustration_folders) ; absente : rien à faire
-  F->>FS: lit toutes les recettes, garde les images de la liste<br/>sous scans/{uid}/ ou users/{uid}/free_recipe_cover_*
+  F->>FS: lit toutes les recettes, garde les images de la liste<br/>sous scans/{uid}/ ou users/{uid}/
   F->>FS: lignes image_moderation manual_folder_move en attente
   F->>FS: lit processing_jobs, books, users, user_profiles, image_moderation,<br/>sauvegardes, annotations, origine : qui cite encore chaque fichier ?
   loop chaque recette, 100 au plus
