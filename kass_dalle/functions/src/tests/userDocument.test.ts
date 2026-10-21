@@ -106,7 +106,7 @@ describe("userDocumentIssues", () => {
     ["rôle inconnu", (d) => (d.role = "superadmin"), [`rôle inconnu (role) « superadmin » : ${R}`]],
     ["rôle avec espace", (d) => (d.role = "admin "), [`rôle inconnu (role) « admin  » : ${R}`]],
     ["rôle en majuscule", (d) => (d.role = "Admin"), [`rôle inconnu (role) « Admin » : ${R}`]],
-    ["rôle nombre", (d) => (d.role = 1), [`rôle inconnu (role) 1 : ${R}`]],
+    ["rôle nombre", (d) => (d.role = 1), [`rôle qui n'est pas un texte (role) 1 : ${L}`]],
     [
       "rôle qui contient @ : masqué",
       (d) => (d.role = "marie@example.com"),

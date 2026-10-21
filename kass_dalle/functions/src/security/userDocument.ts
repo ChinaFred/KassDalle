@@ -135,7 +135,11 @@ export function userDocumentIssues(data: Record<string, unknown>): string[] {
   }
 
   if (missing(data, "role")) issues.push(`rôle absent (role) : ${NO_RIGHTS}`);
-  else if (readRole(data.role) === null) {
+  else if (typeof data.role !== "string") {
+    // `AppUser.fromFirestore` lit `role as String?` : un autre type lève une
+    // exception, la fiche est sautée par `watchAllUsers`.
+    issues.push(`rôle qui n'est pas un texte (role) ${quote(data.role)} : ${NOT_LISTED}`);
+  } else if (readRole(data.role) === null) {
     issues.push(`rôle inconnu (role) ${quote(data.role)} : ${NO_RIGHTS}`);
   }
 
