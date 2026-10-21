@@ -193,7 +193,6 @@
           <tr><td>Lire les durées d'une recette qu'on voit, et ses durées estimées par l'IA (« ≈ Prép. 20 min ») quand elle n'en donne pas — même rendu pour tous les rôles ; compter ou non les durées estimées dans le filtre « Temps total » d'Explorer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Corriger les allergènes d'un ingrédient du référentiel, lancer le backfill « Allergènes »</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Programmer un backfill récurrent, marquer un backfill ponctuel terminé ou le remettre à lancer</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Déplacer ses repas de « Mon planning », sur une période de 62 jours au plus, vers le planning d'un groupe dont on est propriétaire (backfill « Déplacer mes repas vers un groupe »)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> une illustration de recette par l'IA</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Faire <b>produire</b> un visuel d'étape de dressage — sur <b>sa</b> recette pour l'éditeur, sur toutes pour l'admin ; le lecteur créateur garde le conseil, sans visuels</td><td class="no">non</td><td class="no">non</td><td class="mark">sa recette</td><td class="mark">oui</td></tr>
           <tr><td>Retoucher une illustration par l'IA</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
@@ -965,7 +964,6 @@ flowchart LR
     d30(["Marquer un backfill ponctuel terminé&lt;br/&gt;ou le remettre à lancer"])
     d31(["Inviter un proche par e-mail&lt;br/&gt;rôle, groupe, message"])
     d32(["Renvoyer ou annuler une invitation"])
-    d33(["Déplacer ses repas vers un groupe&lt;br/&gt;groupe possédé, période"])
     d34(["Recevoir une notification&lt;br/&gt;à chaque nouvel APK publié (Android)"])
   end
   INV(("Proche invité"))
@@ -1002,7 +1000,6 @@ flowchart LR
   ADM --- d27
   ADM --- d29
   ADM --- d30
-  ADM --- d33
   ADM --- d31
   ADM --- d32
   d31 -.->|"refusé si l'adresse a un compte actif ou en attente, ou si 20 envois aujourd'hui"| e13(["Enregistrer l'invitation&lt;br/&gt;puis envoyer l'e-mail"])
@@ -1072,16 +1069,6 @@ flowchart LR
         ponctuel terminé : clé technique, titre, date et version de fin, automatique ou marqué à
         la main, dernier compte rendu. L'administrateur la colle à la session qui retire ces
         backfills du code.
-        <b>« Déplacer mes repas vers un groupe »</b> est une reprise paramétrée : sa tuile
-        demande d'abord le groupe — un groupe actif dont l'administrateur est propriétaire — et
-        la période, 62 jours au plus, puis confirme (« Déplacer vos repas du … au … vers « … » ? »).
-        Les repas de « Mon planning » de la période passent dans le planning du groupe et
-        quittent le planning personnel ; la recette, la date, les parts et les événements
-        d'agenda déjà exportés ne changent pas. Un repas déjà dans un groupe est laissé tel
-        quel : relancer ne refait rien. Si le groupe est supprimé pendant le passage, celui-ci
-        s'arrête. Elle reste parmi les ponctuels à lancer : chaque passage vaut pour une
-        période, elle n'est jamais marquée terminée, ni toute seule ni par le menu ⋮. Aucun
-        appel d'IA.
         <b>À la fin de chaque backfill</b>, le compte rendu nomme les éléments à revoir : quand
         un passage laisse des éléments en erreur ou incomplets, la bannière affiche un lien
         « Voir les N à revoir ». Il ouvre une liste — un ingrédient, une unité, une recette ou un compte par ligne, avec

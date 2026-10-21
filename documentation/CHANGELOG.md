@@ -20,6 +20,31 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.43 — fonctionnel
+
+Admin › Backfills ne propose plus « Déplacer mes repas vers un groupe », retiré à la demande
+de l'administrateur. Son dernier passage, le 14/10/2026, a déplacé 7 repas du 2 au 29 octobre
+dans le planning d'un groupe, sans échec. Les repas déjà déplacés restent dans le planning de
+leur groupe. Aucun écran de l'application ne change désormais le planning d'un repas existant.
+Le menu ⋮ de chaque ponctuel propose de nouveau « Marquer comme terminé ».
+
+### v0.24.43 — technique
+
+Retrait du ponctuel réutilisable `move_meals_to_group` (v0.23.61), sans « Copier la liste » :
+il n'était pas terminé, son retrait est une décision de l'utilisateur. Supprimés : le callable
+`backfillMoveMealsToGroupFn` (`moveMealsToGroupBackfillCallable.ts`) et son export, ses tests
+(`moveMealsToGroup.test.ts`, `move_meals_to_group_test.dart`), le dialogue
+`move_meals_to_group_dialog.dart`, le modèle `MoveMealsRequest` (`move_meals_request.dart`,
+avec `ownedActiveGroups` et `formatShortPeriod`, que lui seul utilisait), la méthode
+`backfillMoveMealsToGroup` du repository, les entrées des deux registres et de la fixture
+`backfill_schedule.json`, son `case` dans `_runPass` et `_confirmText`, son résumé de tuile et
+son icône. Le champ `reusable` du registre client, propre à ce backfill, part aussi :
+`backfillOffersDoneMenu` ne prend plus que la définition et répond « oui » pour tout ponctuel.
+La clé rejoint les listes de clés retirées des tests. Le document
+`app_config/backfill_run_move_meals_to_group` reste en base, plus lu. Aucune règle Firestore ne
+change : aucune n'existait pour ce backfill, qui écrivait par l'Admin SDK ; l'index `uid` +
+`planned_at` de `planned_meals` reste, `readServedHistory` s'en sert. Aucun poste de coût.
+
 ### v0.24.42 — fonctionnel
 
 - Admin › Backfills : nouveau ponctuel « Contrôler les comptes ». Il lit la fiche de chaque

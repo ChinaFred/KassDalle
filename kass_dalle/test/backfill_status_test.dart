@@ -420,7 +420,6 @@ void main() {
       ]);
       expect(sections.ponctuelsALancer.map((d) => d.key), [
         'default_units',
-        'move_meals_to_group',
         'users_schema_check',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['refresh_sodium']);
@@ -428,13 +427,27 @@ void main() {
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(4));
+      expect(sections.ponctuelsALancer, hasLength(3));
       expect(sections.ponctuelsTermines, isEmpty);
+    });
+
+    test('menu ⋮ : « Marquer comme terminé » sur un ponctuel seulement', () {
+      for (final def in kBackfillRegistry) {
+        expect(backfillOffersDoneMenu(def), !def.isRecurrent, reason: def.key);
+      }
+      expect(
+        backfillOffersDoneMenu(backfillDefinition(BackfillKeys.refreshSodium)!),
+        isTrue,
+      );
+      expect(
+        backfillOffersDoneMenu(backfillDefinition(BackfillKeys.nutrition)!),
+        isFalse,
+      );
     });
 
     test('clé retirée du registre : son état resté en base est ignoré', () {
       // `app_config/backfill_run_<clé>` des ponctuels retirés en v0.23.52,
-      // v0.24.33 et v0.24.37.
+      // v0.24.33, v0.24.37 et v0.24.43.
       final sections = backfillSections(kBackfillRegistry, {
         for (final key in [
           'recipe_protein',
@@ -448,6 +461,7 @@ void main() {
           'invitation_group_owner',
           'illustration_folders',
           'illustration_folders_move',
+          'move_meals_to_group',
         ])
           key: BackfillRunState.fromMap(key, {
             'termine_le': DateTime.utc(2026, 10, 10),
@@ -479,6 +493,15 @@ void main() {
         '',
         reason: 'résumé retiré avec le backfill',
       );
+      expect(backfillDefinition('move_meals_to_group'), isNull);
+      expect(
+        backfillReportSummary('move_meals_to_group', {
+          'deplaces': 7,
+          'echoues': 0,
+        }),
+        '',
+        reason: 'résumé retiré avec le backfill',
+      );
     });
   });
 
@@ -486,7 +509,7 @@ void main() {
     test('une ligne par backfill : clé, titre, fin, origine, compte rendu', () {
       final done = [
         backfillDefinition(BackfillKeys.refreshSodium)!,
-        backfillDefinition(BackfillKeys.moveMealsToGroup)!,
+        backfillDefinition(BackfillKeys.defaultUnits)!,
       ];
       final text = backfillDoneListText(done, {
         'refresh_sodium': BackfillRunState.fromMap('refresh_sodium', {
@@ -499,7 +522,7 @@ void main() {
             'aRevoir': {'items': <Object>[], 'total': 0},
           },
         }),
-        'move_meals_to_group': BackfillRunState.fromMap('move_meals_to_group', {
+        'default_units': BackfillRunState.fromMap('default_units', {
           'termine_le': DateTime.utc(2026, 10, 12, 8),
           'termine_par': 'manuel',
         }),
@@ -509,7 +532,7 @@ void main() {
         'refresh_sodium — Reprendre le sel des ingrédients — terminé le '
         '20/10/2026 en v0.24.32 — automatique — dernier compte rendu : '
         '412 ingrédients repris, 0 échec — à revoir : 0\n'
-        'move_meals_to_group — Déplacer mes repas vers un groupe — terminé le '
+        'default_units — Semer les unités standard — terminé le '
         '12/10/2026 (version inconnue) — marqué à la main — dernier compte '
         'rendu : absent — à revoir : 0',
       );
