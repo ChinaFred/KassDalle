@@ -25,8 +25,8 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 - Admin › Backfills : un passage, une programmation ou un « marquer terminé » qui échoue
   affiche maintenant deux phrases, ce qui n'a pas eu lieu puis la cause (« Programmation non
   enregistrée. Choisissez au moins un jour. »). Le message du serveur n'est repris que s'il
-  est écrit pour l'administrateur : paramètre refusé, verrou, plafond d'IA, élément
-  introuvable (`kBackfillServerMessageCodes`). Une panne affiche la cause lisible de
+  est écrit pour l'administrateur : paramètre refusé, droit refusé, verrou, plafond d'IA,
+  élément introuvable (`kBackfillServerMessageCodes`). Une panne affiche la cause lisible de
   `describeError`. Avant, l'écran recopiait le texte brut de l'erreur, par exemple
   « Error: 13 INTERNAL » (`callableFailureReason`, retiré ; suite de l'audit #151, tickets
   #170 et #171).

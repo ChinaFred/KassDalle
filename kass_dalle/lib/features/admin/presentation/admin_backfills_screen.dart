@@ -477,7 +477,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       // Le message du serveur seulement s'il est écrit pour l'administrateur
       // (liste blanche) ; jamais le texte brut d'une exception.
       _resultMessage = adminFailureMessage(
-        '« ${def.title} » non terminé',
+        'Passage « ${def.title} » non terminé',
         error,
         codes: kBackfillServerMessageCodes,
       );

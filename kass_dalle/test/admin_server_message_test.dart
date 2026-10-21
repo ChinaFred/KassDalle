@@ -97,13 +97,13 @@ void main() {
         details: 'n/a',
       );
       final text = adminFailureMessage(
-        '« Semer les unités standard » non terminé',
+        'Passage « Semer les unités standard » non terminé',
         crashed,
         codes: kBackfillServerMessageCodes,
       );
       expect(text.contains('RST_STREAM'), isFalse);
       expect(
-        text.startsWith('« Semer les unités standard » non terminé.'),
+        text.startsWith('Passage « Semer les unités standard » non terminé.'),
         isTrue,
       );
       final other = adminFailureMessage(

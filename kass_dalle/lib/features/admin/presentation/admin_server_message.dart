@@ -68,9 +68,12 @@ Object? readableError(Object? error) => error is CallableFailure
 /// Codes dont le message est écrit par les callables de backfill pour
 /// l'administrateur : paramètre refusé (« Choisissez au moins un jour. »),
 /// passage refusé par le verrou ou la nature du backfill, plafond d'IA,
-/// élément introuvable. Les autres codes reçoivent la cause lisible.
+/// élément introuvable, droit refusé (« Réservé aux administrateurs. », ou le
+/// groupe d'un autre propriétaire pour le déplacement des repas). Les autres
+/// codes reçoivent la cause lisible.
 const kBackfillServerMessageCodes = {
   'invalid-argument',
+  'permission-denied',
   'failed-precondition',
   'resource-exhausted',
   'not-found',
