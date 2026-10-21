@@ -118,11 +118,6 @@ class CallableFailure implements Exception {
       'Callable $name failed: code=$code, message=$message, details=$details';
 }
 
-/// La raison d'un échec, lisible : le message du serveur pour une callable,
-/// le texte de l'exception sinon.
-String callableFailureReason(Object error) =>
-    error is CallableFailure ? error.message : '$error';
-
 class GcpBillingRepository {
   final FirebaseFunctions _functions;
 

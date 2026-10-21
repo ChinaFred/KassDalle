@@ -20,6 +20,17 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.41 — fonctionnel
+
+- Admin › Backfills : un passage, une programmation ou un « marquer terminé » qui échoue
+  affiche maintenant deux phrases, ce qui n'a pas eu lieu puis la cause (« Programmation non
+  enregistrée. Choisissez au moins un jour. »). Le message du serveur n'est repris que s'il
+  est écrit pour l'administrateur : paramètre refusé, droit refusé, verrou, élément
+  introuvable (`kBackfillServerMessageCodes`). Une panne affiche la cause lisible de
+  `describeError`. Avant, l'écran recopiait le texte brut de l'erreur, par exemple
+  « Error: 13 INTERNAL » (`callableFailureReason`, retiré ; suite de l'audit #151, tickets
+  #170 et #171).
+
 ### v0.24.40 — fonctionnel
 
 - Le semis des unités de mesure standard passe dans *Admin › Backfills*, ponctuel « Semer

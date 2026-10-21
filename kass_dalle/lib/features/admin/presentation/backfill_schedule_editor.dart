@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../data/gcp_billing_repository.dart';
+import 'admin_server_message.dart';
 import '../domain/backfill_registry.dart';
 import '../domain/backfill_status.dart';
 import '../../../core/presentation/adaptive_sheet.dart';
@@ -130,7 +130,11 @@ class _BackfillScheduleEditorState extends State<BackfillScheduleEditor> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = 'Programmation non enregistrée : ${callableFailureReason(e)}.';
+        _error = adminFailureMessage(
+          'Programmation non enregistrée',
+          e,
+          codes: kBackfillServerMessageCodes,
+        );
       });
     }
   }

@@ -72,4 +72,46 @@ void main() {
       'Rôle non modifié. Une erreur inattendue est survenue.',
     );
   });
+
+  test(
+    'écrans de backfill : message du serveur écrit pour l\'admin, sinon cause lisible',
+    () {
+      const refused = CallableFailure(
+        name: 'setBackfillScheduleFn',
+        code: 'invalid-argument',
+        message: 'Choisissez au moins un jour.',
+        details: 'n/a',
+      );
+      expect(
+        adminFailureMessage(
+          'Programmation non enregistrée',
+          refused,
+          codes: kBackfillServerMessageCodes,
+        ),
+        'Programmation non enregistrée. Choisissez au moins un jour.',
+      );
+      const crashed = CallableFailure(
+        name: 'backfillDefaultUnitsFn',
+        code: 'internal',
+        message: 'Error: 13 INTERNAL: RST_STREAM',
+        details: 'n/a',
+      );
+      final text = adminFailureMessage(
+        'Passage « Semer les unités standard » non terminé',
+        crashed,
+        codes: kBackfillServerMessageCodes,
+      );
+      expect(text.contains('RST_STREAM'), isFalse);
+      expect(
+        text.startsWith('Passage « Semer les unités standard » non terminé.'),
+        isTrue,
+      );
+      final other = adminFailureMessage(
+        'Changement non enregistré',
+        StateError('Bad state: x is null'),
+        codes: kBackfillServerMessageCodes,
+      );
+      expect(other.contains('Bad state'), isFalse);
+    },
+  );
 }
