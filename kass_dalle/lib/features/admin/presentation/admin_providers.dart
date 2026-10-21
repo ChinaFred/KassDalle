@@ -4,7 +4,9 @@ import '../data/invitations_repository.dart';
 import '../domain/email_invitation.dart';
 import '../data/ai_budget_repository.dart';
 import '../data/app_check_repository.dart';
+import '../data/ingredient_usage_repository.dart';
 import '../data/nutrition_ingredients_repository.dart';
+import '../domain/ingredient_recipe_usage.dart';
 import '../data/nutrition_units_repository.dart';
 import '../../auth/domain/app_user.dart';
 import '../../../core/services/error_report_service.dart';
@@ -38,6 +40,21 @@ final allNutritionIngredientsProvider =
       return ref
           .watch(nutritionIngredientsRepositoryProvider)
           .watchAll(limit: 3000);
+    });
+
+final ingredientUsageRepositoryProvider = Provider<IngredientUsageRepository>(
+  (_) => IngredientUsageRepository(),
+);
+
+/// Recettes qui citent un ingrédient, lues au dépliage de sa fiche.
+///
+/// `autoDispose` : la section n'est construite que fiche dépliée ; repliée,
+/// elle quitte l'arbre, le provider est libéré, et le prochain dépliage relit.
+final ingredientRecipeUsageProvider = FutureProvider.autoDispose
+    .family<IngredientRecipeUsage, IngredientUsageQuery>((ref, query) {
+      return ref
+          .watch(ingredientUsageRepositoryProvider)
+          .fetchRecipesUsing(query.values);
     });
 
 final nutritionUnitsRepositoryProvider = Provider<NutritionUnitsRepository>((

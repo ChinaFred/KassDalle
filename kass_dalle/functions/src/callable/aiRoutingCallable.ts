@@ -133,7 +133,9 @@ export const ANTHROPIC_MODEL_CHOICES: Array<{ id: string; label: string; hint: s
   {
     id: "claude-haiku-4-5",
     label: "Haiku 4.5",
-    hint: "Le plus rapide et le moins cher. Pour un rappel de connaissances répété.",
+    hint:
+      "Le plus rapide et le moins cher. Pour un rappel de connaissances répété. " +
+      "Sans réflexion : le réglage d'effort ne s'y applique pas.",
   },
 ];
 

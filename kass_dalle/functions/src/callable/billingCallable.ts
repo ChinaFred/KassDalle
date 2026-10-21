@@ -195,6 +195,62 @@ function carriesSodium(value: unknown): boolean {
   return false;
 }
 
+/**
+ * Ingrédient à réparer par « Reprendre le sel » : son profil porte du sodium,
+ * et aucun passage ne l'a encore réparé (`sodium_repaired_at` absent).
+ *
+ * Sans la marque, un ingrédient réparé portait toujours du sodium et restait
+ * cible : une relance après la fin redemandait tout le référentiel salé. Avec
+ * elle, un ingrédient en échec reste cible, et repart quand le curseur revient
+ * au début ; un ingrédient réparé n'est plus redemandé.
+ */
+export function isSodiumRepairTarget(data: Record<string, unknown> | undefined): boolean {
+  if (!data) return false;
+  return carriesSodium(data.per100g) && data.sodium_repaired_at == null;
+}
+
+/**
+ * Ce qu'on écrit sur un ingrédient dont le modèle a rendu les valeurs pour
+ * 100 g. En mode réparation du sel, la marque `sodium_repaired_at` part avec
+ * le profil, dans la même écriture : un profil réparé est un profil marqué.
+ */
+export function enrichedIngredientPayload(args: {
+  per100g: unknown;
+  refreshSodium: boolean;
+  storedFailures: number;
+}): Record<string, unknown> {
+  return {
+    per100g: args.per100g,
+    ...AI_PER100G_MARKERS,
+    last_enriched_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+    ...(args.refreshSodium ? { sodium_repaired_at: FieldValue.serverTimestamp() } : {}),
+    // Un succès remet le compteur d'échecs à zéro.
+    ...(args.storedFailures > 0 ? { enrichment_failure_count: 0 } : {}),
+  };
+}
+
+/**
+ * Le passage a-t-il fini son travail ?
+ *
+ * Mode courant : fini s'il n'a pas buté sur son échéance (inchangé).
+ *
+ * Mode réparation du sel : il faut en plus que le parcours ait commencé au
+ * début de la collection. Un passage repris à mi-chemin ne voit pas les
+ * ingrédients de la première moitié, dont ceux restés en échec aux passages
+ * précédents : il remet le curseur au début et se dit incomplet, et c'est le
+ * parcours entier suivant qui conclut. Un parcours entier sans échec a réparé
+ * toutes les cibles qu'il a trouvées : il ne reste rien.
+ */
+export function enrichPassCompleted(args: {
+  refreshSodium: boolean;
+  stoppedByDeadline: boolean;
+  startedFromBeginning: boolean;
+}): boolean {
+  if (args.stoppedByDeadline) return false;
+  return args.refreshSodium ? args.startedFromBeginning : true;
+}
+
 export interface BackfillEnrichReferentialsResponse {
   scannedUnits: number;
   enrichedUnits: number;
@@ -1049,6 +1105,8 @@ export async function runEnrichReferentialsPass(
   let excludedIngredients = 0;
   let unresolvedFailures = 0;
   let stoppedByDeadline = false;
+  // Mode sel : le parcours des ingrédients est-il parti du début ?
+  let sodiumScanFromBeginning = false;
   const review = new BackfillReview();
 
   await logInfo({
@@ -1215,6 +1273,7 @@ export async function runEnrichReferentialsPass(
       resumeFromCheckpoint,
       resetCheckpoint,
     });
+    sodiumScanFromBeginning = cursor === null;
     const PAGE = 100;
     let finishedScan = false;
     while (Date.now() < softDeadlineMs) {
@@ -1236,9 +1295,9 @@ export async function runEnrichReferentialsPass(
         scannedIngredients++;
         const data = doc.data() as Record<string, unknown>;
         // En mode normal : les profils vides. En mode réparation : ceux qui
-        // portent du sodium, remplis ou non — ce sont exactement ceux que le
-        // double comptage pouvait fausser.
-        const keep = refreshSodium ? carriesSodium(data.per100g) : !hasPer100gValues(data.per100g);
+        // portent du sodium, remplis ou non — ceux que le double comptage
+        // pouvait fausser —, et pas encore réparés.
+        const keep = refreshSodium ? isSodiumRepairTarget(data) : !hasPer100gValues(data.per100g);
         if (!keep) continue;
         if (!refreshSodium) {
           // Trois échecs : plus soumis au modèle, sauf demande explicite.
@@ -1270,7 +1329,14 @@ export async function runEnrichReferentialsPass(
       // d'avoir soumis cet ingrédient. Sans certitude qu'il a été demandé, on
       // ne compte pas d'échec — il repart au passage suivant.
       const noteIngredientFailure = (id: string, cause: string): string => {
-        if (refreshSodium || Date.now() >= softDeadlineMs) return cause;
+        if (Date.now() >= softDeadlineMs) return cause;
+        // Mode sel : pas de compteur, la marque absente suffit à retenter
+        // l'ingrédient au prochain parcours ; l'échec rend le passage
+        // « incomplet ».
+        if (refreshSodium) {
+          unresolvedFailures++;
+          return cause;
+        }
         const outcome = nextFailure(storedFailures.get(id));
         ingredientFailures.set(id, outcome.count);
         if (!outcome.excluded) unresolvedFailures++;
@@ -1293,16 +1359,11 @@ export async function runEnrichReferentialsPass(
           });
           for (const [ingredientId, per100g] of estimated) {
             const ref = db.collection(COLL_NUTRITION_INGREDIENTS).doc(ingredientId);
-            const payload = {
+            const payload = enrichedIngredientPayload({
               per100g,
-              ...AI_PER100G_MARKERS,
-              last_enriched_at: FieldValue.serverTimestamp(),
-              updated_at: FieldValue.serverTimestamp(),
-              // Un succès remet le compteur d'échecs à zéro.
-              ...((storedFailures.get(ingredientId) ?? 0) > 0
-                ? { enrichment_failure_count: 0 }
-                : {}),
-            };
+              refreshSodium,
+              storedFailures: storedFailures.get(ingredientId) ?? 0,
+            });
             // Une réparation REMPLACE le profil : `set(merge)` fusionne les
             // cartes champ par champ et laisserait survivre l'ancienne valeur
             // de sodium si la nouvelle estimation ne la citait pas. `update`
@@ -1375,7 +1436,11 @@ export async function runEnrichReferentialsPass(
     });
   }
 
-  const completed = !stoppedByDeadline;
+  const completed = enrichPassCompleted({
+    refreshSodium,
+    stoppedByDeadline,
+    startedFromBeginning: sodiumScanFromBeginning,
+  });
 
   await logInfo({
     message: "backfillEnrichReferentials: terminé",

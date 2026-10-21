@@ -15,6 +15,8 @@
 /// `system_books`, `group_planning_reach`, `ticket_analyses`,
 /// `ticket_delivered_pr`, `recipe_title_keys` et `invitation_group_owner`.
 /// Retirés en v0.24.37 : `illustration_folders` et `illustration_folders_move`.
+/// Retiré en v0.24.44, sur demande, sans être terminé (ponctuel réutilisable) :
+/// `move_meals_to_group`.
 /// Leurs documents `app_config/backfill_run_<clé>` restent en base ; l'écran
 /// ignore une clé absente de ce registre.
 library;
@@ -30,7 +32,6 @@ abstract final class BackfillKeys {
   static const shoppingProducts = 'shopping_products';
   static const refreshSodium = 'refresh_sodium';
   static const defaultUnits = 'default_units';
-  static const moveMealsToGroup = 'move_meals_to_group';
   static const usersSchemaCheck = 'users_schema_check';
 }
 
@@ -54,11 +55,6 @@ class BackfillDefinition {
   /// `functions/src/backfills/registry.ts` (fixture `backfill_schedule.json`).
   final BackfillDefaultSchedule? defaultSchedule;
 
-  /// Ponctuel paramétré, réutilisable avec d'autres paramètres : le serveur
-  /// ne le marque jamais terminé, et le menu ⋮ ne propose pas de le faire.
-  /// Propre au client : le serveur l'obtient en rendant un reste inconnu.
-  final bool reusable;
-
   const BackfillDefinition({
     required this.key,
     required this.kind,
@@ -67,7 +63,6 @@ class BackfillDefinition {
     required this.usesAi,
     required this.passLimit,
     this.defaultSchedule,
-    this.reusable = false,
   });
 
   bool get isRecurrent => kind == BackfillKind.recurrent;
@@ -164,21 +159,6 @@ const List<BackfillDefinition> kBackfillRegistry = [
         'remplacée.',
     usesAi: false,
     passLimit: 'Chaque passage examine les quarante unités standard.',
-  ),
-
-  // Paramétré (groupe, période) et réutilisable : le serveur ne le marque
-  // jamais terminé tout seul, son reste n'est pas compté.
-  BackfillDefinition(
-    key: BackfillKeys.moveMealsToGroup,
-    kind: BackfillKind.ponctuel,
-    title: 'Déplacer mes repas vers un groupe',
-    description:
-        'Fait passer vos repas de « Mon planning », sur une période, dans le '
-        'planning d\'un groupe dont vous êtes propriétaire.',
-    usesAi: false,
-    passLimit:
-        'Chaque passage couvre 62 jours au plus et déplace au plus 500 repas.',
-    reusable: true,
   ),
 
   // Lecture seule : liste les comptes dont le document s'écarte du schéma de

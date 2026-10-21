@@ -104,6 +104,34 @@ visible que depuis la réparation du streaming : jusque-là Claude échouait sur
 Gemini prenait le relais, si bien que réparer l'appel a confié la lecture à un moteur réglé pour
 aller vite.
 
+**Haiku 4.5 part sans raisonnement ni effort, depuis le 21 octobre 2026.** Haiku 4.5
+(`claude-haiku-4-5`, et tout identifiant daté qui en dérive) répond 400 « adaptive thinking
+is not supported on this model » à `thinking: { type: "adaptive" }`, et refuse aussi
+`output_config.effort`. `requestShapeFor(model, effort)` (`ai/anthropic.ts`, testée dans
+`tests/anthropicRequestShape.test.ts`) décide de la forme de la requête : pour Haiku 4.5, ni
+`thinking` ni `effort` ; pour Opus 5 et Sonnet 5, `thinking: adaptive` et l'effort demandé
+(`low` par défaut). Haiku accepterait un raisonnement à budget fixe
+(`{ type: "enabled", budget_tokens }`) ; il n'en reçoit pas, parce qu'il sert de modèle
+rapide et bon marché pour un rappel de connaissances. Un effort réglé dans Admin → Moteur
+d'IA sur un poste servi par Haiku n'est pas transmis : une ligne DEBUG « effort … non
+transmis » le dit, et l'appel part quand même. Le sélecteur d'effort reste affiché sous
+Haiku ; l'indication du modèle (`ANTHROPIC_MODEL_CHOICES`) précise « Sans réflexion : le
+réglage d'effort ne s'y applique pas ». Avant ce correctif, tous les appels routés vers
+Haiku échouaient et se repliaient sur Gemini. Un balisage coupé au plafond
+(`runTaggingAttempts`, `gemini/tagging.ts`) n'est pas refait à l'effort suivant quand le modèle
+qui a répondu ne reçoit pas l'effort (`effortReachesModel` : Haiku 4.5, ou Gemini, dont l'appel
+ne transmet pas `ctx.effort`) : la requête serait identique. Un `logWarn` « reprise à un autre
+effort sautée » le dit, et `TaggingTruncatedError` est levée.
+
+**Un schéma de sortie Claude est strict à tous les niveaux.** L'API refuse
+(`output_config.format.schema`, 400) tout objet du schéma qui ne porte pas
+`additionalProperties: false`. `toStrictJsonSchema()` (`ai/anthropic.ts`) le pose sur chaque
+objet qui ne le précise pas — racine, `items`, `properties`, `anyOf`/`oneOf`/`allOf`, `$defs`
+— sur une copie, avant l'envoi ; une valeur déjà posée est gardée. Les schémas des postes le
+posent aussi eux-mêmes (`planning_constraints` et `meal_ideas` l'omettaient : la traduction
+des consignes du planning échouait à chaque appel Claude). Gemini ne reçoit pas ce schéma :
+`buildGeminiRequest` n'envoie pas de `responseSchema`.
+
 Côté Gemini, le levier équivalent existe depuis l'origine et se règle sans déploiement —
 `thinking_budgets` par poste dans `app_config/ai_routing_policy` (`anthropic_efforts` côté
 Claude, en snake_case dans le même document).
@@ -757,10 +785,22 @@ vaut mieux qu'un poste qui ne répond plus. Réglable dans Admin → Moteur d'IA
 **Réessais et erreurs Gemini.** `@google/genai` ne retente rien tant que
 `httpOptions.retryOptions` n'est pas posé, et `client.ts` ne le pose pas : les
 seuls réessais restent ceux de `callGemini` (quota, backoff exponentiel plafonné à
-60 s, jusqu'au délai de l'appel), chacun journalisé. Le SDK lève une `ApiError`
+60 s, jusqu'au délai de l'appel), chacun journalisé. `quotaRetryDelayMs(attempt,
+remainingMs)` raccourcit la pause pour laisser au moins `MIN_ATTEMPT_MS` (5 s) à la
+tentative suivante, et rend `null` — plus de réessai — quand il ne reste pas ce temps.
+Aucune tentative ne part avec un délai nul ou négatif : l'appel échoue alors avec
+« Délai de l'appel Gemini épuisé avant la tentative N (budget T ms) ». Avant le
+21 octobre 2026, une pause de 60 s pouvait dépasser l'échéance, et la tentative suivante
+partait avec un délai négatif (« Gemini call timeout after -4749ms »). Le SDK lève une `ApiError`
 dont `status` porte le code HTTP et dont le message est le corps JSON de
-l'erreur ; `classifyError()` classe `status === 429`, puis à défaut un message
-contenant le nombre `429` (mot entier), `quota` ou `resource_exhausted`, en `QUOTA_EXCEEDED`.
+l'erreur. `classifyError()` classe d'abord en `CREDITS_EXHAUSTED` un 402 (`status === 402`,
+`"code":402` dans le message, ou « prepayment credits ») : crédits prépayés épuisés, que
+Google renvoie lui aussi avec `RESOURCE_EXHAUSTED`. Ce cas est définitif : aucun réessai,
+`GeminiError` levée tout de suite, et `callModel` passe aussitôt au repli sur Claude quand
+il est permis. Classé en quota, il était relancé six fois (2 à 60 s de pause, environ deux
+minutes par appel) avant le repli. Ensuite, `classifyError()` classe `status === 429`, puis à
+défaut un message contenant le nombre `429` (mot entier), `quota` ou `resource_exhausted`, en
+`QUOTA_EXCEEDED`.
 Le délai d'un appel `callGemini` annule la requête HTTP (`config.abortSignal`) : la
 connexion est fermée et la réponse n'est plus attendue. Le client est construit avec
 `vertexai: false` et l'hôte `https://generativelanguage.googleapis.com` en dur : le SDK
@@ -1471,10 +1511,9 @@ d'un groupe familial (`group_id` =
 identifiant du groupe). `uid` reste le cuisinier : pour un repas de groupe, c'est le
 propriétaire du groupe, seul à y écrire (règles : `get(groups/{group_id}).owner_id ==
 request.auth.uid` à la création et à la modification). `group_id` est figé à la modification
-côté client. Seul le backfill paramétré « Déplacer mes repas vers un groupe »
-(`backfillMoveMealsToGroupFn`, §7.10) le change, par l'Admin SDK : il fait passer les repas
-personnels d'un administrateur, sur une période, dans un groupe dont il est propriétaire, sans
-toucher `uid` ni les parts.
+côté client, et aucun code serveur ne le change : un repas reste dans le planning où il a été
+créé. Le backfill « Déplacer mes repas vers un groupe » (`move_meals_to_group`), qui le
+posait par l'Admin SDK, est retiré en v0.24.44.
 Les membres du groupe le lisent par `planning_reach/{lecteur}.group_ids` (§3.8 quater) ; le
 client ouvre **un flux par groupe affiché** (`group_id == groupe` et `uid == propriétaire du
 groupe`, `planned_at` sur 90 jours, `PlanningRepository.watchGroupMeals`, index composite
@@ -1525,7 +1564,7 @@ attendant une décision.
 | Champ | Type | Description |
 |---|---|---|
 | `uid` | `String` | Le cuisinier : propriétaire du planning personnel, ou propriétaire du groupe pour un repas de groupe. Figé |
-| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Le backfill `group_planning_reach` (retiré en v0.24.33) l'a posé à `null` sur les repas antérieurs. Figé côté client ; seul le backfill `move_meals_to_group` le change, de `null` (ou absent) vers un groupe de l'appelant |
+| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Le backfill `group_planning_reach` (retiré en v0.24.33) l'a posé à `null` sur les repas antérieurs. Figé côté client ; plus rien ne le change depuis le retrait du backfill `move_meals_to_group` (v0.24.44), qui le faisait passer de `null` (ou absent) à un groupe de l'appelant |
 | `recipe_id` | `String?` | Recette servie ; `null` pour un créneau resté vide |
 | `recipe_titre` | `String` | Titre dénormalisé, pour afficher sans lire la recette |
 | `planned_at` | `Timestamp` | Date et heure du repas |
@@ -1780,7 +1819,17 @@ ou d'une autre `prompt_version` est ignorée — le texte est retraduit ; les cr
 relus en liste blanche (`readPlanningCriteria`). Une entrée n'est reprise que si son `text`
 est égal au texte demandé. **Lecture client** (`readConstraintTranslations`) : par `text`,
 entrées illisibles ignorées. Une traduction en échec n'est jamais écrite : le texte reste
-« non vérifié » et se retraduit au clic suivant. Lecture ou écriture en échec : `logError`,
+« non vérifié » et se retraduit au clic suivant. **Affichage du reste**
+(`untranslatedConstraintLabel`, `constraint_understanding.dart`) : « Transmis à l'IA, non
+vérifié » hors génération, et après une génération dont le `modelStatus` est `ok` ou
+`partial` ; « Non lu, l'IA n'a pas été appelée (plafond atteint) : « … » » après `budget` ;
+« Non lu, aucun choix à faire entre recettes, l'IA n'a pas été appelée : « … » » après
+`skipped` (aucun créneau n'avait plus d'une recette possible comme plat, entrée ou dessert,
+`needsModel`) ; « Non lu, l'IA n'a pas répondu : « … » » après `failed` ou un statut inconnu.
+Le mode `code` (« Autre suggestion ») rend aussi `skipped`, mais l'écran ne garde que le
+statut de la génération. Nouveau planning garde le
+`modelStatus` de la dernière génération (`_lastModelStatus`), déjà rendu par
+`suggestMealPlanFn`. Lecture ou écriture en échec : `logError`,
 la génération continue sans critère pour les textes concernés. Pas de backfill : le
 document naît à la première génération avec un texte.
 
@@ -1888,11 +1937,31 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `allergens_source` · `allergens_at` | `String?` · `Timestamp?` | `ai_estimated` \| `admin` ; date de l'examen ou de la correction. Enregistrer sans changement depuis l'écran passe la source à `admin` |
 | `last_enrichment_attempt_at` | `Timestamp?` | Dernier essai sans valeurs pour 100 g exploitables. Écrit par l'enrichissement à l'écriture d'une recette (`enrichUnknownIngredientsWithAI`, qui ne redemande pas avant vingt heures, `ENRICHMENT_RETRY_AFTER_MS`) et, depuis la v0.23.59, par le backfill « Enrichir unités et ingrédients » sur un échec |
 | `enrichment_failure_count` | `int?` | Échecs du backfill « Enrichir unités et ingrédients » sur cet ingrédient (valeurs introuvables, lot en échec). À 3, l'ingrédient n'est plus soumis au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments exclus après 3 échecs » ; il est listé « Plus redemandé à l'IA après 3 échecs ». Remis à 0 par une estimation réussie du backfill. Pas compté quand l'échéance du passage est dépassée : l'ingrédient n'a peut-être pas été demandé. L'enrichissement à l'écriture d'une recette et celui du rattrapage de la nutrition ne redemandent plus un ingrédient qui en porte 3 (`ingredientEnrichmentAllowed`). Serveur seul |
+| `sodium_repaired_at` | `Timestamp?` | Réparation du sel faite par le backfill « Reprendre le sel des ingrédients » (`refresh_sodium`, v0.24.44), écrite avec le nouveau profil dans la même écriture. **Absent** : pas encore réparé ; un profil qui porte du sodium (`sodium_mg` ou `salt_g` > 0) sans cette marque est cible du backfill, un échec le laisse cible pour le parcours suivant. Écrit par le serveur seul (les règles n'ouvrent au client que le produit acheté et les allergènes). Les ingrédients réparés avant v0.24.44 n'ont pas la marque |
 | `allergens_failure_count` · `allergens_attempt_at` | `int?` · `Timestamp?` | Échecs du backfill « Allergènes des ingrédients et des recettes » (pas de réponse du modèle, lot en échec), et date du dernier. Même règle des trois échecs et même case ; remis à 0 quand le backfill pose les allergènes. L'examen à l'écriture d'une recette (`allergens_auto`) l'applique aussi, sans exception (`allergenAutoExaminationAllowed`). Serveur seul |
 | `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
 | `status` · `quality_status` | `String` | `proposed` \| `known` ; qualité `pending` tant que rien n'a été vérifié |
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
 | `first_seen_at` · `last_seen_at` · `updated_at` | `Timestamp` | Traçabilité |
+
+**Recettes qui citent un ingrédient** (v0.24.46). Au dépliage d'une fiche,
+*Admin › Référentiels › Ingrédients nutrition* lit les recettes par une requête
+`recipes` `where('ingredients_index', arrayContainsAny: valeurs)` `limit(21)`
+(`IngredientUsageRepository.fetchRecipesUsing`, provider
+`ingredientRecipeUsageProvider`, `autoDispose` : replier libère, déplier relit). Les
+valeurs (`ingredientUsageSearchValues`, `features/admin/domain/ingredient_recipe_usage.dart`) :
+`canonical_name`, l'identifiant dont les `_` deviennent des espaces, puis chaque alias,
+normalisés par `buildIngredientsIndex` lui-même (trim, minuscules, sans doublon), 30 au
+plus (plafond d'`array-contains-any`). Ni tri ni autre filtre : l'index automatique du
+champ suffit, **aucun index composite** ; un `orderBy` en exigerait un. Pas de filtre
+`is_private` : la requête est celle d'un administrateur, que `canRead` laisse tout lire.
+Le livre s'affiche depuis `book_titre`, recopié sur la recette : aucune lecture de plus
+par recette. Vingt lignes affichées, sans ordre défini ; la vingt-et-unième signale seulement
+la suite. Le retour de la recette ou de l'éditeur (`await context.push`) invalide le provider
+et relit la liste. Un brouillon s'ouvre sur `/drafts/{id}`. Un
+échec est remonté par `ErrorReportService` (`ingredientUsage.fetchRecipesUsing`). Le
+crayon vers `/recipes/{id}/edit` est masqué pour une recette non validée : l'éditeur
+charge `raw_cooklang` et efface `draft_cooklang` à l'enregistrement.
 
 Les quarante unités standard (gramme, cuillère à soupe, verre, pincée…) se sèment par le
 backfill ponctuel « Semer les unités standard » (`backfillDefaultUnitsFn`, §7.10), qui lit
@@ -2246,9 +2315,11 @@ Firestore refusent l'écriture client, administrateur compris (`*_checkpoint`,
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `refresh_sodium`, `default_units`, `move_meals_to_group`, `users_schema_check` — ponctuels). `default_units` parcourt en un passage sa liste fixe de quarante unités, sans point de reprise. `users_schema_check` lit toute la collection `users` en un passage, sans point de reprise, et n'écrit que son état `app_config/backfill_run_users_schema_check`. `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
-rend un reste inconnu (`remaining: null`), il n'est donc jamais marqué terminé tout seul, et
-il n'a pas de point de reprise — chaque passage relit les repas de sa période.
+récurrents ; `refresh_sodium`, `default_units`, `users_schema_check` — ponctuels). `default_units` parcourt en un passage sa liste fixe de quarante unités, sans point de reprise. `users_schema_check` lit toute la collection `users` en un passage, sans point de reprise, et n'écrit que son état `app_config/backfill_run_users_schema_check`.
+Le ponctuel réutilisable `move_meals_to_group` (« Déplacer mes repas vers un groupe ») est
+retiré en v0.24.44 sur demande, sans avoir été marqué terminé ; avec lui disparaît la notion de
+ponctuel réutilisable (`reusable`) du registre client : le menu ⋮ propose « Marquer comme
+terminé » sur tout ponctuel (`backfillOffersDoneMenu`).
 Les ponctuels `recipe_protein`,
 `estimated_times` et `planning_defaults` sont retirés en v0.23.52, et `system_books`,
 `group_planning_reach`, `ticket_analyses`, `ticket_delivered_pr`, `recipe_title_keys` et
@@ -5156,6 +5227,18 @@ jamais demandé au modèle, et rien n'est écrit dans la recette.
 | plafond du jour atteint (`BudgetExceededError`) | `logWarn` | `budget` | « Votre plafond d'IA du jour est atteint. … Rien n'a été facturé. » — au lieu de l'erreur `resource-exhausted` d'avant |
 | mode `code`, ou aucun créneau avec un choix | `logInfo` | `skipped` | — |
 
+Après `failed` ou `budget`, l'avis cite les consignes que personne n'a lues
+(`degradedNotice`, `gemini/planning.ts`). Il ne dit plus alors « selon vos contraintes »,
+mais ce que le programme a appliqué : « L'IA n'a pas répondu. Kass'Dalle a choisi les plats
+selon vos critères vérifiés. Ces consignes n'ont pas été suivies : « pas trop gras », « sport
+le soir ». » Pour un plafond, « Rien n'a été facturé. » précède la liste. La liste vient de
+`unverifiedConstraintTexts` : pour chaque texte de `planningTexts`, le reste non traduit s'il a
+été compris, le texte entier sinon, sans vide ni doublon. 80 caractères au plus par consigne
+(`UNREAD_TEXT_MAX_CHARS`, coupée par « … »), trois au plus (`UNREAD_TEXTS_MAX`), les suivantes
+comptées (« et 2 autres »). Sans reste, l'avis du tableau est inchangé. `skipped` n'a pas
+d'avis ; sous chaque champ, la ligne « Non lu, aucun choix à faire entre recettes, l'IA n'a pas
+été appelée : « … » » le dit.
+
 **Plafond par génération.** Avant l'appel, `ceilingEstimator` résout le moteur et le modèle
 du poste (`resolveCallTarget`, `ai/router.ts`, sans appel de fournisseur) et chiffre le coût
 plafond sur la grille en vigueur (`estimateCallCeilingUsd` : caractères / 3 en entrée,
@@ -5647,7 +5730,7 @@ Une entrée est un objet `StructuredLogEntry` :
 | `moduleType` | `IMPORT` \| `IMAGE_DECODE` \| `SEARCH` \| `DESIGN` \| `MODERATION` | grande famille |
 | `firestoreDocId` | `string?` | le document concerné |
 | `executionTimeMs` | `number?` | durée mesurée, pas estimée |
-| `geminiStatus` | `SUCCESS` \| `QUOTA_EXCEEDED` \| `ERROR` | issue d'un appel de modèle |
+| `geminiStatus` | `SUCCESS` \| `QUOTA_EXCEEDED` \| `CREDITS_EXHAUSTED` \| `ERROR` | issue d'un appel de modèle ; `CREDITS_EXHAUSTED` : HTTP 402, crédits prépayés épuisés, jamais relancé |
 | `jobId` | `string?` | job d'import |
 | `userId` | `string?` | compte à l'origine |
 | `stepIndex` | `number?` | rang de l'étape dans le pipeline |
@@ -6296,7 +6379,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Cinq tâches planifiées (Cloud Scheduler), huit reprises manuelles (neuf backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
+Cinq tâches planifiées (Cloud Scheduler), sept reprises manuelles (huit backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -6311,13 +6394,22 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | Reprise manuelle | Réservée à | Ce qu'elle traite |
 |---|---|---|
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais. Lève les bornes de patience (vingt heures entre deux tentatives, cinq tentatives par liste d'ingrédients, exclusion du non-reprenable) ; le passage programmé les garde. Ne lève pas l'exclusion des ingrédients et unités que l'IA a manqués trois fois : l'enrichissement de la reprise ne les redemande jamais. Compte rendu : examinées, reprises, complétées, encore incomplètes (`echouees`), laissées faute de temps ou de plafond (`laissees`), non reprenables (`nonReprenables`), abandonnées (`abandonnees`) |
-| `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients (backfill récurrent `enrich_referentials`) ; avec `refreshSodium`, la réparation du sel compté deux fois (backfill ponctuel `refresh_sodium`). Mémoire des échecs hors `refreshSodium` : une unité (`ai_weight_failure_count`) ou un ingrédient (`enrichment_failure_count`) qui échoue trois fois n'est plus soumis au modèle, sauf `retryExcluded`. Une unité demandée il y a moins de vingt heures n'est pas soumise (elle ne compte pas comme un échec). Compte rendu : `excludedUnits`, `excludedIngredients`, `unresolvedFailures` en plus des compteurs |
+| `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients (backfill récurrent `enrich_referentials`) ; avec `refreshSodium`, la réparation du sel compté deux fois (backfill ponctuel `refresh_sodium`) : cibles = profils qui portent du sodium sans `sodium_repaired_at` (`isSodiumRepairTarget`), marque posée avec le profil réparé (`enrichedIngredientPayload`), un échec reste cible et compte dans `unresolvedFailures` ; le passage n'est complet que si son parcours a commencé au début de la collection et n'a pas buté sur l'échéance (`enrichPassCompleted`) — un passage repris à mi-chemin remet le curseur au début et se dit incomplet —, et il n'est marqué terminé qu'après un parcours entier sans échec ni élément à revoir. Mémoire des échecs (compteurs) hors `refreshSodium` : une unité (`ai_weight_failure_count`) ou un ingrédient (`enrichment_failure_count`) qui échoue trois fois n'est plus soumis au modèle, sauf `retryExcluded`. Une unité demandée il y a moins de vingt heures n'est pas soumise (elle ne compte pas comme un échec). Compte rendu : `excludedUnits`, `excludedIngredients`, `unresolvedFailures` en plus des compteurs |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. Le type de page se lit par `resolvePageType` : une page typée dans son seul CookLang (`>> page_type:`) est « hors recette », pas « sans ingrédient ». 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Un ingrédient qui échoue trois fois (`allergens_failure_count`) n'est plus soumis au modèle, sauf `retryExcluded`. Une page dont `resolvePageType` (le champ, sinon `>> page_type:` dans le CookLang) ne dit pas `recipe` est comptée « hors recette ». Compte rendu : ingrédients examinés, ignorés, en erreur, exclus (`ingredientsExclus`), échecs non exclus (`echecsNonExclus`) ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
-| `backfillMoveMealsToGroupFn` | `admin` | ponctuel paramétré `move_meals_to_group`, « Déplacer mes repas vers un groupe ». Entrée `{ groupId, fromDay, toDay, startAt, endAt, appVersion? }` : identifiant de groupe au format sûr (`[A-Za-z0-9_-]{1,128}`), jours `AAAA-MM-JJ` inclusifs, `fromDay <= toDay`, 62 jours au plus ; `startAt` et `endAt` sont les instants (ms) du minuit local du premier jour et du lendemain du dernier, calculés par l'appareil (`MoveMealsRequest`), et doivent tomber à moins de quatorze heures des jours annoncés. Le fuseau de l'appareil fait foi : le serveur ne le devine pas. Entrée invalide : `invalid-argument`, avant le verrou. Le passage lit `groups/{groupId}` : absent, `not-found` ; `owner_id` différent de l'appelant, `permission-denied`. L'appelant est administrateur non révoqué (`requireAdmin`), donc planificateur, et ses groupes sont actifs. Sélection : `uid == appelant` et `startAt <= planned_at < endAt` (index `uid` + `planned_at`, 2 000 repas lus au plus), puis les repas dont `group_id` est nul ou absent ; un repas déjà dans un groupe est compté « ignoré ». Chaque repas s'écrit dans une **transaction** qui relit `groups/{groupId}` (présent, `owner_id` = appelant) et le repas (présent, `uid` = appelant, `group_id` nul ou absent), puis pose `group_id: groupId`. Un groupe supprimé ou cédé pendant le passage l'arrête (`groupeIndisponible: true`) : aucun repas n'est rattaché à un groupe que `deleteGroupMeals` a déjà vidé. Un repas qui a changé entre la lecture et la transaction est compté « ignoré ». Rien d'autre n'est écrit : ni `uid`, ni `base_portions`, ni `target_portions`, ni la recette. 500 repas déplacés par passage, arrêt sur trois échecs de suite. Compte rendu : `groupId`, période (`du`, `au`), examinés, déplacés, ignorés, en erreur, restants, `lectureTronquee`, `groupeIndisponible` — **ni nom de groupe ni titre de recette** : il est recopié dans `app_config/backfill_run_move_meals_to_group`, que tout administrateur lit. Réentrant sans curseur : un repas déplacé n'est plus sélectionné. Jamais marqué terminé tout seul (`summarizeMoveMealsToGroup`, `remaining: null`), et le menu ⋮ de sa tuile ne propose pas de le marquer (`reusable` au registre client, `backfillOffersDoneMenu`). Sans appel de modèle |
 | `backfillDefaultUnitsFn` | `admin` | ponctuel `default_units`, « Semer les unités standard ». Pour chacune des quarante unités de `DEFAULT_NUTRITION_UNITS` (`nutrition/defaultUnits.ts`), une transaction lit `nutrition_units/{id}` : absent, il est créé complet (`status: known`, `source: builtin`, `seen_count: 0`) ; présent, seuls les champs manquants sont complétés — `grams_per_unit` ou `volume_ml_per_unit` absent ou nul, `display_label` absent ou vide, `measurement_type` égal à `unknown` —, le statut passe alors à `known` et une source `fallback_auto` devient `builtin` (`defaultUnitPlan`). Une valeur présente n'est jamais écrasée ; une unité complète n'est pas réécrite. Un libellé ou un type mal formé compte comme présent. Sans curseur : la liste entière tient dans un passage. Arrêt sur trois échecs de suite. Compte rendu : `total`, `examinees`, `creees`, `completees`, `dejaAJour`, `echouees`, `restantes`. Terminé tout seul quand les quarante unités sont examinées sans échec. Partage son verrou avec `enrich_referentials`, qui écrit aussi `grams_per_unit` des unités. Sans appel de modèle. `defaultUnits.test.ts` vérifie que chaque unité a le type et le facteur de la table de repli de `quantityConversion.ts` |
 | `backfillUsersSchemaCheckFn` | `admin` | ponctuel `users_schema_check`, « Contrôler les comptes ». **Lecture seule** : parcourt `users` (pages de 200, 5 000 comptes au plus par passage) et n'écrit rien dans la collection. Chaque document est contrôlé contre ce qui casse réellement (`userDocumentIssues`, `functions/src/security/userDocument.ts`), et chaque raison nomme le champ entre parenthèses et dit son effet. **La fiche n'apparaît pas dans Comptes** (`AppUser.fromFirestore` lève) : `email` ou `display_name` absent, nul ou non texte ; `created_at` ou `last_seen_at` absent ou autre chose qu'un `Timestamp` ; `preferred_name`, `photo_url` ou `free_recipe_cover_url` présent et non texte ; `is_revoked` présent, non nul et non booléen ; `role` présent et non texte. **Compte sans droit**, affiché « en attente » dans Comptes : `role` absent, nul ou texte inconnu (`readRole`, valeurs comparées à l'identique). **Toute règle qui lit la révocation échoue pour ce compte** : `is_revoked` absent (`isRevoked()` lit le champ sans valeur par défaut). `is_revoked: null` est conforme. Une valeur citée qui contient « @ » est remplacée par « (valeur masquée) ». Non contrôlés, parce qu'ils ne bloquent rien : un champ hors de la liste des règles et un `uid` différent de l'identifiant (la mise à jour ne teste que les champs qu'elle change, `_upsertUser` ne touche que `last_seen_at`, `photo_url` et `display_name`, le client lit l'uid sur l'identifiant, aucune Function ne lit `users.uid`) ; la longueur des noms (`nameOk`) et de `photo_url` (`photoUrlOk`), la forme de la couverture (`coverUrlOk`), que les règles ne vérifient que quand le champ change. Sans point de reprise : un contrôle ne conclut « rien à revoir » que sur un parcours entier fait en un passage. Arrêt sur le délai et sur trois échecs de suite. Compte rendu : `examines`, `conformes`, `nonConformes`, `echoues`, `collectionParcourue`. Terminé tout seul quand un passage lit toute la collection sans rien à revoir. Sans appel de modèle. À lancer après le déploiement de la v0.24.42 ; un compte listé se corrige à la main dans la console Firebase, puis on relance |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains` (jamais sur une recette corrigée à la main, `contains_manual`, même avec `force` : `containsPatch`), `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
+
+Une reprise ponctuelle réutilisable est retirée en v0.24.44 sur demande de l'administrateur,
+sans avoir été marquée terminée : `backfillMoveMealsToGroupFn` (« Déplacer mes repas vers un
+groupe », v0.23.61), qui faisait passer les repas de « Mon planning » de l'appelant, sur une
+période de 62 jours au plus, dans le planning d'un groupe dont il est propriétaire, en posant
+`group_id` par l'Admin SDK. Dernier passage le 14/10/2026, lancé à la main : 7 repas déplacés
+du 2 au 29 octobre, 0 échec. Partent avec lui le dialogue de paramètres
+(`move_meals_to_group_dialog.dart`), le modèle `MoveMealsRequest` et le champ `reusable` du
+registre client. Le document `app_config/backfill_run_move_meals_to_group` reste en base, plus
+lu. Aucun poste de coût, aucun libellé de journal propre.
 
 Deux reprises ponctuelles, menées au bout et marquées terminées en production le 21/10/2026 en
 v0.24.36, sont retirées en v0.24.37 avec leur callable : `backfillIllustrationFoldersFn`
@@ -6498,7 +6590,6 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillRecipeRolesFn` | recettes que le modèle n'a pas su classer, recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième, « Plus redemandé à l'IA après 3 échecs » pour une recette sautée |
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième échec d'un ingrédient, « Plus redemandé à l'IA après 3 échecs » pour un ingrédient sauté. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
-| `backfillMoveMealsToGroupFn` | repas dont l'écriture a échoué (« Repas non déplacé : <message> », nature `meal`), nommés par leur identifiant et leur jour (« Repas <id> — AAAA-MM-JJ »), sans titre de recette |
 | `backfillDefaultUnitsFn` | unités dont l'écriture a échoué (« Échec d'écriture : <message> », nature `unit`), nommées par leur libellé |
 | `backfillUsersSchemaCheckFn` | comptes dont le document casse une lecture ou une règle, nature `account`, toutes les raisons réunies par « ; », chacune avec le champ entre parenthèses et son effet (« rôle inconnu (role) « superadmin » : compte sans droit, affiché « en attente » dans Comptes », « date de création absente (created_at) : la fiche n'apparaît pas dans Comptes », « indicateur de révocation absent (is_revoked) : toute règle qui lit la révocation échoue pour ce compte »), ou « Contrôle impossible : <message> ». Nommés par leur prénom (nom préféré, sinon premier mot du nom Google, 20 caractères au plus, écarté s'il contient « @ ») et les six premiers caractères de l'uid — « Marie (abcdef…) », « Compte abcdef… » sans nom —, **jamais par l'adresse**. La feuille « À revoir » affiche en plus, sous chaque compte, l'identifiant complet du document, à chercher dans la console Firebase, et la consigne « Ces fiches ne se corrigent pas depuis l'application… » ; « Copier la liste » (`copyLine`) n'en recopie pas l'identifiant complet |
 
@@ -7822,7 +7913,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/app-check` | `AppCheckScreen` | le mode d'attestation |
 | `/admin/moderation` | `AdminModerationScreen` | trancher sur une image en attente |
 | `/admin/referentials` | `AdminReferentialsScreen` | l'état des référentiels |
-| `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient |
+| `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient ; au dépliage, ouvrir une recette qui le cite (`push` vers `/recipes/{id}`, `/recipes/{id}/edit` ou, pour un brouillon, `/drafts/{id}`) |
 | `/admin/nutrition-units` | `NutritionUnitsScreen` | corriger un poids d'unité |
 | `/admin/nutrition-policy` | `NutritionPolicyScreen` | priorité des sources, seuils |
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |

@@ -95,6 +95,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   ];
 
   int? _activeCorner;
+  Offset _grabOffset = Offset.zero;
   Offset? _loupePos;
 
   double _brightness = 1.0;
@@ -363,10 +364,16 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
 
   // ── Geometry ───────────────────────────────────────────────────────────────
 
+  /// Marge laissée autour de l'image quand le cadre est déplaçable : un coin
+  /// posé sur le bord de l'image reste hors de la zone du geste système
+  /// « retour » d'Android, et le doigt peut dépasser le bord.
+  static const double _cropMargin = 24;
+
   Rect _fittedRect(Size container) {
-    final scaleX = container.width / _imgW;
-    final scaleY = container.height / _imgH;
-    final scale = math.min(scaleX, scaleY);
+    final margin = _allowCrop ? _cropMargin : 0.0;
+    final availW = math.max(1.0, container.width - 2 * margin);
+    final availH = math.max(1.0, container.height - 2 * margin);
+    final scale = math.min(availW / _imgW, availH / _imgH);
     final w = _imgW * scale;
     final h = _imgH * scale;
     return Rect.fromLTWH(
@@ -392,8 +399,16 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   void _onPanStart(DragStartDetails d, Rect fitted) {
     if (!_allowCrop) return;
     const hitRadius = 60.0;
+    // Sans zoom, un toucher dans l'image (marge comprise) saisit toujours le
+    // coin le plus proche ; zoomé, le plafond garde le déplacement de la vue.
+    final frameShown =
+        _cropArmed &&
+        (widget.mode == EnhancerMode.crop ||
+            _activePanel == _EnhancerPanel.frame);
+    final unzoomed = frameShown && _viewTransform.getMaxScaleOnAxis() <= 1.01;
+    final inside = fitted.inflate(_cropMargin).contains(d.localPosition);
     int? closest;
-    double minDist = hitRadius;
+    double minDist = unzoomed && inside ? double.infinity : hitRadius;
     for (int i = 0; i < 4; i++) {
       final dist =
           (d.localPosition - _normToWidget(_corners[i], fitted)).distance;
@@ -406,6 +421,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       setState(() {
         _pushHistory();
         _activeCorner = closest;
+        // Écart doigt-coin conservé : le coin ne saute pas sous le doigt.
+        _grabOffset =
+            _normToWidget(_corners[closest!], fitted) - d.localPosition;
         _loupePos = d.localPosition;
         _panning = false;
       });
@@ -417,8 +435,11 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   void _onPanUpdate(DragUpdateDetails d, Rect fitted) {
     if (_activeCorner != null) {
       setState(() {
-        _corners[_activeCorner!] = _widgetToNorm(d.localPosition, fitted);
-        _loupePos = d.localPosition;
+        _corners[_activeCorner!] = _widgetToNorm(
+          d.localPosition + _grabOffset,
+          fitted,
+        );
+        _loupePos = d.localPosition + _grabOffset;
       });
     } else if (_panning) {
       final scale = _viewTransform.getMaxScaleOnAxis();
@@ -952,17 +973,22 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: _showOriginalPreview
-                          ? Image.memory(_currentBytes, fit: BoxFit.contain)
-                          : ColorFiltered(
-                              colorFilter: ColorFilter.matrix(
-                                _previewColorMatrix(),
+                      // Même marge que `_fittedRect` : le cadre est tracé sur
+                      // l'image telle qu'elle est dessinée.
+                      child: Padding(
+                        padding: EdgeInsets.all(_allowCrop ? _cropMargin : 0),
+                        child: _showOriginalPreview
+                            ? Image.memory(_currentBytes, fit: BoxFit.contain)
+                            : ColorFiltered(
+                                colorFilter: ColorFilter.matrix(
+                                  _previewColorMatrix(),
+                                ),
+                                child: Image.memory(
+                                  _currentBytes,
+                                  fit: BoxFit.contain,
+                                ),
                               ),
-                              child: Image.memory(
-                                _currentBytes,
-                                fit: BoxFit.contain,
-                              ),
-                            ),
+                      ),
                     ),
                     if (_allowCrop &&
                         _cropArmed &&

@@ -60,6 +60,15 @@ class NutritionIngredientDoc {
   /// Vrai quand un administrateur a posé ou confirmé la liste.
   bool get allergensVerified => allergensSource == 'admin';
 
+  /// Nom lisible de l'ingrédient (`canonical_name`) : l'identifiant dont les
+  /// `_` sont redevenus des espaces, accents compris (« papier sulfurisé »
+  /// pour `papier_sulfurise`). `null` sur un document qui ne le porte pas.
+  final String? canonicalName;
+
+  /// Les noms sous lesquels les recettes citent cet ingrédient (`aliases`),
+  /// ajoutés par le serveur à chaque nouvelle rencontre.
+  final List<String> aliases;
+
   const NutritionIngredientDoc({
     required this.id,
     required this.source,
@@ -72,6 +81,8 @@ class NutritionIngredientDoc {
     this.shoppingProduct,
     this.allergens,
     this.allergensSource,
+    this.canonicalName,
+    this.aliases = const [],
   });
 
   /// Vrai quand les valeurs viennent d'une estimation IA plutôt que d'une
@@ -141,6 +152,14 @@ class NutritionIngredientDoc {
           ? sortAllergenKeys((data['allergens'] as List).whereType<String>())
           : null,
       allergensSource: data['allergens_source'] as String?,
+      canonicalName: data['canonical_name'] is String
+          ? data['canonical_name'] as String
+          : null,
+      aliases: data['aliases'] is List
+          ? (data['aliases'] as List).whereType<String>().toList(
+              growable: false,
+            )
+          : const [],
     );
   }
 }

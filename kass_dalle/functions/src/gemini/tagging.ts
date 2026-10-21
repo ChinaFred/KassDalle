@@ -14,8 +14,9 @@
 
 import { extractJsonObject } from "./client";
 import { logAiText, logError, logWarn } from "../logging";
+import { requestShapeFor } from "../ai/anthropic";
 import { callModel } from "../ai/router";
-import { textPart, type ModelCallContext } from "../ai/types";
+import { textPart, type ModelCallContext, type ModelCallResult } from "../ai/types";
 import { TAGGING_PROMPT } from "./promptsExtraction";
 import {
   parseMealRoleFields,
@@ -147,13 +148,38 @@ export async function runTaggingAttempts<T extends { stopReason?: string }>(args
   efforts: readonly Effort[];
   call: (effort: Effort) => Promise<T>;
   onTruncated?: (effort: Effort, result: T) => Promise<void> | void;
+  /**
+   * Vrai quand le modèle qui a répondu reçoit l'effort demandé. Faux : l'essai
+   * suivant partirait identique, il n'a pas lieu. Absent : toujours vrai.
+   */
+  effortApplies?: (result: T) => boolean;
+  /** Appelé quand l'essai suivant est sauté parce que l'effort ne s'applique pas. */
+  onRetrySkipped?: (effort: Effort, result: T) => Promise<void> | void;
 }): Promise<T> {
-  for (const effort of args.efforts) {
+  for (let i = 0; i < args.efforts.length; i++) {
+    const effort = args.efforts[i];
     const result = await args.call(effort);
     if (!isTruncatedStop(result.stopReason)) return result;
     await args.onTruncated?.(effort, result);
+    const hasNext = i < args.efforts.length - 1;
+    if (hasNext && args.effortApplies && !args.effortApplies(result)) {
+      await args.onRetrySkipped?.(effort, result);
+      break;
+    }
   }
   throw new TaggingTruncatedError();
+}
+
+/**
+ * Le modèle qui a répondu reçoit-il l'effort ?
+ *
+ * Non pour Gemini, dont l'appel ne transmet pas `ctx.effort`, ni pour un
+ * modèle Claude qui le refuse (Haiku 4.5, voir `requestShapeFor`). Pour eux,
+ * refaire un balisage coupé à un autre effort enverrait la même requête, et
+ * l'appel serait facturé une seconde fois pour le même résultat.
+ */
+export function effortReachesModel(result: { provider: string; model: string }): boolean {
+  return result.provider === "anthropic" && requestShapeFor(result.model).effort !== null;
 }
 
 /** Une ligne d'ingrédient du livre, séparée en ce qui se compte et ce qui se dit. */
@@ -390,7 +416,7 @@ export async function tagAndNormalize(
     textPart(`\n\n═══════════ TRANSCRIPTION ═══════════\n${transcription}`),
   ];
 
-  const result = await runTaggingAttempts({
+  const result = await runTaggingAttempts<ModelCallResult>({
     efforts: taggingEfforts(),
     call: (effort) =>
       callModel({
@@ -408,6 +434,21 @@ export async function tagAndNormalize(
         userId: ctx.userId,
         callId: truncated.callId,
         extra: { titre: recipe.titre, effort, outputTokens: truncated.usage.outputTokens },
+      }),
+    effortApplies: effortReachesModel,
+    onRetrySkipped: (effort, truncated) =>
+      logWarn({
+        message: `Balisage coupé : reprise à un autre effort sautée, le modèle ${truncated.model} ne reçoit pas l'effort`,
+        moduleType: "IMPORT",
+        correlationId: ctx.correlationId,
+        scanId: ctx.scanId,
+        jobId: ctx.jobId,
+        userId: ctx.userId,
+        callId: truncated.callId,
+        provider: truncated.provider,
+        model: truncated.model,
+        feature,
+        extra: { titre: recipe.titre, effort },
       }),
   });
 

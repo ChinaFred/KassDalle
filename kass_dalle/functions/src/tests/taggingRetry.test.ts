@@ -14,12 +14,21 @@ import {
   TAGGING_EFFORT,
   TAGGING_RETRY_EFFORT,
   TaggingTruncatedError,
+  effortReachesModel,
   isTruncatedStop,
   runTaggingAttempts,
   taggingEfforts,
 } from "../gemini/tagging";
 
 type Effort = "low" | "medium" | "high";
+
+/** Réponse d'un appel, avec le moteur qui l'a servie. */
+interface Answer {
+  text: string;
+  stopReason?: string;
+  provider: string;
+  model: string;
+}
 
 describe("isTruncatedStop", () => {
   test("reconnaît le plafond de Claude et celui de Gemini", () => {
@@ -115,6 +124,58 @@ describe("runTaggingAttempts", () => {
       TaggingTruncatedError,
     );
     assert.equal(calls, 1);
+  });
+
+  test("modèle sans effort : la reprise est sautée, signalée, et l'erreur dédiée levée", async () => {
+    const calls: Effort[] = [];
+    const skipped: Effort[] = [];
+    await assert.rejects(
+      runTaggingAttempts<Answer>({
+        efforts: ["medium", "low"],
+        call: async (effort) => {
+          calls.push(effort);
+          return {
+            text: "",
+            stopReason: "max_tokens",
+            provider: "anthropic",
+            model: "claude-haiku-4-5",
+          };
+        },
+        effortApplies: effortReachesModel,
+        onRetrySkipped: (effort) => {
+          skipped.push(effort);
+        },
+      }),
+      TaggingTruncatedError,
+    );
+    assert.deepEqual(calls, ["medium"]);
+    assert.deepEqual(skipped, ["medium"]);
+  });
+
+  test("modèle qui reçoit l'effort : la reprise a lieu", async () => {
+    const calls: Effort[] = [];
+    const result = await runTaggingAttempts<Answer>({
+      efforts: ["medium", "low"],
+      call: async (effort) => {
+        calls.push(effort);
+        return {
+          text: effort === "low" ? "{}" : "",
+          stopReason: effort === "low" ? "end_turn" : "max_tokens",
+          provider: "anthropic",
+          model: "claude-sonnet-5",
+        };
+      },
+      effortApplies: effortReachesModel,
+    });
+    assert.deepEqual(calls, ["medium", "low"]);
+    assert.equal(result.text, "{}");
+  });
+
+  test("effortReachesModel : Sonnet et Opus oui, Haiku 4.5 et Gemini non", () => {
+    assert.equal(effortReachesModel({ provider: "anthropic", model: "claude-sonnet-5" }), true);
+    assert.equal(effortReachesModel({ provider: "anthropic", model: "claude-opus-5" }), true);
+    assert.equal(effortReachesModel({ provider: "anthropic", model: "claude-haiku-4-5" }), false);
+    assert.equal(effortReachesModel({ provider: "gemini", model: "gemini-2.5-flash" }), false);
   });
 
   test("une erreur de l'appel remonte telle quelle, sans essai suivant", async () => {

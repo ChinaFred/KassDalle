@@ -20,6 +20,91 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.46 — fonctionnel
+
+Admin › Référentiels › Ingrédients nutrition : le dépliage d'une fiche affiche « Recettes qui
+l'utilisent (n) », sous les allergènes. La liste donne jusqu'à vingt recettes qui citent
+l'ingrédient sous son nom canonique, son identifiant ou l'un de ses alias, privées comprises,
+avec « Brouillon », « Privée » et le titre du livre quand ils s'appliquent. Un appui ouvre la
+fiche de la recette, ou la relecture d'un brouillon ; le crayon ouvre l'éditeur, sauf pour un
+brouillon, que l'éditeur n'ouvre pas. Au-delà de vingt, le compteur affiche « (20+) » et la
+ligne « 20 premières recettes affichées. ». La liste est lue à chaque dépliage et au retour de
+la recette ouverte, par une seule requête Firestore, sans appel d'IA ni index composite. Le modèle `NutritionIngredientDoc` lit désormais `canonical_name` et `aliases`.
+
+### v0.24.45 — fonctionnel
+
+- Retouche d'image (couverture d'un livre, import de page, illustrations) : les coins du cadre se posent plus facilement au doigt (#211). Le coin ne saute plus sous le doigt : l'écart entre le doigt et le coin est conservé. L'image garde une marge de 24 px autour d'elle, ce qui permet de poser un coin sur le bord sans toucher la zone du geste « retour » d'Android. Un toucher dans l'image saisit le coin le plus proche, sans plafond de 60 px, tant que la vue n'est pas zoomée. Les poignées sont plus grandes. Aucune dépendance ajoutée.
+
+### v0.24.44 — fonctionnel
+
+Admin › Backfills ne propose plus « Déplacer mes repas vers un groupe », retiré à la demande
+de l'administrateur. Son dernier passage, le 14/10/2026, a déplacé 7 repas du 2 au 29 octobre
+dans le planning d'un groupe, sans échec. Les repas déjà déplacés restent dans le planning de
+leur groupe. Aucun écran de l'application ne change désormais le planning d'un repas existant.
+Le menu ⋮ de chaque ponctuel propose de nouveau « Marquer comme terminé ».
+
+« Reprendre le sel des ingrédients » ne redemande plus un ingrédient déjà réparé, et retente un
+ingrédient en échec au passage suivant. Il ne se dit terminé qu'après un parcours entier de
+l'ancien référentiel sans échec ; un passage repris en cours de route se dit « incomplet » et
+invite à relancer. Les ingrédients réparés avant cette version n'ont pas la marque de
+réparation : le prochain passage les réestime une fois de plus, et cette dépense est imputée
+au poste `backfill_refresh_sodium_per100g`.
+
+### v0.24.44 — technique
+
+Retrait du ponctuel réutilisable `move_meals_to_group` (v0.23.61), sans « Copier la liste » :
+il n'était pas terminé, son retrait est une décision de l'utilisateur. Supprimés : le callable
+`backfillMoveMealsToGroupFn` (`moveMealsToGroupBackfillCallable.ts`) et son export, ses tests
+(`moveMealsToGroup.test.ts`, `move_meals_to_group_test.dart`), le dialogue
+`move_meals_to_group_dialog.dart`, le modèle `MoveMealsRequest` (`move_meals_request.dart`,
+avec `ownedActiveGroups` et `formatShortPeriod`, que lui seul utilisait), la méthode
+`backfillMoveMealsToGroup` du repository, les entrées des deux registres et de la fixture
+`backfill_schedule.json`, son `case` dans `_runPass` et `_confirmText`, son résumé de tuile et
+son icône. Le champ `reusable` du registre client, propre à ce backfill, part aussi :
+`backfillOffersDoneMenu` ne prend plus que la définition et répond « oui » pour tout ponctuel.
+La clé rejoint les listes de clés retirées des tests. Le document
+`app_config/backfill_run_move_meals_to_group` reste en base, plus lu. Aucune règle Firestore ne
+change : aucune n'existait pour ce backfill, qui écrivait par l'Admin SDK ; l'index `uid` +
+`planned_at` de `planned_meals` reste, `readServedHistory` s'en sert. Aucun poste de coût.
+
+Réparation du sel (`refresh_sodium`, mode `refreshSodium` de `runEnrichReferentialsPass`,
+`billingCallable.ts`). Avant : la sélection était `carriesSodium(per100g)`, vraie aussi pour
+un ingrédient déjà réparé ; le curseur avançait sans mémoire d'échec, donc un échec n'était
+retenté qu'au tour suivant ; un passage repris à mi-chemin qui atteignait la fin pouvait marquer
+le backfill terminé malgré les échecs des passages précédents ; une relance après la fin
+redemandait tout. Maintenant : nouveau champ `nutrition_ingredients.sodium_repaired_at`
+(horodatage serveur), posé dans le même `update` que le profil réparé
+(`enrichedIngredientPayload`) ; cible = sodium présent et marque absente
+(`isSodiumRepairTarget`) ; en mode sel, un échec compte dans `unresolvedFailures`, et le
+passage n'est complet que si son parcours a commencé au début de la collection
+(`enrichPassCompleted`). Le mode `enrich_referentials` ne change pas. Les règles Firestore ne
+changent pas : le client n'écrit sur `nutrition_ingredients` que le produit acheté et les
+allergènes. Nouveau test `refreshSodium.test.ts`. Le compte rendu de la bannière dit
+« terminé » seulement sans échec.
+
+### v0.24.43 — fonctionnel
+
+- Planning : sous une consigne écrite que Kass'Dalle ne sait pas vérifier, la mention
+  « Transmis à l'IA » ne s'affiche plus quand l'IA n'a pas répondu. La ligne dit « Non lu,
+  l'IA n'a pas répondu : « … » », ou pourquoi l'IA n'a pas été appelée. Le bandeau du mode
+  dégradé cite ces consignes : « Kass'Dalle a choisi les plats selon vos critères vérifiés.
+  Ces consignes n'ont pas été suivies : « … » ». Avant, il disait que les plats suivaient
+  « vos contraintes », alors qu'aucun texte libre n'avait été lu.
+
+### v0.24.43 — technique
+
+- Haiku 4.5 partait avec `thinking: adaptive` et `effort`, qu'il refuse : chaque poste réglé
+  sur ce modèle échouait en 400, puis se repliait sur Gemini. `requestShapeFor`
+  (`ai/anthropic.ts`) l'envoie maintenant sans raisonnement ni effort. La relance d'un
+  balisage tronqué avec un effort plus élevé n'a plus lieu sur un modèle sans effort.
+- Claude exige `additionalProperties: false` sur chaque objet d'un schéma de sortie.
+  `planning_constraints` et `meal_ideas` l'omettaient et échouaient à chaque appel ; ils
+  sont corrigés, et `toStrictJsonSchema` pose la règle sur tout schéma envoyé à Claude.
+- Un 402 de Gemini (crédit prépayé épuisé) était classé comme un quota et relancé six fois,
+  de 2 à 60 s : environ deux minutes perdues par appel avant le repli. Il est maintenant
+  classé `CREDITS_EXHAUSTED` et échoue tout de suite. Aucune tentative ne part plus avec un
+  délai restant nul ou négatif (`quotaRetryDelayMs`).
+
 ### v0.24.42 — fonctionnel
 
 - Admin › Backfills : nouveau ponctuel « Contrôler les comptes ». Il lit la fiche de chaque
