@@ -33,8 +33,9 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
   `backfills/illustrationFoldersMove.ts` (rien d'autre ne les appelait), leurs tests, leurs
   entrées dans les deux registres, la fixture `backfill_schedule.json` et `LOCK_GROUPS`, les
   méthodes de `GcpBillingRepository`, leurs `case`, résumés et icônes dans Admin › Backfills,
-  et les constantes `COLL_BACKUP_RECIPES` et `COLL_BACKUP_BOOKS` de `config.ts`, que seul le
-  rangement lisait.
+  les constantes `COLL_BACKUP_RECIPES` et `COLL_BACKUP_BOOKS` de `config.ts`, que seul le
+  rangement lisait, et l'option `silent` de `storageObjectPathOf` (`utils/storagePath.ts`),
+  que seul le contrôle passait : tout refus d'une référence est de nouveau tracé.
 - Restent : la valeur `manual_folder_move` de la modération (`decision.ts`,
   `moderation_labels.dart`) pour les lignes `image_moderation` déjà écrites, les libellés de
   journal, et les documents `app_config/backfill_run_illustration_folders*` et
