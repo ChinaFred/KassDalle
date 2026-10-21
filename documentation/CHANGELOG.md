@@ -24,10 +24,11 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 - « Calculer » et « Recalculer » dans l'onglet Nutrition affichent maintenant l'échec du
   calcul : « Nutrition non calculée. » suivi de la raison. Quand la limite d'IA du jour est
-  atteinte, le message dit quand réessayer. Avant, un échec ne s'affichait nulle part. Les
-  deux boutons sont désactivés pendant le calcul.
+  atteinte, le message dit quand réessayer. Avant, un échec ne s'affichait nulle part.
+  Pendant le calcul, le bouton affiche « Calcul en cours… » avec un indicateur et ne
+  répond plus ; un recalcul réussi se confirme par « Nutrition recalculée ».
 - Un EPUB incomplet (sans `META-INF/container.xml` ou sans fichier OPF) est refusé avec un
-  texte simple : « Ce fichier n'est pas un livre EPUB complet : il ne peut pas être lu.
+  texte simple : « Ce fichier EPUB est incomplet et ne peut pas être lu.
   Exportez-le de nouveau depuis le logiciel qui l'a créé, ou importez le livre en PDF. »
   Avant, le membre lisait « Ce fichier n'est pas un EPUB valide : META-INF/container.xml
   manque. » ou « … le fichier OPF est introuvable. » (suite de l'audit #151, tickets

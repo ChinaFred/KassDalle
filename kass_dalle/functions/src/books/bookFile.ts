@@ -94,7 +94,7 @@ export const EPUB_UNREADABLE_MESSAGE =
  * technique va dans `BookFileError.detail`, lu par les journaux.
  */
 export const EPUB_INVALID_MESSAGE =
-  "Ce fichier n'est pas un livre EPUB complet : il ne peut pas être lu. " +
+  "Ce fichier EPUB est incomplet et ne peut pas être lu. " +
   "Exportez-le de nouveau depuis le logiciel qui l'a créé, ou importez le livre en PDF.";
 
 /** Le message d'une erreur pour les journaux : message, puis détail technique s'il existe. */

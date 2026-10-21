@@ -396,8 +396,14 @@ class _NutritionDetailsSectionState
     final onRecompute = widget.onRecompute;
     if (onRecompute == null || _recomputing) return;
     setState(() => _recomputing = true);
+    // « Recalculer » peut rendre les mêmes valeurs : sans confirmation, rien
+    // ne dit que le calcul a eu lieu. « Calculer » fait apparaître le tableau.
+    final hadSnapshot = widget.recipe.nutrition != null;
     try {
       await onRecompute();
+      if (mounted && hadSnapshot) {
+        context.showSuccessSnackBar('Nutrition recalculée');
+      }
     } catch (e, stackTrace) {
       reportUnexpectedError(
         service: ref.read(errorReportServiceProvider),
@@ -439,8 +445,14 @@ class _NutritionDetailsSectionState
               const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: _recomputing ? null : () => _recompute(),
-                icon: const Icon(Icons.calculate_outlined),
-                label: const Text('Calculer'),
+                icon: _recomputing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.calculate_outlined),
+                label: Text(_recomputing ? 'Calcul en cours…' : 'Calculer'),
               ),
             ],
           )
@@ -784,8 +796,18 @@ class _NutritionDetailsSectionState
                       alignment: Alignment.centerRight,
                       child: TextButton.icon(
                         onPressed: _recomputing ? null : () => _recompute(),
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Recalculer'),
+                        icon: _recomputing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.refresh),
+                        label: Text(
+                          _recomputing ? 'Calcul en cours…' : 'Recalculer',
+                        ),
                       ),
                     ),
                   ],
