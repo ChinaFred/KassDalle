@@ -1944,7 +1944,7 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
 | `first_seen_at` · `last_seen_at` · `updated_at` | `Timestamp` | Traçabilité |
 
-**Recettes qui citent un ingrédient** (v0.24.45). Au dépliage d'une fiche,
+**Recettes qui citent un ingrédient** (v0.24.46). Au dépliage d'une fiche,
 *Admin › Référentiels › Ingrédients nutrition* lit les recettes par une requête
 `recipes` `where('ingredients_index', arrayContainsAny: valeurs)` `limit(21)`
 (`IngredientUsageRepository.fetchRecipesUsing`, provider
