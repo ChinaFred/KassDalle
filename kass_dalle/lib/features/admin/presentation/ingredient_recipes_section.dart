@@ -121,7 +121,7 @@ class _RecipeUsageTile extends StatelessWidget {
       ?recipe.bookTitle,
     ];
     return Semantics(
-      hint: 'Ouvrir la recette',
+      hint: recipe.isDraft ? 'Ouvrir la relecture' : 'Ouvrir la recette',
       child: ListTile(
         dense: true,
         contentPadding: EdgeInsets.zero,
