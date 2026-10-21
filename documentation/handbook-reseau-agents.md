@@ -773,7 +773,7 @@ Les tests des règles (`kass_dalle/rules-tests/`) n'ont pas besoin de ce rôle :
 Storage interroge l'émulateur Firestore directement. Dans une session cloud, firebase-tools
 envoie cette requête locale par `HTTPS_PROXY`, que le proxy de la session refuse : les cas
 Storage qui lisent le document y échouent, alors qu'ils passent dans la CI GitHub, qui n'a pas
-de proxy.
+de proxy. Lancer `npm test` avec `NO_PROXY=localhost,127.0.0.1,::1` les fait passer.
 
 ---
 
