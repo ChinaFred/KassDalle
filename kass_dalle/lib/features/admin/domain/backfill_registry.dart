@@ -189,8 +189,8 @@ const List<BackfillDefinition> kBackfillRegistry = [
     kind: BackfillKind.ponctuel,
     title: 'Contrôler les comptes',
     description:
-        'Liste les comptes dont la fiche ne respecte pas les règles de '
-        'sécurité, avec la raison. Ne modifie aucun compte.',
+        'Liste les comptes dont la fiche est illisible, sans droit ou bloque '
+        'les règles de sécurité, avec la raison. Ne modifie aucun compte.',
     usesAi: false,
     passLimit: 'Chaque passage lit tous les comptes, 5 000 au plus.',
   ),

@@ -262,7 +262,7 @@ void main() {
       await pumpSheet(
         tester,
         BackfillFailures(
-          items: [_f('account', 'u1', 'Marie', 'Contraintes trop longues')],
+          items: [_f('autre', 'x1', 'Élément', 'Contraintes trop longues')],
           total: 1,
         ),
       );
@@ -270,6 +270,52 @@ void main() {
       expect(tester.widget<ListTile>(find.byType(ListTile)).onTap, isNull);
       expect(find.text('1 élément.'), findsOneWidget);
     });
+
+    testWidgets(
+      'comptes : identifiant complet à l\'écran, consigne, copie sans uid',
+      (tester) async {
+        String? copied;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copied = (call.arguments as Map)['text'] as String;
+            }
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
+        await pumpSheet(
+          tester,
+          BackfillFailures(
+            items: [
+              _f(
+                'account',
+                'abcdef123456uvwxyz',
+                'Marie (abcdef…)',
+                'rôle absent (role)',
+              ),
+            ],
+            total: 1,
+          ),
+        );
+        expect(find.text('1 élément. $kAccountFailuresHelp'), findsOneWidget);
+        expect(
+          find.text('rôle absent (role)\nIdentifiant : abcdef123456uvwxyz'),
+          findsOneWidget,
+        );
+        expect(tester.widget<ListTile>(find.byType(ListTile)).onTap, isNull);
+        await tester.tap(find.byTooltip('Copier la liste'));
+        await tester.pump();
+        expect(copied, 'Marie (abcdef…) — rôle absent (role)');
+        expect(copied!.contains('abcdef123456uvwxyz'), isFalse);
+      },
+    );
 
     testWidgets('copier : une ligne « nom — raison » par élément', (
       tester,

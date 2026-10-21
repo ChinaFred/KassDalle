@@ -1,13 +1,14 @@
 /**
  * Contrôler les comptes — parcourt `users` et liste dans « À revoir » chaque
- * document qui s'écarte du schéma de `firestore.rules`, avec la raison.
+ * document qui casse une lecture ou une règle, avec la raison et son effet.
  * Lecture seule : rien n'est écrit dans `users`. Sans appel de modèle.
  *
  * Les règles imposent depuis v0.24.30 et v0.24.32 un schéma strict aux
- * documents `users/{uid}` (tickets #162, #163). Un document écrit avant peut ne
- * pas le respecter : `AppUser.fromFirestore` lève, `watchAllUsers` saute le
- * compte, et son titulaire ne peut plus mettre à jour son document. Les
- * contrôles vivent dans `security/userDocument.ts`.
+ * documents `users/{uid}` (tickets #162, #163). Un document écrit avant peut
+ * ne pas apparaître dans Comptes (`AppUser.fromFirestore` lève), n'avoir aucun
+ * droit (rôle absent ou inconnu), ou faire échouer les règles qui lisent la
+ * révocation (`is_revoked` absent). Les contrôles vivent dans
+ * `security/userDocument.ts`.
  *
  * Sans point de reprise, à l'inverse des autres backfills : un contrôle ne
  * peut se dire « rien à revoir » que sur un parcours entier fait d'un seul
@@ -113,7 +114,7 @@ export function checkUserDocument(
   data: Record<string, unknown>,
   review: BackfillReview,
 ): boolean {
-  const issues = userDocumentIssues(docId, data);
+  const issues = userDocumentIssues(data);
   if (issues.length === 0) return true;
   review.add({
     kind: "account",

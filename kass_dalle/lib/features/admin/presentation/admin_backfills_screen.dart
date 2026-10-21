@@ -161,11 +161,12 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'déjà dans un groupe est laissé tel quel ; on peut relancer.\n\n'
             'Aucun appel d\'IA.';
       case BackfillKeys.usersSchemaCheck:
-        return 'Lit la fiche de chaque compte et liste celles qui ne '
-            'respectent pas les règles de sécurité (champ absent, de mauvais '
-            'type ou non permis, rôle inconnu…), avec la raison. Une telle '
-            'fiche n\'apparaît pas dans Comptes, et son titulaire ne peut '
-            'plus la mettre à jour.\n\n'
+        return 'Lit la fiche de chaque compte et liste celles qui posent un '
+            'problème, avec la raison et son effet : un champ illisible '
+            '(absent ou de mauvais type) fait disparaître la fiche de '
+            'Comptes ; un rôle absent ou inconnu laisse le compte sans droit, '
+            'affiché « en attente » ; un indicateur de révocation absent fait '
+            'échouer toute règle qui le lit pour ce compte.\n\n'
             'Lecture seule : aucun compte n\'est modifié. Aucun appel d\'IA. '
             'Tous les comptes sont lus en un passage ; on peut relancer après '
             'une correction.';

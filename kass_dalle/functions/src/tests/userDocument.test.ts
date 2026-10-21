@@ -1,9 +1,10 @@
 /**
  * Contrôle des comptes (`backfillUsersSchemaCheckFn`, `security/userDocument.ts`).
  *
- * Ce que ces tests verrouillent : chaque contrôle de la règle `users/{uid}` de
- * `firestore.rules` qui casse une lecture ou une écriture rend sa raison, un document conforme n'en rend aucune, le
- * libellé d'un compte ne cite jamais l'adresse, et le ponctuel ne se marque
+ * Ce que ces tests verrouillent : chaque écart qui casse la lecture par
+ * `AppUser.fromFirestore`, les droits ou `isRevoked()` rend sa raison et son
+ * effet ; ce qui ne bloque rien n'est pas signalé ; le libellé d'un compte ne
+ * cite jamais l'adresse, et le ponctuel ne se marque
  * terminé que sur un parcours complet sans rien à revoir.
  */
 
@@ -42,95 +43,141 @@ function valid(): Record<string, unknown> {
 }
 
 describe("userDocumentIssues", () => {
+  const L = "la fiche n'apparaît pas dans Comptes";
+  const R = "compte sans droit, affiché « en attente » dans Comptes";
+  const V = "toute règle qui lit la révocation échoue pour ce compte";
+
   test("document complet et conforme : aucune raison", () => {
-    assert.deepEqual(userDocumentIssues(ID, valid()), []);
+    assert.deepEqual(userDocumentIssues(valid()), []);
   });
 
-  test("champs facultatifs absents ou nuls : conforme", () => {
+  test("champs facultatifs absents ou nuls, is_revoked nul : conforme", () => {
     const d = valid();
     delete d.uid;
     delete d.preferred_name;
     delete d.import_illustrations;
     d.photo_url = null;
     d.free_recipe_cover_url = null;
-    assert.deepEqual(userDocumentIssues(ID, d), []);
+    d.is_revoked = null;
+    assert.deepEqual(userDocumentIssues(d), []);
   });
 
   test("les quatre rôles connus sont conformes", () => {
     for (const role of ["pending", "reader", "editor", "admin"]) {
-      assert.deepEqual(userDocumentIssues(ID, { ...valid(), role }), []);
+      assert.deepEqual(userDocumentIssues({ ...valid(), role }), []);
     }
   });
 
+  test("ce qui ne bloque rien n'est pas signalé", () => {
+    const d = {
+      ...valid(),
+      uid: "autre",
+      zzz: 1,
+      "marie@example.com": true,
+      display_name: "a".repeat(200),
+      preferred_name: "b".repeat(200),
+      photo_url: "h".repeat(5000),
+      free_recipe_cover_url: "https://example.com/a.jpg",
+    };
+    assert.deepEqual(userDocumentIssues(d), []);
+  });
+
   const cases: [string, (d: Record<string, unknown>) => void, string[]][] = [
-    ["champ non permis", (d) => (d.zzz = 1), ["champ non permis : zzz"]],
-    ["uid différent", (d) => (d.uid = "autre"), ["uid différent de l'identifiant"]],
-    ["uid nul", (d) => (d.uid = null), ["uid différent de l'identifiant"]],
-    ["email absent", (d) => delete d.email, ["email absent"]],
-    ["email non texte", (d) => (d.email = 3), ["email n'est pas un texte"]],
-    ["display_name absent", (d) => delete d.display_name, ["display_name absent"]],
-    ["display_name nul", (d) => (d.display_name = null), ["display_name absent"]],
-    ["display_name non texte", (d) => (d.display_name = 1), ["display_name n'est pas un texte"]],
+    ["email absent", (d) => delete d.email, [`adresse e-mail absente (email) : ${L}`]],
+    ["email nul", (d) => (d.email = null), [`adresse e-mail absente (email) : ${L}`]],
+    ["email non texte", (d) => (d.email = 3), [`adresse e-mail n'est pas un texte (email) : ${L}`]],
+    [
+      "display_name absent",
+      (d) => delete d.display_name,
+      [`nom Google absent (display_name) : ${L}`],
+    ],
+    [
+      "display_name non texte",
+      (d) => (d.display_name = 1),
+      [`nom Google n'est pas un texte (display_name) : ${L}`],
+    ],
     [
       "preferred_name non texte",
       (d) => (d.preferred_name = 2),
-      ["preferred_name n'est pas un texte"],
+      [`nom préféré n'est pas un texte (preferred_name) : ${L}`],
     ],
-    ["rôle absent", (d) => delete d.role, ["rôle absent"]],
-    ["rôle nul", (d) => (d.role = null), ["rôle absent"]],
-    ["rôle inconnu", (d) => (d.role = "superadmin"), ["rôle inconnu : « superadmin »"]],
-    ["rôle avec espace", (d) => (d.role = "admin "), ["rôle inconnu : « admin  »"]],
-    ["rôle en majuscule", (d) => (d.role = "Admin"), ["rôle inconnu : « Admin »"]],
-    ["rôle nombre", (d) => (d.role = 1), ["rôle inconnu : 1"]],
-    ["is_revoked absent", (d) => delete d.is_revoked, ["is_revoked absent"]],
+    ["rôle absent", (d) => delete d.role, [`rôle absent (role) : ${R}`]],
+    ["rôle nul", (d) => (d.role = null), [`rôle absent (role) : ${R}`]],
+    ["rôle inconnu", (d) => (d.role = "superadmin"), [`rôle inconnu (role) « superadmin » : ${R}`]],
+    ["rôle avec espace", (d) => (d.role = "admin "), [`rôle inconnu (role) « admin  » : ${R}`]],
+    ["rôle en majuscule", (d) => (d.role = "Admin"), [`rôle inconnu (role) « Admin » : ${R}`]],
+    ["rôle nombre", (d) => (d.role = 1), [`rôle inconnu (role) 1 : ${R}`]],
+    [
+      "rôle qui contient @ : masqué",
+      (d) => (d.role = "marie@example.com"),
+      [`rôle inconnu (role) (valeur masquée) : ${R}`],
+    ],
+    [
+      "is_revoked absent",
+      (d) => delete d.is_revoked,
+      [`indicateur de révocation absent (is_revoked) : ${V}`],
+    ],
     [
       "is_revoked texte",
       (d) => (d.is_revoked = "false"),
-      ["is_revoked n'est pas un booléen : « false »"],
+      [`indicateur de révocation n'est pas un booléen (is_revoked) « false » : ${L}`],
     ],
-    ["is_revoked nul", (d) => (d.is_revoked = null), ["is_revoked n'est pas un booléen : null"]],
-    ["created_at absent", (d) => delete d.created_at, ["created_at absent"]],
-    ["created_at texte", (d) => (d.created_at = "2024-01-01"), ["created_at n'est pas une date"]],
-    ["created_at Date JS", (d) => (d.created_at = 1700000000), ["created_at n'est pas une date"]],
-    ["last_seen_at absent", (d) => delete d.last_seen_at, ["last_seen_at absent"]],
-    ["last_seen_at texte", (d) => (d.last_seen_at = "x"), ["last_seen_at n'est pas une date"]],
-    ["photo_url non texte", (d) => (d.photo_url = 5), ["photo_url n'est pas un texte"]],
+    [
+      "is_revoked texte qui contient @ : masqué",
+      (d) => (d.is_revoked = "a@b.fr"),
+      [`indicateur de révocation n'est pas un booléen (is_revoked) (valeur masquée) : ${L}`],
+    ],
+    [
+      "created_at absent",
+      (d) => delete d.created_at,
+      [`date de création absente (created_at) : ${L}`],
+    ],
+    [
+      "created_at texte",
+      (d) => (d.created_at = "2024-01-01"),
+      [`date de création n'est pas une date (created_at) : ${L}`],
+    ],
+    [
+      "created_at nombre",
+      (d) => (d.created_at = 1700000000),
+      [`date de création n'est pas une date (created_at) : ${L}`],
+    ],
+    [
+      "last_seen_at absent",
+      (d) => delete d.last_seen_at,
+      [`date de dernière visite absente (last_seen_at) : ${L}`],
+    ],
+    [
+      "last_seen_at texte",
+      (d) => (d.last_seen_at = "x"),
+      [`date de dernière visite n'est pas une date (last_seen_at) : ${L}`],
+    ],
+    [
+      "photo_url non texte",
+      (d) => (d.photo_url = 5),
+      [`photo n'est pas un texte (photo_url) : ${L}`],
+    ],
     [
       "couverture non texte",
       (d) => (d.free_recipe_cover_url = { url: "x" }),
-      ["free_recipe_cover_url n'est pas un texte"],
+      [`couverture « Recette libre » n'est pas un texte (free_recipe_cover_url) : ${L}`],
     ],
   ];
   for (const [name, mutate, expected] of cases) {
     test(name, () => {
       const d = valid();
       mutate(d);
-      assert.deepEqual(userDocumentIssues(ID, d), expected);
+      assert.deepEqual(userDocumentIssues(d), expected);
     });
   }
 
-  test("longueurs et forme de couverture : non signalées, elles ne bloquent rien", () => {
-    const d = {
-      ...valid(),
-      display_name: "a".repeat(200),
-      preferred_name: "b".repeat(200),
-      photo_url: "h".repeat(5000),
-      free_recipe_cover_url: "https://example.com/a.jpg",
-    };
-    assert.deepEqual(userDocumentIssues(ID, d), []);
-  });
-
-  test("plusieurs écarts : tous listés, champs non permis en tête", () => {
+  test("plusieurs écarts : tous listés, dans l'ordre des champs", () => {
     const d = valid();
-    d.b = 1;
-    d.a = 2;
     delete d.created_at;
     d.role = "boss";
-    assert.deepEqual(userDocumentIssues(ID, d), [
-      "champ non permis : a",
-      "champ non permis : b",
-      "rôle inconnu : « boss »",
-      "created_at absent",
+    assert.deepEqual(userDocumentIssues(d), [
+      `rôle inconnu (role) « boss » : ${R}`,
+      `date de création absente (created_at) : ${L}`,
     ]);
   });
 });
@@ -150,6 +197,16 @@ describe("userReviewLabel", () => {
     assert.equal(label, "Compte abcdef…");
     assert.ok(!label.includes("@"));
   });
+  test("prénom qui contient @ : écarté", () => {
+    assert.equal(
+      userReviewLabel(ID, { preferred_name: "marie@example.com", display_name: "Marie K" }),
+      "Marie (abcdef…)",
+    );
+    assert.equal(
+      userReviewLabel(ID, { display_name: "marie@example.com Kassbi" }),
+      "Compte abcdef…",
+    );
+  });
   test("nom long tronqué", () => {
     assert.equal(
       userReviewLabel("abc", { preferred_name: "x".repeat(40) }),
@@ -163,7 +220,7 @@ describe("checkUserDocument", () => {
     const review = new BackfillReview();
     const d = valid();
     delete d.is_revoked;
-    d.uid = "autre";
+    d.role = "boss";
     assert.equal(checkUserDocument(ID, d, review), false);
     assert.deepEqual(review.toJSON(), {
       items: [
@@ -171,7 +228,10 @@ describe("checkUserDocument", () => {
           kind: "account",
           id: ID,
           label: "Marie (abcdef…)",
-          reason: "uid différent de l'identifiant ; is_revoked absent",
+          reason:
+            "rôle inconnu (role) « boss » : compte sans droit, affiché « en attente » dans " +
+            "Comptes ; indicateur de révocation absent (is_revoked) : toute règle qui lit la " +
+            "révocation échoue pour ce compte",
         },
       ],
       total: 1,

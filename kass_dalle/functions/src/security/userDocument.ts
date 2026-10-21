@@ -1,57 +1,40 @@
 /**
- * Conformité d'un document `users/{uid}` au schéma que `firestore.rules` impose
- * depuis v0.24.30 et v0.24.32 (tickets #162, #163).
+ * Contrôle d'un document `users/{uid}` écrit avant le schéma que
+ * `firestore.rules` impose depuis v0.24.30 et v0.24.32 (tickets #162, #163).
  *
- * Les règles contrôlent une écriture, pas les documents déjà en base : un
- * document écrit avant elles peut ne pas les respecter. `AppUser.fromFirestore`
- * lève alors une exception, `watchAllUsers` saute le compte, et son titulaire
- * ne peut plus mettre à jour son propre document. Ce module dit, pour un
- * document stocké, ce qui casse. Lecture seule, pur, testé
- * (`tests/userDocument.test.ts`). Il sert le backfill « Contrôler les comptes »
- * (`callable/usersSchemaCheckBackfillCallable.ts`).
+ * Les règles contrôlent une écriture, pas les documents déjà en base. Ce module
+ * dit, pour un document stocké, ce qui casse réellement, et l'effet de chaque
+ * écart. Lecture seule, pur, testé (`tests/userDocument.test.ts`). Il sert le
+ * backfill « Contrôler les comptes » (`callable/usersSchemaCheckBackfillCallable.ts`).
  *
- * Seul ce qui casse réellement est signalé :
+ * Trois effets, et trois seulement :
  *
- *  - la lecture par `AppUser.fromFirestore` : `email` et `display_name` en
- *    texte, `preferred_name`, `photo_url` et `free_recipe_cover_url` absents,
- *    nuls ou en texte, `created_at` et `last_seen_at` en date ;
- *  - `readRole` (`security/roles.ts`) : le rôle, l'une des quatre valeurs
- *    écrites à l'identique ;
- *  - `isRevoked()` dans les règles : `is_revoked` présent (un champ absent lu
- *    par `.is_revoked` est une erreur, et une erreur vaut refus) et booléen ;
- *  - ce que les règles refuseraient à la prochaine écriture du titulaire :
- *    un champ hors de `createdKeysOk` et `ownerKeysOk`, un `uid` différent de
- *    l'identifiant du document, un type que `updatedTypesOk` exige.
+ *  - **la fiche n'apparaît pas dans Comptes** : `AppUser.fromFirestore` lève,
+ *    et `watchAllUsers` saute le document. Cas : `email` ou `display_name`
+ *    absent, nul ou non texte ; `created_at` ou `last_seen_at` absent ou autre
+ *    chose qu'une date ; `preferred_name`, `photo_url` ou
+ *    `free_recipe_cover_url` présent et non texte ; `is_revoked` présent, non
+ *    nul et non booléen ;
+ *  - **compte sans droit** : un rôle absent ou inconnu se lit « aucun rôle »
+ *    côté serveur (`readRole`, `security/roles.ts`) et `pending` côté client,
+ *    qui l'affiche « en attente » dans Comptes ;
+ *  - **toute règle qui lit la révocation échoue** : `is_revoked` absent. La
+ *    règle `isRevoked()` lit `.is_revoked` sans valeur par défaut, et l'erreur
+ *    vaut refus. `is_revoked: null` est conforme : la règle le lit faux sans
+ *    erreur, et le client `as bool? ?? false`.
  *
- * Ne sont pas signalés, parce qu'ils ne bloquent rien : la longueur des noms
- * (`nameOk`) et de `photo_url` (`photoUrlOk`), la forme de
- * `free_recipe_cover_url` (`coverUrlOk`). Les règles ne les contrôlent que
- * quand le champ change, et le profil public filtre la couverture
- * (`publicCoverUrl`).
+ * Ne sont pas signalés, parce qu'ils ne bloquent rien : un champ hors de la
+ * liste des règles et un `uid` différent de l'identifiant (la mise à jour ne
+ * teste que les champs qu'elle change, `_upsertUser` ne touche que
+ * `last_seen_at`, `photo_url` et `display_name`, le client lit l'uid sur
+ * l'identifiant et aucune Function ne lit `users.uid`) ; la longueur des noms
+ * et de `photo_url`, la forme de la couverture (contrôlées seulement quand le
+ * champ change ; `publicCoverUrl` filtre la couverture du profil public).
  */
 
 import { Timestamp } from "firebase-admin/firestore";
 
 import { readRole } from "./roles";
-
-/**
- * Champs qu'un document `users/{uid}` peut porter : ceux de la création
- * (`createdKeysOk`) et `import_illustrations`, que le titulaire ajoute
- * (`ownerKeysOk`). L'administrateur n'en ajoute aucun autre (`adminKeysOk`).
- */
-export const USER_DOCUMENT_KEYS = [
-  "uid",
-  "email",
-  "display_name",
-  "preferred_name",
-  "photo_url",
-  "free_recipe_cover_url",
-  "role",
-  "created_at",
-  "last_seen_at",
-  "is_revoked",
-  "import_illustrations",
-] as const;
 
 /** Longueur maximale d'une valeur citée dans une raison. */
 const QUOTED_MAX_LENGTH = 40;
@@ -62,18 +45,39 @@ const LABEL_NAME_MAX_LENGTH = 20;
 /** Caractères de l'identifiant cités dans le libellé d'un compte. */
 const LABEL_ID_LENGTH = 6;
 
+/** Ce qui remplace un texte qui pourrait être une adresse e-mail. */
+const MASKED = "(valeur masquée)";
+
+/** Effet d'un champ que `AppUser.fromFirestore` ne sait pas lire. */
+const NOT_LISTED = "la fiche n'apparaît pas dans Comptes";
+
+/** Effet d'un rôle absent ou inconnu. */
+const NO_RIGHTS = "compte sans droit, affiché « en attente » dans Comptes";
+
+/** Effet de `is_revoked` absent. */
+const REVOCATION_FAILS = "toute règle qui lit la révocation échoue pour ce compte";
+
 function clip(text: string, max: number): string {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
+/** Un texte qui contient « @ » peut être une adresse : il n'est jamais cité. */
+function mayBeEmail(text: string): boolean {
+  return text.includes("@");
+}
+
 /**
  * Une valeur stockée, citée dans une raison : bornée, sur une ligne. Un texte
  * garde ses espaces de début et de fin — `"admin "` est inconnu à cause d'eux.
+ * Un texte qui contient « @ » est masqué : la raison est recopiée dans
+ * `app_config/backfill_run_users_schema_check` et dans « Copier la liste ».
  */
 function quote(value: unknown): string {
   let text: string;
-  if (typeof value === "string") {
+  if (typeof value === "string" && mayBeEmail(value)) {
+    text = MASKED;
+  } else if (typeof value === "string") {
     const flat = Array.from(value, (c) => {
       const code = c.charCodeAt(0);
       return code < 0x20 || code === 0x7f ? " " : c;
@@ -91,48 +95,69 @@ function isTimestamp(value: unknown): boolean {
   return value instanceof Timestamp;
 }
 
-/** Absent, ou nul : les règles lisent l'un et l'autre `null` (`get(…, null)`). */
+/** Absent, ou nul. */
 function missing(data: Record<string, unknown>, key: string): boolean {
   return !(key in data) || data[key] === null || data[key] === undefined;
 }
 
+/** Textes obligatoires, et leur nom courant. */
+const REQUIRED_TEXT_FIELDS: readonly (readonly [string, string, string])[] = [
+  ["email", "adresse e-mail", "absente"],
+  ["display_name", "nom Google", "absent"],
+];
+
+/** Dates obligatoires, et leur nom courant. */
+const DATE_FIELDS: readonly (readonly [string, string])[] = [
+  ["created_at", "date de création"],
+  ["last_seen_at", "date de dernière visite"],
+];
+
+/** Textes facultatifs (absents, nuls ou texte), et leur nom courant. */
+const OPTIONAL_TEXT_FIELDS: readonly (readonly [string, string])[] = [
+  ["preferred_name", "nom préféré"],
+  ["photo_url", "photo"],
+  ["free_recipe_cover_url", "couverture « Recette libre »"],
+];
+
 /**
  * Les raisons, en français simple, pour lesquelles le document [data] de
- * `users/[docId]` s'écarte du schéma des règles ; une liste vide s'il est
- * conforme. Ordre stable : champs non permis, puis champ par champ.
+ * `users/{uid}` casse une lecture ou une règle ; une liste vide s'il ne casse
+ * rien. Chaque raison nomme le champ entre parenthèses et dit son effet.
  */
-export function userDocumentIssues(docId: string, data: Record<string, unknown>): string[] {
+export function userDocumentIssues(data: Record<string, unknown>): string[] {
   const issues: string[] = [];
-  const allowed = USER_DOCUMENT_KEYS as readonly string[];
 
-  for (const key of Object.keys(data).sort()) {
-    if (!allowed.includes(key)) issues.push(`champ non permis : ${clip(key, QUOTED_MAX_LENGTH)}`);
+  for (const [key, label, absent] of REQUIRED_TEXT_FIELDS) {
+    if (missing(data, key)) issues.push(`${label} ${absent} (${key}) : ${NOT_LISTED}`);
+    else if (typeof data[key] !== "string") {
+      issues.push(`${label} n'est pas un texte (${key}) : ${NOT_LISTED}`);
+    }
   }
 
-  if ("uid" in data && data.uid !== docId) issues.push("uid différent de l'identifiant");
-
-  if (missing(data, "email")) issues.push("email absent");
-  else if (typeof data.email !== "string") issues.push("email n'est pas un texte");
-
-  if (missing(data, "display_name")) issues.push("display_name absent");
-  else if (typeof data.display_name !== "string") issues.push("display_name n'est pas un texte");
-
-  if (missing(data, "role")) issues.push("rôle absent");
-  else if (readRole(data.role) === null) issues.push(`rôle inconnu : ${quote(data.role)}`);
-
-  if (!("is_revoked" in data) || data.is_revoked === undefined) issues.push("is_revoked absent");
-  else if (typeof data.is_revoked !== "boolean") {
-    issues.push(`is_revoked n'est pas un booléen : ${quote(data.is_revoked)}`);
+  if (missing(data, "role")) issues.push(`rôle absent (role) : ${NO_RIGHTS}`);
+  else if (readRole(data.role) === null) {
+    issues.push(`rôle inconnu (role) ${quote(data.role)} : ${NO_RIGHTS}`);
   }
 
-  for (const key of ["created_at", "last_seen_at"]) {
-    if (missing(data, key)) issues.push(`${key} absent`);
-    else if (!isTimestamp(data[key])) issues.push(`${key} n'est pas une date`);
+  if (!("is_revoked" in data) || data.is_revoked === undefined) {
+    issues.push(`indicateur de révocation absent (is_revoked) : ${REVOCATION_FAILS}`);
+  } else if (data.is_revoked !== null && typeof data.is_revoked !== "boolean") {
+    issues.push(
+      `indicateur de révocation n'est pas un booléen (is_revoked) ${quote(data.is_revoked)} : ` +
+        NOT_LISTED,
+    );
   }
 
-  for (const key of ["preferred_name", "photo_url", "free_recipe_cover_url"]) {
+  for (const [key, label] of DATE_FIELDS) {
+    if (missing(data, key)) issues.push(`${label} absente (${key}) : ${NOT_LISTED}`);
+    else if (!isTimestamp(data[key])) {
+      issues.push(`${label} n'est pas une date (${key}) : ${NOT_LISTED}`);
+    }
+  }
+
+  for (const [key, label] of OPTIONAL_TEXT_FIELDS) {
     if (!missing(data, key) && typeof data[key] !== "string") {
-      issues.push(`${key} n'est pas un texte`);
+      issues.push(`${label} n'est pas un texte (${key}) : ${NOT_LISTED}`);
     }
   }
 
@@ -144,12 +169,14 @@ export function userDocumentIssues(docId: string, data: Record<string, unknown>)
  * sinon le premier mot du nom Google), tronqué, et le début de son
  * identifiant. Jamais l'adresse : la liste est recopiée dans
  * `app_config/backfill_run_users_schema_check`, que tout administrateur lit.
+ * Un prénom qui contient « @ » peut être une adresse : il est écarté.
  */
 export function userReviewLabel(docId: string, data: Record<string, unknown>): string {
   const shortId = docId.length > LABEL_ID_LENGTH ? `${docId.slice(0, LABEL_ID_LENGTH)}…` : docId;
   const preferred = typeof data.preferred_name === "string" ? data.preferred_name.trim() : "";
   const google =
     typeof data.display_name === "string" ? (data.display_name.trim().split(/\s+/)[0] ?? "") : "";
-  const name = clip(preferred || google, LABEL_NAME_MAX_LENGTH);
+  const candidate = [preferred, google].find((n) => n !== "" && !mayBeEmail(n)) ?? "";
+  const name = clip(candidate, LABEL_NAME_MAX_LENGTH);
   return name ? `${name} (${shortId})` : `Compte ${shortId}`;
 }
