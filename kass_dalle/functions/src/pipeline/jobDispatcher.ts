@@ -27,6 +27,7 @@ import {
 } from "../config";
 import { isValidScanId, raiseImportCeiling, scanOwnerConflict } from "../ai/importBudget";
 import { logInfo, logError, newCorrelationId, newScanId, qualify } from "../logging";
+import { DISPATCH_ERROR_MESSAGE } from "./jobErrorMessage";
 
 export const jobDispatcher = onDocumentWritten(
   {
@@ -196,14 +197,13 @@ export const jobDispatcher = onDocumentWritten(
         correlationId,
         scanId,
       });
-      await getFirestore()
-        .collection(COLL_PROCESSING_JOBS)
-        .doc(jobId)
-        .update({
-          status: "error",
-          error_message: `Dispatcher: ${message}`,
-          updated_at: Timestamp.now(),
-        });
+      await getFirestore().collection(COLL_PROCESSING_JOBS).doc(jobId).update({
+        status: "error",
+        // Texte fixe pour le membre ; le texte brut reste dans le
+        // `logError` ci-dessus.
+        error_message: DISPATCH_ERROR_MESSAGE,
+        updated_at: Timestamp.now(),
+      });
     }
   },
 );

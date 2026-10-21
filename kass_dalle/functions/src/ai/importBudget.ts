@@ -253,12 +253,19 @@ export function importBudgetDenial(args: {
 }): BudgetDenial | null {
   const { spend, usdToEur } = args;
   if (spend.limitUsd == null || spend.costUsd < spend.limitUsd) return null;
+  // Le budget accordé par « Relancer » est le palier (`raisedImportLimit`) ;
+  // sans palier, la relance ne relève rien et la phrase n'est pas écrite.
+  const relaunch =
+    spend.stepUsd != null
+      ? ` Pour continuer, appuyez sur « Relancer » : un nouveau budget de ` +
+        `${formatBudgetAmount(spend.stepUsd, usdToEur)} sera accordé.`
+      : "";
   return {
     reason: "import",
     message:
       `Plafond de cet import atteint : ${formatBudgetAmount(spend.costUsd, usdToEur)} dépensés ` +
-      `pour ${formatBudgetAmount(spend.limitUsd, usdToEur)} autorisés. ` +
-      "Relancer une tranche depuis la file ouvre un nouveau palier de la même taille.",
+      `pour ${formatBudgetAmount(spend.limitUsd, usdToEur)} autorisés.` +
+      relaunch,
   };
 }
 

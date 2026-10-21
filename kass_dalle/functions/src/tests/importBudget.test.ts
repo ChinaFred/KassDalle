@@ -93,13 +93,25 @@ describe("importBudgetDenial", () => {
 
   test("au plafond, l'appel est refusé, et le message chiffre en euros avec un taux", () => {
     const denial = importBudgetDenial({
-      spend: spend({ costUsd: 10, limitUsd: 10 }),
+      spend: spend({ costUsd: 10, limitUsd: 10, stepUsd: 10 }),
       usdToEur: 0.9,
     });
     assert.ok(denial);
     assert.equal(denial.reason, "import");
     assert.match(denial.message, /9,00 €/);
-    assert.match(denial.message, /Relancer une tranche/);
+    assert.match(
+      denial.message,
+      /Pour continuer, appuyez sur « Relancer » : un nouveau budget de 9,00 € sera accordé\.$/,
+    );
+  });
+
+  test("sans palier, la relance ne relève rien : pas de phrase « Relancer »", () => {
+    const denial = importBudgetDenial({
+      spend: spend({ costUsd: 10, limitUsd: 10, stepUsd: null }),
+      usdToEur: 0.9,
+    });
+    assert.ok(denial);
+    assert.doesNotMatch(denial.message, /Relancer/);
   });
 
   test("sans taux, le message reste en dollars : aucun taux n'est inventé", () => {

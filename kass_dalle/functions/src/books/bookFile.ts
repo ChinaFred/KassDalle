@@ -66,12 +66,32 @@ export type BookFileKind = "pdf" | "epub" | "docx";
  *
  * Un fichier illisible le reste à chaque tentative : le processeur ne la
  * réessaie pas, et le message part tel quel sur le job.
+ *
+ * Le texte de la bibliothèque qui a échoué (pdf-lib, JSZip, lecteur Word) ne
+ * va jamais dans le message : il va dans `detail`, que le processeur écrit
+ * dans `logError` et dans la dead letter (`last_error`), lus par
+ * l'administrateur.
  */
 export class BookFileError extends Error {
-  constructor(message: string) {
+  readonly detail: string | null;
+
+  constructor(message: string, cause?: unknown) {
     super(message);
     this.name = "BookFileError";
+    this.detail =
+      cause === undefined ? null : cause instanceof Error ? cause.message : String(cause);
   }
+}
+
+/** Message d'un EPUB qui ne s'ouvre pas ou ne se lit pas (archive abîmée ou au-delà des bornes). */
+export const EPUB_UNREADABLE_MESSAGE =
+  "Ce fichier EPUB n'a pas pu être ouvert : il est abîmé ou trop volumineux. " +
+  "Exportez-le de nouveau, ou découpez-le, puis recommencez.";
+
+/** Le message d'une erreur pour les journaux : message, puis détail technique s'il existe. */
+export function technicalErrorText(err: unknown): string {
+  if (err instanceof BookFileError && err.detail) return `${err.message} (${err.detail})`;
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Le format d'un livre, d'après son type MIME puis son extension. */
@@ -377,17 +397,13 @@ export async function readEpub(bytes: Buffer): Promise<EpubContent> {
   try {
     archive = await BoundedZip.open(bytes);
   } catch (err) {
-    throw new BookFileError(
-      `Ce fichier EPUB n'a pas pu être ouvert : ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw new BookFileError(EPUB_UNREADABLE_MESSAGE, err);
   }
   const read = async (path: string): Promise<string | null> => {
     try {
       return await archive.text(path);
     } catch (err) {
-      throw new BookFileError(
-        `Ce fichier EPUB n'a pas pu être lu : ${err instanceof Error ? err.message : String(err)}`,
-      );
+      throw new BookFileError(EPUB_UNREADABLE_MESSAGE, err);
     }
   };
 
@@ -508,7 +524,9 @@ export async function openPdf(bytes: Buffer): Promise<PdfSource> {
       );
     }
     throw new BookFileError(
-      `Ce PDF n'a pas pu être lu : ${err instanceof Error ? err.message : String(err)}`,
+      "Ce PDF n'a pas pu être lu : le fichier est abîmé ou n'est pas un PDF. " +
+        "Exportez-le de nouveau, puis recommencez.",
+      err,
     );
   }
   const title = doc.getTitle()?.trim() ?? "";
@@ -772,7 +790,9 @@ export async function openBookFile(bytes: Buffer, kind: BookFileKind): Promise<O
       text = await docxToPlainText(bytes);
     } catch (err) {
       throw new BookFileError(
-        `Ce document Word n'a pas pu être lu : ${err instanceof Error ? err.message : String(err)}`,
+        "Ce document Word n'a pas pu être lu : le fichier est abîmé ou trop volumineux. " +
+          "Enregistrez-le de nouveau au format .docx, ou découpez-le en plusieurs fichiers, puis recommencez.",
+        err,
       );
     }
     const paragraphs = text

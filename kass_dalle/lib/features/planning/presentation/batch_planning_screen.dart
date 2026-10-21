@@ -50,7 +50,7 @@ import '../../../core/widgets/app_shortcuts.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_service.dart'
-    show GeminiCallableException;
+    show GeminiCallableException, callableErrorCode;
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
 import '../domain/calendar_export_messages.dart';
@@ -1860,13 +1860,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       }
       return _ConceptOutcome.done;
     } on GeminiCallableException catch (e, stackTrace) {
-      // Refus du plafond de la génération : la boucle s'arrête et l'écran
-      // dit combien de créneaux restent vides. Ce n'est pas une panne.
-      final details = e.details;
-      if (runId != null &&
-          details is Map &&
-          details['reason'] is String &&
-          (e.code == 'resource-exhausted' || e.code == 'not-found')) {
+      if (runId != null && isPlanningRunDenial(e)) {
         return _ConceptOutcome.denied;
       }
       reportUnexpectedError(
@@ -1876,10 +1870,15 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         context: {'code': e.code},
       );
       if (!mounted) return _ConceptOutcome.failed;
-      if (e.code == 'resource-exhausted' && e.message.isNotEmpty) {
-        // Plafond du jour : le message du serveur est écrit pour l'écran.
-        _showError(e.message);
-        return runId != null ? _ConceptOutcome.denied : _ConceptOutcome.failed;
+      if (callableErrorCode(e) == 'resource-exhausted') {
+        // Plafond d'IA du compte ou fournisseur saturé : sans « Réessayer ».
+        // `failureMessage` reprend le message du serveur pour le plafond.
+        _showError(failureMessage('Recette non conçue', e));
+        // La boucle s'arrête, sauf sur un refus `concurrency`, qui se libère
+        // en quelques secondes : le créneau suivant a sa chance.
+        return runId != null && !isConcurrencyRefusal(e)
+            ? _ConceptOutcome.denied
+            : _ConceptOutcome.failed;
       }
       _conceptFailed(slotIndex, e);
       return _ConceptOutcome.failed;
@@ -3437,4 +3436,30 @@ class _NewPlanningAppBar extends StatelessWidget
   @override
   Widget build(BuildContext context) =>
       AppBar(title: const Text('Nouveau planning'));
+}
+
+/// Vrai si [e] est le refus du plafond d'une génération (`PlanningRunDenied`
+/// de `generateRecipeConceptFn`) : `resource-exhausted` ou `not-found`, avec
+/// une `details.reason` et **sans** `details.scope`. Le plafond d'IA du compte
+/// (`scope: ai_budget`, raisons `cost`, `calls` et `concurrency`) n'en est
+/// pas un : son message est affiché, et un refus `concurrency` se libère en
+/// quelques secondes.
+@visibleForTesting
+bool isPlanningRunDenial(GeminiCallableException e) {
+  final details = e.details;
+  if (details is! Map) return false;
+  if (details['reason'] is! String) return false;
+  if (details.containsKey('scope')) return false;
+  final code = callableErrorCode(e);
+  return code == 'resource-exhausted' || code == 'not-found';
+}
+
+/// Vrai si [e] est le refus `concurrency` du plafond d'IA du compte : trop
+/// d'appels en cours, libéré en quelques secondes.
+@visibleForTesting
+bool isConcurrencyRefusal(GeminiCallableException e) {
+  final details = e.details;
+  return details is Map &&
+      details['scope'] == kAiBudgetScope &&
+      details['reason'] == 'concurrency';
 }

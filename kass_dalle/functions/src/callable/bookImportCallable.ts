@@ -22,6 +22,7 @@ import {
   BookFileError,
   detectBookFileKind,
   openBookFile,
+  technicalErrorText,
 } from "../books/bookFile";
 import { referenceCostPerScan, referenceCostPerWindow } from "../books/importEstimate";
 import { fileSha256, findExistingBook, type ExistingBookMatch } from "../books/existingBook";
@@ -163,6 +164,18 @@ export const analyzeBookFileFn = onCall(
       };
     } catch (err) {
       if (err instanceof BookFileError) {
+        // Le texte de la bibliothèque qui a échoué ne part pas au client : il
+        // reste ici, pour l'administrateur.
+        if (err.detail) {
+          await logWarn({
+            message: "Analyse du livre : fichier illisible",
+            errorDescription: technicalErrorText(err),
+            moduleType: "IMPORT",
+            userId: ctx.userId,
+            correlationId: ctx.correlationId,
+            extra: { storagePath },
+          });
+        }
         throw new HttpsError("failed-precondition", err.message);
       }
       if (err instanceof HttpsError) throw err;
@@ -174,10 +187,8 @@ export const analyzeBookFileFn = onCall(
         correlationId: ctx.correlationId,
         extra: { storagePath },
       });
-      throw new HttpsError(
-        "internal",
-        err instanceof Error ? err.message : "Analyse du livre impossible.",
-      );
+      // Texte fixe : le texte brut est dans le `logError` ci-dessus.
+      throw new HttpsError("internal", "Analyse du livre impossible.");
     }
   },
 );

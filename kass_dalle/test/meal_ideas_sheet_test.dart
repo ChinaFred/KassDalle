@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/services/error_report_service.dart';
 import 'package:kass_dalle/core/services/gemini_service.dart';
+import 'package:kass_dalle/core/widgets/error_message.dart' show kAiBudgetScope;
 import 'package:kass_dalle/features/planning/domain/meal_idea.dart';
 import 'package:kass_dalle/features/planning/presentation/meal_ideas_sheet.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
@@ -223,7 +224,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('Recette non rédigée. Une erreur inattendue est survenue.'),
+        find.text('Recette non conçue. Une erreur inattendue est survenue.'),
         findsOneWidget,
       );
       expect(find.textContaining('rédaction impossible'), findsNothing);
@@ -397,7 +398,7 @@ void main() {
       expect(text.toLowerCase(), isNot(contains('firebase')));
     });
 
-    testWidgets('le message que le serveur écrit pour l\'écran est gardé', (
+    testWidgets('le plafond d\'IA du jour garde le message du serveur', (
       tester,
     ) async {
       await generateFailing(
@@ -405,14 +406,35 @@ void main() {
         GeminiCallableException(
           'resource-exhausted',
           'Plafond du jour atteint : revenez demain.',
+          {'reason': 'cost', 'scope': kAiBudgetScope},
+        ),
+      );
+
+      expect(
+        find.text(
+          'Idées non proposées. Plafond du jour atteint : revenez demain.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('le texte brut du fournisseur saturé n\'est pas recopié', (
+      tester,
+    ) async {
+      await generateFailing(
+        tester,
+        GeminiCallableException(
+          'resource-exhausted',
+          '429 Resource has been exhausted (e.g. check quota).',
           null,
         ),
       );
 
       expect(
-        find.text('Plafond du jour atteint : revenez demain.'),
+        find.text('Idées non proposées. Service d\'IA saturé.'),
         findsOneWidget,
       );
+      expect(find.textContaining('429'), findsNothing);
     });
 
     testWidgets('le texte anglais du SDK sur mobile n\'est pas recopié', (
