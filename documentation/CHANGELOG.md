@@ -28,6 +28,13 @@ dans le planning d'un groupe, sans échec. Les repas déjà déplacés restent d
 leur groupe. Aucun écran de l'application ne change désormais le planning d'un repas existant.
 Le menu ⋮ de chaque ponctuel propose de nouveau « Marquer comme terminé ».
 
+« Reprendre le sel des ingrédients » ne redemande plus un ingrédient déjà réparé, et retente un
+ingrédient en échec au passage suivant. Il ne se dit terminé qu'après un parcours entier de
+l'ancien référentiel sans échec ; un passage repris en cours de route se dit « incomplet » et
+invite à relancer. Les ingrédients réparés avant cette version n'ont pas la marque de
+réparation : le prochain passage les réestime une fois de plus, et cette dépense est imputée
+au poste `backfill_refresh_sodium_per100g`.
+
 ### v0.24.43 — technique
 
 Retrait du ponctuel réutilisable `move_meals_to_group` (v0.23.61), sans « Copier la liste » :
@@ -44,6 +51,21 @@ La clé rejoint les listes de clés retirées des tests. Le document
 `app_config/backfill_run_move_meals_to_group` reste en base, plus lu. Aucune règle Firestore ne
 change : aucune n'existait pour ce backfill, qui écrivait par l'Admin SDK ; l'index `uid` +
 `planned_at` de `planned_meals` reste, `readServedHistory` s'en sert. Aucun poste de coût.
+
+Réparation du sel (`refresh_sodium`, mode `refreshSodium` de `runEnrichReferentialsPass`,
+`billingCallable.ts`). Avant : la sélection était `carriesSodium(per100g)`, vraie aussi pour
+un ingrédient déjà réparé ; le curseur avançait sans mémoire d'échec, donc un échec n'était
+retenté qu'au tour suivant ; un passage repris à mi-chemin qui atteignait la fin pouvait marquer
+le backfill terminé malgré les échecs des passages précédents ; une relance après la fin
+redemandait tout. Maintenant : nouveau champ `nutrition_ingredients.sodium_repaired_at`
+(horodatage serveur), posé dans le même `update` que le profil réparé
+(`enrichedIngredientPayload`) ; cible = sodium présent et marque absente
+(`isSodiumRepairTarget`) ; en mode sel, un échec compte dans `unresolvedFailures`, et le
+passage n'est complet que si son parcours a commencé au début de la collection
+(`enrichPassCompleted`). Le mode `enrich_referentials` ne change pas. Les règles Firestore ne
+changent pas : le client n'écrit sur `nutrition_ingredients` que le produit acheté et les
+allergènes. Nouveau test `refreshSodium.test.ts`. Le compte rendu de la bannière dit
+« terminé » seulement sans échec.
 
 ### v0.24.42 — fonctionnel
 

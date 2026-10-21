@@ -140,7 +140,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         return 'Le sel et le sodium d\'un ingrédient étaient additionnés : '
             'tout ingrédient salé porte un sel deux fois trop élevé. Ce '
             'passage fait réestimer par l\'IA les ingrédients porteurs de '
-            'sodium.\n\n'
+            'sodium. Un ingrédient réparé est marqué et n\'est plus '
+            'redemandé ; un ingrédient en échec l\'est au passage suivant.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
       case BackfillKeys.defaultUnits:
@@ -233,8 +234,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           r,
           'Ingrédients : scannés=${r['scannedIngredients']}, '
           'repris=${r['refreshedIngredients']}, échecs=${r['failedIngredients']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+          '${(r['completed'] ?? 0) == 1 && (r['failedIngredients'] ?? 0) == 0 ? ' — terminé' : ' — incomplet'}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}'
+          '${(r['completed'] ?? 0) == 0 && (r['stoppedByDeadline'] ?? 0) == 0 ? ' (parcours repris en cours de route : relancer pour vérifier depuis le début)' : ''}',
         );
       case BackfillKeys.allergens:
         final r = await _repo.backfillAllergens(retryExcluded: retryExcluded);
