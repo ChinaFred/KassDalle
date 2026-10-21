@@ -43,6 +43,9 @@ class SlotConstraintsEditor extends StatefulWidget {
   /// contrainte spécifique ; absent : aucune ligne.
   final ConstraintTranslation? Function(String text)? understandingOf;
 
+  /// `modelStatus` de la dernière génération ; `null` hors génération.
+  final String? understandingModelStatus;
+
   const SlotConstraintsEditor({
     super.key,
     required this.constraint,
@@ -52,6 +55,7 @@ class SlotConstraintsEditor extends StatefulWidget {
     required this.onNotesChanged,
     required this.onFormatChanged,
     this.understandingOf,
+    this.understandingModelStatus,
   });
 
   @override
@@ -194,6 +198,7 @@ class _SlotConstraintsEditorState extends State<SlotConstraintsEditor> {
                   builder: (context, value, _) => ConstraintUnderstandingLines(
                     text: value.text,
                     translation: widget.understandingOf!(value.text),
+                    modelStatus: widget.understandingModelStatus,
                   ),
                 ),
             ],
@@ -322,6 +327,9 @@ class BatchSlotTile extends StatefulWidget {
   /// Ce que le serveur a compris d'un texte, pour la contrainte spécifique.
   final ConstraintTranslation? Function(String text)? understandingOf;
 
+  /// `modelStatus` de la dernière génération ; `null` hors génération.
+  final String? understandingModelStatus;
+
   /// Aucune recette classée en entrée ou en dessert : la ligne « à choisir »
   /// le dit.
   final bool noStarterCandidate;
@@ -392,6 +400,7 @@ class BatchSlotTile extends StatefulWidget {
     this.relaxed = const [],
     this.unmet = const [],
     this.understandingOf,
+    this.understandingModelStatus,
     this.noStarterCandidate = false,
     this.noDessertCandidate = false,
     this.starter,
@@ -1207,6 +1216,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
           onNotesChanged: w.onNotesChanged,
           onFormatChanged: w.onFormatChanged,
           understandingOf: w.understandingOf,
+          understandingModelStatus: w.understandingModelStatus,
         ),
       if (w.recipe != null) ...[
         const SizedBox(height: 8),
@@ -1412,6 +1422,7 @@ class _BatchSlotTileState extends State<BatchSlotTile> {
             ConstraintUnderstandingLines(
               text: notes,
               translation: widget.understandingOf!(notes),
+              modelStatus: widget.understandingModelStatus,
             ),
         ],
       ],

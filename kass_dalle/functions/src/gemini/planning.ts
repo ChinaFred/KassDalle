@@ -969,6 +969,57 @@ export function planningTexts(input: PlanningInput): string[] {
   return [...new Set(texts.map((t) => t.trim()).filter((t) => t.length > 0))];
 }
 
+/** Longueur d'une consigne citée dans un avis, au-delà coupée par « … ». */
+const UNREAD_TEXT_MAX_CHARS = 80;
+/** Consignes citées dans un avis ; les suivantes sont comptées. */
+const UNREAD_TEXTS_MAX = 3;
+
+/**
+ * Ce qu'aucun critère vérifié ne couvre dans les textes d'une génération : le
+ * reste non traduit d'un texte compris, ou le texte entier quand il ne l'a pas
+ * été. Seul le modèle du planning lit ces consignes ; quand il n'a pas répondu,
+ * personne ne les a lues.
+ */
+export function unverifiedConstraintTexts(
+  input: PlanningInput,
+  understood: ReadonlyMap<string, TextUnderstanding>,
+): string[] {
+  const rests = planningTexts(input).map((text) => {
+    const u = understood.get(text);
+    return (u ? u.untranslated : text).trim();
+  });
+  return [...new Set(rests.filter((t) => t.length > 0))];
+}
+
+/**
+ * Avis du mode dégradé : ce qui a empêché l'IA ([lead]), ce que le
+ * programme a appliqué, puis les consignes non lues.
+ *
+ * Avec des consignes non lues, l'avis ne dit plus « selon vos contraintes » :
+ * le programme n'applique que les critères vérifiés, et le reste est cité.
+ * 80 caractères au plus par consigne, trois consignes au plus, les suivantes
+ * comptées. [nothingBilled] ajoute « Rien n'a été facturé. » (plafonds).
+ */
+export function degradedNotice(
+  lead: string,
+  nothingBilled: boolean,
+  unread: readonly string[],
+): string {
+  const billed = nothingBilled ? " Rien n'a été facturé." : "";
+  if (unread.length === 0) {
+    return `${lead} Kass'Dalle a choisi les plats selon vos contraintes.${billed}`;
+  }
+  const cut = (t: string) =>
+    t.length > UNREAD_TEXT_MAX_CHARS ? `${t.slice(0, UNREAD_TEXT_MAX_CHARS - 1).trimEnd()}…` : t;
+  const quoted = unread.slice(0, UNREAD_TEXTS_MAX).map((t) => `« ${cut(t)} »`);
+  const more = unread.length - UNREAD_TEXTS_MAX;
+  const tail = more > 0 ? ` et ${more} autre${more > 1 ? "s" : ""}` : "";
+  return (
+    `${lead} Kass'Dalle a choisi les plats selon vos critères vérifiés.${billed}` +
+    ` Ces consignes n'ont pas été suivies : ${quoted.join(", ")}${tail}.`
+  );
+}
+
 const LIGHT_MARKERS = ["soupe", "salade", "veloute", "bouillon", "leger", "legere", "potage"];
 
 /**
@@ -1990,12 +2041,23 @@ export function formatEur(amount: number): string {
   return `${amount.toFixed(2).replace(".", ",")} €`;
 }
 
-const NOTICE_FAILED = "L'IA n'a pas répondu. Kass'Dalle a choisi les plats selon vos contraintes.";
-const NOTICE_DAILY_CAP =
-  "Votre plafond d'IA du jour est atteint. Kass'Dalle a choisi les plats selon vos contraintes. Rien n'a été facturé.";
+/** Début de l'avis du mode dégradé, et s'il ajoute « Rien n'a été facturé. ». */
+export interface DegradedCause {
+  lead: string;
+  nothingBilled: boolean;
+}
 
-export function generationCapNotice(capEur: number): string {
-  return `Cette génération aurait coûté plus de ${formatEur(capEur)} en IA. Kass'Dalle a choisi les plats selon vos contraintes. Rien n'a été facturé.`;
+const CAUSE_FAILED: DegradedCause = { lead: "L'IA n'a pas répondu.", nothingBilled: false };
+const CAUSE_DAILY_CAP: DegradedCause = {
+  lead: "Votre plafond d'IA du jour est atteint.",
+  nothingBilled: true,
+};
+
+export function generationCapCause(capEur: number): DegradedCause {
+  return {
+    lead: `Cette génération aurait coûté plus de ${formatEur(capEur)} en IA.`,
+    nothingBilled: true,
+  };
 }
 
 /** Une ligne compacte par recette candidate, pour la section RECETTES. */
@@ -2264,7 +2326,7 @@ export async function suggestMealPlan(
   const sentSlots = new Set(rankings.filter(needsModel).map((r) => r.slot));
 
   let modelStatus: PlanningSuggestion["modelStatus"] = "skipped";
-  let notice: string | null = null;
+  let degraded: DegradedCause | null = null;
   let slots: PlanningSlotResult[] | null = null;
   let rejected = 0;
   let candidatesSent = 0;
@@ -2289,7 +2351,7 @@ export async function suggestMealPlan(
     const ceiling = await deps.estimateCeilingUsd(prompt.length);
     if (deps.costCapUsd != null && ceiling != null && ceiling > deps.costCapUsd) {
       modelStatus = "budget";
-      notice = generationCapNotice(deps.policy.costCapEurPerGeneration);
+      degraded = generationCapCause(deps.policy.costCapEurPerGeneration);
       await logWarn({
         ...logCtx,
         message: "Planning — plafond de la génération : appel évité, choix par le code",
@@ -2329,7 +2391,7 @@ export async function suggestMealPlan(
         }
         if (!Array.isArray(parsed)) {
           modelStatus = "failed";
-          notice = NOTICE_FAILED;
+          degraded = CAUSE_FAILED;
           if (!text) {
             await logError({
               ...logCtx,
@@ -2359,7 +2421,7 @@ export async function suggestMealPlan(
       } catch (err) {
         if (err instanceof BudgetExceededError) {
           modelStatus = "budget";
-          notice = NOTICE_DAILY_CAP;
+          degraded = CAUSE_DAILY_CAP;
           await logWarn({
             ...logCtx,
             message: "Planning — plafond du jour atteint, choix par le code",
@@ -2368,7 +2430,7 @@ export async function suggestMealPlan(
           });
         } else {
           modelStatus = "failed";
-          notice = NOTICE_FAILED;
+          degraded = CAUSE_FAILED;
           await logError({
             ...logCtx,
             message: "Planning — appel du modèle en échec, choix par le code",
@@ -2381,6 +2443,15 @@ export async function suggestMealPlan(
   }
 
   if (slots == null) slots = codeFill({ rankings, input, corpusById });
+  // Le modèle n'a pas lu les consignes écrites : l'avis le dit, et les cite.
+  const notice =
+    degraded == null
+      ? null
+      : degradedNotice(
+          degraded.lead,
+          degraded.nothingBilled,
+          unverifiedConstraintTexts(input, understood),
+        );
   const durationMs = Date.now() - startedAt;
   const stats = {
     corpus: input.recipes.length,

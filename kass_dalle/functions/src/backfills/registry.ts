@@ -22,7 +22,7 @@
  * `recipe_title_keys` et `invitation_group_owner`.
  * Retirés en v0.24.37, une fois terminés en production : `illustration_folders`
  * et `illustration_folders_move`.
- * Retiré en v0.24.43, sur demande, sans être terminé (ponctuel réutilisable) :
+ * Retiré en v0.24.44, sur demande, sans être terminé (ponctuel réutilisable) :
  * `move_meals_to_group`.
  * Leurs documents `app_config/backfill_run_<clé>` restent en base ; plus rien
  * ne les lit. La liste complète, avec les versions : skill `backfill`,

@@ -60,10 +60,12 @@ const MEAL_IDEAS_SCHEMA = {
           cuisson_min: { type: "integer" },
         },
         required: ["titre", "description"],
+        additionalProperties: false,
       },
     },
   },
   required: ["idees"],
+  additionalProperties: false,
 };
 
 /**

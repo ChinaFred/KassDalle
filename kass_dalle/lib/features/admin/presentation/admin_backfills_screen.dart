@@ -881,7 +881,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // fichiers conservés car encore cités.
   //
   // « Déplacer mes repas vers un groupe » (`backfillMoveMealsToGroupFn`,
-  // v0.23.61) est retiré en v0.24.43 (21 octobre 2026), à la demande de
+  // v0.23.61) est retiré en v0.24.44 (21 octobre 2026), à la demande de
   // l'administrateur, sans avoir été marqué terminé : paramétré par un groupe
   // et une période, il faisait passer les repas de « Mon planning » de
   // l'appelant dans le planning d'un groupe dont il est propriétaire, en

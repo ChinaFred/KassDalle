@@ -192,7 +192,7 @@ version d'ajout.
 | `invitation_group_owner` | Propriétaire du groupe des invitations | `backfillInvitationGroupOwnerFn` | le 19/10/2026, v0.24.14 | v0.24.33 |
 | `illustration_folders` | Dossiers des illustrations | `backfillIllustrationFoldersFn` | le 21/10/2026, v0.24.36 | v0.24.37 |
 | `illustration_folders_move` | Ranger les illustrations | `backfillIllustrationFoldersMoveFn` | le 21/10/2026, v0.24.36 | v0.24.37 |
-| `move_meals_to_group` | Déplacer mes repas vers un groupe | `backfillMoveMealsToGroupFn` | — (réutilisable, jamais terminé ; dernier passage le 14/10/2026) | v0.24.43 |
+| `move_meals_to_group` | Déplacer mes repas vers un groupe | `backfillMoveMealsToGroupFn` | — (réutilisable, jamais terminé ; dernier passage le 14/10/2026) | v0.24.44 |
 
 Un tiret signale une information que le dépôt ne garde pas. Les autres opérations retirées
 avant le registre (v0.23.45), sans version de retrait connue, sont décrites dans le

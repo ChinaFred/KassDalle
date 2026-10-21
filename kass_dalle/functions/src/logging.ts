@@ -15,7 +15,11 @@
 import { LOG_NAME } from "./config";
 
 export type ModuleType = "IMPORT" | "IMAGE_DECODE" | "SEARCH" | "DESIGN" | "MODERATION";
-export type GeminiStatus = "SUCCESS" | "QUOTA_EXCEEDED" | "ERROR";
+/**
+ * Issue d'un appel Gemini, posée en label. `CREDITS_EXHAUSTED` : HTTP 402, crédits
+ * prépayés épuisés — définitif, jamais relancé (`gemini/client.ts`, `classifyError`).
+ */
+export type GeminiStatus = "SUCCESS" | "QUOTA_EXCEEDED" | "CREDITS_EXHAUSTED" | "ERROR";
 export type LogSeverity = "INFO" | "ERROR" | "WARNING" | "DEBUG";
 
 export interface StructuredLogEntry {

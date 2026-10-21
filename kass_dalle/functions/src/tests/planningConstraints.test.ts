@@ -28,10 +28,12 @@ import {
   buildPlanningPrompt,
   criteriaItemOf,
   isLightRecipe,
+  degradedNotice,
   planningTexts,
   preselect,
   seededRng,
   slotCriteriaOf,
+  unverifiedConstraintTexts,
   validateModelChoices,
   type PlanningInput,
   type PlanningRecipeSummary,
@@ -252,6 +254,50 @@ describe("critères d'une génération", () => {
     );
     assert.deepEqual(c.excludedProteins, ["porc"]);
     assert.equal(c.maxDuration, 30);
+  });
+
+  test("consignes non vérifiées : le reste d'un texte compris, un texte non compris en entier", () => {
+    const input = inputWith([], { global: "sans porc, pas trop gras", notes: "sport le soir" });
+    assert.deepEqual(
+      unverifiedConstraintTexts(
+        input,
+        understood([
+          ["sans porc, pas trop gras", { excluded_proteins: ["porc"] }, "pas trop gras"],
+        ]),
+      ),
+      ["pas trop gras", "sport le soir"],
+    );
+    // Un texte entièrement traduit ne laisse rien à citer.
+    assert.deepEqual(
+      unverifiedConstraintTexts(
+        inputWith([], { global: "sans porc" }),
+        understood([["sans porc", { excluded_proteins: ["porc"] }, ""]]),
+      ),
+      [],
+    );
+  });
+
+  test("avis du mode dégradé : consignes non lues citées, coupées et comptées", () => {
+    const lead = "L'IA n'a pas répondu.";
+    assert.equal(
+      degradedNotice(lead, false, []),
+      "L'IA n'a pas répondu. Kass'Dalle a choisi les plats selon vos contraintes.",
+    );
+    // Avec des consignes non lues, l'avis ne dit plus « selon vos contraintes ».
+    assert.equal(
+      degradedNotice(lead, false, ["pas trop gras", "sport le soir"]),
+      "L'IA n'a pas répondu. Kass'Dalle a choisi les plats selon vos critères vérifiés." +
+        " Ces consignes n'ont pas été suivies : « pas trop gras », « sport le soir ».",
+    );
+    assert.equal(
+      degradedNotice("Votre plafond d'IA du jour est atteint.", true, ["pas trop gras"]),
+      "Votre plafond d'IA du jour est atteint. Kass'Dalle a choisi les plats selon vos critères" +
+        " vérifiés. Rien n'a été facturé. Ces consignes n'ont pas été suivies : « pas trop gras ».",
+    );
+    const long = "a".repeat(120);
+    const out = degradedNotice(lead, false, [long, "b", "c", "d", "e"]);
+    assert.ok(out.includes(`« ${"a".repeat(79)}… »`));
+    assert.ok(out.endsWith("« b », « c » et 2 autres."));
   });
 
   test("léger : entrée, en-cas, soupe ou salade ; un autre plat ne l'est pas ; sans rôle : inconnu", () => {

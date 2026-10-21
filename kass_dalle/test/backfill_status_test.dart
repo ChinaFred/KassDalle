@@ -447,7 +447,7 @@ void main() {
 
     test('clé retirée du registre : son état resté en base est ignoré', () {
       // `app_config/backfill_run_<clé>` des ponctuels retirés en v0.23.52,
-      // v0.24.33, v0.24.37 et v0.24.43.
+      // v0.24.33, v0.24.37 et v0.24.44.
       final sections = backfillSections(kBackfillRegistry, {
         for (final key in [
           'recipe_protein',

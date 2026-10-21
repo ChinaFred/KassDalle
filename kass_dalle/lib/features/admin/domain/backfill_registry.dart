@@ -15,7 +15,7 @@
 /// `system_books`, `group_planning_reach`, `ticket_analyses`,
 /// `ticket_delivered_pr`, `recipe_title_keys` et `invitation_group_owner`.
 /// Retirés en v0.24.37 : `illustration_folders` et `illustration_folders_move`.
-/// Retiré en v0.24.43, sur demande, sans être terminé (ponctuel réutilisable) :
+/// Retiré en v0.24.44, sur demande, sans être terminé (ponctuel réutilisable) :
 /// `move_meals_to_group`.
 /// Leurs documents `app_config/backfill_run_<clé>` restent en base ; l'écran
 /// ignore une clé absente de ce registre.

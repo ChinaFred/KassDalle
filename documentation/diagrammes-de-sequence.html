@@ -1972,7 +1972,7 @@ sequenceDiagram
   SP->>SP: coût plafond (grille en vigueur, taux de la facture)
   alt estimation au-delà de 0,50 € ou plafond du jour atteint
     SP->>PL: codeFill — premier candidat libre, aucun appel
-    Note over SP: modelStatus budget · « Rien n'a été facturé »
+    Note over SP: modelStatus budget · « Rien n'a été facturé »<br/>+ « Ces consignes n'ont pas été suivies : « … » » (degradedNotice)
   else
     SP->>M: callModel(planning, maxTokens 4 000, entity planning_run)
     alt réponse lisible
@@ -1980,11 +1980,11 @@ sequenceDiagram
       SP->>PL: validateModelChoices — hors liste ou en double : premier candidat libre
     else panne ou réponse illisible
       SP->>PL: codeFill
-      Note over SP: modelStatus failed · « L'IA n'a pas répondu… »
+      Note over SP: modelStatus failed · « L'IA n'a pas répondu… »<br/>+ « Ces consignes n'ont pas été suivies : « … » » (degradedNotice)
     end
   end
   SP->>FS: users/{uid}/planning_runs/{runId} — propositions, statut,<br/>concepts_max (borné par les créneaux vides), coût
-  SP-->>B: suggestions (faits du code, source model | code, unmet), rankedCandidates (unmet),<br/>runId, conceptsRemaining, notice, constraintTranslations
+  SP-->>B: suggestions (faits du code, source model | code, unmet), rankedCandidates (unmet),<br/>runId, conceptsRemaining, notice, modelStatus, constraintTranslations
   B->>B: ligne d'origine : Choisie par l'IA · Choisie par Kass'Dalle ;<br/>bandeau si notice, « Réessayer avec l'IA » après une panne,<br/>une ligne par écart, « N créneaux ne tiennent pas tous les critères »
 
   opt créneaux restés vides, conception IA cochée
@@ -4947,8 +4947,12 @@ sequenceDiagram
   end
   Note over SP: coût de la traduction retiré du plafond<br/>laissé au choix des plats (planningRunCost)
   SP->>M: callModel(planning) — critères vérifiés en clair, reste non traduit
-  SP-->>B: suggestions (unmet), rankedCandidates (unmet), constraintTranslations
-  B->>B: « Compris : sans porc · 30 min max »<br/>« Transmis à l'IA, non vérifié : « pas trop gras » »
+  SP-->>B: suggestions (unmet), rankedCandidates (unmet), modelStatus, constraintTranslations
+  alt modelStatus ok ou partial
+    B->>B: « Compris : sans porc · 30 min max »<br/>« Transmis à l'IA, non vérifié : « pas trop gras » »
+  else panne ou réponse illisible (failed)
+    B->>B: « Compris : sans porc · 30 min max »<br/>« Non lu, l'IA n'a pas répondu : « pas trop gras » »
+  end
   B->>B: carte : « 1 h 10, au-delà des 45 min demandées : peu d'autres choix »<br/>« Dessert : à choisir. Aucun dessert sans fruits à coque. » [Choisir]
   B->>B: avis : « 3 créneaux ne tiennent pas tous les critères. » [Voir le premier]
   B->>B: chooseSides — accompagnement qui viole une exclusion jamais proposé,<br/>vérifié avant non renseigné
