@@ -1132,7 +1132,8 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
         extra: { quarantinePath: storagePath, promotedPath, storageCode: storageErrorCode(e) },
       });
     }
-    throw await toHttpsError(e);
+    // Journalisée ci-dessus avec son contexte : pas de seconde ligne.
+    throw await toHttpsError(e, { alreadyLogged: true });
   }
 });
 

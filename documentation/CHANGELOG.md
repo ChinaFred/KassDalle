@@ -58,7 +58,10 @@ Audit #151, lot 8, tickets #170 et #171 : messages d'erreur lus par les membres.
   (`moderationRefusal`). `scope` distingue ce refus du plafond d'une génération de planning
   (`PlanningRunDenied`, `reason: "cost"` sans `scope`). `GeminiQuotaExceededError`,
   `GeminiError` et toute erreur non typée reçoivent un texte fixe ; leur texte brut est
-  journalisé par `toHttpsError` (`logError`). `analyzeBookFileFn` rend toujours
+  journalisé par `toHttpsError` (`logError`), une seule fois par échec : une erreur du
+  fournisseur levée par `gemini/client.ts`, `enhancer.ts` ou `imageGenerator.ts` porte
+  `logged` (déjà journalisée avec son contexte), et `scanAndPromoteUploadFn` passe `alreadyLogged` après sa propre ligne
+  (`callableErrorAlreadyLogged`). `analyzeBookFileFn` rend toujours
   « Analyse du livre impossible. » en `internal`. La recherche web garde sa forme
   (`reason: "ai_daily_budget"`).
 - `budget.ts` : `DAILY_LIMIT_MESSAGE` commun à `cost` et `calls` ; nouveau texte de

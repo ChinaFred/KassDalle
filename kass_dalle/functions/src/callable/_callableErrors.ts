@@ -53,9 +53,13 @@ export const UNEXPECTED_CALLABLE_MESSAGE = "Le traitement a échoué.";
  * bibliothèque) ne part au client : les erreurs du fournisseur et les erreurs
  * non typées reçoivent un texte fixe, et leur texte brut est journalisé ici
  * (`logError`), parce que la plupart des appelants ne journalisent pas avant
- * `throw await toHttpsError(e)`.
+ * `throw await toHttpsError(e)`. Deux exceptions, pour ne pas écrire deux
+ * lignes pour un même échec (`callableErrorAlreadyLogged`).
  */
-export async function toHttpsError(err: unknown): Promise<HttpsError> {
+export async function toHttpsError(
+  err: unknown,
+  options: { alreadyLogged?: boolean } = {},
+): Promise<HttpsError> {
   if (err instanceof HttpsError) return err;
   // Plafond de dépense atteint : ce n'est ni une panne ni un défaut de droits,
   // et le message est déjà écrit pour la personne qui le lira. `internal`
@@ -69,12 +73,14 @@ export async function toHttpsError(err: unknown): Promise<HttpsError> {
   if (err instanceof StoragePathRefusedError) {
     return new HttpsError("permission-denied", err.message);
   }
-  const raw = err instanceof Error ? err.message : String(err);
-  await logError({
-    message: "Callable d'IA en échec — texte fixe renvoyé au client",
-    errorDescription: raw,
-    extra: { errorName: err instanceof Error ? err.name : typeof err },
-  });
+  if (!callableErrorAlreadyLogged(err, options)) {
+    const raw = err instanceof Error ? err.message : String(err);
+    await logError({
+      message: "Callable d'IA en échec — texte fixe renvoyé au client",
+      errorDescription: raw,
+      extra: { errorName: err instanceof Error ? err.name : typeof err },
+    });
+  }
   // Quota du fournisseur : même code que le plafond, sans `details`.
   if (err instanceof GeminiQuotaExceededError) {
     return new HttpsError("resource-exhausted", PROVIDER_QUOTA_CALLABLE_MESSAGE);
@@ -83,4 +89,18 @@ export async function toHttpsError(err: unknown): Promise<HttpsError> {
     return new HttpsError("internal", PROVIDER_ERROR_CALLABLE_MESSAGE);
   }
   return new HttpsError("internal", UNEXPECTED_CALLABLE_MESSAGE);
+}
+
+/**
+ * Vrai quand l'erreur a déjà sa ligne de journal, avec son contexte : une
+ * erreur du fournisseur marquée `logged` par `gemini/client.ts`, `enhancer.ts`
+ * ou `imageGenerator.ts`, ou un appelant qui vient de la journaliser lui-même
+ * (`alreadyLogged`).
+ */
+export function callableErrorAlreadyLogged(
+  err: unknown,
+  options: { alreadyLogged?: boolean } = {},
+): boolean {
+  if (options.alreadyLogged === true) return true;
+  return (err instanceof GeminiError || err instanceof GeminiQuotaExceededError) && err.logged;
 }

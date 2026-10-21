@@ -15,6 +15,7 @@ import {
   PROVIDER_ERROR_CALLABLE_MESSAGE,
   PROVIDER_QUOTA_CALLABLE_MESSAGE,
   UNEXPECTED_CALLABLE_MESSAGE,
+  callableErrorAlreadyLogged,
   toHttpsError,
 } from "../callable/_callableErrors";
 import { moderationRefusal } from "../callable/moderationCallables";
@@ -85,6 +86,31 @@ describe("toHttpsError — aucun texte brut vers le client", () => {
     const err = await toHttpsError(new StoragePathRefusedError("x", "Fichier refusé."));
     assert.equal(err.code, "permission-denied");
     assert.equal(err.message, "Fichier refusé.");
+  });
+});
+
+describe("callableErrorAlreadyLogged — une ligne de journal par échec", () => {
+  test("erreurs du fournisseur marquées logged : déjà journalisées", () => {
+    assert.equal(callableErrorAlreadyLogged(new GeminiError("500", undefined, true)), true);
+    assert.equal(callableErrorAlreadyLogged(new GeminiQuotaExceededError("429", true)), true);
+  });
+
+  test("erreur du fournisseur non marquée : journalisée ici", () => {
+    assert.equal(callableErrorAlreadyLogged(new GeminiError("réponse vide")), false);
+    assert.equal(callableErrorAlreadyLogged(new GeminiQuotaExceededError("429")), false);
+  });
+
+  test("erreur non typée : journalisée ici, sauf si l'appelant l'a déjà fait", () => {
+    assert.equal(callableErrorAlreadyLogged(new Error("x")), false);
+    assert.equal(callableErrorAlreadyLogged(new Error("x"), { alreadyLogged: true }), true);
+  });
+
+  test("le texte renvoyé ne dépend pas de la journalisation", async () => {
+    const err = await toHttpsError(new GeminiError("500", undefined, true));
+    assert.equal(err.code, "internal");
+    assert.equal(err.message, PROVIDER_ERROR_CALLABLE_MESSAGE);
+    const other = await toHttpsError(new Error("x"), { alreadyLogged: true });
+    assert.equal(other.message, UNEXPECTED_CALLABLE_MESSAGE);
   });
 });
 

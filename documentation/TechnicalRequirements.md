@@ -5951,7 +5951,12 @@ modération (`moderationRefusal`) :
 Aucun texte brut (fournisseur, SDK, bibliothèque) ne part au client. `toHttpsError` est
 asynchrone : elle journalise le texte brut de ces trois dernières erreurs (`logError`
 « Callable d'IA en échec — texte fixe renvoyé au client ») avant de rendre l'`HttpsError` ;
-les appelants écrivent `throw await toHttpsError(e)`. `analyzeBookFileFn` rend de même
+les appelants écrivent `throw await toHttpsError(e)`. Elle ne réécrit pas une erreur déjà
+journalisée avec son contexte (`callableErrorAlreadyLogged`) : une `GeminiError` ou une
+`GeminiQuotaExceededError` levée par `gemini/client.ts` après « Appel IA échoué » porte
+`logged`, comme celle relancée par `enhancer.ts` et `imageGenerator.ts` après leur propre
+`logError` ; `scanAndPromoteUploadFn` passe `{ alreadyLogged: true }` après sa ligne « Scan de
+securite en echec technique ». `analyzeBookFileFn` rend de même
 `internal` « Analyse du livre impossible. », le texte brut restant dans son `logError`.
 
 `details.scope` (`AI_BUDGET_SCOPE`) distingue le plafond du compte du plafond d'une

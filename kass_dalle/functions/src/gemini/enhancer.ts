@@ -132,8 +132,9 @@ async function enhanceWithinBudget(
       errorDescription: e instanceof Error ? e.message : String(e),
       extra: { feature: ctx.feature },
     });
-    if (e instanceof GeminiError) throw e;
-    throw new GeminiError(e instanceof Error ? e.message : String(e), e);
+    // Journalisée ci-dessus : `logged` évite une seconde ligne dans `toHttpsError`.
+    if (e instanceof GeminiError) throw new GeminiError(e.message, e.cause, true);
+    throw new GeminiError(e instanceof Error ? e.message : String(e), e, true);
   }
 }
 
