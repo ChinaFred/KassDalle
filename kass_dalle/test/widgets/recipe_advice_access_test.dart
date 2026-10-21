@@ -1,7 +1,11 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kass_dalle/core/services/error_report_service.dart';
+import 'package:kass_dalle/core/widgets/error_message.dart';
 import 'package:kass_dalle/core/widgets/provider_retry.dart';
+import 'package:kass_dalle/features/admin/presentation/admin_providers.dart';
 import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/recipes/data/plating_repository.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe_advice_access.dart';
@@ -14,10 +18,31 @@ import '../support/test_backend.dart';
 /// Conseils et calculs écrits sur la recette : seuls son créateur et un
 /// administrateur les déclenchent (faille 5 de l'audit, v0.23.9). Les autres
 /// ne voient pas le bouton, et l'écran dit pourquoi.
+class _FakeErrorReports extends Fake implements ErrorReportService {
+  final features = <String>[];
+
+  @override
+  Future<String> reportError({
+    String? userId,
+    String? jobId,
+    required String feature,
+    required Object error,
+    StackTrace? stackTrace,
+    Map<String, dynamic> context = const {},
+  }) async {
+    features.add(feature);
+    return 'id';
+  }
+}
+
 void main() {
   late TestBackend backend;
+  late _FakeErrorReports reports;
 
-  setUp(() => backend = TestBackend());
+  setUp(() {
+    backend = TestBackend();
+    reports = _FakeErrorReports();
+  });
 
   Future<void> seedAdvice(String recipeId) =>
       backend.firestore.collection('recipes').doc(recipeId).update({
@@ -36,6 +61,7 @@ void main() {
         retry: appProviderRetry,
         overrides: [
           ...backend.overrides,
+          errorReportServiceProvider.overrideWithValue(reports),
           platingRepositoryProvider.overrideWithValue(
             PlatingRepository(firestore: backend.firestore),
           ),
@@ -130,6 +156,60 @@ void main() {
       );
       expect(find.text('Calculer'), findsNothing);
       expect(find.text(kNutritionReservedMessage), findsOneWidget);
+    });
+
+    testWidgets('plafond d\'IA atteint : le message du serveur s\'affiche', (
+      tester,
+    ) async {
+      const serverMessage =
+          'Limite d\'utilisation de l\'IA atteinte pour aujourd\'hui. '
+          'Réessayez demain.';
+      await pump(
+        tester,
+        NutritionDetailsSection(
+          recipe: testRecipe(),
+          selectedPortions: null,
+          onRecompute: () async => throw FirebaseFunctionsException(
+            code: 'resource-exhausted',
+            message: serverMessage,
+            details: {'reason': 'cost', 'scope': kAiBudgetScope},
+          ),
+        ),
+      );
+      await tester.tap(find.text('Calculer'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Nutrition non calculée. $serverMessage'),
+        findsOneWidget,
+      );
+      expect(reports.features, ['nutritionDetailsSection.recompute']);
+    });
+
+    testWidgets('échec du calcul : message lisible, sans texte brut', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        NutritionDetailsSection(
+          recipe: testRecipe(),
+          selectedPortions: null,
+          onRecompute: () async => throw FirebaseFunctionsException(
+            code: 'internal',
+            message: 'Le traitement a échoué.',
+          ),
+        ),
+      );
+      await tester.tap(find.text('Calculer'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Nutrition non calculée. Une erreur inattendue est survenue.',
+        ),
+        findsOneWidget,
+      );
+      expect(reports.features, ['nutritionDetailsSection.recompute']);
     });
   });
 }

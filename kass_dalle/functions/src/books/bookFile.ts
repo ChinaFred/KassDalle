@@ -88,6 +88,15 @@ export const EPUB_UNREADABLE_MESSAGE =
   "Ce fichier EPUB n'a pas pu être ouvert : il est abîmé ou trop volumineux. " +
   "Exportez-le de nouveau, ou découpez-le, puis recommencez.";
 
+/**
+ * Message d'une archive qui s'ouvre mais n'a pas la structure d'un EPUB
+ * (`META-INF/container.xml` absent, fichier OPF introuvable). Le détail
+ * technique va dans `BookFileError.detail`, lu par les journaux.
+ */
+export const EPUB_INVALID_MESSAGE =
+  "Ce fichier EPUB est incomplet et ne peut pas être lu. " +
+  "Exportez-le de nouveau depuis le logiciel qui l'a créé, ou importez le livre en PDF.";
+
 /** Le message d'une erreur pour les journaux : message, puis détail technique s'il existe. */
 export function technicalErrorText(err: unknown): string {
   if (err instanceof BookFileError && err.detail) return `${err.message} (${err.detail})`;
@@ -409,14 +418,17 @@ export async function readEpub(bytes: Buffer): Promise<EpubContent> {
 
   const containerXml = await read("META-INF/container.xml");
   if (containerXml == null) {
-    throw new BookFileError("Ce fichier n'est pas un EPUB valide : META-INF/container.xml manque.");
+    throw new BookFileError(EPUB_INVALID_MESSAGE, "META-INF/container.xml manquant");
   }
   const rootfile = containerXml.match(/<rootfile\b[^>]*>/i)?.[0] ?? "";
   const opfPath = attribute(rootfile, "full-path");
   const opf = opfPath ? await read(opfPath) : null;
   if (!opfPath || opf == null) {
     throw new BookFileError(
-      "Ce fichier n'est pas un EPUB valide : le fichier OPF est introuvable.",
+      EPUB_INVALID_MESSAGE,
+      opfPath
+        ? `fichier OPF introuvable : ${opfPath}`
+        : "fichier OPF introuvable : full-path absent de META-INF/container.xml",
     );
   }
 

@@ -39,6 +39,7 @@ import { computeAndPersistRecipeNutrition } from "../nutrition/recipeNutrition";
 import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { logError } from "../logging";
+import { toHttpsError } from "./_callableErrors";
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
   "https://kassdale-6d948.firebaseapp.com",
@@ -233,7 +234,11 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
           selectedPortions: req.data?.selectedPortions ?? null,
         },
       });
-      throw err;
+      // Le texte brut ne part pas au client : `toHttpsError` garde les
+      // `HttpsError` volontaires (recette introuvable), rend le plafond d'IA
+      // du compte avec son message et ses `details`, et remplace le reste par
+      // un texte fixe. L'erreur vient d'être journalisée avec son contexte.
+      throw await toHttpsError(err, { alreadyLogged: true });
     }
   },
 );
@@ -274,16 +279,29 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
       }),
     );
 
-    return normalizeRecipeReferentialsCore({
-      aiEnabled: true,
-      recipeId: typeof data.recipeId === "string" ? data.recipeId : undefined,
-      cooklang,
-      ingredients,
-      userId: req.auth?.uid ?? undefined,
-      // Sans ce fil, les enrichissements déclenchés par une SAUVEGARDE
-      // fabriquaient chacun le leur : une même normalisation se lisait en
-      // quatre groupes de journaux sans rapport apparent.
-      correlationId: ctx.correlationId,
-    });
+    const recipeId = typeof data.recipeId === "string" ? data.recipeId : undefined;
+    try {
+      return await normalizeRecipeReferentialsCore({
+        aiEnabled: true,
+        recipeId,
+        cooklang,
+        ingredients,
+        userId: req.auth?.uid ?? undefined,
+        // Sans ce fil, les enrichissements déclenchés par une SAUVEGARDE
+        // fabriquaient chacun le leur : une même normalisation se lisait en
+        // quatre groupes de journaux sans rapport apparent.
+        correlationId: ctx.correlationId,
+      });
+    } catch (err) {
+      await logError({
+        message: "normalizeRecipeReferentialsFn: ERREUR",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId: ctx.correlationId,
+        extra: { recipeId: recipeId ?? null, uid: req.auth?.uid ?? null },
+      });
+      // Même traduction que les autres callables d'IA : plafond du compte
+      // avec son message, texte fixe pour le reste.
+      throw await toHttpsError(err, { alreadyLogged: true });
+    }
   },
 );

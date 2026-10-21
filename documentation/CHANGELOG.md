@@ -20,6 +20,38 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.38 — fonctionnel
+
+- « Calculer » et « Recalculer » dans l'onglet Nutrition affichent maintenant l'échec du
+  calcul : « Nutrition non calculée. » suivi de la raison. Quand la limite d'IA du jour est
+  atteinte, le message dit quand réessayer. Avant, un échec ne s'affichait nulle part.
+  Pendant le calcul, le bouton affiche « Calcul en cours… » avec un indicateur et ne
+  répond plus ; un recalcul réussi se confirme par « Nutrition recalculée ».
+- Un EPUB incomplet (sans `META-INF/container.xml` ou sans fichier OPF) est refusé avec un
+  texte simple : « Ce fichier EPUB est incomplet et ne peut pas être lu.
+  Exportez-le de nouveau depuis le logiciel qui l'a créé, ou importez le livre en PDF. »
+  Avant, le membre lisait « Ce fichier n'est pas un EPUB valide : META-INF/container.xml
+  manque. » ou « … le fichier OPF est introuvable. » (suite de l'audit #151, tickets
+  #170 et #171).
+
+### v0.24.38 — technique
+
+- `computeRecipeNutritionFn` et `normalizeRecipeReferentialsFn` passent par
+  `toHttpsError(err, { alreadyLogged: true })` après leur `logError` de contexte. La
+  première relançait l'erreur brute, la seconde ne convertissait rien : le SDK les rendait en
+  `internal` sans message. Un `BudgetExceededError` part désormais en `resource-exhausted`
+  avec `details { reason, scope: "ai_budget" }`. Aujourd'hui aucun ne sort des deux cœurs :
+  les appels d'IA de la nutrition sont best-effort et rendent un résultat dégradé journalisé.
+  Les `HttpsError` volontaires (`not-found`, `invalid-argument`, `permission-denied`) passent
+  telles quelles.
+- `nutrition_details_section.dart` attrape l'échec du calcul, le remonte par
+  `reportUnexpectedError` (feature `nutritionDetailsSection.recompute`) et l'affiche par
+  `showFailureSnackBar`.
+- `books/bookFile.ts` : nouveau `EPUB_INVALID_MESSAGE` ; le détail (`META-INF/container.xml
+  manquant`, `fichier OPF introuvable : <chemin>`) va dans `BookFileError.detail`, lu par
+  `technicalErrorText` pour les journaux. Les autres messages de `BookFileError` (PDF, Word,
+  format) étaient déjà écrits pour le membre.
+
 ### v0.24.37 — technique
 
 - Les backfills ponctuels « Dossiers des illustrations » (`illustration_folders`) et « Ranger
