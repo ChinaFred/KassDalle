@@ -171,6 +171,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // sur le cache lu en direct ; une traduction en échec n'y est jamais
   // écrite, seule cette carte la connaît.
   final Map<String, ConstraintTranslation> _translationOverrides = {};
+  // `modelStatus` de la dernière génération : « Transmis à l'IA » sous un
+  // texte non traduit n'est vrai que si le modèle a répondu. `null` avant
+  // toute génération.
+  String? _lastModelStatus;
   // L'avis « N créneaux ne tiennent pas tous les critères » a été fermé.
   bool _criteriaNoticeClosed = false;
   // Les cartes, par date : « Voir le premier » y fait défiler la liste.
@@ -870,6 +874,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       setState(() {
         _constraintsLocked = true;
         _runId = suggestion.runId;
+        _lastModelStatus = suggestion.modelStatus;
         _conceptsRemaining = suggestion.conceptsRemaining;
         _slotRankings = {..._slotRankings, ...suggestion.rankings};
         // Ce que le serveur a compris des textes : « Compris : … » sous les
@@ -3061,6 +3066,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               ? ConstraintUnderstandingLines(
                   text: value.text,
                   translation: _translations[value.text.trim()],
+                  modelStatus: _lastModelStatus,
                 )
               : const SizedBox.shrink(),
         ),
@@ -3365,6 +3371,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       understandingOf: _translationsReady
           ? (text) => _translations[text.trim()]
           : null,
+      understandingModelStatus: _lastModelStatus,
       noStarterCandidate: _noRecipeWithRole('entree'),
       noDessertCandidate: _noRecipeWithRole('dessert'),
       starter: _slotStarters[index],

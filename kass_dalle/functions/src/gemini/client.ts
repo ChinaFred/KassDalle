@@ -355,12 +355,32 @@ function isThinkingRejection(err: unknown): boolean {
   return message.includes("thinking") || message.includes("thinkingconfig");
 }
 
+/** Temps minimal laissé à une tentative : en dessous, elle ne part pas. */
+export const MIN_ATTEMPT_MS = 5_000;
+
+/**
+ * Pause avant de relancer un appel refusé pour quota, ou `null` s'il ne
+ * reste pas de quoi faire une tentative de plus.
+ *
+ * Backoff exponentiel (2 s, 4 s, 8 s… plafonné à 60 s), raccourci pour que la
+ * tentative suivante dispose encore de [MIN_ATTEMPT_MS]. Sans ce
+ * raccourcissement, une pause de 60 s pouvait dépasser l'échéance de l'appel,
+ * et la tentative suivante partait avec un délai négatif (« Gemini call
+ * timeout after -4749ms », 21 octobre 2026).
+ */
+export function quotaRetryDelayMs(attempt: number, remainingMs: number): number | null {
+  const available = remainingMs - MIN_ATTEMPT_MS;
+  if (available <= 0) return null;
+  return Math.min(60_000, 2_000 * Math.pow(2, attempt - 1), available);
+}
+
 /**
  * Appelle Gemini avec retry automatique sur quota dépassé.
  *
  * Stratégie : si on reçoit un 429 / QUOTA_EXCEEDED, on attend (backoff exponentiel
- * plafonné à 60s) et on retente. Le retry s'arrête quand la function approche
- * de son timeout (Cloud Tasks reprendra la main pour un nouveau retry).
+ * plafonné à 60s, voir [quotaRetryDelayMs]) et on retente. Le retry s'arrête quand
+ * l'échéance de l'appel ne laisse plus de quoi tenter (Cloud Tasks reprendra la
+ * main pour un nouveau retry). Un 402 (crédits épuisés) n'est jamais relancé.
  */
 export async function callGemini(
   apiKey: string,
@@ -377,6 +397,29 @@ export async function callGemini(
   while (true) {
     attempt++;
     const startedAt = Date.now();
+
+    // Aucune tentative ne part avec un délai nul ou négatif : l'échéance de
+    // l'appel est atteinte, l'échec se dit tel quel.
+    const remainingMs = deadline - startedAt;
+    if (remainingMs <= 0) {
+      const message = `Délai de l'appel Gemini épuisé avant la tentative ${attempt} (budget ${timeoutMs} ms)`;
+      await logError(`Appel IA échoué (${ctx.feature}) — délai épuisé`, {
+        correlationId: ctx.correlationId,
+        scanId: ctx.scanId,
+        callId: ctx.callId,
+        moduleType: ctx.moduleType,
+        jobId: ctx.jobId,
+        userId: ctx.userId,
+        stepIndex: ctx.stepIndex,
+        geminiStatus: "ERROR",
+        provider: "gemini",
+        model: GEMINI_MODEL,
+        feature: ctx.feature,
+        errorDescription: message,
+        extra: { attempt, timeoutMs },
+      });
+      throw new GeminiError(message, undefined, true);
+    }
 
     // Extrait le texte des parts pour traçabilité (les parts image ne sont pas loggées)
     const promptText = parts
@@ -419,7 +462,7 @@ export async function callGemini(
       request.config = { ...request.config, abortSignal: abort.signal };
       const sdkResult = await withTimeout(
         getClient(apiKey).then((client) => client.models.generateContent(request)),
-        Math.min(timeoutMs, deadline - Date.now()),
+        Math.max(1, Math.min(timeoutMs, deadline - Date.now())),
         abort,
       );
       const result = toGeminiResponse(sdkResult);
@@ -472,8 +515,9 @@ export async function callGemini(
         continue;
       }
 
-      if (status === "QUOTA_EXCEEDED" && Date.now() < deadline - 5000) {
-        const backoffMs = Math.min(60_000, 2_000 * Math.pow(2, attempt - 1));
+      const backoffMs =
+        status === "QUOTA_EXCEEDED" ? quotaRetryDelayMs(attempt, deadline - Date.now()) : null;
+      if (backoffMs != null) {
         await logError(`Appel IA — quota dépassé, nouvelle tentative dans ${backoffMs} ms`, {
           correlationId: ctx.correlationId,
           scanId: ctx.scanId,
@@ -520,17 +564,26 @@ export async function callGemini(
 }
 
 /**
- * Quota dépassé ou autre erreur.
+ * Crédits épuisés, quota dépassé ou autre erreur.
  *
  * `@google/genai` lève une `ApiError` dont `status` porte le code HTTP et dont
  * le message est le corps JSON de l'erreur (`{"error":{"code":429,…,
  * "status":"RESOURCE_EXHAUSTED"}}`). Le code fait foi quand il est là ; le
  * message couvre les erreurs sans code.
+ *
+ * Un 402 porte aussi `RESOURCE_EXHAUSTED` (« Your prepayment credits are
+ * depleted »), mais il ne se résorbe pas en quelques secondes : il attend un
+ * rechargement du compte. Classé `QUOTA_EXCEEDED`, il était relancé six fois,
+ * avec des pauses de 2 à 60 s, avant que le repli sur Claude ne parte
+ * (21 octobre 2026). `CREDITS_EXHAUSTED` échoue tout de suite.
  */
 export function classifyError(err: unknown): GeminiStatus {
   const status = (err as { status?: unknown } | null)?.status;
-  if (status === 429) return "QUOTA_EXCEEDED";
   const msg = errorMessage(err).toLowerCase();
+  if (status === 402 || /"code"\s*:\s*402\b/.test(msg) || msg.includes("prepayment credits")) {
+    return "CREDITS_EXHAUSTED";
+  }
+  if (status === 429) return "QUOTA_EXCEEDED";
   if (/\b429\b/.test(msg) || msg.includes("quota") || msg.includes("resource_exhausted")) {
     return "QUOTA_EXCEEDED";
   }

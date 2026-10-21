@@ -19,11 +19,13 @@
  *    derniers correctifs de la chaîne nutrition venaient tous d'une réponse mal
  *    formée.
  *  - Ni `temperature` ni `top_p` : rejetés par les modèles récents.
+ *  - Haiku 4.5 part SANS raisonnement et sans `effort` : il refuse les deux
+ *    (voir `requestShapeFor`).
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 
-import { logError, logInfo } from "../logging";
+import { logDebug, logError, logInfo } from "../logging";
 import {
   ModelCallError,
   type ModelCallContext,
@@ -119,6 +121,109 @@ export function toAnthropicContent(parts: ModelPart[]): Anthropic.ContentBlockPa
   });
 }
 
+type AnthropicEffort = NonNullable<ModelCallContext["effort"]>;
+
+/**
+ * Modèles qui refusent `thinking: { type: "adaptive" }` et `output_config.effort`.
+ *
+ * Haiku 4.5 répond 400 « adaptive thinking is not supported on this model »,
+ * et le paramètre `effort` y lève aussi une erreur. Il accepterait un
+ * raisonnement à budget fixe (`{ type: "enabled", budget_tokens }`), mais il
+ * est choisi pour être le modèle rapide et bon marché d'un rappel de
+ * connaissances : il part donc sans raisonnement du tout. Le 21 octobre 2026,
+ * tous ses appels échouaient et se repliaient sur Gemini.
+ *
+ * Comparaison par préfixe : un identifiant daté (`claude-haiku-4-5-20251001`)
+ * désigne le même modèle.
+ */
+const MODELS_WITHOUT_ADAPTIVE_THINKING = ["claude-haiku-4-5"] as const;
+
+/** Ce que la requête Claude envoie en raisonnement et en effort, pour un modèle. */
+export interface AnthropicRequestShape {
+  /** `null` : le champ `thinking` n'est pas envoyé. */
+  thinking: { type: "adaptive" } | null;
+  /** `null` : `output_config.effort` n'est pas envoyé. */
+  effort: AnthropicEffort | null;
+  /** Effort demandé par le poste ou par Admin, mais non transmis au modèle. */
+  droppedEffort: AnthropicEffort | null;
+}
+
+/**
+ * Forme de la requête pour un modèle et un effort demandé (`low` par défaut).
+ *
+ * Fonction pure, testée seule (`tests/anthropicRequestShape.test.ts`) : un
+ * paramètre refusé par un modèle fait échouer 100 % de ses appels.
+ */
+export function requestShapeFor(model: string, effort?: AnthropicEffort): AnthropicRequestShape {
+  const requested = effort ?? "low";
+  const id = model.trim().toLowerCase();
+  const withoutThinking = MODELS_WITHOUT_ADAPTIVE_THINKING.some(
+    (prefix) => id === prefix || id.startsWith(`${prefix}-`),
+  );
+  if (withoutThinking) {
+    return { thinking: null, effort: null, droppedEffort: effort ?? null };
+  }
+  return { thinking: { type: "adaptive" }, effort: requested, droppedEffort: null };
+}
+
+/**
+ * Schéma de sortie accepté par Claude : chaque objet porte
+ * `additionalProperties: false`.
+ *
+ * L'API refuse tout schéma dont un objet ne le précise pas (400
+ * « For 'object' type, 'additionalProperties' must be explicitly set to
+ * false »). Le schéma de `planning_constraints` l'omettait, et chaque
+ * traduction de consigne échouait. Les schémas des postes le posent
+ * eux-mêmes ; cette passe le pose sur ceux qui l'oublient, à tous les
+ * niveaux, pour qu'un oubli ne coûte plus un poste entier. Une valeur déjà
+ * présente est gardée telle quelle. Le schéma reçu n'est pas modifié : la
+ * fonction rend une copie.
+ *
+ * Gemini ne reçoit pas ce schéma (`buildGeminiRequest` n'envoie pas de
+ * `responseSchema`) : la passe ne concerne que Claude.
+ */
+export function toStrictJsonSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  return strictSchema(schema) as Record<string, unknown>;
+}
+
+/** Mots-clés dont la valeur est une table nom → sous-schéma. */
+const SCHEMA_MAP_KEYS = new Set(["properties", "patternProperties", "$defs", "definitions"]);
+/** Mots-clés dont la valeur est un sous-schéma. */
+const SCHEMA_KEYS = new Set(["items", "additionalProperties", "not", "contains"]);
+/** Mots-clés dont la valeur est une liste de sous-schémas. */
+const SCHEMA_LIST_KEYS = new Set(["anyOf", "oneOf", "allOf", "prefixItems"]);
+
+function strictSchema(node: unknown): unknown {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return node;
+  const source = node as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (SCHEMA_MAP_KEYS.has(key) && value && typeof value === "object" && !Array.isArray(value)) {
+      out[key] = Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([name, sub]) => [
+          name,
+          strictSchema(sub),
+        ]),
+      );
+    } else if (SCHEMA_KEYS.has(key)) {
+      out[key] = strictSchema(value);
+    } else if (SCHEMA_LIST_KEYS.has(key) && Array.isArray(value)) {
+      out[key] = value.map(strictSchema);
+    } else {
+      // `enum`, `const`, `required`, `description`… : des valeurs, pas des
+      // sous-schémas.
+      out[key] = value;
+    }
+  }
+  const type = source.type;
+  const isObject =
+    type === "object" || (Array.isArray(type) && type.includes("object")) || "properties" in source;
+  if (isObject && !("additionalProperties" in source)) {
+    out.additionalProperties = false;
+  }
+  return out;
+}
+
 /**
  * Appelle Claude et rend une réponse normalisée.
  *
@@ -139,6 +244,34 @@ export async function callAnthropic(args: {
   const model = args.model ?? ANTHROPIC_MODEL;
   const client = getClient(args.apiKey);
   const startedAt = Date.now();
+  const shape = requestShapeFor(model, args.ctx.effort);
+  if (shape.droppedEffort) {
+    // Un effort réglé dans Admin › Moteur d'IA, ou posé par le code du poste,
+    // n'a pas d'effet sur ce modèle : la ligne le dit, sans bloquer l'appel.
+    void logDebug({
+      message: `Appel IA — effort « ${shape.droppedEffort} » non transmis, le modèle ne l'accepte pas (${args.ctx.feature})`,
+      correlationId: args.ctx.correlationId,
+      scanId: args.ctx.scanId,
+      callId: args.callId,
+      moduleType: args.ctx.moduleType,
+      userId: args.ctx.userId,
+      provider: "anthropic",
+      model,
+      feature: args.ctx.feature,
+      extra: { droppedEffort: shape.droppedEffort },
+    });
+  }
+  const outputConfig: Anthropic.OutputConfig = {
+    ...(shape.effort ? { effort: shape.effort } : {}),
+    ...(args.outputSchema
+      ? {
+          format: {
+            type: "json_schema" as const,
+            schema: toStrictJsonSchema(args.outputSchema.schema),
+          },
+        }
+      : {}),
+  };
 
   try {
     // Réponse EN FLUX, toujours.
@@ -162,18 +295,8 @@ export async function callAnthropic(args: {
         {
           model,
           max_tokens: args.maxTokens ?? DEFAULT_MAX_TOKENS,
-          thinking: { type: "adaptive" },
-          output_config: {
-            effort: args.ctx.effort ?? "low",
-            ...(args.outputSchema
-              ? {
-                  format: {
-                    type: "json_schema" as const,
-                    schema: args.outputSchema.schema,
-                  },
-                }
-              : {}),
-          },
+          ...(shape.thinking ? { thinking: shape.thinking } : {}),
+          ...(Object.keys(outputConfig).length > 0 ? { output_config: outputConfig } : {}),
           ...(args.systemPrompt ? { system: args.systemPrompt } : {}),
           messages: [{ role: "user", content: toAnthropicContent(args.parts) }],
         },

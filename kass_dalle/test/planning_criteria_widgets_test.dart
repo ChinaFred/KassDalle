@@ -156,11 +156,16 @@ void main() {
     Future<void> pump(
       WidgetTester tester,
       String text,
-      ConstraintTranslation? t,
-    ) => tester.pumpWidget(
+      ConstraintTranslation? t, {
+      String? modelStatus,
+    }) => tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ConstraintUnderstandingLines(text: text, translation: t),
+          body: ConstraintUnderstandingLines(
+            text: text,
+            translation: t,
+            modelStatus: modelStatus,
+          ),
         ),
       ),
     );
@@ -206,6 +211,44 @@ void main() {
         find.text('Transmis à l\'IA, non vérifié : « sans noix »'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('modèle du planning sans réponse : « Non lu »', (tester) async {
+      await pump(
+        tester,
+        'sans noix',
+        const ConstraintTranslation.failed('sans noix'),
+        modelStatus: 'failed',
+      );
+      expect(find.textContaining('Transmis'), findsNothing);
+      expect(
+        find.text('Non lu, l\'IA n\'a pas répondu : « sans noix »'),
+        findsOneWidget,
+      );
+    });
+
+    test('libellé du reste selon le statut de la génération', () {
+      for (final status in [null, 'ok', 'partial']) {
+        expect(
+          untranslatedConstraintLabel('x', status),
+          'Transmis à l\'IA, non vérifié : « x »',
+        );
+      }
+      expect(
+        untranslatedConstraintLabel('x', 'budget'),
+        'Non lu, l\'IA n\'a pas été appelée (plafond atteint) : « x »',
+      );
+      expect(
+        untranslatedConstraintLabel('x', 'skipped'),
+        'Non lu, aucun choix à faire entre recettes, '
+        'l\'IA n\'a pas été appelée : « x »',
+      );
+      for (final status in ['failed', 'inconnu']) {
+        expect(
+          untranslatedConstraintLabel('x', status),
+          'Non lu, l\'IA n\'a pas répondu : « x »',
+        );
+      }
     });
 
     testWidgets('champ vide : rien', (tester) async {

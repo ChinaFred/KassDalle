@@ -16,6 +16,8 @@ import {
   createGenerativeModel,
   extractJsonObject,
   groundingOf,
+  MIN_ATTEMPT_MS,
+  quotaRetryDelayMs,
   thinkingTokensOf,
   toGeminiResponse,
 } from "../gemini/client";
@@ -186,6 +188,54 @@ describe("erreurs de l'API", () => {
     assert.equal(classifyError(new Error("fetch failed")), "ERROR");
     assert.equal(classifyError(new Error("Gemini call timeout after 294290ms")), "ERROR");
     assert.equal(classifyError(new Error("got status 429 from upstream")), "QUOTA_EXCEEDED");
+  });
+
+  // Corps de l'erreur relevé dans Cloud Logging le 21 octobre 2026.
+  const CREDITS_DEPLETED = {
+    error: {
+      code: 402,
+      message:
+        "Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing.",
+      status: "RESOURCE_EXHAUSTED",
+    },
+  };
+
+  test("un 402 (crédits épuisés) est définitif, pas un quota", async () => {
+    const calls = stubFetch(402, CREDITS_DEPLETED);
+    let caught: unknown = null;
+    try {
+      await createGenerativeModel("k", "gemini-2.5-flash").generateContent({
+        contents: [{ role: "user", parts: [{ text: "x" }] }],
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assert.notEqual(caught, null);
+    assert.equal(classifyError(caught), "CREDITS_EXHAUSTED");
+    assert.equal(calls.length, 1);
+  });
+
+  test("le message exact d'un 402, sans code HTTP, est reconnu", () => {
+    assert.equal(classifyError(new Error(JSON.stringify(CREDITS_DEPLETED))), "CREDITS_EXHAUSTED");
+    assert.equal(classifyError({ status: 402, message: "x" }), "CREDITS_EXHAUSTED");
+  });
+});
+
+describe("quotaRetryDelayMs", () => {
+  test("backoff exponentiel quand le temps ne manque pas", () => {
+    assert.equal(quotaRetryDelayMs(1, 300_000), 2_000);
+    assert.equal(quotaRetryDelayMs(3, 300_000), 8_000);
+    assert.equal(quotaRetryDelayMs(10, 300_000), 60_000);
+  });
+
+  test("la pause est raccourcie pour laisser une tentative de MIN_ATTEMPT_MS", () => {
+    assert.equal(quotaRetryDelayMs(6, 20_000), 20_000 - MIN_ATTEMPT_MS);
+  });
+
+  test("plus de relance quand il ne reste pas de quoi tenter", () => {
+    assert.equal(quotaRetryDelayMs(1, MIN_ATTEMPT_MS), null);
+    assert.equal(quotaRetryDelayMs(1, 0), null);
+    assert.equal(quotaRetryDelayMs(1, -4_749), null);
   });
 });
 

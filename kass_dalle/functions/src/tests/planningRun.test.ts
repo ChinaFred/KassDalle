@@ -12,8 +12,9 @@ import {
   PLANNING_MAX_TOKENS,
   estimateCallCeilingUsd,
   estimateInputTokens,
+  degradedNotice,
   formatEur,
-  generationCapNotice,
+  generationCapCause,
 } from "../gemini/planning";
 
 describe("coût plafond d'un appel", () => {
@@ -66,9 +67,14 @@ describe("coût plafond d'un appel", () => {
 describe("message du plafond par génération", () => {
   test("montant en euros, virgule décimale", () => {
     assert.equal(formatEur(0.5), "0,50 €");
+    const cause = generationCapCause(0.5);
     assert.equal(
-      generationCapNotice(0.5),
+      degradedNotice(cause.lead, cause.nothingBilled, []),
       "Cette génération aurait coûté plus de 0,50 € en IA. Kass'Dalle a choisi les plats selon vos contraintes. Rien n'a été facturé.",
+    );
+    assert.equal(
+      degradedNotice(cause.lead, cause.nothingBilled, ["pas trop gras"]),
+      "Cette génération aurait coûté plus de 0,50 € en IA. Kass'Dalle a choisi les plats selon vos critères vérifiés. Rien n'a été facturé. Ces consignes n'ont pas été suivies : « pas trop gras ».",
     );
   });
 });

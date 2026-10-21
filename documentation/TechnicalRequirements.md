@@ -104,6 +104,34 @@ visible que depuis la réparation du streaming : jusque-là Claude échouait sur
 Gemini prenait le relais, si bien que réparer l'appel a confié la lecture à un moteur réglé pour
 aller vite.
 
+**Haiku 4.5 part sans raisonnement ni effort, depuis le 21 octobre 2026.** Haiku 4.5
+(`claude-haiku-4-5`, et tout identifiant daté qui en dérive) répond 400 « adaptive thinking
+is not supported on this model » à `thinking: { type: "adaptive" }`, et refuse aussi
+`output_config.effort`. `requestShapeFor(model, effort)` (`ai/anthropic.ts`, testée dans
+`tests/anthropicRequestShape.test.ts`) décide de la forme de la requête : pour Haiku 4.5, ni
+`thinking` ni `effort` ; pour Opus 5 et Sonnet 5, `thinking: adaptive` et l'effort demandé
+(`low` par défaut). Haiku accepterait un raisonnement à budget fixe
+(`{ type: "enabled", budget_tokens }`) ; il n'en reçoit pas, parce qu'il sert de modèle
+rapide et bon marché pour un rappel de connaissances. Un effort réglé dans Admin → Moteur
+d'IA sur un poste servi par Haiku n'est pas transmis : une ligne DEBUG « effort … non
+transmis » le dit, et l'appel part quand même. Le sélecteur d'effort reste affiché sous
+Haiku ; l'indication du modèle (`ANTHROPIC_MODEL_CHOICES`) précise « Sans réflexion : le
+réglage d'effort ne s'y applique pas ». Avant ce correctif, tous les appels routés vers
+Haiku échouaient et se repliaient sur Gemini. Un balisage coupé au plafond
+(`runTaggingAttempts`, `gemini/tagging.ts`) n'est pas refait à l'effort suivant quand le modèle
+qui a répondu ne reçoit pas l'effort (`effortReachesModel` : Haiku 4.5, ou Gemini, dont l'appel
+ne transmet pas `ctx.effort`) : la requête serait identique. Un `logWarn` « reprise à un autre
+effort sautée » le dit, et `TaggingTruncatedError` est levée.
+
+**Un schéma de sortie Claude est strict à tous les niveaux.** L'API refuse
+(`output_config.format.schema`, 400) tout objet du schéma qui ne porte pas
+`additionalProperties: false`. `toStrictJsonSchema()` (`ai/anthropic.ts`) le pose sur chaque
+objet qui ne le précise pas — racine, `items`, `properties`, `anyOf`/`oneOf`/`allOf`, `$defs`
+— sur une copie, avant l'envoi ; une valeur déjà posée est gardée. Les schémas des postes le
+posent aussi eux-mêmes (`planning_constraints` et `meal_ideas` l'omettaient : la traduction
+des consignes du planning échouait à chaque appel Claude). Gemini ne reçoit pas ce schéma :
+`buildGeminiRequest` n'envoie pas de `responseSchema`.
+
 Côté Gemini, le levier équivalent existe depuis l'origine et se règle sans déploiement —
 `thinking_budgets` par poste dans `app_config/ai_routing_policy` (`anthropic_efforts` côté
 Claude, en snake_case dans le même document).
@@ -757,10 +785,22 @@ vaut mieux qu'un poste qui ne répond plus. Réglable dans Admin → Moteur d'IA
 **Réessais et erreurs Gemini.** `@google/genai` ne retente rien tant que
 `httpOptions.retryOptions` n'est pas posé, et `client.ts` ne le pose pas : les
 seuls réessais restent ceux de `callGemini` (quota, backoff exponentiel plafonné à
-60 s, jusqu'au délai de l'appel), chacun journalisé. Le SDK lève une `ApiError`
+60 s, jusqu'au délai de l'appel), chacun journalisé. `quotaRetryDelayMs(attempt,
+remainingMs)` raccourcit la pause pour laisser au moins `MIN_ATTEMPT_MS` (5 s) à la
+tentative suivante, et rend `null` — plus de réessai — quand il ne reste pas ce temps.
+Aucune tentative ne part avec un délai nul ou négatif : l'appel échoue alors avec
+« Délai de l'appel Gemini épuisé avant la tentative N (budget T ms) ». Avant le
+21 octobre 2026, une pause de 60 s pouvait dépasser l'échéance, et la tentative suivante
+partait avec un délai négatif (« Gemini call timeout after -4749ms »). Le SDK lève une `ApiError`
 dont `status` porte le code HTTP et dont le message est le corps JSON de
-l'erreur ; `classifyError()` classe `status === 429`, puis à défaut un message
-contenant le nombre `429` (mot entier), `quota` ou `resource_exhausted`, en `QUOTA_EXCEEDED`.
+l'erreur. `classifyError()` classe d'abord en `CREDITS_EXHAUSTED` un 402 (`status === 402`,
+`"code":402` dans le message, ou « prepayment credits ») : crédits prépayés épuisés, que
+Google renvoie lui aussi avec `RESOURCE_EXHAUSTED`. Ce cas est définitif : aucun réessai,
+`GeminiError` levée tout de suite, et `callModel` passe aussitôt au repli sur Claude quand
+il est permis. Classé en quota, il était relancé six fois (2 à 60 s de pause, environ deux
+minutes par appel) avant le repli. Ensuite, `classifyError()` classe `status === 429`, puis à
+défaut un message contenant le nombre `429` (mot entier), `quota` ou `resource_exhausted`, en
+`QUOTA_EXCEEDED`.
 Le délai d'un appel `callGemini` annule la requête HTTP (`config.abortSignal`) : la
 connexion est fermée et la réponse n'est plus attendue. Le client est construit avec
 `vertexai: false` et l'hôte `https://generativelanguage.googleapis.com` en dur : le SDK
@@ -1780,7 +1820,17 @@ ou d'une autre `prompt_version` est ignorée — le texte est retraduit ; les cr
 relus en liste blanche (`readPlanningCriteria`). Une entrée n'est reprise que si son `text`
 est égal au texte demandé. **Lecture client** (`readConstraintTranslations`) : par `text`,
 entrées illisibles ignorées. Une traduction en échec n'est jamais écrite : le texte reste
-« non vérifié » et se retraduit au clic suivant. Lecture ou écriture en échec : `logError`,
+« non vérifié » et se retraduit au clic suivant. **Affichage du reste**
+(`untranslatedConstraintLabel`, `constraint_understanding.dart`) : « Transmis à l'IA, non
+vérifié » hors génération, et après une génération dont le `modelStatus` est `ok` ou
+`partial` ; « Non lu, l'IA n'a pas été appelée (plafond atteint) : « … » » après `budget` ;
+« Non lu, aucun choix à faire entre recettes, l'IA n'a pas été appelée : « … » » après
+`skipped` (aucun créneau n'avait plus d'une recette possible comme plat, entrée ou dessert,
+`needsModel`) ; « Non lu, l'IA n'a pas répondu : « … » » après `failed` ou un statut inconnu.
+Le mode `code` (« Autre suggestion ») rend aussi `skipped`, mais l'écran ne garde que le
+statut de la génération. Nouveau planning garde le
+`modelStatus` de la dernière génération (`_lastModelStatus`), déjà rendu par
+`suggestMealPlanFn`. Lecture ou écriture en échec : `logError`,
 la génération continue sans critère pour les textes concernés. Pas de backfill : le
 document naît à la première génération avec un texte.
 
@@ -5149,6 +5199,18 @@ jamais demandé au modèle, et rien n'est écrit dans la recette.
 | plafond du jour atteint (`BudgetExceededError`) | `logWarn` | `budget` | « Votre plafond d'IA du jour est atteint. … Rien n'a été facturé. » — au lieu de l'erreur `resource-exhausted` d'avant |
 | mode `code`, ou aucun créneau avec un choix | `logInfo` | `skipped` | — |
 
+Après `failed` ou `budget`, l'avis cite les consignes que personne n'a lues
+(`degradedNotice`, `gemini/planning.ts`). Il ne dit plus alors « selon vos contraintes »,
+mais ce que le programme a appliqué : « L'IA n'a pas répondu. Kass'Dalle a choisi les plats
+selon vos critères vérifiés. Ces consignes n'ont pas été suivies : « pas trop gras », « sport
+le soir ». » Pour un plafond, « Rien n'a été facturé. » précède la liste. La liste vient de
+`unverifiedConstraintTexts` : pour chaque texte de `planningTexts`, le reste non traduit s'il a
+été compris, le texte entier sinon, sans vide ni doublon. 80 caractères au plus par consigne
+(`UNREAD_TEXT_MAX_CHARS`, coupée par « … »), trois au plus (`UNREAD_TEXTS_MAX`), les suivantes
+comptées (« et 2 autres »). Sans reste, l'avis du tableau est inchangé. `skipped` n'a pas
+d'avis ; sous chaque champ, la ligne « Non lu, aucun choix à faire entre recettes, l'IA n'a pas
+été appelée : « … » » le dit.
+
 **Plafond par génération.** Avant l'appel, `ceilingEstimator` résout le moteur et le modèle
 du poste (`resolveCallTarget`, `ai/router.ts`, sans appel de fournisseur) et chiffre le coût
 plafond sur la grille en vigueur (`estimateCallCeilingUsd` : caractères / 3 en entrée,
@@ -5640,7 +5702,7 @@ Une entrée est un objet `StructuredLogEntry` :
 | `moduleType` | `IMPORT` \| `IMAGE_DECODE` \| `SEARCH` \| `DESIGN` \| `MODERATION` | grande famille |
 | `firestoreDocId` | `string?` | le document concerné |
 | `executionTimeMs` | `number?` | durée mesurée, pas estimée |
-| `geminiStatus` | `SUCCESS` \| `QUOTA_EXCEEDED` \| `ERROR` | issue d'un appel de modèle |
+| `geminiStatus` | `SUCCESS` \| `QUOTA_EXCEEDED` \| `CREDITS_EXHAUSTED` \| `ERROR` | issue d'un appel de modèle ; `CREDITS_EXHAUSTED` : HTTP 402, crédits prépayés épuisés, jamais relancé |
 | `jobId` | `string?` | job d'import |
 | `userId` | `string?` | compte à l'origine |
 | `stepIndex` | `number?` | rang de l'étape dans le pipeline |

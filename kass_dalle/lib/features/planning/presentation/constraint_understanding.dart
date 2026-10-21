@@ -3,6 +3,30 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../domain/planning_criteria.dart';
 
+/// Ligne du texte non traduit, selon ce que le modèle du planning en a fait.
+///
+/// [modelStatus] est le `modelStatus` de la dernière génération de l'écran
+/// (`ok`, `partial`, `failed`, `budget`, `skipped`), `null` hors génération.
+/// « Transmis à l'IA » n'est vrai que si le modèle a répondu (`ok`,
+/// `partial`) ; sans génération, la ligne décrit ce que fera la prochaine.
+/// Le 21 octobre 2026, elle s'affichait alors qu'aucun modèle n'avait
+/// répondu et que le code avait choisi les plats.
+///
+/// `skipped` : aucun créneau n'avait plus d'une recette possible comme plat,
+/// entrée ou dessert (`needsModel`, `gemini/planning.ts`), zéro compris. Le
+/// mode sans IA (« Autre suggestion ») rend aussi `skipped`, mais l'écran ne
+/// garde pas ce statut : seule la génération le pose.
+String untranslatedConstraintLabel(String rest, String? modelStatus) =>
+    switch (modelStatus) {
+      null || 'ok' || 'partial' => 'Transmis à l\'IA, non vérifié : « $rest »',
+      'budget' =>
+        'Non lu, l\'IA n\'a pas été appelée (plafond atteint) : « $rest »',
+      'skipped' =>
+        'Non lu, aucun choix à faire entre recettes, '
+            'l\'IA n\'a pas été appelée : « $rest »',
+      _ => 'Non lu, l\'IA n\'a pas répondu : « $rest »',
+    };
+
 /// Ce que Kass'Dalle a compris d'un texte libre des préférences, sous son
 /// champ : « Compris : sans porc · 30 min max », puis « Transmis à l'IA, non
 /// vérifié : « pas trop gras » ».
@@ -17,10 +41,15 @@ class ConstraintUnderstandingLines extends StatelessWidget {
   /// La traduction de ce texte exact ; `null` s'il n'a pas encore été lu.
   final ConstraintTranslation? translation;
 
+  /// `modelStatus` de la dernière génération de l'écran ; `null` hors
+  /// génération. Voir [untranslatedConstraintLabel].
+  final String? modelStatus;
+
   const ConstraintUnderstandingLines({
     super.key,
     required this.text,
     this.translation,
+    this.modelStatus,
   });
 
   @override
@@ -60,7 +89,7 @@ class ConstraintUnderstandingLines extends StatelessWidget {
             theme,
             Icons.info_outline,
             muted,
-            'Transmis à l\'IA, non vérifié : « $rest »',
+            untranslatedConstraintLabel(rest, modelStatus),
           ),
         );
       }

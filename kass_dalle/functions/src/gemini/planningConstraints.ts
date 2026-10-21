@@ -74,10 +74,12 @@ const CONSTRAINTS_SCHEMA = {
           non_traduit: { type: "string" },
         },
         required: ["index", "non_traduit"],
+        additionalProperties: false,
       },
     },
   },
   required: ["textes"],
+  additionalProperties: false,
 };
 
 /** Le prompt. Exporté pour être testable seul. Aucun exemple rempli : le vocabulaire seul. */
