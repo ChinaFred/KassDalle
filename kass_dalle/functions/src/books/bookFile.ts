@@ -103,13 +103,13 @@ export const EPUB_INVALID_MESSAGE =
  * message propose donc ce chemin.
  */
 export const EPUB_NO_TEXT_MESSAGE =
-  "Ce livre numérique ne contient pas de texte : ses pages sont des images. " +
-  "Enregistrez-le en PDF, puis importez le PDF : ses pages seront lues comme des photos.";
+  "Ce fichier EPUB ne contient pas de texte : ses pages sont des images. " +
+  "Convertissez-le en PDF, ou importez le livre en PDF si vous l'avez : les pages du PDF seront lues comme des photos.";
 
 /** Document Word sans texte (images seules). Même chemin que l'EPUB : le PDF. */
 export const DOCX_NO_TEXT_MESSAGE =
-  "Ce document Word ne contient pas de texte. " +
-  "Enregistrez-le en PDF depuis Word, puis importez le PDF : ses pages seront lues comme des photos.";
+  "Ce document Word ne contient pas de texte, seulement des images. " +
+  "Enregistrez-le en PDF depuis Word, puis importez le PDF : les pages du PDF seront lues comme des photos.";
 
 /** Le message d'une erreur pour les journaux : message, puis détail technique s'il existe. */
 export function technicalErrorText(err: unknown): string {
