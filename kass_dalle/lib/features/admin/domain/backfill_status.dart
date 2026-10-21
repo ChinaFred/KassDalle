@@ -429,16 +429,6 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
     case BackfillKeys.refreshSodium:
       return '${_count(n('refreshedIngredients'), 'ingrédient repris', 'ingrédients repris')}, '
           '${_count(n('failedIngredients'), 'échec', 'échecs')}';
-    case BackfillKeys.illustrationFolders:
-      return '${_count(n('examinees'), 'recette examinée', 'recettes examinées')}, '
-          '${_count(n('conformes'), 'conforme', 'conformes')}, '
-          '${_count(n('horsDossiers') + n('echouees'), 'à revoir', 'à revoir')}';
-    case BackfillKeys.illustrationFoldersMove:
-      return '${_count(n('rangees'), 'recette rangée', 'recettes rangées')}, '
-          '${_count(n('restantes'), 'restante', 'restantes')}, '
-          '${_count(n('anciensSupprimes'), 'ancien fichier supprimé', 'anciens fichiers supprimés')}'
-          '${siPositif('anciensConservesCites', 'conservé car encore cité', 'conservés car encore cités')}'
-          '${siPositif('anciensEnAttente', 'en attente de vérification', 'en attente de vérification')}';
     case BackfillKeys.moveMealsToGroup:
       final from = _isoDayOrNull(report['du']);
       final to = _isoDayOrNull(report['au']);

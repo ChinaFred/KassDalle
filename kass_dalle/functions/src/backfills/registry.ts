@@ -20,6 +20,8 @@
  * Retirés en v0.24.33, une fois terminés en production : `system_books`,
  * `group_planning_reach`, `ticket_analyses`, `ticket_delivered_pr`,
  * `recipe_title_keys` et `invitation_group_owner`.
+ * Retirés en v0.24.37, une fois terminés en production : `illustration_folders`
+ * et `illustration_folders_move`.
  * Leurs documents `app_config/backfill_run_<clé>` restent en base ; plus rien
  * ne les lit. La liste complète, avec les versions : skill `backfill`,
  * « Backfills retirés ».
@@ -35,8 +37,6 @@ export const BACKFILL_KEYS = [
   "shopping_products",
   "refresh_sodium",
   "move_meals_to_group",
-  "illustration_folders",
-  "illustration_folders_move",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -117,26 +117,6 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     usesAi: false,
     defaultSchedule: null,
   },
-  // Contrôle en lecture seule : n'écrit rien dans les recettes, liste dans
-  // « À revoir » celles dont une illustration est hors des dossiers modérés.
-  {
-    key: "illustration_folders",
-    kind: "ponctuel",
-    title: "Dossiers des illustrations",
-    usesAi: false,
-    defaultSchedule: null,
-  },
-  // Range sous `recipes/{id}/` les illustrations que le contrôle précédent
-  // liste, validées telles quelles par l'administrateur : copie, ligne de
-  // modération « décision d'un administrateur », URL réécrite, ancien fichier
-  // supprimé quand plus rien ne le cite. Aucun appel de modèle.
-  {
-    key: "illustration_folders_move",
-    kind: "ponctuel",
-    title: "Ranger les illustrations",
-    usesAi: false,
-    defaultSchedule: null,
-  },
 ];
 
 /** La définition d'une clé, ou `null` si elle n'existe pas. */
@@ -154,13 +134,10 @@ export function recurrentKeys(): BackfillKey[] {
  * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
  * ensemble : l'enrichissement des référentiels et la réparation du sel
  * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est
- * refusé pendant que l'autre tient son verrou. De même, le contrôle des
- * dossiers des illustrations ne part pas pendant leur rangement : il
- * compterait une recette à demi réécrite.
+ * refusé pendant que l'autre tient son verrou.
  */
 const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
   ["enrich_referentials", "refresh_sodium"],
-  ["illustration_folders", "illustration_folders_move"],
 ];
 
 /** Les autres backfills dont le verrou bloque [key]. */

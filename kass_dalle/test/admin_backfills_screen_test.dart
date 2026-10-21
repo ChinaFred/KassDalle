@@ -38,7 +38,7 @@ Future<void> _pump(
 
 void main() {
   final runs = {
-    'illustration_folders': BackfillRunState.fromMap('illustration_folders', {
+    'refresh_sodium': BackfillRunState.fromMap('refresh_sodium', {
       'termine_le': DateTime.utc(2026, 10, 10, 10),
       'termine_version': '0.23.30',
       'termine_par': 'auto',
@@ -52,7 +52,7 @@ void main() {
   ) async {
     await _pump(tester, size: const Size(400, 4800), runs: runs);
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (3)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (1)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(
       find.text('Programmation : Tous les jours à 5 h'),
@@ -71,7 +71,7 @@ void main() {
   testWidgets('état d\'un backfill retiré du code : ignoré, sans erreur', (
     tester,
   ) async {
-    // Les ponctuels retirés en v0.23.52 et en v0.24.33 laissent leur
+    // Les ponctuels retirés en v0.23.52, v0.24.33 et v0.24.37 laissent leur
     // `app_config/backfill_run_<clé>` en base, terminé ou même en cours.
     await _pump(
       tester,
@@ -97,15 +97,22 @@ void main() {
           'termine_par': 'auto',
           'dernier_passage_statut': 'termine',
         }),
+        'illustration_folders_move':
+            BackfillRunState.fromMap('illustration_folders_move', {
+              'termine_le': DateTime.utc(2026, 10, 21, 10),
+              'termine_par': 'auto',
+              'dernier_passage_statut': 'termine',
+            }),
       },
     );
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (3)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (1)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(find.text('Durées estimées'), findsNothing);
     expect(find.text('Protéine et féculent des plats'), findsNothing);
     expect(find.text('Contraintes de variété par défaut'), findsNothing);
     expect(find.text('Livres système des comptes'), findsNothing);
+    expect(find.text('Ranger les illustrations'), findsNothing);
     expect(find.textContaining('ancienne erreur'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -134,7 +141,7 @@ void main() {
     await tester.pump();
     expect(
       copied,
-      'illustration_folders — Dossiers des illustrations — terminé le '
+      'refresh_sodium — Reprendre le sel des ingrédients — terminé le '
       '10/10/2026 en v0.23.30 — automatique — dernier compte rendu : absent '
       '— à revoir : 0',
     );

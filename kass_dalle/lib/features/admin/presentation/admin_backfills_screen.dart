@@ -151,28 +151,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'événements déjà exportés vers l\'agenda ne changent pas. Un repas '
             'déjà dans un groupe est laissé tel quel ; on peut relancer.\n\n'
             'Aucun appel d\'IA.';
-      case BackfillKeys.illustrationFolders:
-        return 'Contrôle chaque recette, sans rien y modifier : une illustration '
-            'ou une vignette rangée ailleurs que dans les dossiers des images '
-            'modérées (« illustrations » et « recipes ») place la recette dans '
-            '« À revoir », avec le dossier trouvé. Un parcours complet '
-            'enregistre la liste des images signalées : c\'est elle, et elle '
-            'seule, que « Ranger les illustrations » range. On peut '
-            'relancer.\n\n'
-            'Aucun appel d\'IA. Deux mille recettes au plus par passage.';
-      case BackfillKeys.illustrationFoldersMove:
-        return 'Range ce que le dernier contrôle « Dossiers des illustrations » '
-            'a listé, et rien d\'autre : pour chaque illustration ou vignette '
-            'de cette liste, copie le fichier dans le dossier de la recette, l\'inscrit comme publié par '
-            'décision d\'un administrateur et réécrit la recette. Les images '
-            'restent celles que vous avez vues. L\'ancien fichier n\'est '
-            'supprimé que si plus aucune recette, aucun brouillon, aucun '
-            'import, aucun compte et aucune sauvegarde ne le cite. On peut '
-            'relancer. Une image ajoutée depuis le contrôle n\'est pas rangée ; '
-            'sans contrôle complet préalable, le passage ne fait rien.\n\n'
-            'Aucun appel d\'IA. Cent recettes au plus par passage. Relancez '
-            'ensuite « Dossiers des illustrations » : il doit rendre 0 à '
-            'revoir.';
       default:
         return '';
     }
@@ -302,43 +280,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'lectureTronquee', ' (plus de 2 000 repas sur la période : relancer)')}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.illustrationFolders:
-        final r = await _repo.backfillIllustrationFolders();
-        return _fromCounts(
-          r,
-          'Recettes : examinées=${r['examinees']}, conformes=${r['conformes']}, '
-          'à revoir=${r['horsDossiers']}, illisibles=${r['echouees']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — parcours terminé' : ' — incomplet, relancer'}'
-          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
-          '${_flag(r, 'stoppedByErrors', ' (trois recettes illisibles de suite : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.illustrationFoldersMove:
-        final r = await _repo.backfillIllustrationFoldersMove();
-        if ((r['listeAbsente'] ?? 0) == 1) {
-          return _fromCounts(
-            r,
-            'Rien n\'a été rangé : aucune liste du contrôle. Lancez d\'abord '
-            '« Dossiers des illustrations » jusqu\'au bout, puis relancez.',
-          );
-        }
-        return _fromCounts(
-          r,
-          'Recettes : examinées=${r['examinees']}, à ranger=${r['aRanger']}, '
-          'rangées=${r['rangees']}, impossibles à ranger=${r['nonDeplacables']}, '
-          'en erreur=${r['echouees']}, restantes=${r['restantes']} | '
-          'Images : copiées=${r['imagesCopiees']}, '
-          'copies d\'un passage interrompu=${r['copiesRetrouvees']} | '
-          'Anciens fichiers : supprimés=${r['anciensSupprimes']}, '
-          'conservés car encore cités=${r['anciensConservesCites']}, '
-          'en attente de vérification=${r['anciensEnAttente']}, '
-          'anciens fichiers déjà supprimés=${r['anciensIntrouvables']}'
-          '${(r['completed'] ?? 0) == 1 && (r['restantes'] ?? 0) + (r['anciensEnAttente'] ?? 0) == 0 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${(r['indexComplet'] ?? 0) == 1 ? '' : ' (références pas toutes lues : aucun ancien fichier supprimé)'}'
-          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
-          '${_flag(r, 'stoppedByErrors', ' (trois recettes en échec de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
       default:
@@ -910,6 +851,22 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // `group_owner_id` sur les invitations par e-mail antérieures.
   // `manageInvitationFn` l'écrit à la création et au renvoi.
   //
+  // Deux ponctuels, menés au bout et marqués terminés en production le
+  // 21/10 en v0.24.36, sont retirés en v0.24.37 (21 octobre 2026) :
+  //
+  // « Dossiers des illustrations » (`backfillIllustrationFoldersFn`) a
+  // contrôlé, sans rien écrire, que les illustrations et vignettes des
+  // recettes sont sous `illustrations/` ou `recipes/` du bucket, et enregistré
+  // la liste des images hors de ces dossiers. Dernier passage : 616 recettes
+  // examinées, 616 conformes, 0 à revoir.
+  //
+  // « Ranger les illustrations » (`backfillIllustrationFoldersMoveFn`) a copié
+  // ces images sous `recipes/{id}/`, les a inscrites dans `image_moderation`
+  // comme publiées par décision d'un administrateur (`manual_folder_move`),
+  // a réécrit les recettes et supprimé les anciens fichiers que plus rien ne
+  // citait. Dernier passage : 18 recettes rangées, 0 restante, 92 anciens
+  // fichiers conservés car encore cités.
+  //
   // Depuis v0.23.45, chaque backfill est classé ponctuel ou récurrent
   // (`backfill_registry.dart`, `functions/src/backfills/registry.ts`). Un
   // ponctuel terminé reste visible en bas de l'écran jusqu'à son retrait du
@@ -1063,8 +1020,6 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
     BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
-    BackfillKeys.illustrationFolders: Icons.folder_open_outlined,
-    BackfillKeys.illustrationFoldersMove: Icons.drive_file_move_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

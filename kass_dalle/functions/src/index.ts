@@ -169,8 +169,6 @@ export { scheduledBackfills } from "./scheduled/backfillSchedule";
 export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdminCallable";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
-export { backfillIllustrationFoldersFn } from "./callable/illustrationFoldersBackfillCallable";
-export { backfillIllustrationFoldersMoveFn } from "./callable/illustrationFoldersMoveBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
 export { backfillMoveMealsToGroupFn } from "./callable/moveMealsToGroupBackfillCallable";
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en

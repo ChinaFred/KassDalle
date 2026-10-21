@@ -20,6 +20,26 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.37 — technique
+
+- Les backfills ponctuels « Dossiers des illustrations » (`illustration_folders`) et « Ranger
+  les illustrations » (`illustration_folders_move`) quittent le code. Ils ont été marqués
+  terminés automatiquement en production le 21/10/2026, en v0.24.36. Dernier compte rendu du
+  contrôle : 616 recettes examinées, 616 conformes, 0 à revoir. Dernier compte rendu du
+  rangement : 18 recettes rangées, 0 restante, 0 ancien fichier supprimé, 92 conservés car
+  encore cités.
+- Retirés : les callables `backfillIllustrationFoldersFn` et `backfillIllustrationFoldersMoveFn`
+  et leurs exports, les modules `backfills/illustrationFolders.ts` et
+  `backfills/illustrationFoldersMove.ts` (rien d'autre ne les appelait), leurs tests, leurs
+  entrées dans les deux registres, la fixture `backfill_schedule.json` et `LOCK_GROUPS`, les
+  méthodes de `GcpBillingRepository`, leurs `case`, résumés et icônes dans Admin › Backfills,
+  et les constantes `COLL_BACKUP_RECIPES` et `COLL_BACKUP_BOOKS` de `config.ts`, que seul le
+  rangement lisait.
+- Restent : la valeur `manual_folder_move` de la modération (`decision.ts`,
+  `moderation_labels.dart`) pour les lignes `image_moderation` déjà écrites, les libellés de
+  journal, et les documents `app_config/backfill_run_illustration_folders*` et
+  `illustration_folders_backfill_checkpoint`, que plus rien ne lit. Aucun poste d'IA concerné.
+
 ### v0.24.36 — technique
 
 - « Ranger les illustrations » range aussi les fichiers sous `users/{uid}/` autres que la
