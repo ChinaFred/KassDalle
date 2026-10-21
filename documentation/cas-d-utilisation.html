@@ -160,6 +160,7 @@
           <tr><td>Voir le nom d'un autre membre (profil public : nom, couverture des recettes libres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le compte d'un autre membre — adresse, rôle, révocation (Admin › Gestion des utilisateurs)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Choisir le thème de l'application — suivre l'appareil, clair ou sombre (Préférences › Apparence), mémorisé sur l'appareil et non dans le compte</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Lire les règles de confidentialité et les conditions d'utilisation — liens « Confidentialité » et « Conditions d'utilisation » au pied de l'écran de connexion et de la salle d'attente ; pages statiques publiques (<span class="path">/confidentialite.html</span>, <span class="path">/conditions.html</span>), lisibles aussi sans compte, comme la page d'accueil publique (<span class="path">/accueil.html</span>) qui présente l'application et renvoie vers elles</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Noter, annoter, exporter en PDF — une annotation se pose sur toute recette qu'on voit</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Planifier — repas, cycle, préférences et garnitures du planning ; <span class="path">/planning/batch</span>, <span class="path">/planning/config</span> et <span class="path">/planning/staples</span> renvoient le lecteur au planning. Un lecteur garde ses anciens repas, qu'il peut ajouter aux courses mais ne supprime plus</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Remplir et lire sa propre liste de courses (repas, période, fiche recette ; jamais celle d'un autre)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -1375,7 +1376,7 @@ flowchart LR
     </div>
     <span class="expect">
       Les règles Storage lisent le <b>jeton</b> d'abord, puis le document <code>users/{uid}</code>
-      (v0.24.47) quand le jeton annonce le rôle demandé : un dépôt, une lecture ou un listage
+      (v0.24.48) quand le jeton annonce le rôle demandé : un dépôt, une lecture ou un listage
       d'administrateur. Un rôle retiré ou une révocation y prend effet tout de suite, comme côté
       Firestore. Cette lecture inter-services exige un rôle IAM posé à la main sur l'agent de
       service Storage ; sans lui, tous les dépôts sont refusés.

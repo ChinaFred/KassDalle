@@ -556,7 +556,7 @@ stateDiagram-v2
       révocation se lisent sur <code>users/{uid}</code>, et le claim <code>role</code> du jeton
       ne sert que si le document n'a pas de rôle. Les règles Storage lisent d'abord les
       <i>custom claims</i>, alimentés par <code>syncUserClaims</code>, puis relisent
-      <code>users/{uid}</code> par <code>firestore.get</code> (v0.24.47) quand le jeton annonce
+      <code>users/{uid}</code> par <code>firestore.get</code> (v0.24.48) quand le jeton annonce
       le rôle demandé. Un rôle retiré ou une révocation prend donc effet immédiatement partout ;
       un rôle accordé attend le rafraîchissement du jeton côté Storage. Le rôle se lit à l'identique partout depuis la v0.24.32
       (<code>readRole</code>, <code>security/roles.ts</code>) : seuls <code>pending</code>,

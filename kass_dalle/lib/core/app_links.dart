@@ -18,3 +18,12 @@ const kAppWebOrigin = 'https://kassdale-6d948.web.app';
 /// routeur la relit avec ses paramètres.
 Uri appWebLink(String location) =>
     Uri.parse(kAppWebOrigin).replace(path: '/', fragment: location);
+
+/// Règles de confidentialité : page HTML statique de `web/`, servie par
+/// Firebase Hosting telle quelle. Elle se lit sans exécuter Flutter, et sans
+/// compte : l'écran de consentement OAuth de Google la déclare.
+const kPrivacyPolicyUrl = '$kAppWebOrigin/confidentialite.html';
+
+/// Conditions d'utilisation : page HTML statique de `web/`, comme
+/// [kPrivacyPolicyUrl].
+const kTermsOfUseUrl = '$kAppWebOrigin/conditions.html';

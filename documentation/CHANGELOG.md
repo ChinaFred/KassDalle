@@ -18,9 +18,9 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
-## 2026-10-21
+## 2026-10-22
 
-### v0.24.47 — technique
+### v0.24.48 — technique
 
 Règles Storage : le rôle et la révocation se relisent sur `users/{uid}`. Jusqu'ici
 `storage.rules` ne lisait que le jeton : un administrateur rétrogradé gardait la lecture de
@@ -34,9 +34,40 @@ aucune lecture facturée. Coût : une lecture Firestore par dépôt dans `quaran
 `tickets/` et par lecture ou listage d'administrateur ; les images affichées par URL et le
 `get` des dossiers publiés n'en coûtent aucune. Un rôle accordé attend toujours le jeton.
 **Action manuelle avant le déploiement** : poser `roles/firebaserules.firestoreServiceAgent`
-sur l'agent de service Storage (`handbook-reseau-agents.md`, section 11.7). Le workflow
+sur l'agent de service Storage (`handbook-reseau-agents.md`, section 11.8). Le workflow
 lance la CLI en `--non-interactive` et ne pose pas ce rôle ; sans lui, tous les dépôts de
 fichiers sont refusés. Quinze cas ajoutés à `rules-tests/test/storage.test.mjs`.
+
+
+### v0.24.47 — fonctionnel
+
+Trois pages publiques, lisibles sans connexion : `/accueil.html` présente l'application et
+les accès Google qu'elle demande, `/confidentialite.html` décrit les données collectées, qui
+les voit et les droits de chacun, `/conditions.html` pose les règles d'usage. Google les
+exige pour valider l'écran de consentement OAuth et passer l'application en production.
+L'écran de connexion et la salle d'attente affichent « Confidentialité · Conditions
+d'utilisation » au-dessus du numéro de version.
+
+L'accès Google Agenda demandé est réduit : la lecture des agendas (`calendar.readonly`) est
+remplacée par la liste des agendas (`calendar.calendarlist.readonly`), seul usage du code.
+Chaque membre accepte le nouvel accès une fois, au prochain export vers l'agenda.
+
+Correction : après une déconnexion, l'accès Google Agenda et Tasks restait en mémoire
+jusqu'à 55 minutes ; un autre compte connecté sur le même appareil exportait ses repas dans
+l'agenda du premier. L'accès est maintenant lié au compte et effacé à la déconnexion.
+
+### v0.24.47 — technique
+
+Les trois pages sont des fichiers statiques de `kass_dalle/web/`, servis par Hosting avant la
+réécriture vers `index.html`, sans script ni ressource externe : la CSP et `firebase.json`
+ne changent pas. `index.html` reçoit un `<noscript>` avec les trois liens.
+`GoogleAccessTokenCache` (`core/services/google_access_token_cache.dart`) remplace les
+jetons statiques de `calendar_service.dart` et `google_tasks_service.dart` : jeton rendu au
+seul uid Firebase qui l'a obtenu, effacé à échéance lue et par `AuthRepository.signOut`.
+Le handbook (§11.7) décrit le réglage manuel de l'écran de consentement et la preuve de
+propriété du site dans Search Console.
+
+## 2026-10-21
 
 ### v0.24.46 — fonctionnel
 

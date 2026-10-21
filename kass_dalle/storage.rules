@@ -10,7 +10,7 @@ service firebase.storage {
     // les droits de son ancien jeton pendant ce temps, alors que Firestore les
     // lui retirait tout de suite (`roleOf()`, `isRevoked()`, v0.24.30).
     //
-    // Depuis la v0.24.47, chaque décision qui demande un rôle — écrire, lire en
+    // Depuis la v0.24.48, chaque décision qui demande un rôle — écrire, lire en
     // administrateur — relit aussi `users/{uid}` par une règle inter-services
     // (`firestore.get`), avec la même logique que `firestore.rules` : rôle du
     // document, claim seulement si le document n'en porte pas ; révocation du

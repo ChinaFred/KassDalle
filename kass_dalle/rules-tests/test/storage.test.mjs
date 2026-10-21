@@ -1,6 +1,6 @@
 // Règles Storage (kass_dalle/storage.rules), rôle par rôle.
 //
-// Depuis la v0.24.47, une décision qui demande un rôle (dépôt, lecture ou
+// Depuis la v0.24.48, une décision qui demande un rôle (dépôt, lecture ou
 // listage d'administrateur) lit le jeton PUIS le document `users/{uid}` par
 // une règle inter-services : l'émulateur Storage interroge l'émulateur
 // Firestore, lancé avec lui (`emulators:exec --only firestore,storage`). Les
@@ -383,9 +383,9 @@ describe("tickets/ — capture d'un ticket", () => {
   });
 });
 
-// ── rôle et révocation relus sur le document (v0.24.47) ──────────────────
+// ── rôle et révocation relus sur le document (v0.24.48) ──────────────────
 //
-// Le jeton vit une heure. Avant la v0.24.47, un administrateur rétrogradé ou
+// Le jeton vit une heure. Avant la v0.24.48, un administrateur rétrogradé ou
 // un compte révoqué gardait ici les droits de son ancien jeton ; Firestore les
 // lui retirait déjà (`roleOf()`, `isRevoked()`).
 
@@ -477,7 +477,7 @@ describe("rôle et révocation lus sur users/{uid}", () => {
   });
 
   // Écart assumé : le jeton reste la première porte. Un compte nommé à
-  // l'instant attend son jeton (une heure au plus), comme avant la v0.24.47 ;
+  // l'instant attend son jeton (une heure au plus), comme avant la v0.24.48 ;
   // Firestore, lui, l'accepte tout de suite.
   it("un compte nommé à l'instant (jeton pending) attend son jeton pour déposer", async () => {
     await assertFails(

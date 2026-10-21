@@ -737,9 +737,75 @@ gcloud firestore backups schedules create --database='(default)' --recurrence=we
   --day-of-week=SUN --retention=14w
 ```
 
-### 11.7 Firebase Storage : rôle IAM des règles inter-services
+### 11.7 Écran de consentement OAuth — passage en production
 
-Depuis la v0.24.47, `storage.rules` relit `users/{uid}` dans Firestore (`firestore.get`) pour
+Réglage fait à la main dans la console Google Cloud (projet `kassdale-6d948`), hors du code et
+du déploiement. Tant que l'écran de consentement est en mode « Test », seuls les comptes
+ajoutés comme testeurs se connectent. Le passer « En production » ouvre la connexion à tout
+compte Google ; les autorisations sensibles demandent alors la validation de Google.
+
+Console › **API et services › Écran de consentement OAuth** (Google Auth Platform) :
+
+| Champ | Valeur |
+|---|---|
+| Nom de l'application | Kass'Dalle |
+| Adresse e-mail d'assistance, coordonnées du développeur | l'adresse du compte fondateur |
+| Page d'accueil | `https://kassdale-6d948.web.app/accueil.html` |
+| Lien vers les règles de confidentialité | `https://kassdale-6d948.web.app/confidentialite.html` |
+| Lien vers les conditions d'utilisation | `https://kassdale-6d948.web.app/conditions.html` |
+| Domaines autorisés | `kassdale-6d948.web.app` et `kassdale-6d948.firebaseapp.com` (domaine de la connexion Firebase) |
+
+Les trois pages sont des fichiers statiques de `kass_dalle/web/`, publiés par le déploiement web
+(`TechnicalRequirements.md`, §11, « Pages publiques »). Elles doivent être en ligne avant la
+demande de validation.
+
+La page d'accueil n'est pas `/`. Google a refusé une première validation, le 21 octobre 2026 :
+« Votre page d'accueil n'est accessible que via une page de connexion. » `/` ouvre l'écran de
+connexion Flutter. `accueil.html` présente l'application sans connexion et renvoie vers les
+deux autres pages. L'écran de connexion porte aussi les liens vers les règles et les
+conditions, et `index.html` répète les trois liens dans un `<noscript>`.
+
+**Propriété du site.** Google demande de prouver que le domaine de la page d'accueil vous
+appartient, dans Google Search Console, avec le compte propriétaire du projet :
+
+1. Search Console › Ajouter une propriété › **Préfixe d'URL** :
+   `https://kassdale-6d948.web.app/`.
+2. Méthode **Fichier HTML** : télécharger le fichier proposé (`google<code>.html`), le déposer
+   tel quel dans `kass_dalle/web/`, sans le renommer ni le modifier, et le publier par le
+   déploiement web.
+3. Vérifier qu'il s'ouvre à `https://kassdale-6d948.web.app/google<code>.html`, puis cliquer
+   « Valider » dans Search Console.
+4. Le fichier reste dans le dépôt : Google revérifie la propriété, et la retirer fait perdre la
+   vérification.
+5. Attendre 24 h avant de relancer la validation de l'écran de consentement.
+
+Autorisations (scopes) que l'application demande, à déclarer dans « Accès aux données » :
+
+| Scope | Sensibilité | Usage | Code |
+|---|---|---|---|
+| `openid`, `email`, `profile` | non sensibles | connexion | `auth_repository.dart` |
+| `https://www.googleapis.com/auth/calendar.events` | sensible | créer les événements des repas planifiés | `calendar_service.dart` |
+| `https://www.googleapis.com/auth/calendar.calendarlist.readonly` | sensible | voir la liste des agendas pour en choisir un (`CalendarList: list`, seul appel de lecture) | `calendar_service.dart` |
+| `https://www.googleapis.com/auth/tasks` | sensible | envoyer la liste de courses vers Google Tasks | `google_tasks_service.dart` |
+
+`calendar.readonly` n'est plus demandé : il ouvrait en plus la lecture des paramètres et des
+partages des agendas, dont l'application ne se sert pas. L'accès aux événements reste couvert
+par `calendar.events`. S'il est déclaré dans « Accès aux données », le retirer.
+
+`calendar.events` est gardé, et non `calendar.events.owned` : ce dernier casserait l'export
+vers un agenda partagé de la famille, dont le compte n'est pas propriétaire.
+
+La demande de validation des scopes sensibles se remplit dans la même console : une
+justification par scope, et une vidéo qui montre chaque usage dans l'application. Sans
+validation, un compte qui accorde Agenda ou Tasks voit l'avertissement « Google
+n'a pas validé cette application ».
+
+Un scope ajouté ou retiré dans le code se déclare ou se retire ici, et dans les règles de
+confidentialité (`web/confidentialite.html`), dans le même livrable.
+
+### 11.8 Firebase Storage : rôle IAM des règles inter-services
+
+Depuis la v0.24.48, `storage.rules` relit `users/{uid}` dans Firestore (`firestore.get`) pour
 le rôle et la révocation (`TechnicalRequirements.md`, « Firebase Storage Rules »). Une règle
 Storage ne lit Firestore que si l'agent de service Storage porte le rôle
 `roles/firebaserules.firestoreServiceAgent`. Sans lui, `firestore.get` échoue, l'erreur vaut
@@ -1425,5 +1491,8 @@ Dans l'ordre :
 - [ ] `deploy.yml` (ou `deploy-eks.yml`), premier lancement manuel sur `master`.
 - [ ] Tickets : jeton GitHub, webhook, deux Routines, essai `analyse #N` (section 12).
 - [ ] Sauvegardes de la base (section 11.6, ou l'équivalent AWS).
+- [ ] Écran de consentement OAuth : page d'accueil publique, pages de confidentialité et de
+      conditions en ligne, propriété du site prouvée dans Search Console, liens et domaines
+      renseignés, passage en production, validation des scopes sensibles (section 11.7).
 - [ ] Rôle IAM des règles Storage inter-services, avant le premier déploiement de
-      `storage.rules` (section 11.7).
+      `storage.rules` (section 11.8).

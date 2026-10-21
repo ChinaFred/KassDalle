@@ -2564,7 +2564,7 @@ et les custom claims du jeton, tenus à jour par le déclencheur `syncUserClaims
 (un amorçage en masse a rattrapé les comptes antérieurs au déclencheur, puis a
 été retiré une fois son travail fait). Ce n'est pas une duplication
 accidentelle : les règles **Storage** lisent le jeton d'abord, et ne relisent le
-document (`firestore.get`, règle inter-services, v0.24.47) que quand le jeton
+document (`firestore.get`, règle inter-services, v0.24.48) que quand le jeton
 annonce déjà le rôle demandé. Le claim leur sert de première porte et évite une
 lecture Firestore facturée aux comptes qui n'ont aucun rôle.
 
@@ -2582,7 +2582,7 @@ créer son propre document et écrire un rapport d'erreur (`isKnownRevoked`).
 Un claim `admin` sans document n'ouvre rien. Le fondateur a un document
 `role: "admin"`, posé par `enforceFounderRole` : il n'est pas touché.
 
-**Storage relit le document depuis la v0.24.47.** Un rôle retiré ou une
+**Storage relit le document depuis la v0.24.48.** Un rôle retiré ou une
 révocation y prend effet tout de suite pour les dépôts et les lectures
 d'administrateur, comme sur Firestore. Deux écarts restent, décrits sous
 « Firebase Storage Rules » : un rôle **accordé** attend le jeton (le claim reste
@@ -3246,7 +3246,7 @@ multiplicateur du fondateur (voir §6, « Principe »).
 
 ### Firebase Storage Rules
 
-**Le jeton d'abord, le document ensuite (v0.24.47).** Une décision qui demande un rôle —
+**Le jeton d'abord, le document ensuite (v0.24.48).** Une décision qui demande un rôle —
 déposer dans `quarantine/` ou `tickets/`, lire `rejected/` ou la quarantaine d'un autre,
 lister un dossier — passe deux contrôles, dans cet ordre :
 
@@ -3258,7 +3258,7 @@ lister un dossier — passe deux contrôles, dans cet ordre :
    OU le document le dit). Un rôle inconnu (`"admin "`) ne vaut rien ; sans document, la
    lecture de `.data` échoue et la règle refuse.
 
-Avant la v0.24.47, ces règles ne lisaient que le jeton. Un administrateur rétrogradé gardait la
+Avant la v0.24.48, ces règles ne lisaient que le jeton. Un administrateur rétrogradé gardait la
 lecture de `rejected/` et de la quarantaine des autres jusqu'au renouvellement de son jeton
 (une heure au plus) — `syncUserClaims` ne révoque pas les jetons pour un passage d'`admin` à
 `editor` — et un compte révoqué à l'instant pouvait encore déposer. Firestore leur retirait
@@ -3332,7 +3332,7 @@ service firebase.storage {
     }
 
     // Le jeton d'abord : sans claim parmi `roles`, refus sans lecture Firestore.
-    // Puis le document, lu une fois (v0.24.47).
+    // Puis le document, lu une fois (v0.24.48).
     function hasRoleIn(roles) {
       return isActive()
         && request.auth.token.get('role', null) in roles
@@ -3538,7 +3538,7 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   claim de rôle, administrateur rétrogradé (`demotedAdmin` : claim `admin`, document `editor`),
   compte nommé dont le jeton dit encore `pending` (`promotedReader`), fondateur, et anonyme. Chaque compte a un jeton (`role`, `revoked`, `email`,
   comme les frappe `syncUserClaims`) et un document `users/{uid}`, relu par les règles Firestore
-  et, depuis la v0.24.47, par les règles Storage (`firestore.get`) : l'émulateur Storage
+  et, depuis la v0.24.48, par les règles Storage (`firestore.get`) : l'émulateur Storage
   interroge l'émulateur Firestore lancé avec lui, et `storage.test.mjs` réécrit ces documents
   avant chaque cas (`seedUsers`).
 - `test/firestore.test.mjs` et `test/storage.test.mjs` couvrent le comportement actuel, rôle par
@@ -7010,6 +7010,72 @@ Exception, décidée par l'utilisateur : la photo de profil (`photo_url`, `googl
 Google) reste affichée sans filtre, dans le menu du compte (`app_shell.dart`), l'écran Compte
 (`account_screen.dart`) et la liste des utilisateurs (`admin_screen.dart`).
 
+### Pages publiques : accueil, confidentialité et conditions d'utilisation
+
+Trois pages HTML statiques, en français, vivent dans `kass_dalle/web/` :
+
+| Fichier | Adresse publique |
+|---|---|
+| `web/accueil.html` | `https://kassdale-6d948.web.app/accueil.html` |
+| `web/confidentialite.html` | `https://kassdale-6d948.web.app/confidentialite.html` |
+| `web/conditions.html` | `https://kassdale-6d948.web.app/conditions.html` |
+
+**La page d'accueil publique.** `accueil.html` est la page d'accueil déclarée sur l'écran de
+consentement OAuth. Google a refusé une première validation : la page déclarée,
+`https://kassdale-6d948.web.app/`, ouvre l'écran de connexion Flutter, et Google exige que la
+page d'accueil présente l'application sans connexion. `accueil.html` dit ce qu'est
+Kass'Dalle, ses fonctions, ses plateformes, pourquoi la connexion passe par Google, et les
+deux accès Google demandés (Agenda, Tasks) avec leur usage. Elle renvoie vers les deux autres
+pages et vers l'application (`/`). `/` reste l'application : la changer en vitrine ajouterait
+un écran à chaque ouverture.
+
+`flutter build web` les copie telles quelles dans `build/web`. Firebase Hosting sert un fichier
+qui existe avant d'appliquer la réécriture `** → /index.html` : les trois adresses rendent la
+page, pas l'application. Elles n'ont aucun en-tête de cache propre dans `firebase.json`.
+
+**Pourquoi pas une route `go_router`.** L'écran de consentement OAuth de Google exige trois
+adresses publiques (page d'accueil, règles de confidentialité, conditions d'utilisation). La
+validation vérifie que la page d'accueil se lit sans connexion et renvoie vers les règles de
+confidentialité. Une route
+Flutter ne s'affiche qu'après le téléchargement et l'exécution de `main.dart.js`, sur un
+canevas : un robot qui lit le HTML sans exécuter le script, ou un lecteur sans JavaScript, ne
+verrait rien. Une page statique se lit partout.
+
+**Contraintes des pages.** Cibles de lien de 44 px au moins, longues adresses coupées
+(`overflow-wrap: anywhere`). Aucun script : la CSP du site (`Content-Security-Policy-Report-Only`,
+ci-dessus) n'admet que les scripts d'`index.html` listés par leur empreinte. Un seul `<style>`
+en ligne (`style-src 'unsafe-inline'`), aucune ressource externe, polices du système. Mode
+sombre par `prefers-color-scheme`, mise en page lisible sur téléphone. Chaque page renvoie vers
+les deux autres et vers l'application (`/`), dans sa navigation et son pied de page. Responsable : « un membre de la famille, son administrateur » ;
+contact : l'adresse du compte fondateur. La date de dernière mise à jour s'écrit en tête de
+chaque page, sous le titre, et change à chaque modification du texte.
+
+**Les liens qui y mènent.**
+
+- Dans l'application, l'écran de connexion (`/login`) et la salle d'attente (`/pending`)
+  portent en pied de page « Confidentialité » et « Conditions d'utilisation », au-dessus du
+  numéro de version (`AuthScreenFooter`, `features/auth/presentation/auth_screen_footer.dart`).
+  Les adresses sont `kPrivacyPolicyUrl` et `kTermsOfUseUrl` (`core/app_links.dart`). Sur le
+  web, le widget `Link` d'`url_launcher` pose un vrai `<a href>` qui ouvre un nouvel onglet ;
+  ailleurs, `launchUrl` ouvre le navigateur du système, et un échec est rapporté
+  (`auth.legalLink`) puis annoncé : « Page non ouverte. Ouvrez <adresse> dans votre
+  navigateur. ». Le pied de page est sous le contenu, plus en surimpression : le contenu qui
+  défile ne passe pas dessous.
+- Dans `web/index.html`, un bloc `<noscript>` affiche les liens vers les trois pages
+  (accueil, confidentialité, conditions) par-dessus l'écran d'attente quand JavaScript est coupé. Aucun script n'est ajouté : les empreintes de la CSP
+  ne changent pas.
+
+**Le contenu suit le code.** Les règles de confidentialité décrivent les données réellement
+traitées : compte Google, Google Agenda et Google Tasks (jeton en mémoire seulement,
+jamais enregistré ni envoyé au serveur, utilisé 50 min au plus, disparu à la déconnexion ou à
+la fermeture de l'application ; lié au compte Firebase qui l'a obtenu et vidé
+par `AuthRepository.signOut` — `GoogleAccessTokenCache`, `core/services/` — pour qu'un second
+compte connecté sur le même appareil ne s'en serve pas), contenus et leur visibilité, appels d'IA et leurs
+fournisseurs, tickets publiés sur un dépôt GitHub public, invitations par Gmail,
+notifications, rapports d'erreurs, journaux, hébergement, durées de conservation. Un
+changement qui ajoute une donnée, un fournisseur, une autorisation Google ou un destinataire
+met la page à jour dans le même commit, avec sa date.
+
 ### Build et déploiement
 
 Le chemin normal est un push sur `master`, depuis le PC comme depuis une session cloud :
@@ -7234,12 +7300,12 @@ supprimer une fonction retirée du code : une fonction supprimée du dépôt dis
 production au déploiement suivant. Il n'est pas passé à `firestore` : il y supprimerait tout
 index absent de `firestore.indexes.json`.
 
-**Les règles Storage exigent un rôle IAM que le workflow ne pose pas** (v0.24.47).
+**Les règles Storage exigent un rôle IAM que le workflow ne pose pas** (v0.24.48).
 `storage.rules` lit `users/{uid}` par `firestore.get` : l'agent de service Storage doit porter
 `roles/firebaserules.firestoreServiceAgent`. En `--non-interactive`, la CLI ne vérifie ni
 n'accorde ce rôle et le déploiement réussit quand même ; c'est à l'usage que tous les dépôts
 de fichiers sont refusés. Le rôle se pose une fois, à la main, avant le premier déploiement
-de ces règles (`handbook-reseau-agents.md`, section 11.7).
+de ces règles (`handbook-reseau-agents.md`, section 11.8).
 
 **L'APK en ligne est conservé.** Le déploiement du hosting remplace tout le contenu en ligne par
 `build/web`. Le workflow télécharge `app-release.apk` et `apk_release.json`
@@ -7862,6 +7928,9 @@ l'authentification.
 |---|---|---|
 | `/login` | `LoginScreen` | tout le monde, y compris déconnecté ; `?revoked=true` affiche le motif, `?next=` porte l'adresse à rouvrir après la connexion (13.2) |
 | `/pending` | `PendingApprovalScreen` | compte authentifié mais pas encore nommé |
+
+`/accueil.html`, `/confidentialite.html` et `/conditions.html` ne sont pas des routes : ce sont des fichiers
+statiques servis par Hosting (§11, « Pages publiques »). Le routeur ne les voit jamais.
 
 **Dans la coquille `AppShell`.** La colonne « droit effectif » dit qui peut réellement
 faire quelque chose de l'écran — droit tenu par les règles Firestore, les règles Storage ou

@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../core/services/google_access_token_cache.dart';
+
 /// Service pour créer des événements dans Google Calendar via l'API REST.
 ///
 /// Sur web : utilise [FirebaseAuth.signInWithPopup] avec le scope Calendar.
@@ -13,58 +15,73 @@ import 'package:http/http.dart' as http;
 class CalendarService {
   static const _calendarScope =
       'https://www.googleapis.com/auth/calendar.events';
-  static const _calendarReadScope =
-      'https://www.googleapis.com/auth/calendar.readonly';
 
-  // Cache du token pour éviter les popups OAuth répétées.
-  // Invalidé automatiquement 5 minutes avant expiration (tokens Google ~1h).
-  static String? _cachedToken;
-  static DateTime? _tokenExpiry;
+  /// Lecture de la seule liste des agendas (`CalendarList: list`), le seul
+  /// appel de lecture du service. `calendar.readonly`, demandé jusque-là,
+  /// ouvrait en plus la lecture des paramètres et des partages des agendas,
+  /// dont l'application ne se sert pas. L'accès aux événements reste couvert
+  /// par [_calendarScope] : l'application ne s'en sert que pour en créer.
+  static const _calendarListScope =
+      'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
+
+  // Cache du token pour éviter les popups OAuth répétées, lié au compte
+  // Firebase qui l'a obtenu et vidé à la déconnexion
+  // ([GoogleAccessTokenCache]). Invalidé 5 minutes avant expiration (tokens
+  // Google ~1h). En mémoire seulement : un jeton obtenu par une version
+  // précédente, avec d'autres portées, ne survit pas au redémarrage de
+  // l'application ni au rechargement de la page qui installe la nouvelle
+  // version.
+  static final _tokenCache = GoogleAccessTokenCache();
 
   // ── Token ──────────────────────────────────────────────────────────────────
 
-  /// Retourne un token OAuth avec les scopes Calendar events + readonly.
+  /// Retourne un token OAuth avec les scopes Calendar events + liste des
+  /// agendas.
   ///
   /// Le token est mis en cache pour toute la session (~55 min) afin d'éviter
   /// les popups OAuth répétées lors d'exports multiples.
   static Future<String> getToken() => _getCalendarToken();
 
   static Future<String> _getCalendarToken() async {
-    // Réutiliser le token en cache s'il est encore valide.
-    if (_cachedToken != null &&
-        _tokenExpiry != null &&
-        DateTime.now().isBefore(
-          _tokenExpiry!.subtract(const Duration(minutes: 5)),
-        )) {
-      return _cachedToken!;
-    }
+    // Réutiliser le token en cache s'il est encore valide, et du même compte.
+    final cached = _tokenCache.read(FirebaseAuth.instance.currentUser?.uid);
+    if (cached != null) return cached;
 
     String token;
+    String? uid;
     if (kIsWeb) {
       // Sur web, Firebase gère l'OAuth — demander les deux scopes ensemble.
       final provider = GoogleAuthProvider()
         ..addScope(_calendarScope)
-        ..addScope(_calendarReadScope);
+        ..addScope(_calendarListScope);
       final result = await FirebaseAuth.instance.signInWithPopup(provider);
       final t = (result.credential as OAuthCredential?)?.accessToken;
       if (t == null) throw Exception('Token Google non disponible');
       token = t;
+      // La fenêtre peut connecter un autre compte Google que le précédent :
+      // le jeton appartient au compte qu'elle rend.
+      uid = result.user?.uid;
     } else {
       // Mobile / Desktop : demande les deux scopes via GoogleSignIn v7.
       // authorizationForScopes : silencieux (null si interaction requise).
       // authorizeScopes : interactif (affiche la demande de consentement).
+      // L'uid est lu avant l'attente : si le compte change pendant la
+      // demande, le jeton n'est pas gardé.
+      final uidBefore = FirebaseAuth.instance.currentUser?.uid;
       final client = GoogleSignIn.instance.authorizationClient;
       final authz =
           await client.authorizationForScopes([
             _calendarScope,
-            _calendarReadScope,
+            _calendarListScope,
           ]) ??
-          await client.authorizeScopes([_calendarScope, _calendarReadScope]);
+          await client.authorizeScopes([_calendarScope, _calendarListScope]);
       token = authz.accessToken;
+      uid = FirebaseAuth.instance.currentUser?.uid == uidBefore
+          ? uidBefore
+          : null;
     }
 
-    _cachedToken = token;
-    _tokenExpiry = DateTime.now().add(const Duration(minutes: 55));
+    _tokenCache.store(uid, token);
     return token;
   }
 

@@ -6,9 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'auth_providers.dart';
+import 'auth_screen_footer.dart';
 import '../../admin/presentation/admin_providers.dart'
     show errorReportServiceProvider;
-import '../../../core/app_version.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/error_message.dart';
 
@@ -85,82 +85,76 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                // Défile : sur un téléphone en paysage, ou avec une grande
-                // taille de police, le bouton de connexion sortait de l'écran.
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset('assets/Icon.png', width: 120, height: 120),
-                      const SizedBox(height: 24),
-                      Text(
-                        "Kass'dalle",
-                        style: Theme.of(context).textTheme.headlineLarge
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Votre Bibliothèque Gourmande',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 48),
-                      if (isRevoked)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 24),
-                          child: Card(
-                            color: Theme.of(context).colorScheme.errorContainer,
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Text(
-                                kRevokedLoginMessage,
-                                style: TextStyle(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onErrorContainer,
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  // Défile : sur un téléphone en paysage, ou avec une grande
+                  // taille de police, le bouton de connexion sortait de l'écran.
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset('assets/Icon.png', width: 120, height: 120),
+                        const SizedBox(height: 24),
+                        Text(
+                          "Kass'dalle",
+                          style: Theme.of(context).textTheme.headlineLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Votre Bibliothèque Gourmande',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 48),
+                        if (isRevoked)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 24),
+                            child: Card(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.errorContainer,
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Text(
+                                  kRevokedLoginMessage,
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onErrorContainer,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
+                        _GoogleSignInButton(
+                          onSignIn: () async {
+                            final repo = ref.read(authRepositoryProvider);
+                            // Compte révoqué : nouvelle session, pour écrire
+                            // `last_seen_at` et laisser choisir l'adresse
+                            // invitée. L'écran se ferme seul quand l'accès
+                            // revient (le routeur suit `appUserProvider`).
+                            if (isRevoked) {
+                              await repo.signInAgainAfterRevocation();
+                            } else {
+                              await repo.signInWithGoogle();
+                            }
+                          },
                         ),
-                      _GoogleSignInButton(
-                        onSignIn: () async {
-                          final repo = ref.read(authRepositoryProvider);
-                          // Compte révoqué : nouvelle session, pour écrire
-                          // `last_seen_at` et laisser choisir l'adresse
-                          // invitée. L'écran se ferme seul quand l'accès
-                          // revient (le routeur suit `appUserProvider`).
-                          if (isRevoked) {
-                            await repo.signInAgainAfterRevocation();
-                          } else {
-                            await repo.signInWithGoogle();
-                          }
-                        },
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 8,
-              child: Center(
-                child: Text(
-                  'v$kAppVersion',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
+            // Sous le contenu, pas en surimpression : en paysage, le contenu
+            // qui défile ne passe pas sous les liens du pied de page.
+            const AuthScreenFooter(),
           ],
         ),
       ),

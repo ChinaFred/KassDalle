@@ -7,7 +7,7 @@ service cloud.firestore {
     // Le rôle et la révocation vivent tous deux dans `users/{uid}` ET dans les
     // custom claims du jeton, entretenus par le déclencheur `syncUserClaims`.
     // Les règles Storage lisent le jeton d'abord, puis ce document par
-    // `firestore.get` quand le jeton annonce le rôle demandé (v0.24.47) ; elles
+    // `firestore.get` quand le jeton annonce le rôle demandé (v0.24.48) ; elles
     // recopient `roleOf()` et `isRevoked()` ci-dessous à l'identique. Ces
     // règles-ci lisent d'abord le document :
     //

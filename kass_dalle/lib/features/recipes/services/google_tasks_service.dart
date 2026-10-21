@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../core/services/google_access_token_cache.dart';
+
 /// Envoi de la liste de courses vers **Google Tasks**, via l'API REST.
 ///
 /// ── Pourquoi Tasks, et pas Keep ──────────────────────────────────────────────
@@ -27,39 +29,43 @@ class GoogleTasksService {
   static const _tasksScope = 'https://www.googleapis.com/auth/tasks';
   static const _base = 'https://tasks.googleapis.com/tasks/v1';
 
-  static String? _cachedToken;
-  static DateTime? _tokenExpiry;
+  /// Lié au compte Firebase qui a obtenu le jeton, vidé à la déconnexion
+  /// ([GoogleAccessTokenCache]).
+  static final _tokenCache = GoogleAccessTokenCache();
 
   /// Jeton OAuth portant le scope Tasks.
   ///
   /// Mis en cache une cinquantaine de minutes : sans cela, une liste de trente
   /// articles ouvrirait trente demandes de consentement.
   static Future<String> _getToken() async {
-    if (_cachedToken != null &&
-        _tokenExpiry != null &&
-        DateTime.now().isBefore(
-          _tokenExpiry!.subtract(const Duration(minutes: 5)),
-        )) {
-      return _cachedToken!;
-    }
+    final cached = _tokenCache.read(FirebaseAuth.instance.currentUser?.uid);
+    if (cached != null) return cached;
 
     String token;
+    String? uid;
     if (kIsWeb) {
       final provider = GoogleAuthProvider()..addScope(_tasksScope);
       final result = await FirebaseAuth.instance.signInWithPopup(provider);
       final t = (result.credential as OAuthCredential?)?.accessToken;
       if (t == null) throw Exception('Token Google non disponible');
       token = t;
+      // La fenêtre peut connecter un autre compte Google que le précédent.
+      uid = result.user?.uid;
     } else {
+      // L'uid est lu avant l'attente : si le compte change pendant la
+      // demande, le jeton n'est pas gardé.
+      final uidBefore = FirebaseAuth.instance.currentUser?.uid;
       final client = GoogleSignIn.instance.authorizationClient;
       final authz =
           await client.authorizationForScopes([_tasksScope]) ??
           await client.authorizeScopes([_tasksScope]);
       token = authz.accessToken;
+      uid = FirebaseAuth.instance.currentUser?.uid == uidBefore
+          ? uidBefore
+          : null;
     }
 
-    _cachedToken = token;
-    _tokenExpiry = DateTime.now().add(const Duration(minutes: 55));
+    _tokenCache.store(uid, token);
     return token;
   }
 
