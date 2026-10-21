@@ -968,6 +968,7 @@ flowchart LR
     d31(["Inviter un proche par e-mail&lt;br/&gt;rôle, groupe, message"])
     d32(["Renvoyer ou annuler une invitation"])
     d34(["Recevoir une notification&lt;br/&gt;à chaque nouvel APK publié (Android)"])
+    d35(["Voir les recettes qui citent un ingrédient&lt;br/&gt;et ouvrir l'une d'elles"])
   end
   INV(("Proche invité"))
   GEM(("Moteur d'IA&lt;br/&gt;Gemini ou Claude"))
@@ -1005,6 +1006,7 @@ flowchart LR
   ADM --- d30
   ADM --- d31
   ADM --- d32
+  ADM --- d35
   d31 -.->|"refusé si l'adresse a un compte actif ou en attente, ou si 20 envois aujourd'hui"| e13(["Enregistrer l'invitation&lt;br/&gt;puis envoyer l'e-mail"])
   d32 -.->|"renvoi : expiration repoussée de 30 jours"| e13
   e13 -.->|"e-mail « {Admin} via Kass'Dalle »"| INV
@@ -1026,6 +1028,7 @@ flowchart LR
   d18 -.->|"refusé depuis un client non attesté"| e5(["Passer en mode exigé"])
   d19 -.->|"publie ou refuse définitivement"| e6(["Écrire la décision et promouvoir l'image"])
   d26 -.->|"dans Ingrédients nutrition, liste « vérifiée par l'admin »"| d11
+  d35 -.->|"au dépliage d'une fiche d'Ingrédients nutrition, 20 recettes au plus"| d11
   d26 -.->|"les recettes suivent au prochain passage"| d27
   d27 -.->|"est"| d12
   d27 -.->|"phase 1 : ingrédients non examinés"| e8(["Estimer les allergènes d'un ingrédient"])
@@ -1054,6 +1057,10 @@ flowchart LR
         estime par l'IA les ingrédients encore non examinés ; elle est facturée. La seconde pose sur
         chaque recette l'union des allergènes de ses ingrédients, sans appel d'IA. Le compte rendu
         est chiffré pour chaque phase : traités, ignorés, en erreur.
+        <b>Les recettes qui citent un ingrédient</b> s'affichent au dépliage de sa fiche, dans
+        Référentiels › Ingrédients nutrition : vingt au plus, privées comprises, avec le livre de
+        chacune. Une ligne ouvre la recette, le crayon ouvre l'éditeur ; un brouillon n'a pas de
+        crayon et se corrige depuis sa relecture. Replier puis déplier la fiche relit la liste.
         <b>Backfills ponctuels et récurrents.</b> L'écran range ses quatorze reprises en trois
         sections : récurrents, ponctuels à lancer, ponctuels terminés. Chaque tuile affiche l'état
         de son dernier passage, lu en direct. Un récurrent se programme — jours et heure de

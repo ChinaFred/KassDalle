@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'admin_providers.dart';
+import 'ingredient_recipes_section.dart';
 import '../data/nutrition_ingredients_repository.dart';
 import '../../recipes/domain/allergens.dart';
 import '../../../core/utils/context_extensions.dart';
@@ -360,6 +361,7 @@ class _NutritionIngredientsScreenState
                               ),
                             ],
                           ),
+                          IngredientRecipesSection(doc: doc),
                           const SizedBox(height: 8),
                           if (keys.isEmpty)
                             const Align(
