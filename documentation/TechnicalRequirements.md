@@ -2563,9 +2563,10 @@ Le rôle et la révocation vivent à **deux endroits** : le document `users/{uid
 et les custom claims du jeton, tenus à jour par le déclencheur `syncUserClaims`
 (un amorçage en masse a rattrapé les comptes antérieurs au déclencheur, puis a
 été retiré une fois son travail fait). Ce n'est pas une duplication
-accidentelle : les règles **Storage** ne peuvent lire que le jeton — une lecture
-Firestore depuis Storage est facturée et, surtout, peut échouer et faire refuser
-la règle entière, ce qui a déjà cassé l'import de recettes.
+accidentelle : les règles **Storage** lisent le jeton d'abord, et ne relisent le
+document (`firestore.get`, règle inter-services, v0.24.47) que quand le jeton
+annonce déjà le rôle demandé. Le claim leur sert de première porte et évite une
+lecture Firestore facturée aux comptes qui n'ont aucun rôle.
 
 Les règles **Firestore**, elles, ont accès aux deux sources, et lisent d'abord
 le document :
@@ -2581,11 +2582,11 @@ créer son propre document et écrire un rapport d'erreur (`isKnownRevoked`).
 Un claim `admin` sans document n'ouvre rien. Le fondateur a un document
 `role: "admin"`, posé par `enforceFounderRole` : il n'est pas touché.
 
-**Écart assumé et connu :** les règles **Storage** restent liées au jeton. Un
-rôle retiré ou une révocation n'y prend effet qu'au renouvellement du jeton
-(une heure au plus) ; sur Firestore l'effet est immédiat.
-Storage ne peut pas faire mieux sans réintroduire la lecture inter-services qui
-avait cassé l'import. Depuis la v0.23.12, `syncUserClaims` appelle en plus
+**Storage relit le document depuis la v0.24.47.** Un rôle retiré ou une
+révocation y prend effet tout de suite pour les dépôts et les lectures
+d'administrateur, comme sur Firestore. Deux écarts restent, décrits sous
+« Firebase Storage Rules » : un rôle **accordé** attend le jeton (le claim reste
+la première porte), et le `get` d'un fichier publié ne lit que le jeton. Depuis la v0.23.12, `syncUserClaims` appelle en plus
 `revokeRefreshTokens` quand un compte perd l'accès — passage à révoqué, rôle qui sort de
 reader/editor/admin, document supprimé d'un compte nommé ou révoqué : la session ne se
 renouvelle plus, et le jeton en cours n'est pas prolongé au-delà de son heure.
@@ -3245,18 +3246,56 @@ multiplicateur du fondateur (voir §6, « Principe »).
 
 ### Firebase Storage Rules
 
-Ces règles ne voient **que le jeton** : aucune lecture Firestore, sous peine de rendre la règle
-faillible et facturée. L'écriture exige donc un claim de rôle **explicite**. Elle acceptait
-auparavant tout jeton n'affirmant pas être `reader` — précaution du temps où aucun jeton ne portait
-encore de claim, et qui aurait suffi à un compte `pending` pour déposer des images dans les dossiers
-partagés.
+**Le jeton d'abord, le document ensuite (v0.24.47).** Une décision qui demande un rôle —
+déposer dans `quarantine/` ou `tickets/`, lire `rejected/` ou la quarantaine d'un autre,
+lister un dossier — passe deux contrôles, dans cet ordre :
 
-Écart documenté avec Firestore (v0.24.30, ticket #162) : Firestore lit le rôle sur le
-document, Storage ne lit que le claim. Un administrateur rétrogradé garde donc sur Storage,
-jusqu'au renouvellement de son jeton (une heure au plus), la lecture de `rejected/` ; un
-compte nommé n'y dépose rien avant que son jeton porte le rôle. `syncUserClaims` appelle
-`revokeRefreshTokens` quand un compte perd l'accès (révoqué, rôle hors reader/editor/admin) ;
-il ne le fait pas pour un passage d'`admin` à `editor`, qui garde donc cette heure sur Storage.
+1. le **jeton** : claim `role` parmi les rôles demandés, et pas de claim `revoked: true`.
+   Sans ce claim, la règle refuse sans lire Firestore ;
+2. le **document** `users/{uid}`, lu par `firestore.get` (règle inter-services), avec la
+   logique de `firestore.rules` recopiée à l'identique : `roleOf(d)` (rôle du document, claim
+   seulement si le document n'a pas de champ `role`) et `isRevoked(d)` (révoqué si le jeton
+   OU le document le dit). Un rôle inconnu (`"admin "`) ne vaut rien ; sans document, la
+   lecture de `.data` échoue et la règle refuse.
+
+Avant la v0.24.47, ces règles ne lisaient que le jeton. Un administrateur rétrogradé gardait la
+lecture de `rejected/` et de la quarantaine des autres jusqu'au renouvellement de son jeton
+(une heure au plus) — `syncUserClaims` ne révoque pas les jetons pour un passage d'`admin` à
+`editor` — et un compte révoqué à l'instant pouvait encore déposer. Firestore leur retirait
+déjà ces droits (`roleOf()`, v0.24.30).
+
+**Coût.** Une lecture Firestore par requête Storage qui atteint le second contrôle : un dépôt
+dans la quarantaine (photo, scan, livre), une capture de ticket, une lecture ou un listage
+d'administrateur. Les deux branches du dépôt en quarantaine sont ordonnées pour qu'un lecteur
+comme un éditeur ne lisent le document qu'une fois, et le type et la taille se testent avant
+le rôle. Ne coûtent **aucune** lecture : les images affichées, servies par URL de
+téléchargement (les règles ne s'évaluent pas), le `get` d'un fichier publié (jeton seul,
+`isActive()`), la lecture par un compte de ses propres fichiers (`isOwner`), et toute requête
+d'un compte dont le jeton n'annonce aucun rôle — un inconnu qui multiplie les requêtes ne
+déclenche pas de lecture facturée. À l'échelle de la famille (quelques dizaines de dépôts par
+jour), le surcoût se compte en centimes par an au tarif Firestore.
+
+**Écarts qui restent avec Firestore.**
+
+- Un rôle **accordé** attend le jeton : un compte nommé à l'instant (claim `pending`,
+  document `reader`) ne dépose rien avant le renouvellement de son jeton, comme avant. Le
+  claim reste la première porte, pour la raison de coût ci-dessus.
+- Le `get` d'un fichier des dossiers publiés ne lit que le jeton : ces fichiers restent
+  joignables par leur URL de téléchargement, que la révocation n'invalide pas, et la lecture
+  du document n'y ajouterait qu'un coût.
+
+**Prérequis IAM, hors dépôt.** Une règle Storage qui appelle `firestore.get` exige que l'agent
+de service Storage, `service-<numéro du projet>@gcp-sa-firebasestorage.iam.gserviceaccount.com`,
+porte le rôle `roles/firebaserules.firestoreServiceAgent` (« Firebase Rules Firestore Service
+Agent »). Sans lui, chaque `firestore.get` échoue, une erreur vaut refus, et **tous les dépôts
+sont refusés** : l'import est cassé. `firebase deploy --only storage` propose d'accorder ce rôle
+en mode interactif, mais le workflow « Déploiement » lance la CLI en `--non-interactive`
+(`.github/scripts/firebase-deploy.sh`), et la CLI saute alors la vérification sans rien
+accorder. Le rôle se pose donc à la main, une fois, avant le premier déploiement de ces
+règles : voir `handbook-reseau-agents.md`, « Firebase Storage : rôle IAM des règles
+inter-services ». Une version antérieure de ces règles lisait déjà Firestore et avait cassé
+l'import ; l'historique ne garde pas la cause, et l'absence de ce rôle est l'explication la
+plus probable.
 
 ```javascript
 rules_version = '2';
@@ -3274,21 +3313,43 @@ service firebase.storage {
         && (!('revoked' in request.auth.token) || request.auth.token.revoked != true);
     }
 
+    // Le document `users/{uid}` de l'appelant (règle inter-services). Sans
+    // document, `.data` échoue et la règle refuse.
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // À l'identique de `roleOf()` et `isRevoked()` de firestore.rules.
+    function roleOf(d) {
+      return d.get('role', null) != null ? d.role : request.auth.token.get('role', null);
+    }
+    function isRevoked(d) {
+      return ('revoked' in request.auth.token && request.auth.token.revoked == true)
+        || d.is_revoked == true;
+    }
+
+    // Le jeton d'abord : sans claim parmi `roles`, refus sans lecture Firestore.
+    // Puis le document, lu une fois (v0.24.47).
+    function hasRoleIn(roles) {
+      return isActive()
+        && request.auth.token.get('role', null) in roles
+        && hasDocRoleIn(userDoc(), roles);
+    }
+    function hasDocRoleIn(d, roles) {
+      return !isRevoked(d) && roleOf(d) in roles;
+    }
+
     // Le sas d'entrée, côté fichiers. Ne concerne que l'écriture : fermer aussi
     // la lecture ferait clignoter les images de qui n'a pas renouvelé son jeton,
     // pour un gain nul (les URL ne se devinent pas).
-    function isApprovedToken() {
-      return isActive() && request.auth.token.role in ['reader', 'editor', 'admin'];
-    }
+    function isApproved() { return hasRoleIn(['reader', 'editor', 'admin']); }
 
     function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
 
-    // Éditeur ou administrateur, sur la foi du claim (v0.24.32, ticket #162).
-    // Seuls ces rôles importent : `analyzeBookImport`, l'extraction de texte
-    // et la création d'un job exigent l'éditeur.
-    function isEditorToken() {
-      return isApprovedToken() && request.auth.token.role in ['editor', 'admin'];
-    }
+    // Éditeur ou administrateur (v0.24.32, ticket #162). Seuls ces rôles
+    // importent : `analyzeBookImport`, l'extraction de texte et la création
+    // d'un job exigent l'éditeur.
+    function isEditor() { return hasRoleIn(['editor', 'admin']); }
 
     // Le type MIME sans ses paramètres : le texte collé s'envoie en
     // `text/plain; charset=utf-8`, qu'une comparaison exacte refuserait.
@@ -3317,12 +3378,10 @@ service firebase.storage {
         && !request.resource.name.matches('quarantine/[^/]+/livres/.*');
     }
 
-    // Administrateur, sur la foi du claim. Sert la seule lecture qui ne soit
-    // pas ouverte à la famille : les images refusées par la modération. Ici,
-    // l'absence de preuve vaut refus.
-    function isAdmin() {
-      return isActive() && request.auth.token.role == 'admin';
-    }
+    // Administrateur, selon le jeton ET le document. Sert les lectures qui ne
+    // sont pas ouvertes à la famille : images refusées par la modération,
+    // quarantaine des autres, listages. Ici, l'absence de preuve vaut refus.
+    function isAdmin() { return hasRoleIn(['admin']); }
 
     // ── Les dossiers PUBLIÉS sont fermés en écriture ────────────────────────
     //
@@ -3348,12 +3407,13 @@ service firebase.storage {
     // ne peut pas voir.
     //
     // Un lecteur n'y dépose que des photos ; un éditeur ou un administrateur,
-    // tous les types d'un import (v0.24.32, ticket #162).
+    // tous les types d'un import (v0.24.32, ticket #162). Type et taille avant
+    // le rôle : un dépôt refusé pour son contenu ne lit pas Firestore.
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid) && isApprovedToken()
-        && ((isEditorToken() && isImportableUnder(50 * 1024 * 1024))
-            || isReaderImageUnder(50 * 1024 * 1024));
+      allow write: if isOwner(uid)
+        && ((isImportableUnder(50 * 1024 * 1024) && isEditor())
+            || (isReaderImageUnder(50 * 1024 * 1024) && isApproved()));
     }
 
     // Un livre entier — PDF, EPUB ou Word — à découper en recettes. Plafond de
@@ -3364,13 +3424,14 @@ service firebase.storage {
     // Éditeurs et administrateurs seulement (v0.24.32, ticket #162).
     match /quarantine/{uid}/livres/{fileName} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid) && isEditorToken()
+      allow write: if isOwner(uid)
         && request.resource.size < 300 * 1024 * 1024
         && baseContentType() in [
              'application/pdf',
              'application/epub+zip',
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-           ];
+           ]
+        && isEditor();
     }
 
     // Lire un fichier dont on a l'adresse : tout compte actif. LISTER le
@@ -3411,14 +3472,15 @@ service firebase.storage {
       allow write: if false;
     }
 
-    // Capture d'un ticket — privée, jamais publiée. Pas de lecture Firestore :
-    // `attachTicketScreenshot` vérifie ensuite que le ticket est à l'appelant.
+    // Capture d'un ticket — privée, jamais publiée. Le ticket n'est pas relu :
+    // `attachTicketScreenshot` vérifie ensuite qu'il est à l'appelant.
     match /tickets/{uid}/{ticketId}/{fileName} {
       allow read: if (isActive() && isOwner(uid)) || isAdmin();
-      allow create, update: if isOwner(uid) && isApprovedToken()
+      allow create, update: if isOwner(uid)
         && fileName.matches('screenshot[.](png|jpg)')
         && request.resource.size <= 5 * 1024 * 1024
-        && baseContentType() in ['image/png', 'image/jpeg'];
+        && baseContentType() in ['image/png', 'image/jpeg']
+        && isApproved();
     }
   }
 }
@@ -3442,12 +3504,14 @@ service firebase.storage {
 > à l'éditeur. Testé dans `rules-tests` (« quarantaine — ce que dépose un lecteur »).
 
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
-`[firebase_storage/unauthorized]` peut vouloir dire cinq choses : le chemin n'appartient
+`[firebase_storage/unauthorized]` peut vouloir dire six choses : le chemin n'appartient
 pas à l'appelant, son jeton ne porte pas encore de rôle (compte `pending`, ou jeton émis
-avant la propagation — une heure au plus), le fichier dépasse 50 Mo (300 Mo sous
-`quarantine/{uid}/livres/`), son type MIME n'est pas dans la liste, ou l'appelant est un
-lecteur et le fichier n'est pas une photo JPEG ou PNG hors de `livres/`. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
-`storagePath` et `mimeType` : sans eux, ces cinq causes sont indiscernables.
+avant la propagation — une heure au plus), son document `users/{uid}` lui a retiré ce rôle
+ou l'a révoqué (ou la lecture inter-services échoue, faute du rôle IAM décrit plus haut), le
+fichier dépasse 50 Mo (300 Mo sous `quarantine/{uid}/livres/`), son type MIME n'est pas dans
+la liste, ou l'appelant est un lecteur et le fichier n'est pas une photo JPEG ou PNG hors de
+`livres/`. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`, `storagePath` et
+`mimeType` : sans eux, ces causes sont indiscernables.
 
 ### Tests des règles
 
@@ -3470,7 +3534,10 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   révoqué (jeton à jour, ou jeton périmé avec `is_revoked` posé sur le document), compte sans
   claim de rôle, administrateur rétrogradé (`demotedAdmin` : claim `admin`, document `editor`),
   compte nommé dont le jeton dit encore `pending` (`promotedReader`), fondateur, et anonyme. Chaque compte a un jeton (`role`, `revoked`, `email`,
-  comme les frappe `syncUserClaims`) et un document `users/{uid}`, relu par les règles Firestore.
+  comme les frappe `syncUserClaims`) et un document `users/{uid}`, relu par les règles Firestore
+  et, depuis la v0.24.47, par les règles Storage (`firestore.get`) : l'émulateur Storage
+  interroge l'émulateur Firestore lancé avec lui, et `storage.test.mjs` réécrit ces documents
+  avant chaque cas (`seedUsers`).
 - `test/firestore.test.mjs` et `test/storage.test.mjs` couvrent le comportement actuel, rôle par
   rôle : création de compte, rôle et fondateur, livres, recettes, annotations, notes, champs
   propriétaire, `app_config`, collections de coût, `processing_jobs` (dont la borne de 20 pages
@@ -3480,7 +3547,10 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   l'étranger, au groupe en pause, à un `group_owner_id` faux ; lecture par l'auteur et le
   propriétaire seuls ; aucune mise à jour ; identifiant imposé `_0` à `_4` et sixième
   refusée ; jour mal formé, impossible ou hors de la veille à J+60 refusé ; bornes) ; côté
-  Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`.
+  Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`,
+  `tickets/`, et le rôle et la révocation relus sur le document (administrateur rétrogradé,
+  compte révoqué à l'instant, éditeur rétrogradé lecteur, rôle inconnu, jeton sans document,
+  document sans rôle, compte nommé à l'instant, chemins courants de chaque rôle).
 - Le bloc « requêtes du client » rejoue la forme des requêtes de `recipe_repository.dart`,
   `book_repository.dart`, `planning_providers.dart`, `annotation_repository.dart` et
   `recipe_rating_repository.dart`. L'émulateur évalue une requête sur ses filtres, comme la
@@ -7160,6 +7230,13 @@ le `firebase` du PC, installé à la main (voir `handbook-reseau-agents.md`).
 supprimer une fonction retirée du code : une fonction supprimée du dépôt disparaît donc de la
 production au déploiement suivant. Il n'est pas passé à `firestore` : il y supprimerait tout
 index absent de `firestore.indexes.json`.
+
+**Les règles Storage exigent un rôle IAM que le workflow ne pose pas** (v0.24.47).
+`storage.rules` lit `users/{uid}` par `firestore.get` : l'agent de service Storage doit porter
+`roles/firebaserules.firestoreServiceAgent`. En `--non-interactive`, la CLI ne vérifie ni
+n'accorde ce rôle et le déploiement réussit quand même ; c'est à l'usage que tous les dépôts
+de fichiers sont refusés. Le rôle se pose une fois, à la main, avant le premier déploiement
+de ces règles (`handbook-reseau-agents.md`, section 11.7).
 
 **L'APK en ligne est conservé.** Le déploiement du hosting remplace tout le contenu en ligne par
 `build/web`. Le workflow télécharge `app-release.apk` et `apk_release.json`

@@ -6,10 +6,10 @@ service cloud.firestore {
     //
     // Le rôle et la révocation vivent tous deux dans `users/{uid}` ET dans les
     // custom claims du jeton, entretenus par le déclencheur `syncUserClaims`.
-    // Les règles Storage ne peuvent lire que le jeton — une lecture Firestore
-    // depuis Storage est facturée et, surtout, peut échouer et faire refuser la
-    // règle entière. Ces règles-ci ont accès aux deux sources, et lisent
-    // d'abord le document :
+    // Les règles Storage lisent le jeton d'abord, puis ce document par
+    // `firestore.get` quand le jeton annonce le rôle demandé (v0.24.47) ; elles
+    // recopient `roleOf()` et `isRevoked()` ci-dessous à l'identique. Ces
+    // règles-ci lisent d'abord le document :
     //
     //  • Le RÔLE se lit sur le document, et sur le jeton seulement quand le
     //    document n'en porte pas. Il se lisait dans le jeton avant la
@@ -30,9 +30,10 @@ service cloud.firestore {
     // `isKnownRevoked` pour les rapports d'erreur). C'était déjà le cas par
     // `isRevoked()` avant v0.24.30.
     //
-    // Écart assumé et connu : sur Storage, le rôle et la révocation ne
-    // changent qu'au renouvellement du jeton (une heure au plus). Ici ils
-    // changent immédiatement.
+    // Écart assumé et connu : sur Storage, un rôle ACCORDÉ n'ouvre rien avant
+    // le renouvellement du jeton (une heure au plus), le claim y restant la
+    // première porte. Un rôle retiré ou une révocation y prend effet tout de
+    // suite, comme ici.
     //
     // Quatre rôles, dont un qui n'ouvre rien : `pending`. Un compte neuf naît
     // ainsi, et `isApproved()` — pas `isAuthenticated()` — garde tout ce qui

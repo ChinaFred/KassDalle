@@ -737,6 +737,44 @@ gcloud firestore backups schedules create --database='(default)' --recurrence=we
   --day-of-week=SUN --retention=14w
 ```
 
+### 11.7 Firebase Storage : rôle IAM des règles inter-services
+
+Depuis la v0.24.47, `storage.rules` relit `users/{uid}` dans Firestore (`firestore.get`) pour
+le rôle et la révocation (`TechnicalRequirements.md`, « Firebase Storage Rules »). Une règle
+Storage ne lit Firestore que si l'agent de service Storage porte le rôle
+`roles/firebaserules.firestoreServiceAgent`. Sans lui, `firestore.get` échoue, l'erreur vaut
+refus, et tous les dépôts de fichiers sont refusés : l'import ne marche plus.
+
+La CLI Firebase propose ce rôle au déploiement des règles Storage, mais seulement en mode
+interactif. Le workflow « Déploiement » la lance en `--non-interactive`, et la CLI saute alors
+la vérification sans rien accorder (`checkStorageRulesIamPermissions`, `rulesDeploy.js` de
+firebase-tools). Le rôle se pose donc à la main, une fois, **avant** le premier déploiement de
+ces règles, par un compte propriétaire du projet :
+
+```bash
+NUM=$(gcloud projects describe <PROJET_GCP> --format='value(projectNumber)')
+gcloud projects add-iam-policy-binding <PROJET_GCP> \
+  --member "serviceAccount:service-$NUM@gcp-sa-firebasestorage.iam.gserviceaccount.com" \
+  --role roles/firebaserules.firestoreServiceAgent
+# vérifier :
+gcloud projects get-iam-policy <PROJET_GCP> --flatten=bindings \
+  --filter="bindings.role:roles/firebaserules.firestoreServiceAgent" \
+  --format="value(bindings.members)"
+```
+
+Autre chemin, équivalent : `firebase deploy --only storage --project <PROJET_GCP>` lancé une fois
+sur le PC, sans `--non-interactive`, et répondre oui à « Cloud Storage for Firebase needs an
+IAM Role to use cross-service rules. Grant the new role? ». Le compte de service du
+déploiement (`github-deploy`) n'a pas besoin de ce droit : le rôle est posé une fois pour
+toutes. Après la pose, un dépôt de photo par un lecteur doit passer ; un refus
+`storage/unauthorized` sur tous les dépôts signale un rôle absent.
+
+Les tests des règles (`kass_dalle/rules-tests/`) n'ont pas besoin de ce rôle : l'émulateur
+Storage interroge l'émulateur Firestore directement. Dans une session cloud, firebase-tools
+envoie cette requête locale par `HTTPS_PROXY`, que le proxy de la session refuse : les cas
+Storage qui lisent le document y échouent, alors qu'ils passent dans la CI GitHub, qui n'a pas
+de proxy.
+
 ---
 
 ## 12. Tickets — de l'application aux sessions Claude
@@ -1387,3 +1425,5 @@ Dans l'ordre :
 - [ ] `deploy.yml` (ou `deploy-eks.yml`), premier lancement manuel sur `master`.
 - [ ] Tickets : jeton GitHub, webhook, deux Routines, essai `analyse #N` (section 12).
 - [ ] Sauvegardes de la base (section 11.6, ou l'équivalent AWS).
+- [ ] Rôle IAM des règles Storage inter-services, avant le premier déploiement de
+      `storage.rules` (section 11.7).

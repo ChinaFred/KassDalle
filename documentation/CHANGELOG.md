@@ -20,6 +20,24 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.47 — technique
+
+Règles Storage : le rôle et la révocation se relisent sur `users/{uid}`. Jusqu'ici
+`storage.rules` ne lisait que le jeton : un administrateur rétrogradé gardait la lecture de
+`rejected/` et de la quarantaine des autres, et un compte révoqué pouvait encore déposer,
+jusqu'au renouvellement du jeton (une heure au plus). Firestore leur retirait déjà ces droits
+depuis la v0.24.30. `isAdmin()`, `isApproved()` et `isEditor()` (ex-`isApprovedToken` et
+`isEditorToken`) testent d'abord le claim de rôle, puis lisent le document par
+`firestore.get`, avec `roleOf` et `isRevoked` recopiés de `firestore.rules`. Sans claim de
+rôle, la règle refuse sans lire Firestore : un compte en attente ou inconnu ne déclenche
+aucune lecture facturée. Coût : une lecture Firestore par dépôt dans `quarantine/` ou
+`tickets/` et par lecture ou listage d'administrateur ; les images affichées par URL et le
+`get` des dossiers publiés n'en coûtent aucune. Un rôle accordé attend toujours le jeton.
+**Action manuelle avant le déploiement** : poser `roles/firebaserules.firestoreServiceAgent`
+sur l'agent de service Storage (`handbook-reseau-agents.md`, section 11.7). Le workflow
+lance la CLI en `--non-interactive` et ne pose pas ce rôle ; sans lui, tous les dépôts de
+fichiers sont refusés. Quinze cas ajoutés à `rules-tests/test/storage.test.mjs`.
+
 ### v0.24.46 — fonctionnel
 
 Admin › Référentiels › Ingrédients nutrition : le dépliage d'une fiche affiche « Recettes qui
