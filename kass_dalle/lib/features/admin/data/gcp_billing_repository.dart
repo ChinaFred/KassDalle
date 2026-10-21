@@ -451,35 +451,6 @@ class GcpBillingRepository {
     );
   }
 
-  /// Contrôle, sans rien écrire dans les recettes, que leurs illustrations
-  /// (`image_urls`, `thumbnail_urls`) sont sous `illustrations/` ou
-  /// `recipes/` du bucket. Sans appel de modèle. Les recettes hors de ces
-  /// dossiers sont dans `failures`.
-  Future<BackfillCounts> backfillIllustrationFolders() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillIllustrationFoldersFn',
-      <String, dynamic>{'appVersion': kAppVersion},
-      timeout: const Duration(minutes: 9),
-    );
-
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
-  /// Range sous `recipes/{id}/` les illustrations et vignettes des recettes
-  /// restées hors des dossiers modérés, approuvées telles quelles par
-  /// l'administrateur, et supprime l'ancien fichier quand plus rien ne le
-  /// cite. Sans appel de modèle. Les recettes non rangées sont dans
-  /// `failures`.
-  Future<BackfillCounts> backfillIllustrationFoldersMove() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillIllustrationFoldersMoveFn',
-      <String, dynamic>{'appVersion': kAppVersion},
-      timeout: const Duration(minutes: 9),
-    );
-
-    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
-  }
-
   /// Déplace les repas du planning personnel de l'appelant, sur la période de
   /// [request], dans le planning du groupe choisi. Sans appel de modèle. Les
   /// drapeaux valent 1 ou 0 ; les repas en échec sont dans `failures`.

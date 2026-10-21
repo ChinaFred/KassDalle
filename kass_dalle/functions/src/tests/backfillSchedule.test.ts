@@ -456,18 +456,16 @@ describe("auteur de la programmation", () => {
 });
 
 describe("verrou commun", () => {
-  test("deux paires se bloquent : sel et enrichissement, contrôle et rangement des illustrations", () => {
+  test("le sel et l'enrichissement se bloquent ; les autres ne bloquent personne", () => {
     assert.deepEqual(lockSiblings("enrich_referentials"), ["refresh_sodium"]);
     assert.deepEqual(lockSiblings("refresh_sodium"), ["enrich_referentials"]);
-    assert.deepEqual(lockSiblings("illustration_folders"), ["illustration_folders_move"]);
-    assert.deepEqual(lockSiblings("illustration_folders_move"), ["illustration_folders"]);
     assert.deepEqual(lockSiblings("move_meals_to_group"), []);
     assert.deepEqual(lockSiblings("recipe_roles"), []);
   });
 });
 
 describe("registre et validation", () => {
-  test("cinq récurrents, quatre ponctuels, clés uniques", () => {
+  test("cinq récurrents, deux ponctuels, clés uniques", () => {
     assert.deepEqual(recurrentKeys(), [
       "nutrition",
       "enrich_referentials",
@@ -475,10 +473,10 @@ describe("registre et validation", () => {
       "recipe_roles",
       "shopping_products",
     ]);
-    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 4);
+    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 2);
     assert.equal(new Set(BACKFILLS.map((b) => b.key)).size, BACKFILLS.length);
     assert.equal(backfillDefinition("inconnu"), null);
-    // Ponctuels retirés en v0.23.52 et en v0.24.33 : leur clé n'est plus connue.
+    // Ponctuels retirés en v0.23.52, v0.24.33 et v0.24.37 : leur clé n'est plus connue.
     for (const retired of [
       "recipe_protein",
       "estimated_times",
@@ -489,6 +487,8 @@ describe("registre et validation", () => {
       "ticket_delivered_pr",
       "recipe_title_keys",
       "invitation_group_owner",
+      "illustration_folders",
+      "illustration_folders_move",
     ]) {
       assert.equal(backfillDefinition(retired), null);
     }

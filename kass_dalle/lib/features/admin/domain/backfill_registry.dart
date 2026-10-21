@@ -14,6 +14,7 @@
 /// `estimated_times` et `planning_defaults`. Retirés en v0.24.33 :
 /// `system_books`, `group_planning_reach`, `ticket_analyses`,
 /// `ticket_delivered_pr`, `recipe_title_keys` et `invitation_group_owner`.
+/// Retirés en v0.24.37 : `illustration_folders` et `illustration_folders_move`.
 /// Leurs documents `app_config/backfill_run_<clé>` restent en base ; l'écran
 /// ignore une clé absente de ce registre.
 library;
@@ -29,8 +30,6 @@ abstract final class BackfillKeys {
   static const shoppingProducts = 'shopping_products';
   static const refreshSodium = 'refresh_sodium';
   static const moveMealsToGroup = 'move_meals_to_group';
-  static const illustrationFolders = 'illustration_folders';
-  static const illustrationFoldersMove = 'illustration_folders_move';
 }
 
 class BackfillDefinition {
@@ -163,28 +162,6 @@ const List<BackfillDefinition> kBackfillRegistry = [
     passLimit:
         'Chaque passage couvre 62 jours au plus et déplace au plus 500 repas.',
     reusable: true,
-  ),
-  BackfillDefinition(
-    key: BackfillKeys.illustrationFolders,
-    kind: BackfillKind.ponctuel,
-    title: 'Dossiers des illustrations',
-    description:
-        'Liste, sans rien modifier, les recettes dont une illustration ou une '
-        'vignette n\'est pas rangée dans les dossiers des images modérées.',
-    usesAi: false,
-    passLimit: 'Chaque passage examine au plus 2 000 recettes.',
-  ),
-  BackfillDefinition(
-    key: BackfillKeys.illustrationFoldersMove,
-    kind: BackfillKind.ponctuel,
-    title: 'Ranger les illustrations',
-    description:
-        'Range dans le dossier de chaque recette les illustrations et '
-        'vignettes que le dernier contrôle « Dossiers des illustrations » a '
-        'listées, et les inscrit comme approuvées par vous, sans les '
-        'modifier.',
-    usesAi: false,
-    passLimit: 'Chaque passage range les images d\'au plus 100 recettes.',
   ),
 ];
 

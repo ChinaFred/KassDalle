@@ -190,6 +190,8 @@ version d'ajout.
 | `ticket_delivered_pr` | PR des tickets livrés | `backfillTicketDeliveredPrFn` | le 17/10/2026, v0.23.99 | v0.24.33 |
 | `recipe_title_keys` | Clé de titre des recettes | `backfillTitleKeysFn` | le 17/10/2026, v0.23.97 | v0.24.33 |
 | `invitation_group_owner` | Propriétaire du groupe des invitations | `backfillInvitationGroupOwnerFn` | le 19/10/2026, v0.24.14 | v0.24.33 |
+| `illustration_folders` | Dossiers des illustrations | `backfillIllustrationFoldersFn` | le 21/10/2026, v0.24.36 | v0.24.37 |
+| `illustration_folders_move` | Ranger les illustrations | `backfillIllustrationFoldersMoveFn` | le 21/10/2026, v0.24.36 | v0.24.37 |
 
 Un tiret signale une information que le dépôt ne garde pas. Les autres opérations retirées
 avant le registre (v0.23.45), sans version de retrait connue, sont décrites dans le

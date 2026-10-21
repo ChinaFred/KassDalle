@@ -41,7 +41,8 @@ export type ModerationReason =
   | "manual_rejected"
   // Image déjà affichée hors des dossiers modérés, rangée sous `recipes/{id}/`
   // par le backfill « Ranger les illustrations » après validation de
-  // l'administrateur : pas d'analyse (`illustrationFoldersMoveBackfillCallable.ts`).
+  // l'administrateur : pas d'analyse. Backfill retiré en v0.24.37 ; la valeur
+  // reste pour les lignes `image_moderation` qu'il a écrites.
   | "manual_folder_move";
 
 /** Un label rendu par le moteur, avec sa confiance. */

@@ -447,8 +447,6 @@ export const GITHUB_TICKETS_MAINTAINER_ID = 16348852; // compte ChinaFred
 export const TICKET_MAX_SEND_ATTEMPTS = 10;
 
 // ── Collections backup ───────────────────────────────────────────────────────
-export const COLL_BACKUP_RECIPES = "backup_recipes";
-export const COLL_BACKUP_BOOKS = "backup_books";
 export const COLL_BACKUP_NUTRITION_INGREDIENTS = "backup_nutrition_ingredients";
 
 // ── Logging ──────────────────────────────────────────────────────────────────
