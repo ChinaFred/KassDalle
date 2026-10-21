@@ -132,7 +132,11 @@ class BackfillFailuresSheet extends StatelessWidget {
       if (f.reason.isNotEmpty) f.reason,
       if (f.kind == BackfillFailureKind.account) 'Identifiant : ${f.id}',
     ];
-    return parts.isEmpty ? null : Text(parts.join('\n'));
+    if (parts.isEmpty) return null;
+    // Sélectionnable : l'identifiant se recopie dans la console à la main.
+    return f.kind == BackfillFailureKind.account
+        ? SelectableText(parts.join('\n'))
+        : Text(parts.join('\n'));
   }
 
   void _open(BuildContext context, BackfillFailure f) {
