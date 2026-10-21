@@ -20,6 +20,35 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.40 — fonctionnel
+
+- Le semis des unités de mesure standard passe dans *Admin › Backfills*, ponctuel « Semer
+  les unités standard ». L'icône « Initialiser les unités par défaut » quitte l'écran
+  *Unités de mesure*, qui garde la liste, la création, la modification et la suppression.
+  Le passage crée les quarante unités standard absentes et complète grammage, volume,
+  libellé ou type manquants, sans remplacer une valeur saisie et sans appel d'IA. Sa tuile
+  affiche un compte rendu chiffré (créées, complétées, déjà à jour, échecs) et la liste des
+  unités en échec. La règle de `CLAUDE.md` le demande : une écriture de masse ne part pas
+  de l'écran d'un référentiel.
+
+### v0.24.40 — technique
+
+- Nouveau callable `backfillDefaultUnitsFn` (`callable/defaultUnitsBackfillCallable.ts`),
+  clé `default_units`, ponctuel, sans IA, inscrit aux deux registres et à la fixture
+  `backfill_schedule.json`. Une transaction par unité ; la règle de complétion est celle de
+  l'ancien `NutritionUnitsRepository.seedDefaultUnits`, recopiée dans `defaultUnitPlan`.
+  Écart voulu : un libellé ou un type mal formé compte comme présent au lieu de lever une
+  exception de conversion.
+- La liste des quarante unités quitte le client pour `functions/src/nutrition/defaultUnits.ts`,
+  recopiée à l'identique. La table de repli de `quantityConversion.ts` n'a ni libellé ni
+  alias : elle ne pouvait pas servir de liste. `defaultUnits.test.ts` vérifie que chaque unité
+  y a le même type et le même facteur.
+- `seedDefaultUnits`, `seedResult` et `_def` sortent de `nutrition_units_repository.dart` ;
+  `_seedDefaults` sort de `nutrition_units_screen.dart`, dont `_runCrudAction` ne prend plus
+  de message de succès calculé.
+- `LOCK_GROUPS` gagne `["enrich_referentials", "default_units"]`, et `lockSiblings` réunit
+  les groupes d'un backfill : les deux écrivent `grams_per_unit` des unités.
+
 ### v0.24.39 — fonctionnel
 
 - Un livre importé sans texte, dont les pages sont des images, dit maintenant quoi faire.

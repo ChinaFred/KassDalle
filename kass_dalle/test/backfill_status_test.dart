@@ -379,6 +379,15 @@ void main() {
         }),
         '38 classées, 0 restante',
       );
+      expect(
+        backfillReportSummary(BackfillKeys.defaultUnits, {
+          'creees': 3,
+          'completees': 1,
+          'dejaAJour': 36,
+          'echouees': 0,
+        }),
+        '3 créées, 1 complétée, 36 déjà à jour, 0 échec',
+      );
     });
   });
 
@@ -401,6 +410,7 @@ void main() {
         'shopping_products',
       ]);
       expect(sections.ponctuelsALancer.map((d) => d.key), [
+        'default_units',
         'move_meals_to_group',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['refresh_sodium']);
@@ -408,7 +418,7 @@ void main() {
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(2));
+      expect(sections.ponctuelsALancer, hasLength(3));
       expect(sections.ponctuelsTermines, isEmpty);
     });
 

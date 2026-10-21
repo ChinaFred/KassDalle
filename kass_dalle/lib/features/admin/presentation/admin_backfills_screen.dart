@@ -144,6 +144,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'sodium.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
+      case BackfillKeys.defaultUnits:
+        return 'Crée dans le référentiel les unités de mesure standard qui '
+            'manquent (gramme, cuillère à soupe, verre, pincée…), et complète '
+            'celles qui n\'ont pas encore leur grammage, leur volume, leur '
+            'libellé ou leur type. Une valeur déjà saisie n\'est jamais '
+            'remplacée.\n\n'
+            'Aucun appel d\'IA. Quarante unités par passage ; on peut '
+            'relancer, une unité complète n\'est pas réécrite.';
       case BackfillKeys.moveMealsToGroup:
         return 'Vos repas de « Mon planning » sur cette période passent dans '
             'le planning du groupe : ses membres les voient, et ils quittent '
@@ -264,6 +272,18 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'hors recette=${r['horsRecette']}, échecs=${r['echouees']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.defaultUnits:
+        final r = await _repo.backfillDefaultUnits();
+        return _fromCounts(
+          r,
+          'Unités standard : examinées=${r['examinees']}, '
+          'créées=${r['creees']}, complétées=${r['completees']}, '
+          'déjà à jour=${r['dejaAJour']}, en erreur=${r['echouees']}, '
+          'restantes=${r['restantes']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
@@ -1019,6 +1039,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.recipeRoles: Icons.restaurant_outlined,
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
+    BackfillKeys.defaultUnits: Icons.straighten_outlined,
     BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
   };
 

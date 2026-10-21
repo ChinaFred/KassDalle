@@ -491,6 +491,21 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Sème les unités standard de `nutrition_units` : crée celles qui
+  /// manquent, complète grammage, volume, libellé ou type absents, sans
+  /// jamais écraser une valeur. Sans appel de modèle. Rend les compteurs tels
+  /// quels ; les drapeaux valent 1 ou 0. Les unités en échec sont dans
+  /// `failures`.
+  Future<BackfillCounts> backfillDefaultUnits() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillDefaultUnitsFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Allergènes : examine par lots de quarante les ingrédients du référentiel
   /// qui n'en ont pas (appels de modèle, poste `backfill_allergens`), puis
   /// recalcule `allergens` sur les recettes, sans appel. Réentrante, avec

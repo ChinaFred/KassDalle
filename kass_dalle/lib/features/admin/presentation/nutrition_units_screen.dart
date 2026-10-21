@@ -45,11 +45,10 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       appBar: AppBar(
         title: const Text('Unités de mesure'),
         actions: [
-          IconButton(
-            tooltip: 'Initialiser les unités par défaut',
-            onPressed: _seedDefaults,
-            icon: const Icon(Icons.restore_outlined),
-          ),
+          // L'icône « Initialiser les unités par défaut » est retirée le
+          // 21/10/2026 (v0.24.40) : le semis vit dans Admin › Backfills,
+          // « Semer les unités standard ». Cet écran montre et corrige ; il
+          // ne lance pas d'opération de masse.
           IconButton(
             tooltip: 'Ajouter une unité',
             onPressed: _openCreateDialog,
@@ -97,10 +96,8 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
                     .toList(growable: false);
                 if (filtered.isEmpty) {
                   return items.isEmpty
-                      // Pas de second bouton de semis ici : une écriture de
-                      // masse n'a pas sa place dans l'écran du référentiel
-                      // (CLAUDE.md, « Admin › Backfills »). L'icône de la
-                      // barre est un écart hérité, à porter en backfill.
+                      // Pas de bouton de semis ici : une écriture de masse
+                      // passe par Admin › Backfills (CLAUDE.md).
                       ? const AppEmptyState(
                           icon: Icons.straighten_outlined,
                           title: 'Aucune unité',
@@ -158,10 +155,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     if (!mounted || result == null) return;
     await _runCrudAction(
       messenger,
-      () async {
-        await ref.read(nutritionUnitsRepositoryProvider).create(result);
-        return null;
-      },
+      () => ref.read(nutritionUnitsRepositoryProvider).create(result),
       success: 'Unité créée.',
       failure: 'Unité non créée',
       feature: 'admin_nutrition_units_create',
@@ -177,10 +171,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     if (!mounted || result == null) return;
     await _runCrudAction(
       messenger,
-      () async {
-        await ref.read(nutritionUnitsRepositoryProvider).update(doc.id, result);
-        return null;
-      },
+      () => ref.read(nutritionUnitsRepositoryProvider).update(doc.id, result),
       success: 'Unité mise à jour.',
       failure: 'Unité non mise à jour',
       feature: 'admin_nutrition_units_update',
@@ -215,10 +206,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     if (!mounted || confirmed != true) return;
     await _runCrudAction(
       messenger,
-      () async {
-        await ref.read(nutritionUnitsRepositoryProvider).delete(doc.id);
-        return null;
-      },
+      () => ref.read(nutritionUnitsRepositoryProvider).delete(doc.id),
       success: 'Unité supprimée.',
       failure: 'Unité non supprimée',
       feature: 'admin_nutrition_units_delete',
@@ -226,48 +214,10 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     );
   }
 
-  Future<void> _seedDefaults() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Initialiser les unités par défaut ?'),
-        content: const Text(
-          'Crée les unités standard françaises absentes, et complète '
-          'les unités existantes qui n’ont pas encore leur grammage ou volume.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Initialiser'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || confirmed != true) return;
-    await _runCrudAction(
-      messenger,
-      () async {
-        final r = await ref
-            .read(nutritionUnitsRepositoryProvider)
-            .seedDefaultUnits();
-        return (r.created == 0 && r.patched == 0)
-            ? 'Tout était déjà à jour.'
-            : '${r.created} créée(s), ${r.patched} mise(s) à jour.';
-      },
-      failure: 'Unités par défaut non initialisées',
-      feature: 'admin_nutrition_units_seed',
-    );
-  }
-
   Future<void> _runCrudAction(
     ScaffoldMessengerState messenger,
-    Future<String?> Function() action, {
-    String? success,
+    Future<void> Function() action, {
+    required String success,
     required String failure,
     required String feature,
     Map<String, dynamic> context = const {},
@@ -275,12 +225,8 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     // Lu avant l'attente : l'écran peut avoir été quitté au retour.
     final scheme = Theme.of(this.context).colorScheme;
     try {
-      // L'action peut rendre son propre message de succès (compte rendu de
-      // l'initialisation) ; sinon, [success].
-      final message = await action() ?? success;
-      if (message != null) {
-        messenger.showSuccessMessage(message, scheme: scheme);
-      }
+      await action();
+      messenger.showSuccessMessage(success, scheme: scheme);
     } catch (e, st) {
       try {
         await ref
