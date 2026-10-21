@@ -1212,7 +1212,7 @@ Jobs de traitement asynchrone pour scans recettes/livres et imports par lien.
 | `book_titre` | `String?` | Titre denormalise du livre cible |
 | `created_recipe_ids` | `List<String>` | IDs des brouillons recettes crees. **Écrit dès la création de chaque brouillon**, pas à la fin du job : la normalisation des référentiels qui suit dure jusqu'à 7 min, et la file de travail masque un job dès qu'il a produit un brouillon (sauf `error` / `rejected` / `duplicate`). Peut être non vide sur un job `duplicate` : sur une page à plusieurs recettes, les recettes qui ne sont pas en double sont écrites avant l'attente. « Ce n'est pas un doublon » ne le touche pas, et la reprise y ajoute les brouillons des recettes retenues. |
 | `created_book_id` | `String?` | ID du brouillon livre cree |
-| `error_message` | `String?` | Message d'erreur si statut `error`, ou raison du rejet si statut `rejected` |
+| `error_message` | `String?` | Message d'erreur si statut `error`, ou raison du rejet si statut `rejected`. Lu par le membre : jamais le texte brut d'une exception (`jobErrorMessage`, voir « Le message du job », §7.9) |
 | `error_id` | `String?` | Identifiant du rapport d'erreur (`error_reports`) lié à un job en `error`. La file « Brouillons & Traitements » l'affiche en puce « Code : … », copiable. Remis à `null` par `relaunchDeadLetterFn` sur le job relancé. Aucun code actuel n'y écrit d'autre valeur que `null` : le client le lit seulement |
 | `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages), **20 au plus** (21 pages avec la première, v0.24.17). Les règles refusent une liste plus longue ou d'un autre type, en création et en mise à jour ; le processeur refuse le job (`too_many_pages`) ; le client désactive « Analyser » au-delà (`kMaxAdditionalFileUrls`). Poids total de l'import (fichier principal et pages) : 200 Mo au plus, contrôlé par le processeur (`too_large`) |
 | `current_step` | `String?` | Étape courante du traitement IA. `fetch` (« Lecture de la page web… ») n'existe que pour `recipeUrlImport`. `translate` (« Traduction de la recette par l'IA… ») n'apparaît que pour une recette écrite dans une autre langue : entre `gemini_call` et `parse` pour un scan, entre `parse` et `tagging` pour un `recipeUrlImport`. Son jalon n'est dans le fil d'icônes (`processing_trail`) que si le job porte `translated` |
@@ -1983,7 +1983,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls`, `total_analyzed_image_units` et `total_grounded_searches`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` (la seule quantité dont dépend une franchise mensuelle) et `grounded_searches` (appels ancrés dans Google, à rapprocher de la ligne « grounding » de la facture). `getMonthlyCostsFn` rend ce dernier total en `ai.groundedSearches` |
 | `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel — d'un appel, ou du nombre d'images analysées pour la relance de modération, `dailyCalls`, depuis v0.23.48), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
-| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. Un `scanId` venu du client n'atteint ce document qu'après deux contrôles : `scanAndPromoteUploadFn` l'écarte (`undefined`, `logWarn`) s'il n'a pas la forme `isValidScanId` ou si `scanOwnerConflict` désigne un autre compte — le contrôle du fichier a lieu, son coût reste dans `ai_usage` et la dépense du jour, sans compteur de scan ; `jobDispatcher` (`dispatchScanId`) le remplace par un identifiant serveur dans les mêmes cas. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`. Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
+| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. Un `scanId` venu du client n'atteint ce document qu'après deux contrôles : `scanAndPromoteUploadFn` l'écarte (`undefined`, `logWarn`) s'il n'a pas la forme `isValidScanId` ou si `scanOwnerConflict` désigne un autre compte — le contrôle du fichier a lieu, son coût reste dans `ai_usage` et la dépense du jour, sans compteur de scan ; `jobDispatcher` (`dispatchScanId`) le remplace par un identifiant serveur dans les mêmes cas. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`, avec le message « Plafond de cet import atteint : X dépensés pour Y autorisés. Pour continuer, appuyez sur « Relancer » : un nouveau budget de Z sera accordé. » (Z = `step_usd`, phrase omise sans palier ; `importBudgetDenial`). Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
 ---
@@ -5937,6 +5937,44 @@ client s'en sert pour décider s'il propose de réessayer.
 | `resource-exhausted` | plafond de dépense atteint | message nommant le plafond, pas de réessai |
 | `internal` | tout le reste | réessai possible |
 
+**`resource-exhausted` et `details.reason`** (v0.24.35, ticket #170). Deux erreurs partent
+sous ce code depuis les callables d'IA (`toHttpsError`, `callable/_callableErrors.ts`) et la
+modération (`moderationRefusal`) :
+
+| Erreur | `message` | `details` |
+|---|---|---|
+| `BudgetExceededError` (plafond d'IA du compte) | rédigé en français pour le membre, sans montant ni identifiant : « Limite d'utilisation de l'IA atteinte pour aujourd'hui. Réessayez demain, ou demandez à un administrateur de relever la limite. » (`DAILY_LIMIT_MESSAGE`, `cost` et `calls`), « L'IA traite déjà vos autres demandes. Réessayez dans un instant. » (`concurrency`), plafond d'un livre (`import`, pipeline seulement) | `{ reason: "cost" \| "calls" \| "concurrency" \| "import", scope: "ai_budget" }` (`budgetExceededHttpsError`) |
+| `GeminiQuotaExceededError` (fournisseur saturé) | texte fixe, « Le service d'IA est saturé. Réessayez plus tard. » | aucun |
+| `GeminiError` (panne du fournisseur) | `internal`, texte fixe « Le service d'IA n'a pas pu traiter la demande. » | aucun |
+| toute autre erreur non typée | `internal`, texte fixe « Le traitement a échoué. » | aucun |
+
+Aucun texte brut (fournisseur, SDK, bibliothèque) ne part au client. `toHttpsError` est
+asynchrone : elle journalise le texte brut de ces trois dernières erreurs (`logError`
+« Callable d'IA en échec — texte fixe renvoyé au client ») avant de rendre l'`HttpsError` ;
+les appelants écrivent `throw await toHttpsError(e)`. Elle ne réécrit pas une erreur déjà
+journalisée avec son contexte (`callableErrorAlreadyLogged`) : une `GeminiError` ou une
+`GeminiQuotaExceededError` levée par `gemini/client.ts` après « Appel IA échoué » porte
+`logged`, comme celle relancée par `enhancer.ts` et `imageGenerator.ts` après leur propre
+`logError` ; `scanAndPromoteUploadFn` passe `{ alreadyLogged: true }` après sa ligne « Scan de
+securite en echec technique ». `analyzeBookFileFn` rend de même
+`internal` « Analyse du livre impossible. », le texte brut restant dans son `logError`.
+
+`details.scope` (`AI_BUDGET_SCOPE`) distingue le plafond du compte du plafond d'une
+génération de planning, qui part aussi en `resource-exhausted` avec `reason: "cost"`
+(`PlanningRunDenied`, `generateRecipeConceptFn`) et sans `scope`. Côté client,
+`aiBudgetRefusalMessage` (`core/widgets/error_message.dart`) rend le message du serveur
+quand l'erreur — `GeminiCallableException` ou `FirebaseFunctionsException` — porte
+`resource-exhausted` (ou `resource_exhausted` de l'appel HTTP du web), `scope: "ai_budget"`
+et `reason` à `cost`, `calls` ou `concurrency` ; `failureMessage` en fait sa seconde
+phrase. Une `GeminiCallableException` `resource-exhausted` **sans** `details` est le
+fournisseur saturé : `describeError` rend « Service d'IA saturé — Réessayez dans quelques
+heures. ». Tout autre `resource-exhausted` (avec une raison, ou hors callable d'IA) garde
+« Limite du jour atteinte ». La génération par lot (`batch_planning_screen.dart`) ne
+s'arrête en silence que sur `isPlanningRunDenial` (raison sans `scope`) ; un refus
+`concurrency` (`isConcurrencyRefusal`) affiche son message sans arrêter la boucle. La
+recherche web garde sa propre forme (`reason: "ai_daily_budget"`, `budget: <raison>`,
+`webSearchHttpsError`), lue par `webSearchErrorFrom`.
+
 **Trois gardes**, dans `callable/_auth.ts`, toutes précédées de la vérification App Check :
 
 | Garde | Exige | Source du rôle |
@@ -6127,17 +6165,40 @@ refusés (`StoragePathRefusedError`). `additional_file_urls` compte 20 entrées 
 | Champ | Valeurs |
 |---|---|
 | `failure_reason` | `budget_exceeded`, `quota_exceeded`, `book_file_unreadable`, `tagging_truncated`, `foreign_book`, `owner_not_editor`, `forbidden_source_path`, `archive_limit_exceeded`, `too_many_pages`, `too_large`, `url_page_blocked`, `url_page_not_found`, `url_no_recipe`, `url_url_refused`, `url_timeout`, `pipeline_error` |
-| `last_error` | le message de l'exception |
+| `last_error` | le message de l'exception ; pour un livre illisible, suivi entre parenthèses du texte de la bibliothèque qui a échoué (`BookFileError.detail`, `technicalErrorText`) |
 | `retry_count` | le nombre de tentatives consommées |
 | `file_path` | le fichier téléversé, pour pouvoir rejouer ; l'adresse de la page pour un import par lien |
 | `correlation_id`, `user_id` | le fil et le compte |
 
 Le job passe alors en `status: "error"` avec son `error_message`, et le processeur **retourne
-sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà classé. Un échec
-générique (`pipeline_error`) reçoit un message fixe (`PIPELINE_ERROR_MESSAGE` : « L'import n'a
-pas abouti après plusieurs essais. Relancez-le, ou supprimez-le s'il échoue de nouveau. ») ; le
-texte de l'exception (souvent gRPC ou SDK) ne reste que dans `last_error` de la dead letter et
-dans le `logError` « Échec pipeline ».
+sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà classé.
+
+**Le message du job** (`error_message`, lu par le membre sur la tuile et dans « Détail de
+l'erreur » de `work_queue_widgets.dart`, qui n'affichent que ce champ). `jobErrorMessage`
+(`pipeline/jobErrorMessage.ts`, v0.24.35, ticket #171) l'écrit d'après `failure_reason`, par
+liste blanche :
+
+| `failure_reason` | `error_message` |
+|---|---|
+| `budget_exceeded`, `book_file_unreadable`, `foreign_book`, `too_many_pages`, `too_large` (`MEMBER_WRITTEN_FAILURES`) | le message de l'exception, écrit pour le membre ; vide : `PIPELINE_ERROR_MESSAGE` |
+| `quota_exceeded` | `PROVIDER_QUOTA_MESSAGE` : « Le service d'IA est saturé. Relancez l'import dans quelques heures. » |
+| `tagging_truncated` | `TAGGING_TRUNCATED_MESSAGE` : « Cette recette est trop longue pour être mise en forme par l'IA. Créez-la à la main avec « Saisie manuelle », ou découpez-la avant de l'importer de nouveau. » |
+| `forbidden_source_path` | `SOURCE_REFUSED_MESSAGE` : « Le fichier de cet import n'est pas accessible. Supprimez l'import, puis envoyez le fichier de nouveau. » |
+| `archive_limit_exceeded` | `ARCHIVE_LIMIT_MESSAGE` : « Ce document est trop volumineux pour être lu. Retirez ses images ou découpez-le en plusieurs fichiers, puis importez-le de nouveau. » |
+| `pipeline_error` et toute autre raison | `PIPELINE_ERROR_MESSAGE` : « L'import n'a pas abouti après plusieurs essais. Relancez-le, ou supprimez-le s'il échoue de nouveau. » |
+| `owner_not_editor` | `OWNER_NOT_EDITOR_MESSAGE`, avec `error_code` |
+| `url_*` | `URL_IMPORT_MESSAGES[code]`, avec `error_code` |
+
+Le pipeline de couverture (`bookCoverScan`) et l'import d'un livre (`bookDocumentScan`)
+passent par le même chemin. `BookFileError` ne recopie plus le texte de pdf-lib, JSZip ou du
+lecteur Word dans son message : il le garde dans `detail`, que `last_error` et le `logError`
+« Échec pipeline » reçoivent (`technicalErrorText`), et que `analyzeBookFileFn` journalise
+(`logWarn` « Analyse du livre : fichier illisible ») avant de rendre `failed-precondition`
+avec le seul message. Une mise en file Cloud Tasks en échec (`jobDispatcher`) écrit
+`DISPATCH_ERROR_MESSAGE` (« L'import n'a pas pu démarrer. Relancez-le, ou supprimez-le s'il
+échoue de nouveau. ») ; le texte de l'erreur ne reste que dans son `logError`. Le texte de
+l'exception (souvent gRPC, SDK ou fournisseur) ne reste que dans `last_error` de la dead
+letter et dans le `logError` « Échec pipeline ».
 
 **La reprise manuelle.** `relaunchDeadLetterFn` (admin) recrée un `processing_jobs` en
 `queued` avec `attempt_count: 0` et horodate `relaunched_at` sur la dead letter.
@@ -7701,7 +7762,12 @@ introuvable » (icône `link_off_outlined`) avec « Retour à la bibliothèque �
 
 **Messages d'erreur.** Un échec s'écrit `failureMessage(what, error)`
 (`core/widgets/error_message.dart`) ou `context.showFailureSnackBar(what, error)` : ce qui
-n'a pas eu lieu, puis le titre de `describeError`. Une page ou un encart d'erreur passe par
+n'a pas eu lieu, puis le titre de `describeError` — sauf pour un refus du plafond d'IA du
+compte, dont la seconde phrase est le message du serveur (`aiBudgetRefusalMessage`, §7.8). Le
+planning (`planning_screen.dart`, `batch_planning_screen.dart`), la feuille d'idées
+(`meal_ideas_sheet.dart`) et l'import (`scan_upload_service.dart`) ne recopient plus
+`e.message` pour tout `resource-exhausted` : ils passent par `failureMessage`, et le texte
+brut d'un fournisseur saturé n'est plus affiché. Une page ou un encart d'erreur passe par
 `AppErrorState`, dont « Détails » (le texte brut) n'est visible que de l'admin. Les écrans
 d'administration et de modération gardent le message écrit par une callable pour une liste
 blanche de codes lue dans `functions/src`, appel par appel : `adminFailureMessage(what,
@@ -8183,9 +8249,10 @@ ni du repli « appels sans montant » : le montant est calculable, il doit être
   une analyse facturée, sans limite (audit sécurité, « Moyenne »). `moderateAndPromote`
   réserve désormais une place par image analysée (`withDailyBudget`, au coût de l'analyse
   lu dans la grille), avant l'appel à Cloud Vision. Plafond atteint : `BudgetExceededError`,
-  rendu au client en `resource-exhausted`. Le client ne lit pas son message :
-  `describeError` (`core/widgets/error_message.dart`) traduit tout `resource-exhausted` en
-  « Limite du jour atteinte — Le service a atteint sa limite pour aujourd'hui. Réessayez plus tard. ».
+  rendu au client en `resource-exhausted` avec `details: { reason, scope: "ai_budget" }`
+  (`budgetExceededHttpsError`, §7.8). `failureMessage` (`core/widgets/error_message.dart`)
+  reprend alors le message du serveur, qui dit quand réessayer, pour les raisons `cost`,
+  `calls` et `concurrency` ; `describeError` seul garde « Limite du jour atteinte ».
   Chaque analyse est enregistrée dès qu'elle est faite, réussie ou non (`analyseAndRecord`,
   une ligne `ai_usage` par image, écrite avant que la réservation soit rendue) : l'image
   suivante du lot lit une dépense du jour à jour, et un lot interrompu ne perd aucune analyse

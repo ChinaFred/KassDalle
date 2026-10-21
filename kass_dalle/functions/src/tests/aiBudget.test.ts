@@ -167,7 +167,7 @@ describe("interrupteur global", () => {
       policy: policy(),
       usdToEur: RATE,
     });
-    assert.match(denial?.message ?? "", /plafond/i);
+    assert.match(denial?.message ?? "", /limite/i);
     assert.match(denial?.message ?? "", /demain/i);
   });
 });

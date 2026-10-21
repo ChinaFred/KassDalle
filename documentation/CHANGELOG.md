@@ -18,6 +18,74 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-21
+
+### v0.24.35 — fonctionnel
+
+Audit #151, lot 8, tickets #170 et #171 : messages d'erreur lus par les membres.
+
+- Plafond d'IA du jour atteint (#170) : le message d'échec dit ce qui n'a pas eu lieu, puis
+  le message du serveur, qui dit quand réessayer — « Recette non conçue. Limite
+  d'utilisation de l'IA atteinte pour aujourd'hui. Réessayez demain, ou demandez à un
+  administrateur de relever la limite. » au lieu de « … Limite du jour atteinte. ». Le même
+  texte vaut pour la limite en euros et pour la limite d'appels. Vaut pour tous les écrans
+  qui affichent un échec en deux phrases, publication d'images comprise.
+- Trop d'appels d'IA en cours : « L'IA traite déjà vos autres demandes. Réessayez dans un
+  instant. », affiché de la même façon. Dans la génération de planning par lot, ce refus
+  n'arrête plus la boucle.
+- Fournisseur d'IA saturé : « … Service d'IA saturé. » (conseil « Réessayez dans quelques
+  heures. »), sans son texte brut en anglais, dans le planning, la feuille d'idées et
+  l'import.
+- La feuille d'idées dit « Recette non conçue » au lieu de « Recette non rédigée ».
+- Plafond d'un import de livre : « Plafond de cet import atteint : X dépensés pour Y
+  autorisés. Pour continuer, appuyez sur « Relancer » : un nouveau budget de Z est
+  accordé. ».
+- Import en échec (#171) : la ligne de « Brouillons & Traitements » et « Détail de
+  l'erreur » n'affichent plus de texte technique. Fournisseur saturé, balisage trop long,
+  fichier inaccessible, document Word trop volumineux, PDF, EPUB ou Word illisible, mise en
+  file en échec : chacun reçoit une phrase fixe, avec ce que le membre peut faire. Les
+  messages déjà écrits pour le membre restent (plafond, livre illisible, livre d'un autre,
+  trop de pages, import trop lourd, propriétaire qui n'est plus éditeur, import par lien).
+- Une erreur inattendue d'une fonction d'IA ou de l'analyse d'un livre n'affiche plus de
+  texte technique.
+
+### v0.24.35 — technique
+
+- `toHttpsError` quitte `geminiCallables.ts` pour `callable/_callableErrors.ts`, testé seul,
+  et devient asynchrone (`throw await toHttpsError(e)`). Un `BudgetExceededError` part en
+  `resource-exhausted` avec `details: { reason, scope: "ai_budget" }`
+  (`budgetExceededHttpsError`), depuis les callables d'IA et la modération
+  (`moderationRefusal`). `scope` distingue ce refus du plafond d'une génération de planning
+  (`PlanningRunDenied`, `reason: "cost"` sans `scope`). `GeminiQuotaExceededError`,
+  `GeminiError` et toute erreur non typée reçoivent un texte fixe ; leur texte brut est
+  journalisé par `toHttpsError` (`logError`), une seule fois par échec : une erreur du
+  fournisseur levée par `gemini/client.ts`, `enhancer.ts` ou `imageGenerator.ts` porte
+  `logged` (déjà journalisée avec son contexte), et `scanAndPromoteUploadFn` passe `alreadyLogged` après sa propre ligne
+  (`callableErrorAlreadyLogged`). `analyzeBookFileFn` rend toujours
+  « Analyse du livre impossible. » en `internal`. La recherche web garde sa forme
+  (`reason: "ai_daily_budget"`).
+- `budget.ts` : `DAILY_LIMIT_MESSAGE` commun à `cost` et `calls` ; nouveau texte de
+  `CONCURRENCY_DENIAL`. `importBudgetDenial` cite le palier de la relance (`step_usd`).
+- Client : `aiBudgetRefusalMessage` (`core/widgets/error_message.dart`) lit ces `details`
+  sur une `GeminiCallableException` ou une `FirebaseFunctionsException` ; `failureMessage`
+  en fait sa seconde phrase pour `cost`, `calls` et `concurrency`. `describeError` rend
+  « Service d'IA saturé » pour une `GeminiCallableException` `resource-exhausted` sans
+  `details`. `planning_screen.dart`, `batch_planning_screen.dart`, `meal_ideas_sheet.dart`
+  et `scan_upload_service.dart` ne recopient plus `e.message` pour tout
+  `resource-exhausted`. La génération par lot ne s'arrête en silence que sur
+  `isPlanningRunDenial` (raison sans `scope`), et continue après un refus `concurrency`
+  (`isConcurrencyRefusal`) ; le code se compare par `callableErrorCode` (le web rendait
+  `resource_exhausted`).
+- `pipeline/jobErrorMessage.ts` : `error_message` d'un job en échec par liste blanche de
+  `failure_reason` (`MEMBER_WRITTEN_FAILURES`), textes fixes sinon. `PIPELINE_ERROR_MESSAGE`
+  y est déplacé. `jobDispatcher` écrit `DISPATCH_ERROR_MESSAGE` au lieu de
+  `Dispatcher: <erreur>`. `BookFileError` garde le texte de pdf-lib, JSZip ou du lecteur
+  Word dans `detail` ; `last_error` de la dead letter et le `logError` le reçoivent
+  (`technicalErrorText`), `analyzeBookFileFn` le journalise en `logWarn`.
+- Tests : `callableErrors.test.ts`, `jobErrorMessage.test.ts`, `importBudget.test.ts`,
+  `aiBudget.test.ts`, `error_message_test.dart`, `meal_ideas_sheet_test.dart`,
+  `batch_planning_denial_test.dart`.
+
 ## 2026-10-20
 
 ### v0.24.34 — fonctionnel

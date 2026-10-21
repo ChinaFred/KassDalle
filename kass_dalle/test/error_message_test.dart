@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/services/gemini_service.dart'
@@ -72,11 +73,24 @@ void main() {
     test('une erreur de callable d\'IA est lue par son code', () {
       // SDK : `resource-exhausted` ; appel HTTP du web : `resource_exhausted`.
       for (final code in ['resource-exhausted', 'resource_exhausted']) {
+        // Sans `details` : le fournisseur d'IA saturé.
         expect(
           describeError(GeminiCallableException(code, 'x', null)).title,
+          'Service d\'IA saturé',
+        );
+        // Avec une raison (plafond d'une génération, des tickets…).
+        expect(
+          describeError(
+            GeminiCallableException(code, 'x', {'reason': 'count'}),
+          ).title,
           'Limite du jour atteinte',
         );
       }
+      // Hors callable d'IA : le libellé générique d'un plafond.
+      expect(
+        describeError(_firebaseError('resource-exhausted')).title,
+        'Limite du jour atteinte',
+      );
       final denied = describeError(
         GeminiCallableException('permission-denied', 'x', null),
       );
@@ -127,6 +141,125 @@ void main() {
       );
       expect(text, isNot(contains('GeminiCallableException')));
       expect(text, isNot(contains('stack trace')));
+    });
+  });
+
+  group('failureMessage — plafond d\'IA du compte', () {
+    const serverMessage =
+        'Limite d\'utilisation de l\'IA atteinte pour aujourd\'hui. Réessayez '
+        'demain, ou demandez à un administrateur de relever la limite.';
+
+    test('reason cost : la seconde phrase est le message du serveur', () {
+      expect(
+        failureMessage(
+          'Recette non conçue',
+          GeminiCallableException('resource-exhausted', serverMessage, {
+            'reason': 'cost',
+            'scope': kAiBudgetScope,
+          }),
+        ),
+        'Recette non conçue. $serverMessage',
+      );
+    });
+
+    test('reason calls, appel HTTP du web (`resource_exhausted`)', () {
+      expect(
+        failureMessage(
+          'Idées non proposées',
+          GeminiCallableException('resource_exhausted', 'Revenez demain', {
+            'reason': 'calls',
+            'scope': kAiBudgetScope,
+          }),
+        ),
+        'Idées non proposées. Revenez demain.',
+      );
+    });
+
+    test('reason concurrency : le message du serveur aussi', () {
+      expect(
+        failureMessage(
+          'Recette non conçue',
+          GeminiCallableException(
+            'resource-exhausted',
+            'L\'IA traite déjà vos autres demandes. Réessayez dans un instant.',
+            {'reason': 'concurrency', 'scope': kAiBudgetScope},
+          ),
+        ),
+        'Recette non conçue. L\'IA traite déjà vos autres demandes. '
+        'Réessayez dans un instant.',
+      );
+    });
+
+    test('FirebaseFunctionsException du SDK : même lecture', () {
+      expect(
+        failureMessage(
+          'Image non publiée',
+          FirebaseFunctionsException(
+            code: 'resource-exhausted',
+            message: serverMessage,
+            details: {'reason': 'calls', 'scope': kAiBudgetScope},
+          ),
+        ),
+        'Image non publiée. $serverMessage',
+      );
+    });
+
+    test('fournisseur saturé, sans details : « Service d\'IA saturé »', () {
+      final error = GeminiCallableException(
+        'resource-exhausted',
+        'Le service d\'IA est saturé. Réessayez plus tard.',
+        null,
+      );
+      expect(
+        failureMessage('Recette non conçue', error),
+        'Recette non conçue. Service d\'IA saturé.',
+      );
+      final m = describeError(error);
+      expect(m.title, 'Service d\'IA saturé');
+      expect(m.advice, 'Réessayez plus tard.');
+    });
+
+    test('autres raisons ou sans scope : « Limite du jour atteinte »', () {
+      for (final details in [
+        {'reason': 'import', 'scope': kAiBudgetScope},
+        // Plafond d'une génération de planning (`PlanningRunDenied`).
+        {'reason': 'cost'},
+        {'reason': 'cost', 'scope': 'autre'},
+      ]) {
+        expect(
+          failureMessage(
+            'Recette non conçue',
+            GeminiCallableException('resource-exhausted', 'Texte', details),
+          ),
+          'Recette non conçue. Limite du jour atteinte.',
+          reason: '$details',
+        );
+      }
+    });
+
+    test('un autre code avec les mêmes details : libellé de son code', () {
+      expect(
+        failureMessage(
+          'Recette non conçue',
+          GeminiCallableException('internal', 'Texte', {
+            'reason': 'cost',
+            'scope': kAiBudgetScope,
+          }),
+        ),
+        'Recette non conçue. Une erreur inattendue est survenue.',
+      );
+    });
+
+    test('message vide : libellé générique', () {
+      expect(
+        aiBudgetRefusalMessage(
+          GeminiCallableException('resource-exhausted', '  ', {
+            'reason': 'cost',
+            'scope': kAiBudgetScope,
+          }),
+        ),
+        isNull,
+      );
     });
   });
 }

@@ -1618,21 +1618,19 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// pour l'utilisateur, ou null.
   ///
   /// Liste blanche, d'après `scanAndPromoteUploadFn` et `analyzeBookFileFn` :
-  /// `resource-exhausted` (plafond, budget), `failed-precondition` (fichier
-  /// bloqué, livre illisible : `BookFileError`) et `permission-denied` (rôle,
-  /// chemin refusé) portent une phrase en français écrite pour l'écran. Tout
-  /// autre code est écarté : `invalid-argument` (« storagePath est requis. »)
-  /// est un texte de développeur, `internal` et `unknown` recopient
-  /// l'exception brute, et sur mobile `unavailable` et `deadline-exceeded`
-  /// arrivent avec le texte anglais du SDK.
+  /// `failed-precondition` (fichier bloqué, livre illisible : `BookFileError`)
+  /// et `permission-denied` (rôle, chemin refusé) portent une phrase en
+  /// français écrite pour l'écran. Tout autre code est écarté :
+  /// `invalid-argument` (« storagePath est requis. ») est un texte de
+  /// développeur, `internal` et `unknown` recopient l'exception brute, et sur
+  /// mobile `unavailable` et `deadline-exceeded` arrivent avec le texte
+  /// anglais du SDK. `resource-exhausted` passe par `failureMessage` : il
+  /// reprend le message du plafond d'IA du jour, et écarte le texte brut du
+  /// fournisseur saturé, qui porte le même code.
   String? _serverWrittenMessage(Object error) {
     if (error is! GeminiCallableException) return null;
     if (error.message.isEmpty) return null;
-    const userFacing = {
-      'resource-exhausted',
-      'failed-precondition',
-      'permission-denied',
-    };
+    const userFacing = {'failed-precondition', 'permission-denied'};
     final code = error.code.toLowerCase().replaceAll('_', '-');
     return userFacing.contains(code) ? error.message : null;
   }

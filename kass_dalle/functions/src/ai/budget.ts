@@ -182,6 +182,15 @@ export function dailySpendDocId(userId: string, day: string): string {
   return `${userId}_${day}`;
 }
 
+/**
+ * Message d'un refus du plafond du jour, en euros (`cost`) comme en appels
+ * (`calls`) : le membre n'a pas à savoir lequel a été atteint. Repris tel quel
+ * par le client (`failureMessage`).
+ */
+export const DAILY_LIMIT_MESSAGE =
+  "Limite d'utilisation de l'IA atteinte pour aujourd'hui. " +
+  "Réessayez demain, ou demandez à un administrateur de relever la limite.";
+
 /** Ce que le plafond décide. `null` quand l'appel peut passer. */
 export interface BudgetDenial {
   /**
@@ -223,9 +232,7 @@ export function budgetDenial(args: {
     if (spentEur >= costLimitEur) {
       return {
         reason: "cost",
-        message:
-          "Plafond de dépense IA atteint pour aujourd'hui. " +
-          "Les fonctions d'IA se rouvrent demain, ou dès qu'un administrateur relève le plafond.",
+        message: DAILY_LIMIT_MESSAGE,
       };
     }
   }
@@ -233,9 +240,7 @@ export function budgetDenial(args: {
   if (callsLimit > 0 && spend.calls >= callsLimit) {
     return {
       reason: "calls",
-      message:
-        "Nombre maximal d'appels d'IA atteint pour aujourd'hui. " +
-        "Les fonctions d'IA se rouvrent demain, ou dès qu'un administrateur relève le plafond.",
+      message: DAILY_LIMIT_MESSAGE,
     };
   }
 
@@ -675,9 +680,7 @@ export interface BudgetReservation {
 
 const CONCURRENCY_DENIAL: BudgetDenial = {
   reason: "concurrency",
-  message:
-    "Trop d'appels d'IA en cours pour ce compte. Réessayez dans un instant, " +
-    "une fois les traitements en cours terminés.",
+  message: "L'IA traite déjà vos autres demandes. Réessayez dans un instant.",
 };
 
 /** Options d'une réservation. */

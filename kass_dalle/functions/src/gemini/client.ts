@@ -287,16 +287,22 @@ export function buildGeminiRequest(
 }
 
 export class GeminiQuotaExceededError extends Error {
-  constructor(message: string) {
+  /** `logged` : déjà journalisée avec son contexte, `toHttpsError` ne la réécrit pas. */
+  constructor(
+    message: string,
+    public readonly logged = false,
+  ) {
     super(message);
     this.name = "GeminiQuotaExceededError";
   }
 }
 
 export class GeminiError extends Error {
+  /** `logged` : déjà journalisée avec son contexte, `toHttpsError` ne la réécrit pas. */
   constructor(
     message: string,
     public readonly cause?: unknown,
+    public readonly logged = false,
   ) {
     super(message);
     this.name = "GeminiError";
@@ -506,9 +512,9 @@ export async function callGemini(
       });
 
       if (status === "QUOTA_EXCEEDED") {
-        throw new GeminiQuotaExceededError(errorMessage(err));
+        throw new GeminiQuotaExceededError(errorMessage(err), true);
       }
-      throw new GeminiError(errorMessage(err), err);
+      throw new GeminiError(errorMessage(err), err, true);
     }
   }
 }

@@ -100,16 +100,11 @@ import { PLATING_PROMPT_VERSION, suggestPlating } from "../gemini/plating";
 import { STORAGE_PROMPT_VERSION, suggestStorageAdvice } from "../gemini/storageAdvice";
 import { recordUsage } from "../ai/usage";
 import { isValidScanId, scanOwnerConflict } from "../ai/importBudget";
-import { BudgetExceededError } from "../ai/budget";
+import { toHttpsError } from "./_callableErrors";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload, scanUploadHead, streamContainsEicar } from "../utils/uploadSecurity";
-import {
-  PUBLISHED_IMAGE_PREFIXES,
-  StoragePathRefusedError,
-  isWellFormedObjectPath,
-} from "../utils/storagePath";
+import { PUBLISHED_IMAGE_PREFIXES, isWellFormedObjectPath } from "../utils/storagePath";
 import { BOOK_UPLOAD_FOLDER } from "../books/bookFile";
-import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
 import { logAiText, logError, logInfo, logWarn, qualify } from "../logging";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -138,28 +133,6 @@ const callableOpts = {
 };
 
 const SECURITY_SCAN_UNIT_COST_USD = Number(process.env.SECURITY_SCAN_UNIT_COST_USD ?? "0");
-
-function toHttpsError(err: unknown): HttpsError {
-  if (err instanceof HttpsError) return err;
-  // Plafond de dépense atteint : ce n'est ni une panne ni un défaut de droits,
-  // et le message est déjà écrit pour la personne qui le lira. `internal`
-  // l'aurait présenté comme un incident, et l'aurait fait réessayer.
-  if (err instanceof BudgetExceededError) {
-    return new HttpsError("resource-exhausted", err.message);
-  }
-  if (err instanceof GeminiQuotaExceededError) {
-    return new HttpsError("resource-exhausted", err.message);
-  }
-  // Fichier hors des dossiers admis : un défaut de droits, refusé avant
-  // tout téléchargement et tout appel de modèle.
-  if (err instanceof StoragePathRefusedError) {
-    return new HttpsError("permission-denied", err.message);
-  }
-  if (err instanceof GeminiError) {
-    return new HttpsError("internal", err.message);
-  }
-  return new HttpsError("internal", err instanceof Error ? err.message : String(err));
-}
 
 async function logUploadScanUsage(args: {
   uid: string;
@@ -268,7 +241,7 @@ export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req
       ...(extraction.langueOrigine ? { langue_origine: extraction.langueOrigine } : {}),
     };
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -306,7 +279,7 @@ export const polishCooklangFn = onCall(callableOpts, async (req) => {
     });
     return { cooklang: polished };
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -335,7 +308,7 @@ export const polishMarkdownFn = onCall(callableOpts, async (req) => {
     });
     return { markdown: polished };
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -372,7 +345,7 @@ export const refineRecipeFn = onCall(callableOpts, async (req) => {
     });
     return data;
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -441,7 +414,7 @@ export const generateRecipeFn = onCall(callableOpts, async (req) => {
     );
     return data;
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -462,7 +435,7 @@ export const searchRecipesFn = onCall(callableOpts, async (req) => {
     });
     return data;
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -489,7 +462,7 @@ export const extractBookCoverFn = onCall(callableOpts, async (req) => {
     });
     return data;
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -619,7 +592,7 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
       constraintTranslations: understanding.outcomes,
     };
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -645,7 +618,7 @@ export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
     });
     return { items };
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -718,7 +691,7 @@ export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
       ...(conceptsRemaining != null ? { conceptsRemaining } : {}),
     };
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -780,7 +753,7 @@ export const suggestMealIdeasFn = onCall(callableOpts, async (req) => {
     );
     return { ideas };
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -802,7 +775,7 @@ export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
     );
     return data;
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -1159,7 +1132,8 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
         extra: { quarantinePath: storagePath, promotedPath, storageCode: storageErrorCode(e) },
       });
     }
-    throw toHttpsError(e);
+    // Journalisée ci-dessus avec son contexte : pas de seconde ligne.
+    throw await toHttpsError(e, { alreadyLogged: true });
   }
 });
 
@@ -1224,7 +1198,7 @@ export const detectAndCropIllustrationsFn = onCall(
         cropsBase64: selection.kept.map((c) => c.bytes.toString("base64")),
       };
     } catch (e) {
-      throw toHttpsError(e);
+      throw await toHttpsError(e);
     }
   },
 );
@@ -1304,7 +1278,7 @@ export const enhanceIllustrationFn = onCall(
 
       return { enhancedUrl: newUrl };
     } catch (e) {
-      throw toHttpsError(e);
+      throw await toHttpsError(e);
     }
   },
 );
@@ -1366,7 +1340,7 @@ export const generateRecipeIllustrationFn = onCall(
       );
       return { generatedUrl: out };
     } catch (e) {
-      throw toHttpsError(e);
+      throw await toHttpsError(e);
     }
   },
 );
@@ -1508,7 +1482,7 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
 
     return { platingAdvice: platingAdviceToJson(stored) };
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -1600,7 +1574,7 @@ export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {
 
     return { storageAdvice: { ...stored, generated_at: stored.generated_at.toISOString() } };
   } catch (e) {
-    throw toHttpsError(e);
+    throw await toHttpsError(e);
   }
 });
 
@@ -1705,7 +1679,7 @@ export const generatePlatingImageFn = onCall(
 
       return { imageUrl: url };
     } catch (e) {
-      throw toHttpsError(e);
+      throw await toHttpsError(e);
     }
   },
 );

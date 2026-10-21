@@ -294,7 +294,7 @@ sequenceDiagram
   P->>P: resolveJobSourcePath — file_url et pages sous scans/{created_by}/ ?
   alt rejected/, quarantaine, scans d'un autre, URL externe ou segment ..
     P->>DL: failure_reason = forbidden_source_path, dès la 1re tentative
-    P->>J: status error, error_message
+    P->>J: status error, error_message fixe (SOURCE_REFUSED_MESSAGE)
     Note over P,DL: aucun téléchargement, aucun appel de modèle
   end
   P->>ST: getMetadata — taille du fichier et des pages
@@ -1384,7 +1384,7 @@ sequenceDiagram
   else toute autre image, « ai » déclaré par le client compris
     CF->>BU: réserve une place, au coût de l'analyse lu dans la grille
     alt plafond quotidien du compte atteint
-      CF-->>SV: resource-exhausted, aucune analyse lancée
+      CF-->>SV: resource-exhausted (reason, scope ai_budget), aucune analyse lancée
     end
     CF->>FS: crée le document, statut en attente
     CF->>VI: SafeSearch et labels
@@ -2313,11 +2313,12 @@ sequenceDiagram
   else callable, et 10 appels déjà en cours
     BU->>BU: attend une place, 20 s au plus
     BU-->>CM: BudgetExceededError (concurrency) si aucune ne se libère
-    CM-->>AP: resource-exhausted
+    CM-->>AP: resource-exhausted, details reason concurrency, scope ai_budget
     Note over AP,CM: pipeline, déclencheurs, tâches planifiées :<br/>jamais limités en simultanéité
   else plafond atteint (dépensé + en cours)
     BU-->>CM: BudgetExceededError
-    CM-->>AP: resource-exhausted, nommant le plafond
+    CM-->>AP: resource-exhausted, nommant le plafond<br/>details reason cost ou calls, scope ai_budget
+    Note over AP,CM: client : failureMessage reprend le message du serveur,<br/>qui dit quand réessayer. Fournisseur saturé :<br/>même code sans details, « Service d'IA saturé »
     Note over AP,CM: dans le pipeline : dead letter immédiate,<br/>sans réessayer — trois tentatives heurteraient le même mur
   end
 
@@ -2451,7 +2452,8 @@ sequenceDiagram
     P->>DL: failure_reason = pipeline_error ou quota_exceeded
   end
 
-  P->>J: status = error, error_message
+  P->>J: status = error, error_message = jobErrorMessage(failure_reason)
+  Note over P,J: message écrit pour le membre recopié (plafond, livre illisible,<br/>livre d'un autre, pages, poids) ; sinon un texte fixe.<br/>Le texte brut reste dans last_error et logError
   Note over P: retourne SANS lever — lever relancerait<br/>Cloud Tasks sur un job déjà classé
 
   A->>RH: Relancer, depuis Admin › File d'échecs

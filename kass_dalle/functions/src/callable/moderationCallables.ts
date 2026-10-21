@@ -18,6 +18,7 @@ import { logError, logInfo, logWarn } from "../logging";
 import { isWellFormedObjectPath } from "../utils/storagePath";
 import { moderationImageMime, storedModerationMime } from "../utils/uploadSecurity";
 import { BudgetExceededError } from "../ai/budget";
+import { budgetExceededHttpsError } from "./_callableErrors";
 import { recordUsage } from "../ai/usage";
 import {
   MODERATION_FEATURE,
@@ -121,11 +122,12 @@ function parseItems(data: unknown, uid: string): ModerationItem[] {
  *
  * Plafond quotidien atteint (`BudgetExceededError`) : `resource-exhausted`,
  * avec le message déjà écrit pour la personne qui le lira — ni une panne, ni
- * un défaut de droits.
+ * un défaut de droits — et `details.reason` / `details.scope`, comme les
+ * callables d'IA (`budgetExceededHttpsError`).
  */
 export function moderationRefusal(err: unknown): HttpsError | null {
   if (err instanceof BudgetExceededError) {
-    return new HttpsError("resource-exhausted", err.message);
+    return budgetExceededHttpsError(err);
   }
   if (err instanceof ImageFormatRejected) {
     return new HttpsError("failed-precondition", err.detail);

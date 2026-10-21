@@ -57,7 +57,7 @@ import 'storage_advice_sheet.dart';
 import 'suggest_meal_screen.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/services/gemini_service.dart'
-    show GeminiCallableException;
+    show GeminiCallableException, callableErrorCode;
 import '../../../core/widgets/app_states.dart';
 import '../domain/calendar_export_messages.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -1498,10 +1498,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         context: {'code': e.code},
       );
       if (!mounted) return;
-      if (e.code == 'resource-exhausted' && e.message.isNotEmpty) {
-        // Plafond du jour : le message du serveur est écrit pour l'écran, et
-        // réessayer ne servirait à rien avant demain.
-        context.showErrorSnackBar(e.message);
+      if (callableErrorCode(e) == 'resource-exhausted') {
+        // Plafond d'IA du jour ou fournisseur saturé : pas de « Réessayer »,
+        // il ne servirait à rien tout de suite. Pour le plafond,
+        // `failureMessage` reprend le message du serveur, qui dit quand l'IA
+        // revient ; pour le fournisseur, le libellé générique.
+        context.showFailureSnackBar('Recette non conçue', e);
       } else {
         _conceptFailed(meal, e);
       }

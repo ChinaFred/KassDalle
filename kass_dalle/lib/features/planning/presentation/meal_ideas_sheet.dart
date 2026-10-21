@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../core/presentation/stylus_pad_text_field.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../../core/services/error_reporting.dart';
-import '../../../core/services/gemini_service.dart'
-    show GeminiCallableException;
 import '../../../core/widgets/error_message.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../recipes/domain/recipe.dart';
@@ -114,11 +112,9 @@ class _MealIdeasSheetState extends State<MealIdeasSheet> {
         service: widget.errorReportService,
       );
       if (!mounted) return;
-      setState(
-        () => _error =
-            _serverWrittenMessage(e) ??
-            failureMessage('Idées non proposées', e),
-      );
+      // Un refus du plafond d'IA du jour garde le message du serveur, qui dit
+      // quand l'IA revient (`failureMessage`).
+      setState(() => _error = failureMessage('Idées non proposées', e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -152,24 +148,9 @@ class _MealIdeasSheetState extends State<MealIdeasSheet> {
       if (!mounted) return;
       setState(() {
         _conceiving = null;
-        _error =
-            _serverWrittenMessage(e) ??
-            failureMessage('Recette non rédigée', e);
+        _error = failureMessage('Recette non conçue', e);
       });
     }
-  }
-
-  /// Message que le serveur écrit pour l'écran quand le plafond du jour ou le
-  /// budget est atteint (`resource-exhausted`), comme dans le planning. Tout
-  /// autre code est écarté : `internal` et `unknown` recopient l'exception
-  /// brute, `invalid-argument` est un texte de développeur, et sur mobile
-  /// `unavailable` et `deadline-exceeded` arrivent avec le texte anglais du
-  /// SDK.
-  String? _serverWrittenMessage(Object error) {
-    if (error is! GeminiCallableException) return null;
-    if (error.message.isEmpty) return null;
-    final code = error.code.toLowerCase().replaceAll('_', '-');
-    return code == 'resource-exhausted' ? error.message : null;
   }
 
   @override

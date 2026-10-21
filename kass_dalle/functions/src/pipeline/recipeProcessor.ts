@@ -64,7 +64,8 @@ import {
 import { ingredientsFromCooklang } from "./ingredientsFromCooklang";
 import { sourceNutritionDocument } from "../nutrition/sourceNutrition";
 import type { JsonLdNutrition } from "../web/recipePage";
-import { BookFileError } from "../books/bookFile";
+import { BookFileError, technicalErrorText } from "../books/bookFile";
+import { jobErrorMessage } from "./jobErrorMessage";
 import { TargetBookNotOwned, assertJobTargetBook } from "./targetBook";
 import {
   JobOwnerNotEditor,
@@ -167,14 +168,6 @@ const STEP_ORDER: PipelineStep[] = [
   "save",
   "done",
 ];
-
-/**
- * Message d'un échec générique (`pipeline_error`) sur le job, lu par le membre.
- * Le message de l'exception n'y est pas recopié : c'est souvent un texte gRPC
- * ou SDK, sans sens pour lui.
- */
-export const PIPELINE_ERROR_MESSAGE =
-  "L'import n'a pas abouti après plusieurs essais. Relancez-le, ou supprimez-le s'il échoue de nouveau.";
 
 function stepIndex(step: PipelineStep): number {
   return STEP_ORDER.indexOf(step);
@@ -1006,7 +999,10 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
     // adresse refusée) ne se rejoue pas ; un délai dépassé, si.
     const urlError = err instanceof UrlImportError ? err : null;
     const isFinalUrlError = urlError != null && !urlError.retryable;
-    const message = err instanceof Error ? err.message : String(err);
+    // Texte complet pour l'administrateur (journal, dead letter) : le
+    // message, et le détail technique d'un livre illisible. Le membre lit
+    // `jobErrorMessage`, jamais ce texte.
+    const message = technicalErrorText(err);
 
     if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
       try {
@@ -1103,16 +1099,16 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
         // Un import par lien porte un message lisible et son code : la tuile
         // du client choisit ses actions sur le code. Un propriétaire refusé
         // aussi (`owner_not_editor`), quel que soit le type du job.
-        // Un échec générique (`pipeline_error`) porte un message fixe : le
-        // texte de l'exception (gRPC, SDK) reste dans `last_error` de la dead
+        // Les autres échecs passent par la liste blanche de `jobErrorMessage` :
+        // le message de l'exception n'est recopié que s'il est écrit pour le
+        // membre (plafond, livre illisible…). Sinon, un texte fixe ; le texte
+        // brut (gRPC, SDK, fournisseur) reste dans `last_error` de la dead
         // letter et dans le `logError` ci-dessus, lus par l'administrateur.
         error_message: isOwnerNotEditor
           ? OWNER_NOT_EDITOR_MESSAGE
           : urlError
             ? URL_IMPORT_MESSAGES[urlError.code]
-            : failureReason === "pipeline_error"
-              ? PIPELINE_ERROR_MESSAGE
-              : message,
+            : jobErrorMessage(failureReason, err instanceof Error ? err.message : String(err)),
         ...(isOwnerNotEditor
           ? { error_code: OWNER_NOT_EDITOR_CODE, current_step: null }
           : urlError

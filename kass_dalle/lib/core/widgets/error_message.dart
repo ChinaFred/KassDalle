@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import '../services/gemini_service.dart' show GeminiCallableException;
@@ -125,6 +126,21 @@ ErrorMessage describeError(Object? error) {
     );
   }
 
+  // Fournisseur d'IA saturé : une callable d'IA qui rend `resource-exhausted`
+  // sans `details` (`GeminiQuotaExceededError`, `toHttpsError`). Les autres
+  // plafonds portent une raison (plafond du compte, d'une génération de
+  // planning, des tickets) ou ont leur propre traduction (recherche web,
+  // recherche de membres, groupes).
+  if (error is GeminiCallableException &&
+      code == 'resource-exhausted' &&
+      error.details == null) {
+    return const ErrorMessage(
+      title: 'Service d\'IA saturé',
+      advice: 'Réessayez plus tard.',
+      retryable: true,
+    );
+  }
+
   if (code.contains('resource-exhausted') || code.contains('quota')) {
     return const ErrorMessage(
       title: 'Limite du jour atteinte',
@@ -162,6 +178,46 @@ const kUnexpectedErrorAdvice =
 const kReportProblemAdvice =
     'Si le problème persiste, signalez-le depuis le menu du compte.';
 
+/// `details.scope` d'un refus du plafond d'IA du compte, posé par le serveur
+/// (`AI_BUDGET_SCOPE`, `functions/src/callable/_callableErrors.ts`).
+const kAiBudgetScope = 'ai_budget';
+
+/// Raisons d'un refus du plafond d'IA dont le message, rédigé par le serveur
+/// pour le membre, dit quand réessayer : plafond du jour en euros (`cost`) ou
+/// en appels (`calls`), trop d'appels en cours (`concurrency`). Le plafond d'un
+/// livre (`import`) n'arrive pas par une callable.
+const _aiBudgetMessageReasons = {'cost', 'calls', 'concurrency'};
+
+/// Le message du serveur quand [error] est un refus du plafond d'IA du
+/// compte, ou `null`.
+///
+/// Reconnu au code `resource-exhausted`, à `details.scope` = [kAiBudgetScope]
+/// et à `details.reason` = `cost`, `calls` ou `concurrency`. Le même code sert
+/// au fournisseur d'IA saturé, qui ne porte pas de `details` (« Service d'IA
+/// saturé », [describeError]). `details.reason` seul ne suffit pas : le
+/// plafond d'une génération de planning porte aussi `reason: cost`, sans
+/// `scope`.
+String? aiBudgetRefusalMessage(Object? error) {
+  if (error == null) return null;
+  final Object? details;
+  final String message;
+  if (error is GeminiCallableException) {
+    details = error.details;
+    message = error.message;
+  } else if (error is FirebaseFunctionsException) {
+    details = error.details;
+    message = error.message ?? '';
+  } else {
+    return null;
+  }
+  if (_codeOf(error) != 'resource-exhausted') return null;
+  if (details is! Map) return null;
+  if (details['scope'] != kAiBudgetScope) return null;
+  if (!_aiBudgetMessageReasons.contains(details['reason'])) return null;
+  final text = message.trim();
+  return text.isEmpty ? null : text;
+}
+
 /// Version courte, pour un SnackBar où il n'y a pas la place d'expliquer.
 String shortErrorMessage(Object? error) => describeError(error).title;
 
@@ -172,10 +228,15 @@ String shortErrorMessage(Object? error) => describeError(error).title;
 ///
 /// Un [what] qui finit déjà par un point n'en reçoit pas un second. Le texte
 /// brut de l'exception n'y figure jamais : il reste dans le rapport d'erreur.
-/// Un message écrit par le serveur pour l'écran ne passe pas par ici :
-/// l'appelant l'affiche tel quel, dans sa propre branche `on … catch`.
+///
+/// Seule exception : un refus du plafond d'IA du compte
+/// ([aiBudgetRefusalMessage]). Sa seconde phrase est le message du serveur,
+/// écrit pour le membre, qui dit quand réessayer : « Recette non conçue.
+/// Limite d'utilisation de l'IA atteinte pour aujourd'hui. Réessayez demain,
+/// … ». Tout autre `resource-exhausted` garde le titre de [describeError].
 String failureMessage(String what, Object? error) =>
-    '${_sentence(what.trimRight())} ${_sentence(describeError(error).title)}';
+    '${_sentence(what.trimRight())} '
+    '${_sentence(aiBudgetRefusalMessage(error) ?? describeError(error).title)}';
 
 /// Termine [text] par un point, sauf s'il finit déjà par une ponctuation.
 String _sentence(String text) {
