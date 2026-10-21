@@ -38,6 +38,7 @@ export const BACKFILL_KEYS = [
   "refresh_sodium",
   "default_units",
   "move_meals_to_group",
+  "users_schema_check",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -125,6 +126,16 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     key: "move_meals_to_group",
     kind: "ponctuel",
     title: "Déplacer mes repas vers un groupe",
+    usesAi: false,
+    defaultSchedule: null,
+  },
+  // Lecture seule : liste les comptes dont le document s'écarte du schéma de
+  // `firestore.rules` (v0.24.30, v0.24.32). Terminé quand un passage complet
+  // ne trouve rien à revoir.
+  {
+    key: "users_schema_check",
+    kind: "ponctuel",
+    title: "Contrôler les comptes",
     usesAi: false,
     defaultSchedule: null,
   },

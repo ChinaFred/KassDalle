@@ -31,6 +31,7 @@ abstract final class BackfillKeys {
   static const refreshSodium = 'refresh_sodium';
   static const defaultUnits = 'default_units';
   static const moveMealsToGroup = 'move_meals_to_group';
+  static const usersSchemaCheck = 'users_schema_check';
 }
 
 class BackfillDefinition {
@@ -178,6 +179,20 @@ const List<BackfillDefinition> kBackfillRegistry = [
     passLimit:
         'Chaque passage couvre 62 jours au plus et déplace au plus 500 repas.',
     reusable: true,
+  ),
+
+  // Lecture seule : liste les comptes dont le document s'écarte du schéma de
+  // `firestore.rules` (v0.24.30, v0.24.32). Terminé quand un passage complet
+  // ne trouve rien à revoir.
+  BackfillDefinition(
+    key: BackfillKeys.usersSchemaCheck,
+    kind: BackfillKind.ponctuel,
+    title: 'Contrôler les comptes',
+    description:
+        'Liste les comptes dont la fiche ne respecte pas les règles de '
+        'sécurité, avec la raison. Ne modifie aucun compte.',
+    usesAi: false,
+    passLimit: 'Chaque passage lit tous les comptes, 5 000 au plus.',
   ),
 ];
 

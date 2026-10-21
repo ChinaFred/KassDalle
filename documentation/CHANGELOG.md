@@ -20,6 +20,34 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.42 — fonctionnel
+
+- Admin › Backfills : nouveau ponctuel « Contrôler les comptes ». Il lit la fiche de chaque
+  compte et liste dans « À revoir » celles qui ne respectent pas les règles de sécurité posées
+  en v0.24.30 et v0.24.32 (tickets #162, #163), avec la raison : « uid différent de
+  l'identifiant », « rôle inconnu : … », « created_at absent », « champ non permis : … ». Une
+  fiche écrite avant ces règles peut ne plus apparaître dans Comptes, et son titulaire ne peut
+  plus la mettre à jour. Le compte est nommé par son prénom et le début de son identifiant,
+  jamais par son adresse. Lecture seule, sans appel d'IA ; il se marque terminé quand un
+  passage ne trouve plus rien.
+
+### v0.24.42 — technique
+
+- Nouveau callable `backfillUsersSchemaCheckFn` (`callable/usersSchemaCheckBackfillCallable.ts`),
+  clé `users_schema_check`, ponctuel, sans IA, inscrit aux deux registres et à la fixture
+  `backfill_schedule.json`. Il n'écrit rien dans `users` ; seul son état
+  `app_config/backfill_run_users_schema_check` est écrit par `runBackfillFromCallable`.
+- Les contrôles vivent dans `security/userDocument.ts` (`userDocumentIssues`,
+  `userReviewLabel`). Ils ne signalent que ce qui casse : la lecture par
+  `AppUser.fromFirestore`, `readRole`, `isRevoked()`, et ce que la règle `users/{uid}` refuserait
+  à la prochaine écriture du titulaire (champ non permis, `uid`, types, dates en `Timestamp`).
+  `is_revoked` absent est signalé : `isRevoked()` lit le champ sans valeur par défaut, et
+  l'erreur vaut refus. La longueur des noms et de `photo_url` et la forme de la couverture ne
+  sont pas contrôlées : les règles ne les vérifient qu'au changement du champ, et elles ne
+  bloquent rien. Testés dans `tests/userDocument.test.ts`.
+- Sans point de reprise : un contrôle ne conclut « rien à revoir » que sur un parcours entier
+  fait en un passage (5 000 comptes au plus).
+
 ### v0.24.41 — fonctionnel
 
 - Admin › Backfills : un passage, une programmation ou un « marquer terminé » qui échoue

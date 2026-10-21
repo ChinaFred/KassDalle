@@ -461,12 +461,13 @@ describe("verrou commun", () => {
     assert.deepEqual(lockSiblings("refresh_sodium"), ["enrich_referentials"]);
     assert.deepEqual(lockSiblings("default_units"), ["enrich_referentials"]);
     assert.deepEqual(lockSiblings("move_meals_to_group"), []);
+    assert.deepEqual(lockSiblings("users_schema_check"), []);
     assert.deepEqual(lockSiblings("recipe_roles"), []);
   });
 });
 
 describe("registre et validation", () => {
-  test("cinq récurrents, trois ponctuels, clés uniques", () => {
+  test("cinq récurrents, quatre ponctuels, clés uniques", () => {
     assert.deepEqual(recurrentKeys(), [
       "nutrition",
       "enrich_referentials",
@@ -474,7 +475,7 @@ describe("registre et validation", () => {
       "recipe_roles",
       "shopping_products",
     ]);
-    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 3);
+    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 4);
     assert.equal(new Set(BACKFILLS.map((b) => b.key)).size, BACKFILLS.length);
     assert.equal(backfillDefinition("inconnu"), null);
     // Ponctuels retirés en v0.23.52, v0.24.33 et v0.24.37 : leur clé n'est plus connue.

@@ -388,6 +388,15 @@ void main() {
         }),
         '3 unités créées, 1 complétée, 36 déjà à jour, 0 échec',
       );
+      expect(
+        backfillReportSummary(BackfillKeys.usersSchemaCheck, {
+          'examines': 12,
+          'conformes': 10,
+          'nonConformes': 2,
+          'echoues': 0,
+        }),
+        '12 comptes lus, 2 à revoir, 0 échec',
+      );
     });
   });
 
@@ -412,13 +421,14 @@ void main() {
       expect(sections.ponctuelsALancer.map((d) => d.key), [
         'default_units',
         'move_meals_to_group',
+        'users_schema_check',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['refresh_sodium']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(3));
+      expect(sections.ponctuelsALancer, hasLength(4));
       expect(sections.ponctuelsTermines, isEmpty);
     });
 
