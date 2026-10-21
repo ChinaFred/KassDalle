@@ -36,6 +36,7 @@ export const BACKFILL_KEYS = [
   "recipe_roles",
   "shopping_products",
   "refresh_sodium",
+  "default_units",
   "move_meals_to_group",
 ] as const;
 
@@ -108,6 +109,16 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     usesAi: true,
     defaultSchedule: null,
   },
+  // Les unités standard du référentiel `nutrition_units`. Ponctuel : la liste
+  // est fixe, et une fois semée rien ne la défait, sinon une suppression à la
+  // main dans l'écran Unités de mesure — que ce passage, relancé, répare.
+  {
+    key: "default_units",
+    kind: "ponctuel",
+    title: "Semer les unités standard",
+    usesAi: false,
+    defaultSchedule: null,
+  },
   // Paramétré (groupe, période) et réutilisable : jamais marqué terminé
   // tout seul (`summarizeMoveMealsToGroup` rend un reste inconnu).
   {
@@ -133,15 +144,22 @@ export function recurrentKeys(): BackfillKey[] {
 /**
  * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
  * ensemble : l'enrichissement des référentiels et la réparation du sel
- * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est
- * refusé pendant que l'autre tient son verrou.
+ * réécrivent tous deux `per100g` des ingrédients ; l'enrichissement et le
+ * semis des unités standard écrivent tous deux `grams_per_unit` dans
+ * `nutrition_units`. Un passage de l'un est refusé pendant que l'autre tient
+ * son verrou. Un backfill peut appartenir à plusieurs groupes.
  */
 const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
   ["enrich_referentials", "refresh_sodium"],
+  ["enrich_referentials", "default_units"],
 ];
 
-/** Les autres backfills dont le verrou bloque [key]. */
+/** Les autres backfills dont le verrou bloque [key], dans l'ordre des groupes. */
 export function lockSiblings(key: BackfillKey): BackfillKey[] {
-  const group = LOCK_GROUPS.find((g) => g.includes(key));
-  return group ? group.filter((k) => k !== key) : [];
+  const out: BackfillKey[] = [];
+  for (const group of LOCK_GROUPS) {
+    if (!group.includes(key)) continue;
+    for (const k of group) if (k !== key && !out.includes(k)) out.push(k);
+  }
+  return out;
 }

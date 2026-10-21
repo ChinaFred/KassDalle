@@ -1894,6 +1894,13 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
 | `first_seen_at` · `last_seen_at` · `updated_at` | `Timestamp` | Traçabilité |
 
+Les quarante unités standard (gramme, cuillère à soupe, verre, pincée…) se sèment par le
+backfill ponctuel « Semer les unités standard » (`backfillDefaultUnitsFn`, §7.10), qui lit
+`DEFAULT_NUTRITION_UNITS` (`functions/src/nutrition/defaultUnits.ts`). Jusqu'en v0.24.39,
+ce semis s'écrivait depuis le client (icône de l'écran Unités de mesure). Une unité semée
+porte `display_label`, `aliases`, `measurement_type`, `grams_per_unit` (poids et petites
+mesures) ou `volume_ml_per_unit` (volumes), `status: known` et `source: builtin`.
+
 `nutrition_units/{unitId}` porte les mêmes champs de traçabilité, plus les alias observés,
 des exemples d'ingrédients associés et un `grams_per_unit` — **jamais** posé sur une unité
 de volume ni de comptage, où il n'aurait aucun sens. Une unité que le modèle n'a pas su peser
@@ -2239,7 +2246,7 @@ Firestore refusent l'écriture client, administrateur compris (`*_checkpoint`,
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `refresh_sodium`, `move_meals_to_group` — ponctuels). `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
+récurrents ; `refresh_sodium`, `default_units`, `move_meals_to_group` — ponctuels). `default_units` parcourt en un passage sa liste fixe de quarante unités, sans point de reprise. `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
 rend un reste inconnu (`remaining: null`), il n'est donc jamais marqué terminé tout seul, et
 il n'a pas de point de reprise — chaque passage relit les repas de sa période.
 Les ponctuels `recipe_protein`,
@@ -6289,7 +6296,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Cinq tâches planifiées (Cloud Scheduler), six reprises manuelles (sept backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
+Cinq tâches planifiées (Cloud Scheduler), sept reprises manuelles (huit backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -6308,6 +6315,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. Le type de page se lit par `resolvePageType` : une page typée dans son seul CookLang (`>> page_type:`) est « hors recette », pas « sans ingrédient ». 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Un ingrédient qui échoue trois fois (`allergens_failure_count`) n'est plus soumis au modèle, sauf `retryExcluded`. Une page dont `resolvePageType` (le champ, sinon `>> page_type:` dans le CookLang) ne dit pas `recipe` est comptée « hors recette ». Compte rendu : ingrédients examinés, ignorés, en erreur, exclus (`ingredientsExclus`), échecs non exclus (`echecsNonExclus`) ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
 | `backfillMoveMealsToGroupFn` | `admin` | ponctuel paramétré `move_meals_to_group`, « Déplacer mes repas vers un groupe ». Entrée `{ groupId, fromDay, toDay, startAt, endAt, appVersion? }` : identifiant de groupe au format sûr (`[A-Za-z0-9_-]{1,128}`), jours `AAAA-MM-JJ` inclusifs, `fromDay <= toDay`, 62 jours au plus ; `startAt` et `endAt` sont les instants (ms) du minuit local du premier jour et du lendemain du dernier, calculés par l'appareil (`MoveMealsRequest`), et doivent tomber à moins de quatorze heures des jours annoncés. Le fuseau de l'appareil fait foi : le serveur ne le devine pas. Entrée invalide : `invalid-argument`, avant le verrou. Le passage lit `groups/{groupId}` : absent, `not-found` ; `owner_id` différent de l'appelant, `permission-denied`. L'appelant est administrateur non révoqué (`requireAdmin`), donc planificateur, et ses groupes sont actifs. Sélection : `uid == appelant` et `startAt <= planned_at < endAt` (index `uid` + `planned_at`, 2 000 repas lus au plus), puis les repas dont `group_id` est nul ou absent ; un repas déjà dans un groupe est compté « ignoré ». Chaque repas s'écrit dans une **transaction** qui relit `groups/{groupId}` (présent, `owner_id` = appelant) et le repas (présent, `uid` = appelant, `group_id` nul ou absent), puis pose `group_id: groupId`. Un groupe supprimé ou cédé pendant le passage l'arrête (`groupeIndisponible: true`) : aucun repas n'est rattaché à un groupe que `deleteGroupMeals` a déjà vidé. Un repas qui a changé entre la lecture et la transaction est compté « ignoré ». Rien d'autre n'est écrit : ni `uid`, ni `base_portions`, ni `target_portions`, ni la recette. 500 repas déplacés par passage, arrêt sur trois échecs de suite. Compte rendu : `groupId`, période (`du`, `au`), examinés, déplacés, ignorés, en erreur, restants, `lectureTronquee`, `groupeIndisponible` — **ni nom de groupe ni titre de recette** : il est recopié dans `app_config/backfill_run_move_meals_to_group`, que tout administrateur lit. Réentrant sans curseur : un repas déplacé n'est plus sélectionné. Jamais marqué terminé tout seul (`summarizeMoveMealsToGroup`, `remaining: null`), et le menu ⋮ de sa tuile ne propose pas de le marquer (`reusable` au registre client, `backfillOffersDoneMenu`). Sans appel de modèle |
+| `backfillDefaultUnitsFn` | `admin` | ponctuel `default_units`, « Semer les unités standard ». Pour chacune des quarante unités de `DEFAULT_NUTRITION_UNITS` (`nutrition/defaultUnits.ts`), une transaction lit `nutrition_units/{id}` : absent, il est créé complet (`status: known`, `source: builtin`, `seen_count: 0`) ; présent, seuls les champs manquants sont complétés — `grams_per_unit` ou `volume_ml_per_unit` absent ou nul, `display_label` absent ou vide, `measurement_type` égal à `unknown` —, le statut passe alors à `known` et une source `fallback_auto` devient `builtin` (`defaultUnitPlan`). Une valeur présente n'est jamais écrasée ; une unité complète n'est pas réécrite. Un libellé ou un type mal formé compte comme présent. Sans curseur : la liste entière tient dans un passage. Arrêt sur trois échecs de suite. Compte rendu : `total`, `examinees`, `creees`, `completees`, `dejaAJour`, `echouees`, `restantes`. Terminé tout seul quand les quarante unités sont examinées sans échec. Partage son verrou avec `enrich_referentials`, qui écrit aussi `grams_per_unit` des unités. Sans appel de modèle. `defaultUnits.test.ts` vérifie que chaque unité a le type et le facteur de la table de repli de `quantityConversion.ts` |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains` (jamais sur une recette corrigée à la main, `contains_manual`, même avec `force` : `containsPatch`), `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Deux reprises ponctuelles, menées au bout et marquées terminées en production le 21/10/2026 en
@@ -6358,9 +6366,10 @@ où il s'est arrêté, et l'appel suivant repart de là.
   second passage du même backfill — un double clic, un autre appareil, la tâche horaire — est
   refusé, `failed-precondition`, et l'écran affiche le message du serveur. Deux backfills
   différents tournent ensemble, sauf ceux d'un même `LOCK_GROUPS` (`backfills/registry.ts`) :
-  `enrich_referentials` et `refresh_sodium` réécrivent tous deux `per100g` des ingrédients, et
-  l'un refuse de partir pendant que l'autre tient son verrou (même transaction, qui lit l'état
-  des deux). Un verrou dont l'échéance est passée est repris ;
+  `enrich_referentials` et `refresh_sodium` réécrivent tous deux `per100g` des ingrédients ;
+  `enrich_referentials` et `default_units` écrivent tous deux `grams_per_unit` des unités.
+  L'un refuse de partir pendant que l'autre tient son verrou (même transaction, qui lit l'état
+  des deux). Un backfill peut appartenir à plusieurs groupes (`lockSiblings` les réunit). Un verrou dont l'échéance est passée est repris ;
 - enregistre l'issue : statut, origine, date, compte rendu complet (`last_report`), ou le
   message de l'erreur, puis relève l'erreur ;
 - pour un **ponctuel**, pose `termine_*` (`termine_par: "auto"`) quand le passage finit sans
@@ -6489,6 +6498,7 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième échec d'un ingrédient, « Plus redemandé à l'IA après 3 échecs » pour un ingrédient sauté. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
 | `backfillMoveMealsToGroupFn` | repas dont l'écriture a échoué (« Repas non déplacé : <message> », nature `meal`), nommés par leur identifiant et leur jour (« Repas <id> — AAAA-MM-JJ »), sans titre de recette |
+| `backfillDefaultUnitsFn` | unités dont l'écriture a échoué (« Échec d'écriture : <message> », nature `unit`), nommées par leur libellé |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du

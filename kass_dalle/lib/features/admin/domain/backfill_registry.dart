@@ -29,6 +29,7 @@ abstract final class BackfillKeys {
   static const recipeRoles = 'recipe_roles';
   static const shoppingProducts = 'shopping_products';
   static const refreshSodium = 'refresh_sodium';
+  static const defaultUnits = 'default_units';
   static const moveMealsToGroup = 'move_meals_to_group';
 }
 
@@ -147,6 +148,21 @@ const List<BackfillDefinition> kBackfillRegistry = [
     description: 'Corrige le sel compté deux fois dans les ingrédients salés.',
     usesAi: true,
     passLimit: 'Chaque passage travaille au plus huit minutes.',
+  ),
+
+  // Remplace l'icône « Initialiser les unités par défaut » de l'écran Unités
+  // de mesure (retirée en v0.24.40). Ponctuel : la liste est fixe.
+  BackfillDefinition(
+    key: BackfillKeys.defaultUnits,
+    kind: BackfillKind.ponctuel,
+    title: 'Semer les unités standard',
+    description:
+        'Crée les unités de mesure standard absentes du référentiel, et '
+        'complète celles qui n\'ont pas encore leur grammage, leur volume, '
+        'leur libellé ou leur type. Une valeur déjà saisie n\'est jamais '
+        'remplacée.',
+    usesAi: false,
+    passLimit: 'Chaque passage examine les quarante unités standard.',
   ),
 
   // Paramétré (groupe, période) et réutilisable : le serveur ne le marque
