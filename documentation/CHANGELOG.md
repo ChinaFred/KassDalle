@@ -26,10 +26,10 @@ Admin › Référentiels › Ingrédients nutrition : le dépliage d'une fiche a
 l'utilisent (n) », sous les allergènes. La liste donne jusqu'à vingt recettes qui citent
 l'ingrédient sous son nom canonique, son identifiant ou l'un de ses alias, privées comprises,
 avec « Brouillon », « Privée » et le titre du livre quand ils s'appliquent. Un appui ouvre la
-recette ; le crayon ouvre son éditeur, sauf pour un brouillon, que l'éditeur n'ouvre pas. Au-delà
-de vingt, le compteur affiche « (20+) » et invite à corriger puis replier et déplier la fiche.
-La liste est lue à chaque dépliage par une seule requête Firestore, sans appel d'IA ni index
-composite. Le modèle `NutritionIngredientDoc` lit désormais `canonical_name` et `aliases`.
+fiche de la recette, ou la relecture d'un brouillon ; le crayon ouvre l'éditeur, sauf pour un
+brouillon, que l'éditeur n'ouvre pas. Au-delà de vingt, le compteur affiche « (20+) » et la
+ligne « 20 premières recettes affichées. ». La liste est lue à chaque dépliage et au retour de
+la recette ouverte, par une seule requête Firestore, sans appel d'IA ni index composite. Le modèle `NutritionIngredientDoc` lit désormais `canonical_name` et `aliases`.
 
 ### v0.24.44 — fonctionnel
 

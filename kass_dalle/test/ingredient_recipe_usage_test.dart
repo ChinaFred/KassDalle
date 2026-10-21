@@ -14,7 +14,11 @@ import 'package:kass_dalle/features/admin/data/nutrition_ingredients_repository.
 import 'package:kass_dalle/features/admin/domain/ingredient_recipe_usage.dart';
 import 'package:kass_dalle/features/admin/presentation/admin_providers.dart';
 import 'package:kass_dalle/features/admin/presentation/nutrition_ingredients_screen.dart';
+import 'package:kass_dalle/features/auth/domain/app_user.dart';
+import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
+
+import 'support/test_backend.dart';
 
 class _RecordingErrorReportService extends ErrorReportService {
   final List<String> features = [];
@@ -58,7 +62,11 @@ class _CountingRepository extends IngredientUsageRepository {
     calls++;
     final pending = gate;
     if (pending != null) await pending.future;
-    if (fail) throw StateError('lecture refusée');
+    if (fail) {
+      // Erreur transitoire : `AppErrorState` ne propose « Réessayer » que
+      // pour une erreur que réessayer peut corriger.
+      throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+    }
     return super.fetchRecipesUsing(values);
   }
 }
@@ -266,6 +274,13 @@ void main() {
             builder: (_, _) => const NutritionIngredientsScreen(),
           ),
           GoRoute(
+            path: '/drafts/:id',
+            builder: (_, state) {
+              visited.add(state.uri.path);
+              return const Text('relecture');
+            },
+          ),
+          GoRoute(
             path: '/recipes/:id',
             builder: (_, state) {
               visited.add(state.uri.path);
@@ -287,6 +302,9 @@ void main() {
         ProviderScope(
           retry: (_, _) => null,
           overrides: [
+            appUserProvider.overrideWith(
+              (ref) => Stream.value(testUser(role: UserRole.admin)),
+            ),
             allNutritionIngredientsProvider.overrideWith(
               (ref) => Stream.value(const [_papier]),
             ),
@@ -382,13 +400,7 @@ void main() {
       await pumpScreen(tester);
       await toggle(tester);
       expect(find.text('Recettes qui l\'utilisent (20+)'), findsOneWidget);
-      expect(
-        find.text(
-          '20 premières recettes affichées. Corrigez-les puis repliez et '
-          'dépliez la fiche pour voir la suite.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('20 premières recettes affichées.'), findsOneWidget);
       expect(find.byIcon(Icons.restaurant_menu_outlined), findsNWidgets(20));
     });
 
@@ -396,10 +408,7 @@ void main() {
       repo.fail = true;
       await pumpScreen(tester);
       await toggle(tester);
-      expect(
-        find.text('Recettes introuvables pour le moment.'),
-        findsOneWidget,
-      );
+      expect(find.text('Impossible de charger les recettes.'), findsOneWidget);
       expect(repo.calls, 1);
 
       repo.fail = false;
@@ -443,10 +452,36 @@ void main() {
       await tester.tap(find.byTooltip('Ouvrir dans l\'éditeur'));
       await tester.pumpAndSettle();
       expect(visited.last, '/recipes/tarte/edit');
-      expect(
-        GoRouter.of(tester.element(find.text('éditeur'))).canPop(),
-        isTrue,
-      );
+      final editorRouter = GoRouter.of(tester.element(find.text('éditeur')));
+      expect(editorRouter.canPop(), isTrue);
+      // Au retour, la liste est relue.
+      final before = repo.calls;
+      editorRouter.pop();
+      await tester.pumpAndSettle();
+      expect(repo.calls, before + 1);
+      expect(find.text('Tarte'), findsOneWidget);
+    });
+
+    testWidgets('un brouillon s\'ouvre dans sa relecture, sans crayon', (
+      tester,
+    ) async {
+      await firestore
+          .collection('recipes')
+          .doc('pain')
+          .set(_recipe('Pain', ['papier sulfurisé'], status: 'inReview'));
+      await pumpScreen(tester);
+      await toggle(tester);
+      expect(find.byTooltip('Ouvrir dans l\'éditeur'), findsNothing);
+
+      await tester.tap(find.text('Pain'));
+      await tester.pumpAndSettle();
+      expect(visited.last, '/drafts/pain');
+      expect(find.text('relecture'), findsOneWidget);
+
+      final before = repo.calls;
+      GoRouter.of(tester.element(find.text('relecture'))).pop();
+      await tester.pumpAndSettle();
+      expect(repo.calls, before + 1);
     });
   });
 }

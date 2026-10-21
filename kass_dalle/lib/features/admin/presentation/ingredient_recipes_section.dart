@@ -6,6 +6,7 @@ import 'admin_providers.dart';
 import '../data/nutrition_ingredients_repository.dart';
 import '../domain/ingredient_recipe_usage.dart';
 import '../../../core/theme/app_icon_size.dart';
+import '../../../core/widgets/app_states.dart';
 
 /// Section « Recettes qui l'utilisent » d'une fiche du référentiel nutrition.
 ///
@@ -49,14 +50,11 @@ class IngredientRecipesSection extends ConsumerWidget {
     } else if (usageAsync.hasError) {
       // Erreur déjà signalée au rapport d'erreurs par
       // IngredientUsageRepository.fetchRecipesUsing.
-      body = Row(
-        children: [
-          const Expanded(child: Text('Recettes introuvables pour le moment.')),
-          TextButton(
-            onPressed: () => ref.invalidate(provider),
-            child: const Text('Réessayer'),
-          ),
-        ],
+      body = AppErrorState(
+        error: usageAsync.error,
+        title: 'Impossible de charger les recettes.',
+        onRetry: () => ref.invalidate(provider),
+        compact: true,
       );
     } else if (usage == null || usage.recipes.isEmpty) {
       body = Padding(
@@ -67,14 +65,18 @@ class IngredientRecipesSection extends ConsumerWidget {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final recipe in usage.recipes) _RecipeUsageTile(recipe: recipe),
+          for (final recipe in usage.recipes)
+            _RecipeUsageTile(
+              recipe: recipe,
+              // Au retour de la recette ou de l'éditeur, la liste est relue :
+              // une correction peut avoir retiré l'ingrédient de la recette.
+              onReturn: () => ref.invalidate(provider),
+            ),
           if (usage.hasMore)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                '$kIngredientUsageDisplayLimit premières recettes affichées. '
-                'Corrigez-les puis repliez et dépliez la fiche pour voir la '
-                'suite.',
+                '$kIngredientUsageDisplayLimit premières recettes affichées.',
                 style: muted,
               ),
             ),
@@ -101,7 +103,15 @@ class IngredientRecipesSection extends ConsumerWidget {
 class _RecipeUsageTile extends StatelessWidget {
   final IngredientRecipeRef recipe;
 
-  const _RecipeUsageTile({required this.recipe});
+  /// Rappelé au retour de l'écran ouvert depuis la ligne.
+  final VoidCallback onReturn;
+
+  const _RecipeUsageTile({required this.recipe, required this.onReturn});
+
+  Future<void> _open(BuildContext context, String location) async {
+    await context.push(location);
+    if (context.mounted) onReturn();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,9 +139,14 @@ class _RecipeUsageTile extends StatelessWidget {
             : IconButton(
                 tooltip: 'Ouvrir dans l\'éditeur',
                 icon: const Icon(Icons.edit_outlined, size: AppIconSize.small),
-                onPressed: () => context.push('/recipes/${recipe.id}/edit'),
+                onPressed: () => _open(context, '/recipes/${recipe.id}/edit'),
               ),
-        onTap: () => context.push('/recipes/${recipe.id}'),
+        // Un brouillon s'ouvre dans sa relecture, une recette validée dans
+        // sa fiche.
+        onTap: () => _open(
+          context,
+          recipe.isDraft ? '/drafts/${recipe.id}' : '/recipes/${recipe.id}',
+        ),
       ),
     );
   }

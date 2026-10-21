@@ -1956,7 +1956,9 @@ plus (plafond d'`array-contains-any`). Ni tri ni autre filtre : l'index automati
 champ suffit, **aucun index composite** ; un `orderBy` en exigerait un. Pas de filtre
 `is_private` : la requête est celle d'un administrateur, que `canRead` laisse tout lire.
 Le livre s'affiche depuis `book_titre`, recopié sur la recette : aucune lecture de plus
-par recette. Vingt lignes affichées ; la vingt-et-unième signale seulement la suite. Un
+par recette. Vingt lignes affichées, sans ordre défini ; la vingt-et-unième signale seulement
+la suite. Le retour de la recette ou de l'éditeur (`await context.push`) invalide le provider
+et relit la liste. Un brouillon s'ouvre sur `/drafts/{id}`. Un
 échec est remonté par `ErrorReportService` (`ingredientUsage.fetchRecipesUsing`). Le
 crayon vers `/recipes/{id}/edit` est masqué pour une recette non validée : l'éditeur
 charge `raw_cooklang` et efface `draft_cooklang` à l'enregistrement.
@@ -7842,7 +7844,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/app-check` | `AppCheckScreen` | le mode d'attestation |
 | `/admin/moderation` | `AdminModerationScreen` | trancher sur une image en attente |
 | `/admin/referentials` | `AdminReferentialsScreen` | l'état des référentiels |
-| `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient ; au dépliage, ouvrir une recette qui le cite (`push` vers `/recipes/{id}` ou `/recipes/{id}/edit`) |
+| `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient ; au dépliage, ouvrir une recette qui le cite (`push` vers `/recipes/{id}`, `/recipes/{id}/edit` ou, pour un brouillon, `/drafts/{id}`) |
 | `/admin/nutrition-units` | `NutritionUnitsScreen` | corriger un poids d'unité |
 | `/admin/nutrition-policy` | `NutritionPolicyScreen` | priorité des sources, seuils |
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
