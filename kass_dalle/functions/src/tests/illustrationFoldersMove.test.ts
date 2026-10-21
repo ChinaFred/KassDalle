@@ -13,6 +13,7 @@ import { LEGACY_APP_BUCKET, recipeIllustrationIssues } from "../backfills/illust
 import {
   illustrationMimeOf,
   moveModerationId,
+  movableSourceRefusal,
   movedIllustrationPath,
   objectKey,
   recipeMovePlan,
@@ -158,21 +159,25 @@ describe("sources admises", () => {
     assert.match(plan.blocking[3], /^covers\//);
   });
 
-  test("sous users/, seule la couverture « Recette libre » se range", () => {
+  test("sous users/{uid}/, tout fichier se range : couverture, découpes et vignettes", () => {
+    const illus = { bucket: BUCKET, path: "users/u/illustrations/job1_0_1700000000000.jpg" };
+    const thumb = { bucket: BUCKET, path: "users/u/thumbnails/job1_0_1700000000000_thumb.webp" };
     const plan = recipeMovePlan(
-      {
-        image_urls: [
-          downloadUrl("users/u/photo.jpg"),
-          downloadUrl("users/u/sub/free_recipe_cover_1.jpg"),
-          downloadUrl(USER.path),
-        ],
-      },
+      { image_urls: [downloadUrl(illus.path), downloadUrl(USER.path)] },
       opts,
-      scope(),
+      scope([objectKey(illus), objectKey(USER)]),
     );
-    assert.deepEqual(plan.refs, [USER]);
+    assert.deepEqual(plan.refs, [illus, USER]);
+    assert.deepEqual(plan.blocking, []);
+    assert.equal(movableSourceRefusal(thumb.path), null);
+    assert.equal(movableSourceRefusal("users/u/photo.jpg"), null);
+  });
+
+  test("users/ sans dossier de compte : refusé", () => {
+    const plan = recipeMovePlan({ image_urls: [downloadUrl("users/photo.jpg")] }, opts, scope());
+    assert.deepEqual(plan.refs, []);
     assert.equal(plan.blocking.length, 1);
-    assert.match(plan.blocking[0], /^users\//);
+    assert.match(plan.blocking[0], /^users\/ : chemin sans dossier de compte/);
   });
 
   test("racine du bucket et scans/ sans dossier de compte : refusés", () => {

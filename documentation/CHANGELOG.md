@@ -20,6 +20,17 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.36 — technique
+
+- « Ranger les illustrations » range aussi les fichiers sous `users/{uid}/` autres que la
+  couverture « Recette libre » : les découpes et vignettes d'une page importée, que le pipeline
+  écrivait sous `users/{uid}/illustrations/` et `users/{uid}/thumbnails/` avant le 19 août
+  2026. Le passage du 21 octobre en avait refusé 18 (« users/ : fichier autre qu'une
+  couverture de recette libre »), que l'administrateur a validées une à une. Les autres
+  garde-fous ne changent pas : liste fermée du dernier contrôle, type lu sur les octets
+  (JPEG, PNG ou WebP), refus de `quarantine/`, `rejected/`, `tickets/` et `covers/`
+  (`movableSourceRefusal`).
+
 ### v0.24.35 — fonctionnel
 
 Audit #151, lot 8, tickets #170 et #171 : messages d'erreur lus par les membres.

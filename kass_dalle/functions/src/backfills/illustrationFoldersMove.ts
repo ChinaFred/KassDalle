@@ -69,30 +69,34 @@ export function objectKey(ref: StorageObjectRef): string {
 /** `scans/{uid}/…` : page ou fichier promu par un import (`scanAndPromoteUploadFn`). */
 const SCAN_SOURCE = /^scans\/[^/]+\/.+$/;
 /**
- * `users/{uid}/free_recipe_cover_{horodatage}.{ext}` : la couverture « Recette
- * libre » d'un compte, seul fichier écrit sous `users/` — par la modération
- * (`targetPathFor`, `free_recipe_cover`), et avant elle par le client, au même
- * nom. Tout autre fichier sous `users/` n'est pas rangé.
+ * `users/{uid}/…` : un fichier du dossier d'un compte. Deux origines connues,
+ * toutes deux images de recette : la couverture « Recette libre »
+ * (`free_recipe_cover_{horodatage}.{ext}`) et, avant le 19 août 2026, les
+ * découpes d'une page importée et leurs vignettes, écrites par le pipeline
+ * sous `illustrations/` et `thumbnails/`. Depuis la v0.24.31, seul le serveur
+ * écrit sous `users/` ; un fichier plus ancien déposé par un compte y reste
+ * possible. L'administrateur a validé une à une les illustrations listées par
+ * le contrôle du 21 octobre 2026 : elles se rangent toutes.
  */
-const USER_COVER_SOURCE = /^users\/[^/]+\/free_recipe_cover_[0-9]+\.[a-z0-9]{1,5}$/;
+const USER_SOURCE = /^users\/[^/]+\/.+$/;
 
 /**
  * Pourquoi une image hors des dossiers modérés ne se range pas, ou `null` si
  * elle peut l'être. Seules deux sources sont admises : une page d'import sous
- * `scans/{uid}/` et une couverture « Recette libre » sous `users/{uid}/`.
+ * `scans/{uid}/` et un fichier du dossier d'un compte sous `users/{uid}/`.
  * `quarantine/` (pas encore modérée), `rejected/` (refusée), `tickets/`
  * (capture privée), `covers/` et tout autre dossier sont refusés : les copier
  * publierait comme approuvée une image que personne n'a validée — un éditeur
- * peut écrire n'importe quelle URL du bucket dans sa recette.
+ * peut écrire n'importe quelle URL du bucket dans sa recette. La liste fermée
+ * du dernier contrôle borne en plus ce qui se range.
  */
 export function movableSourceRefusal(path: string): string | null {
-  if (SCAN_SOURCE.test(path) || USER_COVER_SOURCE.test(path)) return null;
+  if (SCAN_SOURCE.test(path) || USER_SOURCE.test(path)) return null;
   const folder = sourceFolder(path);
   if (folder === "quarantine/") return "quarantine/ : image pas encore modérée, non rangée";
   if (folder === "rejected/") return "rejected/ : image refusée par la modération, non rangée";
   if (folder === "tickets/") return "tickets/ : capture privée d'un ticket, non rangée";
-  if (folder === "users/")
-    return "users/ : fichier autre qu'une couverture de recette libre, non rangé";
+  if (folder === "users/") return "users/ : chemin sans dossier de compte, non rangé";
   if (folder === "scans/") return "scans/ : chemin sans dossier de compte, non rangé";
   return `${folder} : dossier non admis pour le rangement`;
 }
