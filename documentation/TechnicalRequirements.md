@@ -1944,6 +1944,25 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
 | `first_seen_at` · `last_seen_at` · `updated_at` | `Timestamp` | Traçabilité |
 
+**Recettes qui citent un ingrédient** (v0.24.46). Au dépliage d'une fiche,
+*Admin › Référentiels › Ingrédients nutrition* lit les recettes par une requête
+`recipes` `where('ingredients_index', arrayContainsAny: valeurs)` `limit(21)`
+(`IngredientUsageRepository.fetchRecipesUsing`, provider
+`ingredientRecipeUsageProvider`, `autoDispose` : replier libère, déplier relit). Les
+valeurs (`ingredientUsageSearchValues`, `features/admin/domain/ingredient_recipe_usage.dart`) :
+`canonical_name`, l'identifiant dont les `_` deviennent des espaces, puis chaque alias,
+normalisés par `buildIngredientsIndex` lui-même (trim, minuscules, sans doublon), 30 au
+plus (plafond d'`array-contains-any`). Ni tri ni autre filtre : l'index automatique du
+champ suffit, **aucun index composite** ; un `orderBy` en exigerait un. Pas de filtre
+`is_private` : la requête est celle d'un administrateur, que `canRead` laisse tout lire.
+Le livre s'affiche depuis `book_titre`, recopié sur la recette : aucune lecture de plus
+par recette. Vingt lignes affichées, sans ordre défini ; la vingt-et-unième signale seulement
+la suite. Le retour de la recette ou de l'éditeur (`await context.push`) invalide le provider
+et relit la liste. Un brouillon s'ouvre sur `/drafts/{id}`. Un
+échec est remonté par `ErrorReportService` (`ingredientUsage.fetchRecipesUsing`). Le
+crayon vers `/recipes/{id}/edit` est masqué pour une recette non validée : l'éditeur
+charge `raw_cooklang` et efface `draft_cooklang` à l'enregistrement.
+
 Les quarante unités standard (gramme, cuillère à soupe, verre, pincée…) se sèment par le
 backfill ponctuel « Semer les unités standard » (`backfillDefaultUnitsFn`, §7.10), qui lit
 `DEFAULT_NUTRITION_UNITS` (`functions/src/nutrition/defaultUnits.ts`). Jusqu'en v0.24.39,
@@ -7825,7 +7844,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/app-check` | `AppCheckScreen` | le mode d'attestation |
 | `/admin/moderation` | `AdminModerationScreen` | trancher sur une image en attente |
 | `/admin/referentials` | `AdminReferentialsScreen` | l'état des référentiels |
-| `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient |
+| `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient ; au dépliage, ouvrir une recette qui le cite (`push` vers `/recipes/{id}`, `/recipes/{id}/edit` ou, pour un brouillon, `/drafts/{id}`) |
 | `/admin/nutrition-units` | `NutritionUnitsScreen` | corriger un poids d'unité |
 | `/admin/nutrition-policy` | `NutritionPolicyScreen` | priorité des sources, seuils |
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
