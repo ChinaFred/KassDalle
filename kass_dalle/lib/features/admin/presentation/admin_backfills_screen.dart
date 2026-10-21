@@ -160,6 +160,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'événements déjà exportés vers l\'agenda ne changent pas. Un repas '
             'déjà dans un groupe est laissé tel quel ; on peut relancer.\n\n'
             'Aucun appel d\'IA.';
+      case BackfillKeys.usersSchemaCheck:
+        return 'Lit la fiche de chaque compte et liste celles qui posent un '
+            'problème, avec la raison et son effet : un champ illisible '
+            '(absent ou de mauvais type) fait disparaître la fiche de '
+            'Comptes ; un rôle absent ou inconnu laisse le compte sans droit, '
+            'affiché « en attente » ; un indicateur de révocation absent fait '
+            'échouer toute règle qui le lit pour ce compte.\n\n'
+            'Lecture seule : aucun compte n\'est modifié. Aucun appel d\'IA. '
+            'Tous les comptes sont lus en un passage ; on peut relancer après '
+            'une correction.';
       default:
         return '';
     }
@@ -302,6 +312,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.usersSchemaCheck:
+        final r = await _repo.backfillUsersSchemaCheck();
+        return _fromCounts(
+          r,
+          'Comptes : examinés=${r['examines']}, conformes=${r['conformes']}, '
+          'à revoir=${r['nonConformes']}, contrôles en échec=${r['echoues']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${_flag(r, 'stoppedByBudget', ' (plus de 5 000 comptes : lecture arrêtée)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer)')}',
         );
       default:
         throw StateError('Backfill inconnu : ${def.key}');
@@ -1052,6 +1073,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.refreshSodium: Icons.science_outlined,
     BackfillKeys.defaultUnits: Icons.straighten_outlined,
     BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
+    BackfillKeys.usersSchemaCheck: Icons.manage_accounts_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

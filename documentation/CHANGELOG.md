@@ -20,6 +20,40 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.42 — fonctionnel
+
+- Admin › Backfills : nouveau ponctuel « Contrôler les comptes ». Il lit la fiche de chaque
+  compte écrite avant les règles de v0.24.30 et v0.24.32 (tickets #162, #163) et liste dans
+  « À revoir » celles qui posent un problème, avec la raison et son effet : un champ absent ou
+  de mauvais type fait disparaître la fiche de Comptes ; un rôle absent ou inconnu laisse le
+  compte sans droit, affiché « en attente » ; un indicateur de révocation absent fait échouer
+  toute règle qui le lit pour ce compte. Le compte est nommé par son prénom et le début de son
+  identifiant, jamais par son adresse. La feuille « À revoir » affiche sous chaque compte son
+  identifiant complet et dit de le corriger dans la console Firebase, puis de relancer le
+  contrôle ; « Copier la liste » ne recopie pas cet identifiant. Lecture seule, sans appel
+  d'IA ; il se marque terminé quand un passage ne trouve plus rien.
+
+### v0.24.42 — technique
+
+- Nouveau callable `backfillUsersSchemaCheckFn` (`callable/usersSchemaCheckBackfillCallable.ts`),
+  clé `users_schema_check`, ponctuel, sans IA, inscrit aux deux registres et à la fixture
+  `backfill_schedule.json`. Il n'écrit rien dans `users` ; seul son état
+  `app_config/backfill_run_users_schema_check` est écrit par `runBackfillFromCallable`.
+- Les contrôles vivent dans `security/userDocument.ts` (`userDocumentIssues`,
+  `userReviewLabel`). Ils ne signalent que ce qui casse, et chaque raison dit son effet : un
+  champ que `AppUser.fromFirestore` ne lit pas (fiche absente de Comptes), un rôle que
+  `readRole` lit « aucun rôle » (compte sans droit), `is_revoked` absent (`isRevoked()` lit le
+  champ sans valeur par défaut, et l'erreur vaut refus). `is_revoked: null` est conforme. Ne
+  sont pas contrôlés, parce qu'ils ne bloquent rien : un champ hors de la liste des règles, un
+  `uid` différent de l'identifiant, la longueur des noms et de `photo_url`, la forme de la
+  couverture. Une valeur citée qui contient « @ », et un prénom qui en contient un, sont
+  écartés du compte rendu. Testés dans `tests/userDocument.test.ts`.
+- `backfill_failures_sheet.dart` : pour une entrée de nature `account`, l'identifiant complet
+  du document s'affiche sous la raison, et le sous-titre de la feuille donne la consigne
+  (`kAccountFailuresHelp`). `copyLine` est inchangé et ne porte pas l'identifiant complet.
+- Sans point de reprise : un contrôle ne conclut « rien à revoir » que sur un parcours entier
+  fait en un passage (5 000 comptes au plus).
+
 ### v0.24.41 — fonctionnel
 
 - Admin › Backfills : un passage, une programmation ou un « marquer terminé » qui échoue

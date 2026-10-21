@@ -501,6 +501,19 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Contrôle les comptes : liste les documents `users/{uid}` qui
+  /// s'écartent du schéma de `firestore.rules`, avec la raison. Lecture
+  /// seule, sans appel de modèle. Les comptes à revoir sont dans `failures`.
+  Future<BackfillCounts> backfillUsersSchemaCheck() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillUsersSchemaCheckFn',
+      <String, dynamic>{'appVersion': kAppVersion},
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Allergènes : examine par lots de quarante les ingrédients du référentiel
   /// qui n'en ont pas (appels de modèle, poste `backfill_allergens`), puis
   /// recalcule `allergens` sur les recettes, sans appel. Réentrante, avec
