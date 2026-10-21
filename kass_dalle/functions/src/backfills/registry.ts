@@ -22,6 +22,8 @@
  * `recipe_title_keys` et `invitation_group_owner`.
  * Retirés en v0.24.37, une fois terminés en production : `illustration_folders`
  * et `illustration_folders_move`.
+ * Retiré en v0.24.44, sur demande, sans être terminé (ponctuel réutilisable) :
+ * `move_meals_to_group`.
  * Leurs documents `app_config/backfill_run_<clé>` restent en base ; plus rien
  * ne les lit. La liste complète, avec les versions : skill `backfill`,
  * « Backfills retirés ».
@@ -37,7 +39,6 @@ export const BACKFILL_KEYS = [
   "shopping_products",
   "refresh_sodium",
   "default_units",
-  "move_meals_to_group",
   "users_schema_check",
 ] as const;
 
@@ -117,15 +118,6 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     key: "default_units",
     kind: "ponctuel",
     title: "Semer les unités standard",
-    usesAi: false,
-    defaultSchedule: null,
-  },
-  // Paramétré (groupe, période) et réutilisable : jamais marqué terminé
-  // tout seul (`summarizeMoveMealsToGroup` rend un reste inconnu).
-  {
-    key: "move_meals_to_group",
-    kind: "ponctuel",
-    title: "Déplacer mes repas vers un groupe",
     usesAi: false,
     defaultSchedule: null,
   },

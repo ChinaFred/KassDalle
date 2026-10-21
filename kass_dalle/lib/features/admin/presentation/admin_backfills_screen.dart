@@ -10,12 +10,10 @@ import 'admin_server_message.dart';
 import 'backfill_failures_sheet.dart';
 import 'backfill_schedule_editor.dart';
 import 'billing_providers.dart';
-import 'move_meals_to_group_dialog.dart';
 import '../data/gcp_billing_repository.dart';
 import '../domain/backfill_failures.dart';
 import '../domain/backfill_registry.dart';
 import '../domain/backfill_status.dart';
-import '../domain/move_meals_request.dart';
 import '../domain/recipe_roles_backfill_report.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
@@ -142,7 +140,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         return 'Le sel et le sodium d\'un ingrédient étaient additionnés : '
             'tout ingrédient salé porte un sel deux fois trop élevé. Ce '
             'passage fait réestimer par l\'IA les ingrédients porteurs de '
-            'sodium.\n\n'
+            'sodium. Un ingrédient réparé est marqué et n\'est plus '
+            'redemandé à l\'IA. Un ingrédient en échec est redemandé au '
+            'passage suivant.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
       case BackfillKeys.defaultUnits:
@@ -153,13 +153,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'remplacée.\n\n'
             'Aucun appel d\'IA. Les quarante unités standard sont examinées '
             'en un passage. Relancer ne réécrit pas une unité déjà complète.';
-      case BackfillKeys.moveMealsToGroup:
-        return 'Vos repas de « Mon planning » sur cette période passent dans '
-            'le planning du groupe : ses membres les voient, et ils quittent '
-            'votre planning personnel. La recette, la date, les parts et les '
-            'événements déjà exportés vers l\'agenda ne changent pas. Un repas '
-            'déjà dans un groupe est laissé tel quel ; on peut relancer.\n\n'
-            'Aucun appel d\'IA.';
       case BackfillKeys.usersSchemaCheck:
         return 'Lit la fiche de chaque compte et liste celles qui posent un '
             'problème, avec la raison et son effet : un champ illisible '
@@ -203,11 +196,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
   /// Lance le passage de [def] et met en forme son compte rendu.
   /// [retryExcluded] : la case « Réessayer aussi les éléments exclus après 3 échecs ».
-  /// [move] porte les paramètres de « Déplacer mes repas vers un groupe ».
   Future<_PassOutcome> _runPass(
     BackfillDefinition def, {
     bool retryExcluded = false,
-    MoveMealsRequest? move,
   }) async {
     switch (def.key) {
       case BackfillKeys.nutrition:
@@ -244,8 +235,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           r,
           'Ingrédients : scannés=${r['scannedIngredients']}, '
           'repris=${r['refreshedIngredients']}, échecs=${r['failedIngredients']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+          '${(r['completed'] ?? 0) == 1 && (r['unresolvedFailures'] ?? 0) == 0 ? ' — terminé' : ' — incomplet'}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}'
+          '${(r['completed'] ?? 0) == 0 && (r['stoppedByDeadline'] ?? 0) == 0 ? ' (passage commencé en milieu de liste : relancer pour tout revérifier depuis le début)' : ''}',
         );
       case BackfillKeys.allergens:
         final r = await _repo.backfillAllergens(retryExcluded: retryExcluded);
@@ -295,21 +287,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'déjà à jour=${r['dejaAJour']}, en erreur=${r['echouees']}, '
           'restantes=${r['restantes']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.moveMealsToGroup:
-        if (move == null) throw StateError('Paramètres manquants : ${def.key}');
-        final r = await _repo.backfillMoveMealsToGroup(move);
-        return _fromCounts(
-          r,
-          'Repas : examinés=${r['examines']}, déplacés=${r['deplaces']}, '
-          'ignorés (déjà dans un groupe)=${r['ignores']}, '
-          'en erreur=${r['echoues']}, restants=${r['restants']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${_flag(r, 'groupeIndisponible', ' (groupe supprimé ou cédé pendant le passage : arrêté, rien de plus n\'a été déplacé)')}'
-          '${_flag(r, 'lectureTronquee', ' (plus de 2 000 repas sur la période : relancer)')}'
-          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
@@ -402,23 +379,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
   Future<void> _launch(BackfillDefinition def, BackfillRunState? state) async {
     if (_launching.contains(def.key)) return;
-    MoveMealsRequest? move;
-    if (def.key == BackfillKeys.moveMealsToGroup) {
-      // Paramétré : le groupe et la période d'abord, puis le récapitulatif.
-      move = await showMoveMealsToGroupDialog(context);
-      if (move == null || !mounted) return;
-    }
     final done = state?.isDone ?? false;
     final doneAt = state?.termineLe;
     var retryExcluded = false;
     final bool ok;
-    if (move != null) {
-      ok = await _confirm(
-        title: move.confirmQuestion,
-        content: _confirmText(def),
-        confirmLabel: 'Déplacer',
-      );
-    } else if (done) {
+    if (done) {
       ok = await _confirm(
         title: 'Relancer « ${def.title} » ?',
         content:
@@ -443,11 +408,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
     setState(() => _launching.add(def.key));
     try {
-      final outcome = await _runPass(
-        def,
-        retryExcluded: retryExcluded,
-        move: move,
-      );
+      final outcome = await _runPass(def, retryExcluded: retryExcluded);
       if (!mounted) return;
       ref.invalidate(referentialKpisProvider);
       setState(() {
@@ -681,7 +642,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       onSchedule: def.isRecurrent
           ? () => _editSchedule(def, schedules.scheduleFor(def.key))
           : null,
-      onSetDone: backfillOffersDoneMenu(def, states[def.key])
+      onSetDone: backfillOffersDoneMenu(def)
           ? (done) => _setDone(def, states[def.key], done)
           : null,
       onShowFailures: (failures) => showBackfillFailuresSheet(
@@ -919,6 +880,15 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // citait. Dernier passage : 18 recettes rangées, 0 restante, 92 anciens
   // fichiers conservés car encore cités.
   //
+  // « Déplacer mes repas vers un groupe » (`backfillMoveMealsToGroupFn`,
+  // v0.23.61) est retiré en v0.24.44 (21 octobre 2026), à la demande de
+  // l'administrateur, sans avoir été marqué terminé : paramétré par un groupe
+  // et une période, il faisait passer les repas de « Mon planning » de
+  // l'appelant dans le planning d'un groupe dont il est propriétaire, en
+  // posant `group_id` par l'Admin SDK. Dernier passage le 14/10/2026, lancé à
+  // la main : 7 repas déplacés du 2 au 29 octobre, 0 échec. Aucun parcours
+  // de l'application ne change le planning d'un repas existant.
+  //
   // Depuis v0.23.45, chaque backfill est classé ponctuel ou récurrent
   // (`backfill_registry.dart`, `functions/src/backfills/registry.ts`). Un
   // ponctuel terminé reste visible en bas de l'écran jusqu'à son retrait du
@@ -1072,7 +1042,6 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
     BackfillKeys.defaultUnits: Icons.straighten_outlined,
-    BackfillKeys.moveMealsToGroup: Icons.move_down_outlined,
     BackfillKeys.usersSchemaCheck: Icons.manage_accounts_outlined,
   };
 

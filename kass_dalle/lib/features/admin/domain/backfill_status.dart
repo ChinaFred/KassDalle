@@ -13,7 +13,6 @@ library;
 
 import 'backfill_failures.dart';
 import 'backfill_registry.dart';
-import 'move_meals_request.dart';
 
 // ── Heure de Paris ──────────────────────────────────────────────────────────
 
@@ -434,17 +433,6 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
           '${_count(n('completees'), 'complétée', 'complétées')}, '
           '${_count(n('dejaAJour'), 'déjà à jour', 'déjà à jour')}, '
           '${_count(n('echouees'), 'échec', 'échecs')}';
-    case BackfillKeys.moveMealsToGroup:
-      final from = _isoDayOrNull(report['du']);
-      final to = _isoDayOrNull(report['au']);
-      final period = from != null && to != null
-          ? ' ${formatShortPeriod(from, to)}'
-          : '';
-      final stopped = report['groupeIndisponible'] == true
-          ? ', arrêté : groupe supprimé ou cédé'
-          : '';
-      return '${_count(n('deplaces'), 'repas déplacé', 'repas déplacés')}$period, '
-          '${_count(n('echoues'), 'échec', 'échecs')}$stopped';
     case BackfillKeys.usersSchemaCheck:
       return '${_count(n('examines'), 'compte lu', 'comptes lus')}, '
           '${_count(n('nonConformes'), 'à revoir', 'à revoir')}, '
@@ -454,22 +442,9 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
   }
 }
 
-/// `AAAA-MM-JJ` lu en date locale, ou `null`.
-DateTime? _isoDayOrNull(Object? raw) {
-  if (raw is! String) return null;
-  final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(raw);
-  if (m == null) return null;
-  return DateTime(int.parse(m[1]!), int.parse(m[2]!), int.parse(m[3]!));
-}
-
 /// Le menu ⋮ d'une tuile propose-t-il « Marquer comme terminé » ou
-/// « Remettre à lancer » ? Un ponctuel, oui ; un ponctuel réutilisable
-/// seulement pour être remis à lancer, s'il a été marqué terminé.
-bool backfillOffersDoneMenu(BackfillDefinition def, BackfillRunState? state) {
-  if (def.isRecurrent) return false;
-  if (def.reusable) return state?.isDone ?? false;
-  return true;
-}
+/// « Remettre à lancer » ? Un ponctuel, oui ; un récurrent, non.
+bool backfillOffersDoneMenu(BackfillDefinition def) => !def.isRecurrent;
 
 /// La ligne d'état d'une tuile, selon la proposition validée.
 ///

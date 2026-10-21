@@ -20,6 +20,53 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.44 — fonctionnel
+
+Admin › Backfills ne propose plus « Déplacer mes repas vers un groupe », retiré à la demande
+de l'administrateur. Son dernier passage, le 14/10/2026, a déplacé 7 repas du 2 au 29 octobre
+dans le planning d'un groupe, sans échec. Les repas déjà déplacés restent dans le planning de
+leur groupe. Aucun écran de l'application ne change désormais le planning d'un repas existant.
+Le menu ⋮ de chaque ponctuel propose de nouveau « Marquer comme terminé ».
+
+« Reprendre le sel des ingrédients » ne redemande plus un ingrédient déjà réparé, et retente un
+ingrédient en échec au passage suivant. Il ne se dit terminé qu'après un parcours entier de
+l'ancien référentiel sans échec ; un passage repris en cours de route se dit « incomplet » et
+invite à relancer. Les ingrédients réparés avant cette version n'ont pas la marque de
+réparation : le prochain passage les réestime une fois de plus, et cette dépense est imputée
+au poste `backfill_refresh_sodium_per100g`.
+
+### v0.24.44 — technique
+
+Retrait du ponctuel réutilisable `move_meals_to_group` (v0.23.61), sans « Copier la liste » :
+il n'était pas terminé, son retrait est une décision de l'utilisateur. Supprimés : le callable
+`backfillMoveMealsToGroupFn` (`moveMealsToGroupBackfillCallable.ts`) et son export, ses tests
+(`moveMealsToGroup.test.ts`, `move_meals_to_group_test.dart`), le dialogue
+`move_meals_to_group_dialog.dart`, le modèle `MoveMealsRequest` (`move_meals_request.dart`,
+avec `ownedActiveGroups` et `formatShortPeriod`, que lui seul utilisait), la méthode
+`backfillMoveMealsToGroup` du repository, les entrées des deux registres et de la fixture
+`backfill_schedule.json`, son `case` dans `_runPass` et `_confirmText`, son résumé de tuile et
+son icône. Le champ `reusable` du registre client, propre à ce backfill, part aussi :
+`backfillOffersDoneMenu` ne prend plus que la définition et répond « oui » pour tout ponctuel.
+La clé rejoint les listes de clés retirées des tests. Le document
+`app_config/backfill_run_move_meals_to_group` reste en base, plus lu. Aucune règle Firestore ne
+change : aucune n'existait pour ce backfill, qui écrivait par l'Admin SDK ; l'index `uid` +
+`planned_at` de `planned_meals` reste, `readServedHistory` s'en sert. Aucun poste de coût.
+
+Réparation du sel (`refresh_sodium`, mode `refreshSodium` de `runEnrichReferentialsPass`,
+`billingCallable.ts`). Avant : la sélection était `carriesSodium(per100g)`, vraie aussi pour
+un ingrédient déjà réparé ; le curseur avançait sans mémoire d'échec, donc un échec n'était
+retenté qu'au tour suivant ; un passage repris à mi-chemin qui atteignait la fin pouvait marquer
+le backfill terminé malgré les échecs des passages précédents ; une relance après la fin
+redemandait tout. Maintenant : nouveau champ `nutrition_ingredients.sodium_repaired_at`
+(horodatage serveur), posé dans le même `update` que le profil réparé
+(`enrichedIngredientPayload`) ; cible = sodium présent et marque absente
+(`isSodiumRepairTarget`) ; en mode sel, un échec compte dans `unresolvedFailures`, et le
+passage n'est complet que si son parcours a commencé au début de la collection
+(`enrichPassCompleted`). Le mode `enrich_referentials` ne change pas. Les règles Firestore ne
+changent pas : le client n'écrit sur `nutrition_ingredients` que le produit acheté et les
+allergènes. Nouveau test `refreshSodium.test.ts`. Le compte rendu de la bannière dit
+« terminé » seulement sans échec.
+
 ### v0.24.43 — fonctionnel
 
 - Planning : sous une consigne écrite que Kass'Dalle ne sait pas vérifier, la mention
