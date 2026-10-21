@@ -97,6 +97,20 @@ export const EPUB_INVALID_MESSAGE =
   "Ce fichier EPUB est incomplet et ne peut pas être lu. " +
   "Exportez-le de nouveau depuis le logiciel qui l'a créé, ou importez le livre en PDF.";
 
+/**
+ * Livre sans texte : ses pages sont des images. Un PDF se lit page par page
+ * comme une photo (les tranches PDF partent au modèle telles quelles) ; le
+ * message propose donc ce chemin.
+ */
+export const EPUB_NO_TEXT_MESSAGE =
+  "Ce fichier EPUB ne contient pas de texte : ses pages sont des images. " +
+  "Convertissez-le en PDF, ou importez le livre en PDF si vous l'avez : les pages du PDF seront lues comme des photos.";
+
+/** Document Word sans texte (images seules). Même chemin que l'EPUB : le PDF. */
+export const DOCX_NO_TEXT_MESSAGE =
+  "Ce document Word ne contient pas de texte, seulement des images. " +
+  "Enregistrez-le en PDF depuis Word, puis importez le PDF : les pages du PDF seront lues comme des photos.";
+
 /** Le message d'une erreur pour les journaux : message, puis détail technique s'il existe. */
 export function technicalErrorText(err: unknown): string {
   if (err instanceof BookFileError && err.detail) return `${err.message} (${err.detail})`;
@@ -758,11 +772,7 @@ function textBook(
 ): OpenedBook {
   const characters = paragraphs.reduce((sum, p) => sum + p.length + 1, 0);
   if (characters === 0) {
-    throw new BookFileError(
-      kind === "epub"
-        ? "Ce livre numérique ne contient aucun texte lisible : ses pages sont sans doute des images."
-        : "Ce document ne contient aucun texte lisible.",
-    );
+    throw new BookFileError(kind === "epub" ? EPUB_NO_TEXT_MESSAGE : DOCX_NO_TEXT_MESSAGE);
   }
   const windows = planTextWindows(paragraphs);
   checkWindowCount(windows.length);
