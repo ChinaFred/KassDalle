@@ -51,6 +51,19 @@ L'authentification est exclusivement basée sur **Google Sign-In** (Firebase Aut
   un délai dépassé (30 s) son message. L'écran défile quand la hauteur manque (téléphone en
   paysage, grande police). Le numéro de version, en bas de l'écran de connexion et de la salle
   d'attente, s'écrit en petit, en couleur secondaire du thème.
+- **Confidentialité et conditions d'utilisation.** Au-dessus du numéro de version, l'écran de
+  connexion et la salle d'attente portent deux liens discrets, « Confidentialité » et
+  « Conditions d'utilisation ». Sur le web, ils ouvrent la page dans un nouvel onglet ; sur
+  Android et Windows, dans le navigateur. Si le navigateur ne s'ouvre pas : « Page non ouverte.
+  Ouvrez <adresse> dans votre navigateur. ». Les deux pages sont publiques et se lisent sans
+  compte et sans ouvrir l'application :
+  `https://kassdale-6d948.web.app/confidentialite.html` et
+  `https://kassdale-6d948.web.app/conditions.html`. Elles servent aussi à l'écran de
+  consentement OAuth de Google.
+- **Page d'accueil publique.** `https://kassdale-6d948.web.app/accueil.html` présente
+  l'application sans connexion : ce qu'elle fait, ses plateformes, la connexion Google et les
+  accès Agenda et Tasks qu'elle peut demander. Elle renvoie vers les deux pages ci-dessus et
+  porte un bouton « Ouvrir Kass'Dalle ». C'est la page d'accueil déclarée à Google.
 - **Messages d'erreur.** Un échec s'affiche en deux phrases : ce qui n'a pas eu lieu, puis la
   cause lisible (« Photo non enregistrée. Connexion perdue. »). Le texte technique de l'erreur
   part dans les rapports d'erreurs. Sur une page d'erreur, le bouton « Détails », qui montre ce

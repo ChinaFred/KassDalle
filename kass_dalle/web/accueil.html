@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Kass'Dalle, livre de cuisine numérique familial et privé.">
+  <meta name="color-scheme" content="light dark">
+  <title>Kass'Dalle — livre de cuisine familial</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <!--
+    Page d'accueil publique, déclarée sur l'écran de consentement OAuth de
+    Google : elle présente l'application sans connexion. Statique, servie telle
+    quelle par Firebase Hosting, sans script ni ressource externe (voir la CSP
+    de firebase.json). Mêmes couleurs que confidentialite.html.
+  -->
+  <style>
+    :root {
+      --bg: #FAFAF5;
+      --fg: #22261A;
+      --muted: #5C6450;
+      --accent: #4E5B27;
+      --rule: #DADDCB;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16180F;
+        --fg: #E6E8DC;
+        --muted: #A9AE9C;
+        --accent: #A7BC64;
+        --rule: #34392A;
+      }
+    }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+    main { max-width: 46rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    nav { font-size: .9rem; margin-bottom: 1.5rem; }
+    nav a + a::before { content: "·"; color: var(--muted); margin: 0 .5rem; }
+    nav a, footer a { display: inline-block; padding: .75rem 0; }
+    h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 .25rem; color: var(--accent); }
+    h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+    .updated { color: var(--muted); font-size: .9rem; margin-top: 0; }
+    a { color: var(--accent); overflow-wrap: anywhere; }
+    ul { padding-left: 1.25rem; }
+    li { margin: .25rem 0; }
+    footer { margin-top: 3rem; font-size: .9rem; color: var(--muted); }
+    .lead { font-size: 1.1rem; }
+    .open {
+      display: inline-block;
+      min-height: 44px;
+      box-sizing: border-box;
+      margin: 1rem 0 .5rem;
+      padding: .7rem 1.4rem;
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--bg);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .open:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+  </style>
+</head>
+<body>
+<main>
+  <nav>
+    <a href="/">Ouvrir Kass'Dalle</a>
+    <a href="/confidentialite.html">Règles de confidentialité</a>
+    <a href="/conditions.html">Conditions d'utilisation</a>
+  </nav>
+
+  <h1>Kass'Dalle</h1>
+  <p class="updated">Dernière mise à jour : 22 octobre 2026</p>
+  <p class="lead">Un livre de cuisine numérique pour la famille.</p>
+  <p>Kass'Dalle rassemble les recettes de la famille : celles des livres de cuisine, des
+  carnets et des sites web. L'application est privée. On y entre sur invitation, ou après
+  l'approbation d'un administrateur. Elle est gratuite et sans publicité.</p>
+  <p><a class="open" href="/">Ouvrir Kass'Dalle</a></p>
+
+  <h2>Ce que fait l'application</h2>
+  <ul>
+    <li>Importer une recette depuis une photo de page, depuis un lien vers un site, ou depuis
+    un livre entier (PDF, EPUB). L'intelligence artificielle lit la page et en fait une fiche
+    de recette.</li>
+    <li>Ranger les recettes dans des livres, et les partager avec les membres de son groupe
+    familial. Un livre peut rester privé.</li>
+    <li>Planifier les repas de la semaine, seul ou pour un groupe.</li>
+    <li>Préparer la liste de courses à partir des repas et des recettes.</li>
+    <li>Afficher la nutrition et les allergènes d'une recette, à titre indicatif.</li>
+  </ul>
+
+  <h2>Où l'utiliser</h2>
+  <p>Dans un navigateur web, sur Android et sur Windows.</p>
+
+  <h2>Connexion avec un compte Google</h2>
+  <p>La connexion se fait avec un compte Google. Il sert à identifier chaque membre de la
+  famille : son nom, ses recettes, son rôle. L'application ne crée pas de mot de passe.</p>
+
+  <h2>Accès demandés à votre compte Google</h2>
+  <p>En plus de la connexion, deux accès peuvent être demandés. Google vous les demande
+  seulement quand vous utilisez la fonction concernée. Vous pouvez les refuser : le reste de
+  l'application fonctionne.</p>
+  <ul>
+    <li><strong>Google Agenda</strong> : créer les événements des repas planifiés
+    (« Préparer : <em>nom du plat</em> », avec l'heure, un rappel et un lien vers la recette),
+    et voir la liste de vos agendas, pour que vous choisissiez celui où ajouter les repas.
+    Google présente le premier accès comme « voir et modifier les événements de tous vos
+    agendas » : Kass'Dalle s'en sert seulement pour créer des événements. Elle ne lit, ne
+    modifie ni ne supprime ceux qui existent.</li>
+    <li><strong>Google Tasks</strong> : envoyer la liste de courses dans Google Tasks. Kass'Dalle
+    crée une liste, avec un rayon par tâche et un article par sous-tâche. Elle ne lit pas vos
+    listes ni vos tâches existantes.</li>
+  </ul>
+  <p>Vous pouvez retirer ces accès à tout moment sur
+  <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+  Le détail des données traitées figure dans les
+  <a href="/confidentialite.html">règles de confidentialité</a>.</p>
+
+  <h2>Contact</h2>
+  <p>Kass'Dalle est géré par un membre de la famille, son administrateur. Pour toute
+  question :
+  <a href="mailto:china.fred.75@gmail.com">china.fred.75@gmail.com</a>.</p>
+
+  <footer>
+    <a href="/confidentialite.html">Règles de confidentialité</a> ·
+    <a href="/conditions.html">Conditions d'utilisation</a> ·
+    <a href="/">Ouvrir Kass'Dalle</a>
+  </footer>
+</main>
+</body>
+</html>

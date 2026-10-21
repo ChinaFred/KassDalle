@@ -6846,6 +6846,72 @@ Exception, décidée par l'utilisateur : la photo de profil (`photo_url`, `googl
 Google) reste affichée sans filtre, dans le menu du compte (`app_shell.dart`), l'écran Compte
 (`account_screen.dart`) et la liste des utilisateurs (`admin_screen.dart`).
 
+### Pages publiques : accueil, confidentialité et conditions d'utilisation
+
+Trois pages HTML statiques, en français, vivent dans `kass_dalle/web/` :
+
+| Fichier | Adresse publique |
+|---|---|
+| `web/accueil.html` | `https://kassdale-6d948.web.app/accueil.html` |
+| `web/confidentialite.html` | `https://kassdale-6d948.web.app/confidentialite.html` |
+| `web/conditions.html` | `https://kassdale-6d948.web.app/conditions.html` |
+
+**La page d'accueil publique.** `accueil.html` est la page d'accueil déclarée sur l'écran de
+consentement OAuth. Google a refusé une première validation : la page déclarée,
+`https://kassdale-6d948.web.app/`, ouvre l'écran de connexion Flutter, et Google exige que la
+page d'accueil présente l'application sans connexion. `accueil.html` dit ce qu'est
+Kass'Dalle, ses fonctions, ses plateformes, pourquoi la connexion passe par Google, et les
+deux accès Google demandés (Agenda, Tasks) avec leur usage. Elle renvoie vers les deux autres
+pages et vers l'application (`/`). `/` reste l'application : la changer en vitrine ajouterait
+un écran à chaque ouverture.
+
+`flutter build web` les copie telles quelles dans `build/web`. Firebase Hosting sert un fichier
+qui existe avant d'appliquer la réécriture `** → /index.html` : les trois adresses rendent la
+page, pas l'application. Elles n'ont aucun en-tête de cache propre dans `firebase.json`.
+
+**Pourquoi pas une route `go_router`.** L'écran de consentement OAuth de Google exige trois
+adresses publiques (page d'accueil, règles de confidentialité, conditions d'utilisation). La
+validation vérifie que la page d'accueil se lit sans connexion et renvoie vers les règles de
+confidentialité. Une route
+Flutter ne s'affiche qu'après le téléchargement et l'exécution de `main.dart.js`, sur un
+canevas : un robot qui lit le HTML sans exécuter le script, ou un lecteur sans JavaScript, ne
+verrait rien. Une page statique se lit partout.
+
+**Contraintes des pages.** Cibles de lien de 44 px au moins, longues adresses coupées
+(`overflow-wrap: anywhere`). Aucun script : la CSP du site (`Content-Security-Policy-Report-Only`,
+ci-dessus) n'admet que les scripts d'`index.html` listés par leur empreinte. Un seul `<style>`
+en ligne (`style-src 'unsafe-inline'`), aucune ressource externe, polices du système. Mode
+sombre par `prefers-color-scheme`, mise en page lisible sur téléphone. Chaque page renvoie vers
+les deux autres et vers l'application (`/`), dans sa navigation et son pied de page. Responsable : « un membre de la famille, son administrateur » ;
+contact : l'adresse du compte fondateur. La date de dernière mise à jour s'écrit en tête de
+chaque page, sous le titre, et change à chaque modification du texte.
+
+**Les liens qui y mènent.**
+
+- Dans l'application, l'écran de connexion (`/login`) et la salle d'attente (`/pending`)
+  portent en pied de page « Confidentialité » et « Conditions d'utilisation », au-dessus du
+  numéro de version (`AuthScreenFooter`, `features/auth/presentation/auth_screen_footer.dart`).
+  Les adresses sont `kPrivacyPolicyUrl` et `kTermsOfUseUrl` (`core/app_links.dart`). Sur le
+  web, le widget `Link` d'`url_launcher` pose un vrai `<a href>` qui ouvre un nouvel onglet ;
+  ailleurs, `launchUrl` ouvre le navigateur du système, et un échec est rapporté
+  (`auth.legalLink`) puis annoncé : « Page non ouverte. Ouvrez <adresse> dans votre
+  navigateur. ». Le pied de page est sous le contenu, plus en surimpression : le contenu qui
+  défile ne passe pas dessous.
+- Dans `web/index.html`, un bloc `<noscript>` affiche les liens vers les trois pages
+  (accueil, confidentialité, conditions) par-dessus l'écran d'attente quand JavaScript est coupé. Aucun script n'est ajouté : les empreintes de la CSP
+  ne changent pas.
+
+**Le contenu suit le code.** Les règles de confidentialité décrivent les données réellement
+traitées : compte Google, Google Agenda et Google Tasks (jeton en mémoire seulement,
+jamais enregistré ni envoyé au serveur, utilisé 50 min au plus, disparu à la déconnexion ou à
+la fermeture de l'application ; lié au compte Firebase qui l'a obtenu et vidé
+par `AuthRepository.signOut` — `GoogleAccessTokenCache`, `core/services/` — pour qu'un second
+compte connecté sur le même appareil ne s'en serve pas), contenus et leur visibilité, appels d'IA et leurs
+fournisseurs, tickets publiés sur un dépôt GitHub public, invitations par Gmail,
+notifications, rapports d'erreurs, journaux, hébergement, durées de conservation. Un
+changement qui ajoute une donnée, un fournisseur, une autorisation Google ou un destinataire
+met la page à jour dans le même commit, avec sa date.
+
 ### Build et déploiement
 
 Le chemin normal est un push sur `master`, depuis le PC comme depuis une session cloud :
@@ -7691,6 +7757,9 @@ l'authentification.
 |---|---|---|
 | `/login` | `LoginScreen` | tout le monde, y compris déconnecté ; `?revoked=true` affiche le motif, `?next=` porte l'adresse à rouvrir après la connexion (13.2) |
 | `/pending` | `PendingApprovalScreen` | compte authentifié mais pas encore nommé |
+
+`/accueil.html`, `/confidentialite.html` et `/conditions.html` ne sont pas des routes : ce sont des fichiers
+statiques servis par Hosting (§11, « Pages publiques »). Le routeur ne les voit jamais.
 
 **Dans la coquille `AppShell`.** La colonne « droit effectif » dit qui peut réellement
 faire quelque chose de l'écran — droit tenu par les règles Firestore, les règles Storage ou
