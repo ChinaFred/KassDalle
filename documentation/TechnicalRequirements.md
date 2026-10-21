@@ -3283,6 +3283,9 @@ jour), le surcoût se compte en centimes par an au tarif Firestore.
 - Le `get` d'un fichier des dossiers publiés ne lit que le jeton : ces fichiers restent
   joignables par leur URL de téléchargement, que la révocation n'invalide pas, et la lecture
   du document n'y ajouterait qu'un coût.
+- Un compte révoqué dont le jeton est encore valide relit ses **propres** fichiers de
+  `quarantine/` (`isOwner(uid) || isAdmin()`) pendant une heure au plus : ce sont ses
+  données, et la révocation coupe déjà tout dépôt.
 
 **Prérequis IAM, hors dépôt.** Une règle Storage qui appelle `firestore.get` exige que l'agent
 de service Storage, `service-<numéro du projet>@gcp-sa-firebasestorage.iam.gserviceaccount.com`,
