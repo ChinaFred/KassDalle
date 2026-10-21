@@ -20,6 +20,10 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.45 — fonctionnel
+
+- Retouche d'image (couverture d'un livre, import de page, illustrations) : les coins du cadre se posent plus facilement au doigt (#211). Le coin ne saute plus sous le doigt : l'écart entre le doigt et le coin est conservé. L'image garde une marge de 24 px autour d'elle, ce qui permet de poser un coin sur le bord sans toucher la zone du geste « retour » d'Android. Un toucher dans l'image saisit le coin le plus proche, sans plafond de 60 px, tant que la vue n'est pas zoomée. Les poignées sont plus grandes. Aucune dépendance ajoutée.
+
 ### v0.24.44 — fonctionnel
 
 Admin › Backfills ne propose plus « Déplacer mes repas vers un groupe », retiré à la demande

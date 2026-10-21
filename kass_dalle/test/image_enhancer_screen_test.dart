@@ -174,4 +174,103 @@ void main() {
     expect(results, [null]);
     expect(reporter.features, contains('imageEnhancerScreen.loadImage'));
   });
+
+  group('cadre de recadrage au toucher (#211)', () {
+    Future<void> pumpCrop(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(400, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ImageEnhancerScreen(
+            imageBytes: photo,
+            mode: EnhancerMode.crop,
+            onResult: (_) async {},
+            errorReporter: reporter,
+          ),
+        ),
+      );
+      await settleReal(tester);
+      await tester.tap(find.text('Recadrer'));
+      await tester.pump();
+    }
+
+    Offset origin(WidgetTester tester) => tester.getTopLeft(
+      find.byWidgetPredicate(
+        (w) => w is CustomPaint && w.painter is QuadOverlayPainter,
+      ),
+    );
+
+    QuadOverlayPainter painter(WidgetTester tester) {
+      final paints = tester.widgetList<CustomPaint>(find.byType(CustomPaint));
+      return paints.map((p) => p.painter).whereType<QuadOverlayPainter>().first;
+    }
+
+    testWidgets('marge autour de l\'image et coin qui ne saute pas', (
+      tester,
+    ) async {
+      await pumpCrop(tester);
+      final q = painter(tester);
+      expect(q.fitted.left, greaterThanOrEqualTo(24));
+      expect(q.fitted.right, lessThanOrEqualTo(400 - 24));
+
+      final o = origin(tester);
+      final corner =
+          o +
+          Offset(
+            q.fitted.left + q.corners[0].dx * q.fitted.width,
+            q.fitted.top + q.corners[0].dy * q.fitted.height,
+          );
+      // Le doigt saisit à 20 px du coin, puis bouge de 10 px : le coin suit
+      // le déplacement sans passer sous le doigt.
+      final gesture = await tester.startGesture(corner + const Offset(20, 0));
+      await gesture.moveBy(const Offset(40, 0));
+      await gesture.moveBy(const Offset(10, 0));
+      await tester.pump();
+      final after = painter(tester);
+      final moved = Offset(
+        after.fitted.left + after.corners[0].dx * after.fitted.width,
+        after.fitted.top + after.corners[0].dy * after.fitted.height,
+      );
+      // Sans écart conservé, le coin sauterait sous le doigt (+70 px).
+      expect(moved.dx - corner.dx, lessThan(30));
+      await gesture.up();
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('un coin se pose sur le bord de l\'image', (tester) async {
+      await pumpCrop(tester);
+      final q = painter(tester);
+      final o = origin(tester);
+      final corner =
+          o +
+          Offset(
+            q.fitted.left + q.corners[0].dx * q.fitted.width,
+            q.fitted.top + q.corners[0].dy * q.fitted.height,
+          );
+      final gesture = await tester.startGesture(corner);
+      await gesture.moveTo(o + const Offset(40, 40));
+      await gesture.moveTo(o + const Offset(2, 2));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump(const Duration(seconds: 1));
+      expect(painter(tester).corners[0], const Offset(0, 0));
+    });
+
+    testWidgets('toucher loin de tout coin : le plus proche est saisi', (
+      tester,
+    ) async {
+      await pumpCrop(tester);
+      final q = painter(tester);
+      final o = origin(tester);
+      final centre = o + q.fitted.center;
+      final gesture = await tester.startGesture(centre);
+      await gesture.moveBy(const Offset(-30, -30));
+      await gesture.moveBy(const Offset(-10, -10));
+      await tester.pump();
+      expect(painter(tester).corners[0], isNot(q.corners[0]));
+      await gesture.up();
+      await tester.pump(const Duration(seconds: 1));
+    });
+  });
 }
