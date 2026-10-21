@@ -16,6 +16,7 @@ import sharp from "sharp";
 
 import {
   BookFileError,
+  EPUB_INVALID_MESSAGE,
   buildPdfChunks,
   detectBookFileKind,
   htmlToParagraphs,
@@ -25,6 +26,7 @@ import {
   planTextWindows,
   planWindows,
   readEpub,
+  technicalErrorText,
   textWindowContent,
 } from "../books/bookFile";
 import { BOOK_WINDOW_CONTEXT_MARKER } from "../gemini/promptsExtraction";
@@ -225,15 +227,37 @@ describe("readEpub", () => {
   test("une archive qui n'est pas un EPUB lève une erreur lisible", async () => {
     const zip = new JSZip();
     zip.file("autre.txt", "rien");
+    // Le membre lit un texte simple ; le nom du fichier manquant reste dans
+    // `detail`, pour les journaux.
     await assert.rejects(
       async () => readEpub(await zip.generateAsync({ type: "nodebuffer" })),
-      (err: unknown) => err instanceof BookFileError && /container\.xml/.test(err.message),
+      (err: unknown) =>
+        err instanceof BookFileError &&
+        err.message === EPUB_INVALID_MESSAGE &&
+        err.detail === "META-INF/container.xml manquant" &&
+        technicalErrorText(err).includes("container.xml"),
     );
     await assert.rejects(
       () => readEpub(Buffer.from("ceci n'est pas une archive")),
       (err: unknown) => err instanceof BookFileError,
     );
   });
+});
+
+test("un EPUB sans fichier OPF lève le même message, détail à part", async () => {
+  const zip = new JSZip();
+  zip.file(
+    "META-INF/container.xml",
+    '<container><rootfiles><rootfile full-path="OEBPS/absent.opf"/></rootfiles></container>',
+  );
+  await assert.rejects(
+    async () => readEpub(await zip.generateAsync({ type: "nodebuffer" })),
+    (err: unknown) =>
+      err instanceof BookFileError &&
+      err.message === EPUB_INVALID_MESSAGE &&
+      err.detail === "fichier OPF introuvable : OEBPS/absent.opf" &&
+      !/OPF|container|xml/i.test(err.message),
+  );
 });
 
 describe("openBookFile — EPUB", () => {

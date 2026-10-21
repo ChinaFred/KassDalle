@@ -1238,7 +1238,7 @@ Jobs de traitement asynchrone pour scans recettes/livres et imports par lien.
 | `pending_items` | `List<int>?` | **Posé par le serveur** sur un job `duplicate` : la position, dans la transcription, des recettes en attente. La reprise ne traite qu'elles. Supprimé quand la reprise aboutit. Le client l'ignore |
 | `duplicate_override` | `Boolean?` | **Écrit par le client** pour « Ce n'est pas un doublon » (`ScanUploadNotifier.resumeDuplicateJob`), dans une seule écriture : `{ status: "queued", duplicate_override: true, error_message: null, current_step: null, updated_at }`. Les règles n'admettent cette écriture que depuis `status == "duplicate"`, par le propriétaire éditeur ou administrateur, et sur ces seules clés (`isDuplicateResume`, §4). `recipeProcessor` saute alors la comparaison et ne traite que `pending_items`. Reste sur le job ensuite ; une relance après une erreur ne refait donc pas la comparaison. Sur le modèle de `forced_duplicate` |
 
-**`bookDocumentScan` ne transcrit rien.** `recipeProcessor` l'aiguille sur `runBookImport` (`pipeline/bookImport.ts`), qui ouvre le fichier (`books/bookFile.ts`), crée le livre s'il n'y en a pas (`book_id` absent → document `books/book_import_{jobId}`, couverture dans `scans/{uid}/book_import_{jobId}/`), puis découpe le contenu en tranches et crée **un job `recipeScan` par tranche** (`processing_jobs/book_import_{jobId}_{NNNN}`, fichier dans `scans/{uid}/book_import_{jobId}/{NNNN}.pdf|txt`). Ces jobs suivent le pipeline d'une page scannée et partagent le `scan_id` du parent : le coût du livre se lit sur un seul groupe. L'opération est idempotente — livre et enfants ont des identifiants déterminés par le parent, un enfant existant n'est jamais recréé (`create()` refusé, code gRPC 6) — et un livre neuf qui n'a aucun enfant est supprimé si l'import échoue. Un `BookFileError` (PDF chiffré, EPUB sans texte, plus de 400 tranches) part directement en dead letter sans nouvelle tentative, comme un plafond de dépense.
+**`bookDocumentScan` ne transcrit rien.** `recipeProcessor` l'aiguille sur `runBookImport` (`pipeline/bookImport.ts`), qui ouvre le fichier (`books/bookFile.ts`), crée le livre s'il n'y en a pas (`book_id` absent → document `books/book_import_{jobId}`, couverture dans `scans/{uid}/book_import_{jobId}/`), puis découpe le contenu en tranches et crée **un job `recipeScan` par tranche** (`processing_jobs/book_import_{jobId}_{NNNN}`, fichier dans `scans/{uid}/book_import_{jobId}/{NNNN}.pdf|txt`). Ces jobs suivent le pipeline d'une page scannée et partagent le `scan_id` du parent : le coût du livre se lit sur un seul groupe. L'opération est idempotente — livre et enfants ont des identifiants déterminés par le parent, un enfant existant n'est jamais recréé (`create()` refusé, code gRPC 6) — et un livre neuf qui n'a aucun enfant est supprimé si l'import échoue. Un `BookFileError` (PDF chiffré, EPUB sans texte ou incomplet, plus de 400 tranches) part directement en dead letter sans nouvelle tentative, comme un plafond de dépense. Son message s'adresse au membre ; le détail technique (texte de la bibliothèque, `META-INF/container.xml` manquant, fichier OPF introuvable) va dans `BookFileError.detail`, lu par `technicalErrorText` pour les journaux. Un EPUB sans `container.xml` ou sans fichier OPF reçoit `EPUB_INVALID_MESSAGE` : « Ce fichier n'est pas un livre EPUB complet : il ne peut pas être lu. Exportez-le de nouveau depuis le logiciel qui l'a créé, ou importez le livre en PDF. »
 
 **Découpage** (`books/bookFile.ts`). PDF : `pdf-lib` (chargé à la demande), fenêtres de 3 pages + 1 page de contexte (`planWindows`) ; une tranche de plus de 12 Mo est coupée en deux, chaque moitié gardant son contexte, parce que le fichier part en base64 dans une requête plafonnée à 20 Mo chez Gemini. EPUB et Word : texte extrait par du code (OPF + XHTML pour l'EPUB, `docxToPlainText` pour Word), fenêtres d'environ 6 000 caractères + 1 500 de contexte, un paragraphe n'étant jamais coupé (`planTextWindows`). La ligne `BOOK_WINDOW_CONTEXT_MARKER` sépare le texte à transcrire du contexte. Mesuré sur un PDF synthétique de 190 Mo et 300 pages : ouverture 0,14 s, découpage en 100 tranches 0,3 s, pic de mémoire 462 Mo (`recipeProcessor` passe à 2 GiB).
 
@@ -5955,7 +5955,21 @@ journalisée avec son contexte (`callableErrorAlreadyLogged`) : une `GeminiError
 `GeminiQuotaExceededError` levée par `gemini/client.ts` après « Appel IA échoué » porte
 `logged`, comme celle relancée par `enhancer.ts` et `imageGenerator.ts` après leur propre
 `logError` ; `scanAndPromoteUploadFn` passe `{ alreadyLogged: true }` après sa ligne « Scan de
-securite en echec technique ». `analyzeBookFileFn` rend de même
+securite en echec technique », comme `computeRecipeNutritionFn` et
+`normalizeRecipeReferentialsFn` (v0.24.38) après leur ligne « …: ERREUR » qui porte
+`recipeId`, uid et identifiant de corrélation. Ces deux callables relançaient l'erreur
+brute, que le SDK rend en `internal` sans message ni `details` : un refus du plafond y
+aurait perdu son message pour le membre. Leurs
+appels d'IA (friture, poids à la pièce et par couple, ingrédients non consommés) sont
+best-effort et rendent un résultat dégradé journalisé : un `BudgetExceededError` n'en sort
+pas aujourd'hui ; la traduction le couvre si un appel cesse de l'être. Côté client, les
+boutons « Calculer » et « Recalculer » (`nutrition_details_section.dart`) attrapent
+l'échec, le remontent (`reportUnexpectedError`, feature
+`nutritionDetailsSection.recompute`) et l'affichent par `showFailureSnackBar`
+(« Nutrition non calculée. … »). La normalisation à l'enregistrement
+(`_normalizeReferentials`, `recipe_repository.dart`) reste best-effort : son échec est
+remonté (`normalize_recipe_referentials`) et l'enregistrement continue avec la liste
+d'origine, sans message. `analyzeBookFileFn` rend de même
 `internal` « Analyse du livre impossible. », le texte brut restant dans son `logError`.
 
 `details.scope` (`AI_BUDGET_SCOPE`) distingue le plafond du compte du plafond d'une

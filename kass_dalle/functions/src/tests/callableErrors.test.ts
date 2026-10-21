@@ -8,6 +8,7 @@
 
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { HttpsError } from "firebase-functions/v2/https";
 
 import { BudgetExceededError, budgetDenial, DEFAULT_AI_BUDGET_POLICY } from "../ai/budget";
 import {
@@ -111,6 +112,37 @@ describe("callableErrorAlreadyLogged — une ligne de journal par échec", () =>
     assert.equal(err.message, PROVIDER_ERROR_CALLABLE_MESSAGE);
     const other = await toHttpsError(new Error("x"), { alreadyLogged: true });
     assert.equal(other.message, UNEXPECTED_CALLABLE_MESSAGE);
+  });
+});
+
+// `computeRecipeNutritionFn` et `normalizeRecipeReferentialsFn` journalisent
+// avec leur contexte, puis appellent `toHttpsError(err, { alreadyLogged: true })`.
+describe("toHttpsError — callables de nutrition (alreadyLogged)", () => {
+  test("plafond d'IA : message et details gardés", async () => {
+    const denial = denialFor("cost");
+    const err = await toHttpsError(new BudgetExceededError(denial), { alreadyLogged: true });
+    assert.equal(err.code, "resource-exhausted");
+    assert.equal(err.message, denial.message);
+    assert.deepEqual(err.details, { reason: "cost", scope: AI_BUDGET_SCOPE });
+  });
+
+  test("HttpsError volontaires rendues telles quelles", async () => {
+    for (const original of [
+      new HttpsError("not-found", "Recette introuvable."),
+      new HttpsError("invalid-argument", "recipeId est requis."),
+      new HttpsError("permission-denied", "Réservé au créateur."),
+    ]) {
+      const err = await toHttpsError(original, { alreadyLogged: true });
+      assert.equal(err, original);
+    }
+  });
+
+  test("erreur Firestore brute : texte fixe, sans le texte d'origine", async () => {
+    const err = await toHttpsError(new Error("13 INTERNAL: Received RST_STREAM"), {
+      alreadyLogged: true,
+    });
+    assert.equal(err.code, "internal");
+    assert.equal(err.message, UNEXPECTED_CALLABLE_MESSAGE);
   });
 });
 

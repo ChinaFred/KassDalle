@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/services/nutrition_units_reference.dart';
+import '../../../../core/services/error_reporting.dart';
+import '../../../../core/utils/context_extensions.dart';
+import '../../../admin/presentation/admin_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../domain/nutrition_contributions.dart';
 import '../../domain/recipe_advice_access.dart';
@@ -377,6 +380,38 @@ class _NutritionDetailsSectionState
   bool _showContributionTable = true;
   bool _showIngredientDetails = true;
 
+  /// Vrai pendant un calcul lancé depuis cette section : les boutons
+  /// « Calculer » et « Recalculer » sont désactivés, pour qu'un double appui
+  /// ne lance pas deux appels d'IA.
+  bool _recomputing = false;
+
+  /// Lance [NutritionDetailsSection.onRecompute] et dit l'échec au membre.
+  ///
+  /// Le bouton appelait le callback sans attendre son erreur : un refus du
+  /// plafond d'IA du compte ou une panne du calcul ne s'affichait nulle part.
+  /// Le message suit `failureMessage` : le texte du serveur pour le plafond
+  /// d'IA, le titre de `describeError` sinon. L'erreur part au rapport
+  /// d'erreurs.
+  Future<void> _recompute() async {
+    final onRecompute = widget.onRecompute;
+    if (onRecompute == null || _recomputing) return;
+    setState(() => _recomputing = true);
+    try {
+      await onRecompute();
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        service: ref.read(errorReportServiceProvider),
+        feature: 'nutritionDetailsSection.recompute',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'recipeId': widget.recipe.id},
+      );
+      if (mounted) context.showFailureSnackBar('Nutrition non calculée', e);
+    } finally {
+      if (mounted) setState(() => _recomputing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final nutritionAsync = ref.watch(
@@ -403,7 +438,7 @@ class _NutritionDetailsSectionState
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
-                onPressed: onRecompute,
+                onPressed: _recomputing ? null : () => _recompute(),
                 icon: const Icon(Icons.calculate_outlined),
                 label: const Text('Calculer'),
               ),
@@ -748,7 +783,7 @@ class _NutritionDetailsSectionState
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton.icon(
-                        onPressed: onRecompute,
+                        onPressed: _recomputing ? null : () => _recompute(),
                         icon: const Icon(Icons.refresh),
                         label: const Text('Recalculer'),
                       ),
