@@ -20,6 +20,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-21
 
+### v0.24.39 — fonctionnel
+
+- Un livre importé sans texte, dont les pages sont des images, dit maintenant quoi faire.
+  EPUB : « Ce livre numérique ne contient pas de texte : ses pages sont des images.
+  Enregistrez-le en PDF, puis importez le PDF : ses pages seront lues comme des photos. »
+  Word : « Ce document Word ne contient pas de texte. Enregistrez-le en PDF depuis Word, puis
+  importez le PDF : ses pages seront lues comme des photos. » Avant, le message constatait
+  l'absence de texte sans proposer de solution (`EPUB_NO_TEXT_MESSAGE`,
+  `DOCX_NO_TEXT_MESSAGE`, `books/bookFile.ts` ; suite de l'audit #151, tickets #170 et #171).
+
 ### v0.24.38 — fonctionnel
 
 - « Calculer » et « Recalculer » dans l'onglet Nutrition affichent maintenant l'échec du
