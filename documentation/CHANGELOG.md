@@ -44,8 +44,12 @@ texte collé, lien : entrée retirée, `@` réécrit en `#`), `withoutUtensilsIn
 de `refineRecipe` et `generateRecipe`, le parseur CookLang des deux côtés
 (`extractIngredients`, `extractIngredientsStructured`, cas ajouté à `cooklang_parsing.json`),
 `resolveOneIngredient` avant `ensureIngredientReference`, et les entrées de
-`syncRecipeNutrition`. `checkFidelity` n'attend plus d'entrée pour une ligne de matériel.
-Aucun schéma ne change ; aucun backfill dans cette version.
+`syncRecipeNutrition`. `checkFidelity` n'attend plus d'entrée pour une ligne de matériel,
+reconnue sur la seule ligne du livre par `isUtensilLine` (une parenthèse la rend toujours
+attendue) ; une entrée n'est écartée que si son nom et sa ligne sont des ustensiles, pour
+qu'un aliment mal rattaché (« papier sulfurisé » sur « 50 g de cacahuètes ») reste signalé.
+« Ramequin » reste hors liste : c'est aussi un fromage. Aucun schéma ne change ; aucun backfill
+dans cette version.
 
 ### v0.24.52 — technique
 

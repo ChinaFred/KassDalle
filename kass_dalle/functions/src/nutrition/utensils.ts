@@ -15,7 +15,8 @@
  * - ne crée ni ne met à jour aucune fiche du référentiel.
  *
  * Fermée, et sans aliment : « moule » seul est le mollusque, « ficelle » seule
- * le pain, « brochette » seule le plat. Un nom absent de la liste reste un
+ * le pain, « brochette » seule le plat ; « ramequin » reste hors liste, c'est
+ * aussi un fromage (Bugey, Vaud). Un nom absent de la liste reste un
  * ingrédient ; l'ajouter se fait ici ET dans `lib/core/utils/utensils.dart`,
  * avec son cas dans `test-fixtures/utensils.json`.
  */
@@ -54,7 +55,6 @@ export const UTENSIL_NAMES: readonly string[] = [
   "cercle à entremets",
   "emporte-pièce",
   "étamine",
-  "ramequin",
   "sac de congélation",
   "sachet de congélation",
   "moule à tarte",
@@ -178,6 +178,20 @@ export function isUtensil(text: string): boolean {
   }
   for (const candidate of [...candidates]) candidates.push(stripTrailingQualifiers(candidate));
   return candidates.some((c) => c.length > 0 && UTENSIL_KEYS.has(c.join("_")));
+}
+
+/**
+ * Vrai quand une LIGNE DU LIVRE ne porte qu'un ustensile — serveur seul.
+ *
+ * Plus stricte que `isUtensil` : une ligne qui contient une parenthèse n'est
+ * jamais reconnue. « 12 caissettes en papier (ou 30 g de beurre pour le
+ * moule) » cite un aliment entre parenthèses ; la reconnaître ferait sortir
+ * ce beurre du contrôle de fidélité, sans avertissement. Une ligne de matériel
+ * avec parenthèse reste donc attendue dans la liste : le contrôle avertit, il
+ * ne perd rien.
+ */
+export function isUtensilLine(line: string): boolean {
+  return !/[()]/.test(line) && isUtensil(line);
 }
 
 /**

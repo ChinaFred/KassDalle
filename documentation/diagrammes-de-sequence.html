@@ -374,10 +374,10 @@ sequenceDiagram
       G-->>P: CookLang balisé + liste normalisée (nom, qté, unité, NOTE)<br/>+ cuisines, types de plat, rôle dans un repas
       P->>LOG: stage « balisage » — la sortie du modèle
       P->>P: withoutUtensils — AUCUN appel
-      Note over P: un ustensile de la liste fermée (utensils.json)<br/>sort de la liste ; @papier sulfurisé{} devient #papier sulfurisé{}
+      Note over P: un ustensile de la liste fermée (utensils.json), nom ET ligne du livre,<br/>sort de la liste ; @papier sulfurisé{} devient #papier sulfurisé{}
 
       P->>P: contrôle de fidélité — AUCUN appel
-      Note over P: une entrée par ligne du livre, lignes de matériel exceptées ?<br/>autant d'étapes qu'à la transcription ?<br/>titres de section entiers ?
+      Note over P: une entrée par ligne du livre ? (exemptée : une ligne<br/>de matériel lue par isUtensilLine, sans parenthèse ;<br/>ustensilesEcartes n'est pas lu)<br/>autant d'étapes qu'à la transcription ?<br/>titres de section entiers ?
 
       alt rupture constatée
         P->>LOG: erreur — la recette balisée est écartée

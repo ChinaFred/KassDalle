@@ -27,7 +27,7 @@ import {
 } from "./mealRole";
 import type { TranscribedRecipe } from "./transcription";
 import { noteDitQuelqueChose, noteFromRawLine } from "../nutrition/ingredientNote";
-import { isUtensil, retagUtensils } from "../nutrition/utensils";
+import { isUtensil, isUtensilLine, retagUtensils } from "../nutrition/utensils";
 
 /**
  * Plafond de sortie du balisage, réflexion comprise.
@@ -212,8 +212,9 @@ export interface TaggedRecipe {
   mainIngredientsChecked: boolean;
   /**
    * Entrées retirées de `ingredients` parce qu'elles nomment un ustensile de
-   * la liste fermée (`nutrition/utensils.ts`). Gardées pour le contrôle de
-   * fidélité : leur ligne du livre est couverte, pas perdue.
+   * la liste fermée (`nutrition/utensils.ts`), et que leur ligne du livre en
+   * est une aussi. Gardées pour le journal ; le contrôle de fidélité ne les
+   * lit pas.
    */
   ustensilesEcartes?: NormalizedIngredientLine[];
 }
@@ -229,12 +230,18 @@ export interface TaggedRecipe {
  * passent tous par `tagAndNormalize`.
  */
 export function withoutUtensils(tagged: TaggedRecipe): TaggedRecipe {
-  const ecartes = tagged.ingredients.filter((i) => isUtensil(i.nom));
+  // Le nom ET la ligne du livre doivent désigner un ustensile. Une entrée
+  // « papier sulfurisé » rattachée à « 50 g de cacahuètes » reste dans la liste :
+  // le contrôle de fidélité signale alors la ligne d'arachide sans entrée, au
+  // lieu de la laisser disparaître.
+  const estEcartee = (i: NormalizedIngredientLine): boolean =>
+    isUtensil(i.nom) && (i.brut.trim().length === 0 || isUtensilLine(i.brut));
+  const ecartes = tagged.ingredients.filter(estEcartee);
   return {
     ...tagged,
     cooklang: retagUtensils(tagged.cooklang),
     ingredients:
-      ecartes.length > 0 ? tagged.ingredients.filter((i) => !isUtensil(i.nom)) : tagged.ingredients,
+      ecartes.length > 0 ? tagged.ingredients.filter((i) => !estEcartee(i)) : tagged.ingredients,
     ...(ecartes.length > 0
       ? { ustensilesEcartes: [...(tagged.ustensilesEcartes ?? []), ...ecartes] }
       : {}),

@@ -12,13 +12,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { UTENSIL_NAMES, isUtensil, retagUtensils } from "../nutrition/utensils";
+import { UTENSIL_NAMES, isUtensil, isUtensilLine, retagUtensils } from "../nutrition/utensils";
 import { withoutUtensilsInGenerated } from "../gemini/refiner";
 
 interface UtensilFixture {
   names: string[];
   cases: { input: string; utensil: boolean; why: string }[];
   retag_cases: { input: string; expected: string; why: string }[];
+  line_cases: { input: string; utensil: boolean; why: string }[];
 }
 
 const fixture = JSON.parse(
@@ -45,6 +46,14 @@ describe("utensils.json — réécriture du CookLang (serveur seul)", () => {
   for (const c of fixture.retag_cases) {
     test(c.why, () => {
       assert.equal(retagUtensils(c.input), c.expected);
+    });
+  }
+});
+
+describe("utensils.json — ligne du livre, lecture stricte (serveur seul)", () => {
+  for (const c of fixture.line_cases) {
+    test(`« ${c.input} » → ${c.utensil ? "matériel" : "attendue"} (${c.why})`, () => {
+      assert.equal(isUtensilLine(c.input), c.utensil);
     });
   }
 });

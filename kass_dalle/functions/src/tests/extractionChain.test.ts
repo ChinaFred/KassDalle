@@ -1135,24 +1135,43 @@ describe("ustensiles écrits comme ingrédients", () => {
     );
   });
 
-  test("une ligne de matériel hors liste fermée, écartée comme ustensile, reste couverte", () => {
+  test("une entrée ustensile rattachée à une ligne d'aliment ne fait pas disparaître l'aliment", () => {
+    // Relecture sécurité : { nom: "papier sulfurisé", brut: "50 g de cacahuètes" }
+    // exemptait la ligne d'arachide du contrôle. L'allergène sortait de la
+    // recette sans avertissement.
     const recette = gravlax();
-    const ligne = "Papier sulfurisé pour la plaque";
+    const ligne = "50 g de cacahuètes";
     recette.sectionsIngredients[0].lignes.push(ligne);
-    const tagged = taggedGravlax({
-      ustensilesEcartes: [
-        {
-          brut: ligne,
-          section: "Pour le saumon",
-          nom: "papier sulfurisé",
-          qte: "",
-          unite: "",
-          note: "",
-        },
-      ],
-    });
-    const report = checkFidelity(recette, tagged);
-    assert.ok(!report.findings.some((f) => f.code === "ingredients_compte"));
+    const entree = {
+      brut: ligne,
+      section: "Pour le saumon",
+      nom: "papier sulfurisé",
+      qte: "50",
+      unite: "g",
+      note: "",
+    };
+
+    // Par withoutUtensils : l'entrée n'est pas écartée, et ne couvre pas sa ligne.
+    const tagged = taggedGravlax();
+    tagged.ingredients = [...tagged.ingredients, entree];
+    const out = withoutUtensils(tagged);
+    assert.equal(out.ustensilesEcartes, undefined);
+    assert.equal(out.ingredients.length, 6);
+    const report = checkFidelity(recette, out);
+    assert.ok(report.findings.some((f) => f.code === "ingredients_compte"));
+
+    // Même entrée posée d'office parmi les écartées : la ligne reste attendue.
+    const report2 = checkFidelity(recette, taggedGravlax({ ustensilesEcartes: [entree] }));
+    assert.ok(report2.findings.some((f) => f.code === "ingredients_compte"));
+  });
+
+  test("une ligne de matériel qui cite un aliment entre parenthèses reste attendue", () => {
+    const recette = gravlax();
+    recette.sectionsIngredients[0].lignes.push(
+      "12 caissettes en papier (ou 30 g de beurre pour le moule)",
+    );
+    const report = checkFidelity(recette, taggedGravlax());
+    assert.ok(report.findings.some((f) => f.code === "ingredients_compte"));
   });
 
   test("une ligne d'aliment sans entrée reste signalée", () => {

@@ -4877,17 +4877,24 @@ une entrée par ligne de la liste du livre : une ligne « 1 feuille de papier su
   génération) porte la même interdiction ;
 - **la liste fermée** `utensils.json` (`nutrition/utensils.ts` ↔ `core/utils/utensils.dart`),
   appliquée après le modèle. `tagAndNormalize` passe sa sortie par `withoutUtensils` : l'entrée
-  sort de la liste, `@nom{…}` devient `#nom{…}` (`retagUtensils`), et l'entrée écartée est
-  gardée dans `ustensilesEcartes`, journalisée en INFO. Cela couvre l'import d'une page, le texte
+  sort de la liste si son nom ET sa ligne du livre (`brut`, quand elle existe) sont reconnus,
+  `@nom{…}` devient `#nom{…}` (`retagUtensils`), et l'entrée écartée est gardée dans
+  `ustensilesEcartes`, pour le journal INFO seulement. Une entrée « papier sulfurisé »
+  rattachée à « 50 g de cacahuètes » reste dans la liste. Cela couvre l'import d'une page, le texte
   collé et l'import par lien. `refineRecipe` et `generateRecipe` passent leur réponse par
   `withoutUtensilsInGenerated` (texte, `ingredients`, `ingredients_index`). Le parseur CookLang
   l'applique des deux côtés, la normalisation et le déclencheur nutrition aussi (§3.10) ;
-- **le contrôle de fidélité** : `checkFidelity` n'attend aucune entrée pour une ligne reconnue
-  par la liste fermée, ni pour une ligne portée par une entrée de `ustensilesEcartes`.
-  Une autre ligne sans entrée reste signalée (`ingredients_compte`).
+- **le contrôle de fidélité** : seule la ligne du livre décide. `checkFidelity` n'attend aucune
+  entrée pour une ligne que `isUtensilLine` reconnaît — `isUtensil` en plus strict : une ligne
+  qui contient une parenthèse est toujours attendue, la parenthèse pouvant citer un aliment
+  (« 12 caissettes en papier (ou 30 g de beurre pour le moule) »). `ustensilesEcartes` n'est
+  pas lu, et une entrée dont le nom est un ustensile ne couvre pas sa ligne. Une ligne d'aliment
+  sans entrée reste donc signalée (`ingredients_compte`), même si le modèle lui a rattaché un
+  ustensile.
 
 La liste est fermée et ne contient aucun aliment : « moule » seul est le mollusque, « ficelle »
-seule le pain, « brochette » seule le plat ; seuls les noms composés « moule à … » de la liste
+seule le pain, « brochette » seule le plat, et « ramequin » reste hors liste (ramequin du Bugey,
+ramequin vaudois) ; seuls les noms composés « moule à … » de la liste
 sont des ustensiles. Un ustensile hors liste écrit en `@` reste un ingrédient : l'ajouter se fait
 dans les deux fichiers et dans la fixture.
 
@@ -7306,7 +7313,7 @@ Functions.
 | `page_homography.json` | redressement d'une page : taille de sortie, homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
 | `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines et des féculents principaux, des rôles qui portent ces deux derniers, et de ce que la recette apporte (`contains`) ; la section `contains_manual_cases` verrouille la règle « une correction à la main n'est jamais réécrite par le modèle » (`containsPatch` ↔ `mealContainsAfterSuggestion`) ; la section `unsafe_keys` (clés héritées du prototype) est serveur seul | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
 | `shopping_products.json` | regroupement des lignes de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
-| `utensils.json` | liste fermée des ustensiles et consommables, et reconnaissance d'un nom ou d'une ligne du livre ; section `retag_cases` (réécriture `@` → `#`) : serveur seul | `core/utils/utensils.dart`, `core/services/cooklang_parser.dart` | `nutrition/utensils.ts`, `cooklang/parser.ts` |
+| `utensils.json` | liste fermée des ustensiles et consommables, et reconnaissance d'un nom ou d'une ligne du livre ; sections `retag_cases` (réécriture `@` → `#`) et `line_cases` (lecture stricte d'une ligne du livre, `isUtensilLine`) : serveur seul | `core/utils/utensils.dart`, `core/services/cooklang_parser.dart` | `nutrition/utensils.ts`, `cooklang/parser.ts` |
 | `allergens.json` | les quatorze allergènes majeurs (annexe II INCO) : clés dans l'ordre du règlement et libellés — valeurs seules ; le calcul du champ `allergens` d'une recette est serveur seul | `features/recipes/domain/allergens.dart` | `nutrition/allergens.ts` |
 
 ### Nouveautés — l'asset `changelog_recent.json`

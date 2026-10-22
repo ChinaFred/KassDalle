@@ -31,7 +31,6 @@
     "cercle à entremets",
     "emporte-pièce",
     "étamine",
-    "ramequin",
     "sac de congélation",
     "sachet de congélation",
     "moule à tarte",
@@ -83,8 +82,17 @@
     { "input": "feuilles de riz", "utensil": false, "why": "un aliment" },
     { "input": "beurre pour le moule", "utensil": false, "why": "un aliment qui cite un moule" },
     { "input": "farine", "utensil": false, "why": "un aliment" },
+    { "input": "ramequin", "utensil": false, "why": "le ramequin du Bugey et le ramequin vaudois sont des aliments" },
     { "input": "film", "utensil": false, "why": "hors de la liste" },
     { "input": "", "utensil": false, "why": "vide" }
+  ],
+  "_line_comment": "Serveur seul : lecture stricte d'une ligne du livre (isUtensilLine), qui décide seule de l'exemption du contrôle de fidélité et de l'écartement d'une entrée. Une ligne avec une parenthèse n'est jamais du matériel : la parenthèse peut citer un aliment.",
+  "line_cases": [
+    { "input": "1 feuille de papier sulfurisé", "utensil": true, "why": "ligne de matériel" },
+    { "input": "1 cercle à pâtisserie de 20 cm", "utensil": true, "why": "dimension retirée" },
+    { "input": "12 caissettes en papier (ou 30 g de beurre pour le moule)", "utensil": false, "why": "la parenthèse cite un aliment" },
+    { "input": "8 piques à brochette en bois (trempés dans l'eau)", "utensil": false, "why": "toute parenthèse rend la ligne attendue" },
+    { "input": "50 g de cacahuètes", "utensil": false, "why": "un aliment" }
   ],
   "_retag_comment": "Serveur seul : réécriture du CookLang à l'écriture d'une recette (import, texte collé, lien, refine, génération). Un @nom{…} reconnu devient #nom{…}, accolades conservées ; le reste du texte est inchangé.",
   "retag_cases": [

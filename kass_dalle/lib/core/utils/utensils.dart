@@ -10,7 +10,8 @@ import 'ingredient_name.dart';
 /// référentiel nutritionnel.
 ///
 /// Sans aliment : « moule » seul est le mollusque, « ficelle » seule le pain,
-/// « brochette » seule le plat.
+/// « brochette » seule le plat ; « ramequin » reste hors liste, c'est aussi un
+/// fromage (Bugey, Vaud).
 const List<String> kUtensilNames = [
   'papier sulfurisé',
   'papier cuisson',
@@ -42,7 +43,6 @@ const List<String> kUtensilNames = [
   'cercle à entremets',
   'emporte-pièce',
   'étamine',
-  'ramequin',
   'sac de congélation',
   'sachet de congélation',
   'moule à tarte',
