@@ -7604,10 +7604,6 @@ propres au PC.
 déploiements simultanés publient chacun leur version, et le dernier arrivé l'emporte. Trois
 protections, et une consigne :
 
-- `deploy.ps1` affiche au démarrage la branche, le dernier commit et `git status --short
-  --untracked-files=all`, refuse une branche autre que `master` (son code n'a pas eu de CI), et
-  n'avance qu'après un « oui » tapé (`Confirm-Deploy`, v0.24.65) : toute autre réponse l'arrête
-  avant le moindre build ;
 - `deploy.ps1` refuse de partir si le PC est en retard sur `origin/master`, et le vérifie de
   nouveau juste avant `firebase deploy`, après les builds web et APK qui durent plusieurs
   minutes ;
@@ -7622,6 +7618,11 @@ Il reste une fenêtre de quelques secondes entre la seconde vérification et la 
 `firebase deploy`. Le workflow recopie aussi l'APK en ligne juste avant son hosting : un
 `deploy.ps1` qui publierait un nouvel APK à ce moment le verrait remplacé par l'ancien. En cas de
 doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
+
+**Le démarrage de `deploy.ps1` se confirme (v0.24.65).** Avant tout build, `Confirm-Deploy`
+affiche la branche, le dernier commit et `git status --short --untracked-files=all`, refuse une
+branche autre que `master` (son code n'a pas eu de CI), puis attend un « oui » tapé. Toute
+autre réponse, ou une entrée fermée, l'arrête sans rien construire ni mettre en ligne.
 
 **Le commit de `deploy.ps1` se confirme (v0.24.58, Issue #164).** Avant son `git add -A`,
 le script affiche `git status --short --untracked-files=all` (chaque fichier non suivi, pas
