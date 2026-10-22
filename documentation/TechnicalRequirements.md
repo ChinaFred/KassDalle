@@ -3288,8 +3288,9 @@ jour), le surcoût se compte en centimes par an au tarif Firestore.
   document `reader`) ne dépose rien avant le renouvellement de son jeton, comme avant. Le
   claim reste la première porte, pour la raison de coût ci-dessus.
 - Le `get` d'un fichier des dossiers publiés (`isApprovedReader()`, v0.24.51, ticket #162)
-  lit le **document seul**, sans passer par le claim : un compte en attente, révoqué ou sans
-  document ne lit plus ces fichiers par le SDK, et un compte nommé à l'instant les lit tout
+  lit le rôle sur le **document** ; le claim ne sert plus que de repli pour un document sans
+  rôle, et le jeton porte encore la révocation (`isActive()`) : un compte en attente, révoqué
+  ou sans document ne lit plus ces fichiers par le SDK, et un compte nommé à l'instant les lit tout
   de suite, comme le routeur du client l'ouvre sur le rôle du document
   (`resolveRedirect`). Un essai d'aligner cette lecture sur le claim (2026-10-05) avait coupé
   l'accès au fondateur, le temps que son jeton porte le rôle. Les fichiers restent joignables
@@ -3357,8 +3358,8 @@ service firebase.storage {
     // Le sas d'entrée, côté fichiers, pour l'écriture : jeton ET document.
     function isApproved() { return hasRoleIn(['reader', 'editor', 'admin']); }
 
-    // Le `get` des dossiers publiés (v0.24.51, ticket #162) : le document seul,
-    // sans le claim. Un compte en attente n'y lit plus rien ; un compte nommé à
+    // Le `get` des dossiers publiés (v0.24.51, ticket #162) : le rôle du
+    // document, le claim en repli pour un document sans rôle. Un compte en attente n'y lit plus rien ; un compte nommé à
     // l'instant lit tout de suite, comme le routeur du client l'y autorise.
     function isApprovedReader() {
       return isActive() && hasDocRoleIn(userDoc(), ['reader', 'editor', 'admin']);

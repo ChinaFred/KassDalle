@@ -111,11 +111,12 @@ service firebase.storage {
       return hasRoleIn(['reader', 'editor', 'admin']);
     }
 
-    /// Un compte nommé, selon son document seul : sert le `get` des dossiers
-    /// publiés (ticket #162, point 1).
+    /// Un compte nommé, selon le rôle de son document : sert le `get` des
+    /// dossiers publiés (ticket #162, point 1).
     ///
-    /// Un compte en attente n'y lit plus rien. Le claim n'est pas consulté :
-    /// un essai d'aligner la lecture sur le rôle du JETON (2026-10-05) a coupé
+    /// Un compte en attente n'y lit plus rien. Le claim de rôle n'est pas la
+    /// première porte (il ne sert qu'en repli, ci-dessous ; `isActive()` lit
+    /// la révocation du jeton) : un essai d'aligner la lecture sur le rôle du JETON (2026-10-05) a coupé
     /// l'accès au fondateur, le temps que son jeton porte le claim. Le routeur
     /// du client ouvre l'application sur le rôle du document
     /// (`resolveRedirect`, `AppUser.isPending`) ; la lecture suit la même
