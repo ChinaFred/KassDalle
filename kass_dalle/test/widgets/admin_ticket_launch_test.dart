@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -86,6 +87,7 @@ void main() {
     Future<TicketLaunchResult> Function()? onLaunch,
     List<Ticket>? tickets,
     ValueNotifier<String?>? selection,
+    double textScale = 2.0,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -131,7 +133,7 @@ void main() {
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(
               context,
-            ).copyWith(textScaler: const TextScaler.linear(2.0)),
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
             child: child!,
           ),
           // Une sélection qui change sans routeur : l'écran large garde le
@@ -561,6 +563,83 @@ void main() {
       await pump(tester, status: 'analyzed');
       expect(find.text(combined), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Valider'), findsOneWidget);
+    });
+
+    // Le libellé du bouton combiné, au texte par défaut : lignes occupées
+    // et échelle effective (1 sans réduction). Dans la police de test, chaque
+    // caractère est aussi large que la taille de police : 34 caractères à
+    // 14 px font 476 px.
+    ({int lines, double scale}) combinedLayout(WidgetTester tester) {
+      final label = find.text(combined);
+      final paragraph = tester.renderObject<RenderParagraph>(label);
+      final line = paragraph.getFullHeightForCaret(
+        const TextPosition(offset: 0),
+      );
+      final fitted = find.ancestor(of: label, matching: find.byType(FittedBox));
+      final scale = fitted.evaluate().isEmpty
+          ? 1.0
+          : tester.getSize(fitted).width / paragraph.size.width;
+      return (lines: (paragraph.size.height / line).round(), scale: scale);
+    }
+
+    testWidgets('réduction légère : une ligne, sans troncature', (
+      tester,
+    ) async {
+      // 542 px : 452 px de place pour 476 px de libellé, réduction de 5 %.
+      await pump(
+        tester,
+        status: 'analyzed',
+        size: const Size(542, 800),
+        textScale: 1.0,
+      );
+      expect(tester.takeException(), isNull);
+      final layout = combinedLayout(tester);
+      expect(layout.lines, 1);
+      expect(layout.scale, lessThan(1.0));
+      expect(layout.scale, greaterThanOrEqualTo(0.9));
+    });
+
+    testWidgets(
+      'police de test à 360 px (réduction sous 0,9) : le libellé passe à la ligne',
+      (tester) async {
+        await pump(
+          tester,
+          status: 'analyzed',
+          size: const Size(360, 800),
+          textScale: 1.0,
+        );
+        expect(tester.takeException(), isNull);
+        final layout = combinedLayout(tester);
+        expect(layout.scale, 1.0);
+        expect(layout.lines, greaterThan(1));
+      },
+    );
+
+    testWidgets('écran large à 800 px : jamais réduit sous 0,9', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        status: 'analyzed',
+        size: const Size(800, 800),
+        textScale: 1.0,
+      );
+      expect(tester.takeException(), isNull);
+      final layout = combinedLayout(tester);
+      expect(layout.scale, greaterThanOrEqualTo(0.9));
+      if (layout.scale == 1.0) expect(layout.lines, greaterThan(1));
+    });
+
+    testWidgets('texte agrandi : le libellé garde sa taille', (tester) async {
+      await pump(tester, status: 'analyzed');
+      expect(tester.takeException(), isNull);
+      expect(
+        find.ancestor(
+          of: find.text(combined),
+          matching: find.byType(FittedBox),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('absent hors « analysé »', (tester) async {

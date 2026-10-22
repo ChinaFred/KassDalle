@@ -1975,7 +1975,7 @@ sequenceDiagram
     SP->>PL: codeFill — premier candidat libre, aucun appel
     Note over SP: modelStatus budget · « Rien n'a été facturé »<br/>+ « Ces consignes n'ont pas été suivies : « … » » (degradedNotice)
   else
-    SP->>M: callModel(planning, maxTokens 4 000, entity planning_run)
+    SP->>M: callModel(planning, maxTokens 16 000, entity planning_run)
     alt réponse lisible
       M-->>SP: [{slot, recipe_id, starter_id, dessert_id}]
       SP->>PL: validateModelChoices — hors liste ou en double : premier candidat libre
@@ -1995,7 +1995,7 @@ sequenceDiagram
       alt refusée
         GC-->>B: resource-exhausted (reason) — la boucle s'arrête
       else réservée
-        GC->>M: callModel(planning_concept, maxTokens 6 000, entity planning_run)
+        GC->>M: callModel(planning_concept, maxTokens 16 000, entity planning_run)
         GC->>FS: cost_usd += coût enregistré, reserved_usd −= estimation
         GC-->>B: recette conçue → brouillon, « Conçue par l'IA »
       end
@@ -2494,7 +2494,12 @@ sequenceDiagram
       prend effet en moins d'une minute.
       <span class="path">ai_routing_screen.dart → setAiRoutingPolicyFn →
       app_config/ai_routing_policy → ai/router.ts</span>
-      <br/><b>Les sept réglages s'enregistrent sous un nom.</b> <code>aiRoutingPresetsFn</code>
+      <br/><b>Changer un défaut fige d'abord.</b> Quand l'administrateur change le moteur, le
+      modèle ou la réflexion de Claude par défaut, l'écran écrit l'ancienne valeur en choix
+      explicite sur chaque poste qui la suivait, après une confirmation qui les compte. Le nouveau
+      défaut ne sert qu'aux postes remis sur « Défaut », à ceux qu'ajoute une mise à jour et,
+      pour le modèle et la réflexion de Claude, aux postes passés ensuite sur Claude.
+      <br/><b>Tous les réglages s'enregistrent sous un nom.</b> <code>aiRoutingPresetsFn</code>
       écrit dans <code>ai_routing_presets</code> ; une configuration ne commande rien tant qu'elle
       n'est pas chargée puis enregistrée. Le chargement est un remplacement, pas une fusion : un
       poste que la configuration ne nomme pas repart au moteur par défaut. Une configuration
@@ -2516,6 +2521,11 @@ sequenceDiagram
   A->>S: ouvre Moteur d'IA
   S->>PO: politique en vigueur — poste par poste
   A->>S: route « transcription_page » vers Claude
+  opt change un défaut (moteur, modèle ou réflexion de Claude)
+    S->>A: confirmation « N postes suivent … », si au moins un poste suit
+    A->>S: Changer le défaut
+    S->>S: AiRoutingDefaults — l'ancienne valeur écrite sur chaque poste qui la suivait
+  end
   S->>SET: setAiRoutingPolicy
   SET->>SET: requireAdmin
   SET->>PO: écrit la politique
@@ -2523,6 +2533,7 @@ sequenceDiagram
   Note over CM: appel suivant, quel qu'en soit l'appelant
   CM->>PO: lit la politique (cache court)
   CM->>CM: resolveProvider(poste)
+  CM->>CM: resolveAnthropicEffort — réglage du poste, sinon défaut, sinon codeEffortFor
 
   alt clé Anthropic présente et pièce jointe lisible
     CM->>C: appel
@@ -4930,7 +4941,7 @@ sequenceDiagram
   alt tous les textes en cache, mode code, ou estimation au-delà du plafond de la génération
     Note over SP: aucun appel de modèle
   else textes modifiés (16 au plus, 2 000 car.)
-    SP->>M: askJson(planning_constraints, maxTokens 3 000)
+    SP->>M: askJson(planning_constraints, maxTokens 12 000)
     alt réponse lisible
       M-->>SP: textes : exclus, voulus, préparation max, léger, non_traduit
       SP->>SP: parseConstraintsAnswer — valeurs hors vocabulaire écartées

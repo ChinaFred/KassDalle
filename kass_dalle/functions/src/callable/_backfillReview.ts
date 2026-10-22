@@ -34,13 +34,13 @@ const ERROR_MESSAGE_MAX_LENGTH = 120;
  * connaît pas.
  */
 export type BackfillReviewKind =
-  "ingredient" | "unit" | "recipe" | "account" | "meal" | "ticket" | "invitation";
+  "ingredient" | "unit" | "recipe" | "meal" | "ticket" | "invitation";
 
 export interface BackfillReviewItem {
   kind: BackfillReviewKind;
-  /** Identifiant du document (ingrédient, unité, recette, compte). */
+  /** Identifiant du document (ingrédient, unité, recette, ticket…). */
   id: string;
-  /** Nom lisible : nom canonique, titre de la recette, nom du compte. */
+  /** Nom lisible : nom canonique, titre de la recette ou du ticket. */
   label: string;
   /** Pourquoi l'élément est à revoir, en français simple. */
   reason: string;

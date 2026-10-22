@@ -30,6 +30,7 @@ le fichier TypeScript. Les suites qui la rejouent :
 | `unit_to_grams.json` | `nutrition_quantity_converter_test.dart` | `sharedFixtures.test.ts`, `usualPortion.test.ts` (section `usual_portion`) |
 | `ingredient_names.json` | `ingredient_name_test.dart` | `sharedFixtures.test.ts` |
 | `ai_pricing.json` | `ai_pricing_test.dart` | `sharedFixtures.test.ts` |
+| `ai_effort_resolution.json` | `ai_effort_resolution_test.dart` | `aiEffortResolution.test.ts` (section `model_cases` : serveur seul) |
 | `page_homography.json` | `page_homography_test.dart` | `sharedFixtures.test.ts` |
 | `meal_roles.json` | `meal_role_test.dart` | `mealRole.test.ts` |
 | `planning_criteria.json` | `planning_criteria_test.dart` | `planningCriteria.test.ts` |

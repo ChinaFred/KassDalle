@@ -1,0 +1,84 @@
+{
+  "_comment": "Effort de réflexion Claude que reçoit un poste : celui du poste dans la politique (anthropic_efforts), à défaut l'effort par défaut de la politique (anthropic_effort), à défaut celui que le code du poste demande (CODE_EFFORTS de functions/src/ai/featureEfforts.ts, 'low' pour un poste absent de la table). Le serveur décide de l'appel (resolveAnthropicEffort puis codeEffortFor, ai/router.ts) ; le client rejoue le même ordre pour l'affichage (AiRoutingPolicy.effectiveEffortFor, ai_routing_repository.dart), avec l'effort du code reçu du serveur (code_effort). Rejouée par test/ai_effort_resolution_test.dart et functions/src/tests/aiEffortResolution.test.ts. Un écart ne lève aucune erreur : l'écran annonce une réflexion que le poste ne reçoit pas, et la facture diffère de ce que l'administrateur croit avoir réglé. La section model_cases est serveur seul : le client reçoit supportsEffort du serveur et ne décide pas.",
+  "cases": [
+    {
+      "name": "l'effort du poste l'emporte sur le défaut et sur le code",
+      "feature": "transcription_page",
+      "code_effort": "high",
+      "anthropic_efforts": { "transcription_page": "low" },
+      "anthropic_effort": "medium",
+      "expected": "low"
+    },
+    {
+      "name": "l'effort du poste l'emporte même égal au défaut",
+      "feature": "generate",
+      "code_effort": "low",
+      "anthropic_efforts": { "generate": "medium" },
+      "anthropic_effort": "medium",
+      "expected": "medium"
+    },
+    {
+      "name": "sans effort du poste, le défaut de la politique l'emporte sur le code",
+      "feature": "transcription_page",
+      "code_effort": "high",
+      "anthropic_efforts": { "generate": "high" },
+      "anthropic_effort": "medium",
+      "expected": "medium"
+    },
+    {
+      "name": "défaut « Selon le poste » (null) : l'effort du code",
+      "feature": "transcription_page",
+      "code_effort": "high",
+      "anthropic_efforts": {},
+      "anthropic_effort": null,
+      "expected": "high"
+    },
+    {
+      "name": "défaut null, poste à effort moyen dans le code",
+      "feature": "recipe_translation",
+      "code_effort": "medium",
+      "anthropic_efforts": {},
+      "anthropic_effort": null,
+      "expected": "medium"
+    },
+    {
+      "name": "poste absent de CODE_EFFORTS : low",
+      "feature": "nutrition_ingredients_enrichment",
+      "code_effort": "low",
+      "anthropic_efforts": {},
+      "anthropic_effort": null,
+      "expected": "low"
+    },
+    {
+      "name": "l'effort d'un autre poste ne s'applique pas",
+      "feature": "nutrition_ingredients_enrichment",
+      "code_effort": "low",
+      "anthropic_efforts": { "transcription_page": "high" },
+      "anthropic_effort": null,
+      "expected": "low"
+    }
+  ],
+  "model_cases": [
+    {
+      "name": "Haiku 4.5 ne reçoit aucun effort, même réglé",
+      "model": "claude-haiku-4-5",
+      "requested": "high",
+      "supports_effort": false,
+      "sent": null
+    },
+    {
+      "name": "Haiku 4.5 daté : même modèle",
+      "model": "claude-haiku-4-5-20251001",
+      "requested": "low",
+      "supports_effort": false,
+      "sent": null
+    },
+    {
+      "name": "Sonnet 5 reçoit l'effort résolu",
+      "model": "claude-sonnet-5",
+      "requested": "high",
+      "supports_effort": true,
+      "sent": "high"
+    }
+  ]
+}

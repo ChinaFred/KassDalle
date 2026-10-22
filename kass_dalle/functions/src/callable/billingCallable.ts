@@ -43,6 +43,7 @@ import { requireAdmin, type AuthContext } from "./_auth";
 import { runBackfillFromCallable } from "../backfills/runner";
 import type { PassSummary } from "../backfills/schedule";
 import { logError, logInfo, logWarn } from "../logging";
+import { KeyedLogSampler } from "../utils/logSampler";
 import {
   AI_PER100G_MARKERS,
   estimatePer100gForTargets,
@@ -295,6 +296,9 @@ async function bigQuery(): Promise<import("@google-cloud/bigquery").BigQuery> {
   return bigqueryClient;
 }
 
+/** Refus d'accès d'`ensureAdminWithAudit`, échantillonnés par opération et par compte. */
+const accessRefusals = new KeyedLogSampler();
+
 export async function ensureAdminWithAudit(
   req: Parameters<typeof requireAdmin>[0],
   op: string,
@@ -309,13 +313,18 @@ export async function ensureAdminWithAudit(
     if (isAccessRefusal(err)) {
       // Un refus est la garde qui fonctionne, pas une panne : un WARNING, pour
       // que les erreurs de l'écran Journaux restent les vraies pannes (audit
-      // #151, ticket #163). L'uid et l'opération restent lisibles.
-      await logWarn({
-        message: `${op}: accès refusé`,
-        errorDescription: errMsg,
-        ...(uid ? { userId: uid } : {}),
-        extra: { uid, op },
-      });
+      // #151, ticket #163). L'uid et l'opération restent lisibles. Échantillonné
+      // par opération et par compte : une rafale de refus d'un même compte
+      // n'écrit qu'une ligne par minute et par instance, avec leur nombre.
+      const refused = accessRefusals.record(`${op}|${uid ?? "anonymous"}`, Date.now());
+      if (refused !== null) {
+        await logWarn({
+          message: `${op}: accès refusé (${refused} refus depuis le dernier relevé)`,
+          errorDescription: errMsg,
+          ...(uid ? { userId: uid } : {}),
+          extra: { uid, op, refused },
+        });
+      }
     } else {
       // Toute autre erreur de la garde (lecture du compte en échec…) en est une.
       await logError({
