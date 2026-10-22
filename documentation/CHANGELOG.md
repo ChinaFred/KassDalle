@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.56 — fonctionnel
+### v0.24.57 — fonctionnel
 
 Le papier sulfurisé, le film alimentaire, les piques à brochette et les autres ustensiles ou
 consommables ne sont plus ajoutés aux ingrédients d'une recette importée, retouchée par l'IA ou
@@ -29,7 +29,7 @@ liste quand on les écrit avec `@`, et ils ne créent plus de fiche dans le réf
 Les recettes et les fiches déjà concernées (`papier_sulfurise`…) ne sont pas reprises dans cette
 version : leur nettoyage viendra par un backfill.
 
-### v0.24.56 — technique
+### v0.24.57 — technique
 
 Régression du 20 août 2026 (v0.21.31) : `TAGGING_PROMPT` ne nommait plus le papier sulfurisé ni
 l'aluminium, et son travail 2 exigeait une entrée par ligne de la liste du livre. Le prompt
@@ -50,6 +50,18 @@ attendue) ; une entrée n'est écartée que si son nom et sa ligne sont des uste
 qu'un aliment mal rattaché (« papier sulfurisé » sur « 50 g de cacahuètes ») reste signalé.
 « Ramequin » reste hors liste : c'est aussi un fromage. Aucun schéma ne change ; aucun backfill
 dans cette version.
+
+### v0.24.56 — fonctionnel
+
+Admin › Tickets : le libellé du bouton « Valider et lancer le développement », qui passait
+à la ligne sur un téléphone de 360 px (ticket #181), se réduit pour tenir sur une ligne au
+texte par défaut, sans être tronqué, de 10 % au plus. Quand il faudrait le réduire davantage,
+par exemple dans le volet de détail étroit entre 800 et 910 px de large, il passe à la
+ligne. Avec un texte agrandi, il garde sa taille et passe à la ligne. Les autres constats de l'audit étaient déjà corrigés dans le code (seuils 480 px par
+`PlatformUtils.narrowContentBreakpoint`, tailles d'icônes par `AppIconSize.small`,
+« Fermer » sur les visionneuses, erreur des titres privés et des invitations par e-mail
+affichée) ou relèvent de choix assumés : barre du bas sans libellés, confirmations de
+succès retirées au ticket #143.
 
 ### v0.24.55 — technique
 

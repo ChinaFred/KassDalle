@@ -1989,7 +1989,7 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
 | `first_seen_at` · `last_seen_at` · `updated_at` | `Timestamp` | Traçabilité |
 
-**Aucune fiche pour un ustensile** (v0.24.56). Un nom de la liste fermée `utensils.json`
+**Aucune fiche pour un ustensile** (v0.24.57). Un nom de la liste fermée `utensils.json`
 (`nutrition/utensils.ts`, `isUtensil`) ne crée ni ne met à jour aucun document : la
 normalisation (`resolveOneIngredient`, avant `ensureIngredientReference`) le retire de la liste
 qu'elle rend, et le déclencheur `syncRecipeNutrition` l'écarte de ses entrées avant le
@@ -4885,7 +4885,7 @@ la liste du CookLang par `pipeline/ingredientsFromCooklang.ts` quand elle arrive
 tout. La dérivation a lieu **avant** la normalisation référentiel, et ne rend ni la note ni le
 `source` — il n'y a pas de ligne de livre à citer.
 
-**Un ustensile n'est pas un ingrédient** (v0.24.56). Entre v0.21.31 et v0.24.52,
+**Un ustensile n'est pas un ingrédient** (v0.24.57). Entre v0.21.31 et v0.24.52,
 `TAGGING_PROMPT` ne nommait plus le papier sulfurisé ni l'aluminium, et son travail 2 exigeait
 une entrée par ligne de la liste du livre : une ligne « 1 feuille de papier sulfurisé » devenait
 `@papier sulfurisé{1%feuille}`, une entrée de `ingredients`, puis une fiche

@@ -1466,7 +1466,9 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
                       validateFirst: true,
                     ),
               icon: const Icon(AppIcons.ticketLaunchDevelopment),
-              label: const Text('Valider et lancer le développement'),
+              label: const _OneLineAtDefaultScale(
+                'Valider et lancer le développement',
+              ),
             ),
           ),
         ],
@@ -3184,6 +3186,54 @@ class _AnalysisCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Libellé de bouton sur une ligne, à la taille de texte par défaut.
+///
+/// « Valider et lancer le développement » passait à la ligne sur un
+/// téléphone de 360 px, et le bouton doublait de hauteur. Au texte par
+/// défaut, le libellé se réduit pour tenir sur une ligne, sans être tronqué,
+/// tant que la réduction reste de 10 % au plus ([minScale]). Au-delà (volet
+/// de détail étroit entre 800 et 910 px de large, par exemple), il passe à
+/// la ligne : deux lignes lisibles valent mieux qu'une ligne à 8 px.
+/// Texte agrandi par l'utilisateur : le libellé garde sa taille et passe à
+/// la ligne, pour que l'agrandissement reste effectif.
+class _OneLineAtDefaultScale extends StatelessWidget {
+  final String text;
+
+  /// Réduction la plus forte acceptée pour tenir sur une ligne.
+  static const double minScale = 0.9;
+
+  const _OneLineAtDefaultScale(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final label = Text(text);
+    final scaler = MediaQuery.textScalerOf(context);
+    if (scaler.scale(1) > 1) return label;
+    final baseStyle = DefaultTextStyle.of(context).style;
+    // « Texte en gras » du système : `Text` l'applique, la mesure aussi.
+    final style = MediaQuery.boldTextOf(context)
+        ? baseStyle.merge(const TextStyle(fontWeight: FontWeight.bold))
+        : baseStyle;
+    final direction = Directionality.of(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) return label;
+        final painter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          textDirection: direction,
+          textScaler: scaler,
+          maxLines: 1,
+        )..layout();
+        final natural = painter.width;
+        painter.dispose();
+        if (natural <= constraints.maxWidth) return label;
+        if (constraints.maxWidth / natural < minScale) return label;
+        return FittedBox(fit: BoxFit.scaleDown, child: label);
+      },
     );
   }
 }
