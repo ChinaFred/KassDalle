@@ -16,6 +16,7 @@ import {
   formatEur,
   generationCapCause,
 } from "../gemini/planning";
+import { PLANNING_CONSTRAINTS_MAX_TOKENS } from "../gemini/planningConstraints";
 
 describe("coût plafond d'un appel", () => {
   const table = builtinPricingTable();
@@ -58,9 +59,10 @@ describe("coût plafond d'un appel", () => {
     assert.ok(withTable > 0);
   });
 
-  test("plafonds de sortie : 16 000 pour le planning, 6 000 pour une conception", () => {
+  test("plafonds de sortie : 16 000 pour le planning et pour une conception, 12 000 pour la traduction des préférences", () => {
     assert.equal(PLANNING_MAX_TOKENS, 16_000);
-    assert.equal(PLANNING_CONCEPT_MAX_TOKENS, 6_000);
+    assert.equal(PLANNING_CONCEPT_MAX_TOKENS, 16_000);
+    assert.equal(PLANNING_CONSTRAINTS_MAX_TOKENS, 12_000);
   });
 });
 

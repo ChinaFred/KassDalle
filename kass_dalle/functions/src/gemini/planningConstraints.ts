@@ -40,8 +40,13 @@ export const CONSTRAINT_TEXT_MAX_CHARS = 2_000;
 /** Entrées gardées dans le cache ; les plus anciennes sortent. */
 export const CONSTRAINT_CACHE_MAX_ENTRIES = 40;
 
-/** Plafond de jetons de sortie : seize objets courts. */
-export const PLANNING_CONSTRAINTS_MAX_TOKENS = 3_000;
+/**
+ * Plafond de jetons de sortie : seize objets courts, plus la réflexion de
+ * Claude, qui compte dans `max_tokens`. Mesuré sur Sonnet 5 : 662 jetons de
+ * sortie (22 oct. 2026). Gemini ne reçoit pas ce plafond ; il ne sert qu'à
+ * l'estimation du coût plafond.
+ */
+export const PLANNING_CONSTRAINTS_MAX_TOKENS = 12_000;
 
 /** Ce que le programme a compris d'un texte. */
 export interface TextUnderstanding {

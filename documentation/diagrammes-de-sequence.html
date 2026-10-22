@@ -1997,7 +1997,7 @@ sequenceDiagram
       alt refusée
         GC-->>B: resource-exhausted (reason) — la boucle s'arrête
       else réservée
-        GC->>M: callModel(planning_concept, maxTokens 6 000, entity planning_run)
+        GC->>M: callModel(planning_concept, maxTokens 16 000, entity planning_run)
         GC->>FS: cost_usd += coût enregistré, reserved_usd −= estimation
         GC-->>B: recette conçue → brouillon, « Conçue par l'IA »
       end
@@ -4945,7 +4945,7 @@ sequenceDiagram
   alt tous les textes en cache, mode code, ou estimation au-delà du plafond de la génération
     Note over SP: aucun appel de modèle
   else textes modifiés (16 au plus, 2 000 car.)
-    SP->>M: askJson(planning_constraints, maxTokens 3 000)
+    SP->>M: askJson(planning_constraints, maxTokens 12 000)
     alt réponse lisible
       M-->>SP: textes : exclus, voulus, préparation max, léger, non_traduit
       SP->>SP: parseConstraintsAnswer — valeurs hors vocabulaire écartées
