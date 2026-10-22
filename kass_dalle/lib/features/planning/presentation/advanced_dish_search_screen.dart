@@ -204,7 +204,7 @@ class _AdvancedDishSearchScreenState
           ? Row(
               children: [
                 SizedBox(
-                  width: 320,
+                  width: PlatformUtils.sidePanelWidth,
                   child: _panel(_corpus, onChanged: _setPrefs),
                 ),
                 const VerticalDivider(width: 1),
@@ -214,7 +214,9 @@ class _AdvancedDishSearchScreenState
           : Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640),
+                constraints: const BoxConstraints(
+                  maxWidth: PlatformUtils.maxContentWidth,
+                ),
                 child: withField,
               ),
             ),

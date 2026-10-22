@@ -70,6 +70,13 @@ class PlatformUtils {
   /// panneau, dialogue).
   static const double narrowContentBreakpoint = 480.0;
 
+  /// Largeur du panneau de gauche d'un écran large en deux colonnes.
+  static const double sidePanelWidth = 320.0;
+
+  /// Largeur maximale d'une colonne de contenu centrée (liste, formulaire),
+  /// pour qu'elle ne s'étire pas sur tout un écran large.
+  static const double maxContentWidth = 640.0;
+
   /// Hauteur disponible sous laquelle une barre d'actions n'est plus fixée
   /// en bas d'une fiche : elle suit le contenu en fin de défilement
   /// (paysage, texte agrandi, bandeaux), plutôt que de masquer la fiche.

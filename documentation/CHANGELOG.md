@@ -20,14 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.61 — fonctionnel
+### v0.24.62 — fonctionnel
 
 *Admin › Backfills* : nouveau récurrent « Purger les rapports d'erreur anciens ». Il supprime
 les rapports d'erreur de plus de 90 jours, puis les captures jointes à un ticket que plus
 aucun ticket ne cite (dépôt abandonné, capture remplacée). Une capture rattachée à son ticket
 reste. Il n'a pas de programmation par défaut : à programmer chaque jour depuis sa tuile.
 
-### v0.24.61 — technique
+### v0.24.62 — technique
 
 Nouveau callable `backfillRetentionFn` (backfill récurrent `retention`, aux deux registres et
 dans `backfill_schedule.json`, branché dans `scheduledPassFor`), sans appel de modèle. Phase 1 :
@@ -42,6 +42,15 @@ champ. Les captures sont listées par pages de 500, 5 000 suppressions au plus p
 de ticket illisible par Firestore (`__x__`) désigne une capture orpheline. Tests : `retention.test.ts`, `backfillSchedule.test.ts`,
 `backfill_status_test.dart`, `admin_backfills_screen_test.dart`, et trois cas de
 `rules-tests` (rapport sans date, daté du futur, daté de l'instant).
+
+### v0.24.61 — technique
+
+Ticket #181 : les largeurs de mise en page écrites en dur ont reçu un nom dans `PlatformUtils`.
+`sidePanelWidth` (320 px) fixe le panneau latéral des écrans larges : recherche avancée,
+planning par lot, relecture d'un brouillon, recette générée. `maxContentWidth` (640 px) borne
+la colonne centrée de la recherche avancée, de la suggestion de repas et des membres d'un
+groupe. Huit occurrences sont remplacées dans six fichiers, sans changement visible. Les
+autres 320 et 640 gardent leur valeur : largeur d'un dialogue, taille d'image, mise en page PDF.
 
 ### v0.24.60 — fonctionnel
 

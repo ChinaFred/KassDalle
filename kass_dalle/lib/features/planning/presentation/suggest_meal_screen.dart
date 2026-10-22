@@ -404,7 +404,9 @@ class _SuggestMealScreenState extends ConsumerState<SuggestMealScreen> {
             body: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640),
+                constraints: const BoxConstraints(
+                  maxWidth: PlatformUtils.maxContentWidth,
+                ),
                 child: Column(
                   children: [
                     Expanded(
