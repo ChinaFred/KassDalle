@@ -152,7 +152,7 @@ const List<BackfillDefinition> kBackfillRegistry = [
     title: 'Retirer les ustensiles des ingrédients',
     description:
         'Retire le papier sulfurisé et les autres ustensiles des ingrédients '
-        'des recettes, puis supprime leurs fiches nutrition.',
+        'des recettes, puis supprime leurs fiches du référentiel.',
     usesAi: false,
     passLimit: 'Chaque passage examine au plus 2 000 recettes.',
   ),

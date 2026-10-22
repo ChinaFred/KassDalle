@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import {
   cleanupRecipe,
   isUtensilSheet,
-  sheetUsageValues,
+  sheetUsageBatches,
   summarizeUtensilsCleanup,
   type UtensilsCleanupResponse,
 } from "../callable/utensilsCleanupBackfillCallable";
@@ -57,6 +57,20 @@ describe("cleanupRecipe", () => {
     assert.deepEqual(removed, ["film alimentaire"]);
   });
 
+  test("un ustensile avec parenthèse n'est pas touché : il est signalé", () => {
+    const { patch, removed, withParentheses } = cleanupRecipe({
+      raw_cooklang: "Garnir @caissettes (ou beurre){12} et @papier sulfurisé{}.",
+      ingredients: [
+        { name: "caissettes (ou beurre)", qty: "12", unit: "" },
+        { name: "papier sulfurisé", qty: "", unit: "" },
+      ],
+    });
+    assert.equal(patch.raw_cooklang, "Garnir @caissettes (ou beurre){12} et #papier sulfurisé{}.");
+    assert.deepEqual(patch.ingredients, [{ name: "caissettes (ou beurre)", qty: "12", unit: "" }]);
+    assert.deepEqual(removed, ["papier sulfurisé"]);
+    assert.deepEqual(withParentheses, ["caissettes (ou beurre)"]);
+  });
+
   test("champs absents ou d'un autre type : ignorés", () => {
     assert.deepEqual(cleanupRecipe({ raw_cooklang: 3, ingredients: "x" }).patch, {});
   });
@@ -72,17 +86,21 @@ describe("fiches du référentiel", () => {
 
   test("valeurs cherchées : nom canonique, identifiant, alias, sans doublon", () => {
     assert.deepEqual(
-      sheetUsageValues("papier_sulfurise", {
+      sheetUsageBatches("papier_sulfurise", {
         canonical_name: "Papier sulfurisé",
         aliases: ["papier sulfurisé", "feuille de papier sulfurisé", 4],
       }),
-      ["papier sulfurisé", "papier sulfurise", "feuille de papier sulfurisé"],
+      [["papier sulfurisé", "papier sulfurise", "feuille de papier sulfurisé"]],
     );
   });
 
-  test("au plus trente valeurs", () => {
+  test("tous les alias, par lots de trente", () => {
     const aliases = Array.from({ length: 40 }, (_, i) => `alias ${i}`);
-    assert.equal(sheetUsageValues("x", { aliases }).length, 30);
+    const batches = sheetUsageBatches("x", { aliases });
+    assert.deepEqual(
+      batches.map((b) => b.length),
+      [30, 11],
+    );
   });
 });
 
@@ -93,6 +111,8 @@ describe("summarizeUtensilsCleanup", () => {
     corrigees: 2,
     dejaPropres: 8,
     echouees: 0,
+    aReprendre: 0,
+    aRevoirALaMain: 0,
     fichesTrouvees: 1,
     fichesSupprimees: 1,
     fichesEncoreCitees: 0,
@@ -113,13 +133,26 @@ describe("summarizeUtensilsCleanup", () => {
     assert.equal(s.toReview, 0);
   });
 
-  test("essai à blanc qui trouve : des éléments à revoir, donc pas terminé", () => {
+  test("essai à blanc qui trouve : incomplet, avec ce qu'il a trouvé pour reste", () => {
     const s = summarizeUtensilsCleanup({
       ...base,
       essaiABlanc: true,
       aRevoir: { items: [], total: 3 },
     });
+    assert.equal(s.complete, false);
+    assert.equal(s.remaining, 3);
     assert.equal(s.toReview, 3);
+  });
+
+  test("essai à blanc qui ne trouve rien : terminé", () => {
+    const s = summarizeUtensilsCleanup({
+      ...base,
+      essaiABlanc: true,
+      corrigees: 0,
+      fichesSupprimees: 0,
+    });
+    assert.equal(s.complete, true);
+    assert.equal(s.remaining, 0);
   });
 
   test("passage incomplet : reste inconnu", () => {

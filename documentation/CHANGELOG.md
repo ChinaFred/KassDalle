@@ -26,18 +26,23 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 des recettes déjà importées le papier sulfurisé, le film alimentaire et les autres ustensiles
 que d'anciens imports avaient pris pour des ingrédients, puis supprime leurs fiches du
 référentiel nutrition (`papier_sulfurise`…). La confirmation porte une case « Essai à blanc :
-ne rien modifier », cochée par défaut : le passage liste alors dans « À revoir » les recettes et
-les fiches qui seraient corrigées, sans rien écrire.
+ne rien modifier », cochée par défaut à chaque lancement : le passage liste alors dans « À
+revoir » les recettes et les fiches qui seraient corrigées, sans rien écrire. Un ustensile suivi
+d'une parenthèse (« caissettes (ou beurre) ») n'est pas touché : la recette passe dans « À
+revoir », à corriger à la main.
 
 ### v0.24.59 — technique
 
 Nouveau callable `backfillUtensilsCleanupFn` (backfill ponctuel `utensils_cleanup`, aux deux
-registres et dans `backfill_schedule.json`), sans appel de modèle. Recettes : `retagUtensils`
-sur `raw_cooklang` et `draft_cooklang`, noms reconnus par `isUtensil` retirés de `ingredients`
-et de `ingredients_index` ; seuls les champs changés sont écrits, et `onRecipeWritten`
-recalcule nutrition, courses et allergènes. Fiches : après le parcours de toutes les
-recettes, une fiche `nutrition_ingredients` dont l'identifiant ou le nom canonique est un
-ustensile est supprimée si aucune recette ne la cite dans `ingredients_index`. `dryRun` vaut
+registres et dans `backfill_schedule.json`), sans appel de modèle par le passage. Recettes :
+`@nom{…}` devient `#nom{…}` dans `raw_cooklang` et `draft_cooklang`, et les noms reconnus par
+`isUtensilLine` sortent de `ingredients` et de `ingredients_index` ; seuls les champs changés
+sont écrits, sous condition de la version lue (`lastUpdateTime`), et `onRecipeWritten`
+recalcule nutrition, courses et allergènes, avec d'éventuels appels de modèle sur le plafond du
+propriétaire. Fiches : après le parcours de toutes les recettes, une fiche
+`nutrition_ingredients` dont l'identifiant ou le nom canonique est un ustensile est supprimée
+si aucune recette ne la cite dans `ingredients_index` (nom canonique, identifiant et tous les
+alias, normalisés par `buildIngredientsIndex`, par lots de trente). `dryRun` vaut
 vrai par défaut et a son propre curseur (`utensils_cleanup_dry_run_backfill_checkpoint`).
 `LOCK_GROUPS` : le nettoyage ne tourne ni avec `enrich_referentials`, ni avec
 `refresh_sodium`, ni avec `allergens`, qui écrivent les fiches. La boîte à case de l'écran

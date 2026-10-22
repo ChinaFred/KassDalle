@@ -395,6 +395,7 @@ void main() {
       expect(
         backfillReportSummary(BackfillKeys.utensilsCleanup, {
           'essaiABlanc': true,
+          'recettesParcourues': true,
           'corrigees': 12,
           'fichesSupprimees': 1,
         }),
@@ -403,12 +404,23 @@ void main() {
       expect(
         backfillReportSummary(BackfillKeys.utensilsCleanup, {
           'essaiABlanc': false,
+          'recettesParcourues': true,
           'corrigees': 12,
           'fichesSupprimees': 2,
           'echouees': 0,
           'fichesEchouees': 0,
         }),
         '12 recettes corrigées, 2 fiches supprimées, 0 échec',
+      );
+      expect(
+        backfillReportSummary(BackfillKeys.utensilsCleanup, {
+          'essaiABlanc': true,
+          'recettesParcourues': false,
+          'corrigees': 5,
+          'aRevoirALaMain': 1,
+        }),
+        'Essai à blanc : 5 recettes à corriger, fiches non examinées, '
+        '1 à revoir à la main',
       );
     });
   });

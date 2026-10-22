@@ -11,10 +11,16 @@
  *
  * Deux phases :
  *  1. Recettes : `@nom{…}` devient `#nom{…}` dans `raw_cooklang` et
- *     `draft_cooklang` (`retagUtensils`), et les ustensiles sortent de
- *     `ingredients` et de `ingredients_index`. L'écriture réveille
- *     `onRecipeWritten`, qui recalcule nutrition, courses et allergènes comme
- *     après toute modification d'ingrédients.
+ *     `draft_cooklang`, et les ustensiles sortent de `ingredients` et de
+ *     `ingredients_index`. Un nom reconnu qui porte une parenthèse
+ *     (« caissettes (ou beurre) ») n'est pas touché : la parenthèse peut citer
+ *     un aliment, et la recette part dans « à revoir » (`isUtensilLine`, même
+ *     prudence que le contrôle de fidélité). L'écriture est conditionnée à la
+ *     version lue : une recette modifiée entre-temps n'est pas écrasée, elle
+ *     est reprise au passage suivant. L'écriture réveille `onRecipeWritten`,
+ *     qui recalcule nutrition, courses et allergènes comme après toute
+ *     modification d'ingrédients — ce recalcul peut appeler un modèle, sur le
+ *     plafond du propriétaire de la recette.
  *  2. Fiches : une fois toutes les recettes parcourues, une fiche dont
  *     l'identifiant ou le nom canonique est un ustensile est supprimée, si
  *     plus aucune recette ne la cite dans `ingredients_index`. Une fiche
@@ -35,7 +41,8 @@ import {
   REGION,
 } from "../config";
 import { logError, logInfo } from "../logging";
-import { isUtensil, retagUtensils } from "../nutrition/utensils";
+import { buildIngredientsIndex } from "../cooklang/parser";
+import { isUtensil, isUtensilLine } from "../nutrition/utensils";
 import type { StoredIngredient } from "../triggers/recipeIngredients";
 import { getBackfillCursor, parseBoolean, setBackfillCursor } from "./_backfillCursor";
 import { requireAdmin, type AuthContext } from "./_auth";
@@ -91,6 +98,10 @@ export interface UtensilsCleanupResponse {
   /** Rien à changer. */
   dejaPropres: number;
   echouees: number;
+  /** Modifiées entre la lecture et l'écriture : laissées telles quelles, reprises au passage suivant. */
+  aReprendre: number;
+  /** Un ustensile avec parenthèse : non touchées, à revoir à la main. */
+  aRevoirALaMain: number;
   /** Fiches du référentiel dont le nom est un ustensile. */
   fichesTrouvees: number;
   /** Fiches supprimées (ou qui le seraient, à blanc). */
@@ -116,6 +127,8 @@ function emptyResponse(dryRun: boolean): UtensilsCleanupResponse {
     corrigees: 0,
     dejaPropres: 0,
     echouees: 0,
+    aReprendre: 0,
+    aRevoirALaMain: 0,
     fichesTrouvees: 0,
     fichesSupprimees: 0,
     fichesEncoreCitees: 0,
@@ -136,16 +149,24 @@ export interface RecipeCleanup {
   patch: Record<string, unknown>;
   /** Noms des ustensiles retirés, sans doublon, dans l'ordre rencontré. */
   removed: string[];
+  /**
+   * Noms reconnus comme ustensiles mais qui portent une parenthèse : laissés
+   * en place, à revoir à la main.
+   */
+  withParentheses: string[];
 }
 
-/** Noms écrits `@nom{…}` qui désignent un ustensile. */
-function taggedUtensilNames(cooklang: string): string[] {
-  const out: string[] = [];
-  for (const m of cooklang.matchAll(/@([^{@#~\n]+)\{[^}]*\}/g)) {
-    const name = m[1].trim();
-    if (isUtensil(name)) out.push(name);
-  }
-  return out;
+/**
+ * Un nom à retirer : un ustensile sans parenthèse. `isUtensil` ignore les
+ * parenthèses ; « caissettes (ou beurre) » cite pourtant un aliment.
+ */
+function removable(name: string): boolean {
+  return isUtensilLine(name);
+}
+
+/** Ustensile reconnu, mais avec une parenthèse : on n'y touche pas. */
+function utensilWithParentheses(name: string): boolean {
+  return /[()]/.test(name) && isUtensil(name);
 }
 
 /**
@@ -156,69 +177,69 @@ function taggedUtensilNames(cooklang: string): string[] {
 export function cleanupRecipe(data: Record<string, unknown>): RecipeCleanup {
   const patch: Record<string, unknown> = {};
   const removed: string[] = [];
-  const note = (name: string) => {
+  const withParentheses: string[] = [];
+  const note = (list: string[], name: string) => {
     const clean = name.trim();
-    if (clean && !removed.some((r) => r.toLowerCase() === clean.toLowerCase())) {
-      removed.push(clean);
+    if (clean && !list.some((r) => r.toLowerCase() === clean.toLowerCase())) list.push(clean);
+  };
+  const check = (name: string): boolean => {
+    if (removable(name)) {
+      note(removed, name);
+      return true;
     }
+    if (utensilWithParentheses(name)) note(withParentheses, name);
+    return false;
   };
 
   for (const field of ["raw_cooklang", "draft_cooklang"] as const) {
     const text = data[field];
     if (typeof text !== "string") continue;
-    const retagged = retagUtensils(text);
-    if (retagged !== text) {
-      patch[field] = retagged;
-      taggedUtensilNames(text).forEach(note);
-    }
+    // Même motif que `retagUtensils`, avec la règle plus stricte de `removable`.
+    const retagged = text.replace(
+      /@([^{@#~\n]+)\{([^}]*)\}/g,
+      (match, name: string, inner: string) => (check(name.trim()) ? `#${name}{${inner}}` : match),
+    );
+    if (retagged !== text) patch[field] = retagged;
   }
 
   if (Array.isArray(data.ingredients)) {
     const ingredients = data.ingredients as StoredIngredient[];
-    const kept = ingredients.filter((i) => {
-      const name = typeof i?.name === "string" ? i.name : "";
-      if (!isUtensil(name)) return true;
-      note(name);
-      return false;
-    });
+    const kept = ingredients.filter((i) => !check(typeof i?.name === "string" ? i.name : ""));
     if (kept.length !== ingredients.length) patch.ingredients = kept;
   }
 
   if (Array.isArray(data.ingredients_index)) {
     const index = data.ingredients_index as unknown[];
-    const kept = index.filter((n) => {
-      if (typeof n !== "string" || !isUtensil(n)) return true;
-      note(n);
-      return false;
-    });
+    const kept = index.filter((n) => typeof n !== "string" || !check(n));
     if (kept.length !== index.length) patch.ingredients_index = kept;
   }
 
-  return { patch, removed };
+  return { patch, removed, withParentheses };
 }
 
 /**
- * Valeurs cherchées dans `ingredients_index` pour une fiche : nom canonique,
- * identifiant lu comme un nom, puis alias — en minuscules, sans doublon, comme
- * l'index (`buildIngredientsIndex`). Même ordre que l'écran Ingrédients
- * nutrition (`ingredientUsageSearchValues`).
+ * Valeurs cherchées dans `ingredients_index` pour une fiche, par lots de
+ * trente (plafond d'un `array-contains-any`) : nom canonique, identifiant lu
+ * comme un nom, et TOUS les alias. La normalisation est celle de l'index
+ * lui-même (`buildIngredientsIndex`), jamais une copie.
+ *
+ * L'écran Ingrédients nutrition (`ingredientUsageSearchValues`) n'affiche que
+ * les trente premières valeurs ; ici, une suppression ne se décide qu'après
+ * avoir tout cherché.
  */
-export function sheetUsageValues(id: string, data: Record<string, unknown>): string[] {
+export function sheetUsageBatches(id: string, data: Record<string, unknown>): string[][] {
   const names: string[] = [];
   if (typeof data.canonical_name === "string") names.push(data.canonical_name);
   names.push(id.replaceAll("_", " "));
   if (Array.isArray(data.aliases)) {
     for (const a of data.aliases) if (typeof a === "string") names.push(a);
   }
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const n of names) {
-    const v = n.trim().toLowerCase();
-    if (!v || seen.has(v)) continue;
-    seen.add(v);
-    out.push(v);
+  const values = buildIngredientsIndex(names.map((name) => ({ name, qty: "", unit: "" })));
+  const batches: string[][] = [];
+  for (let i = 0; i < values.length; i += MAX_USAGE_VALUES) {
+    batches.push(values.slice(i, i + MAX_USAGE_VALUES));
   }
-  return out.slice(0, MAX_USAGE_VALUES);
+  return batches;
 }
 
 /** Vrai quand la fiche désigne un ustensile, par son identifiant ou son nom canonique. */
@@ -230,6 +251,12 @@ export function isUtensilSheet(id: string, data: Record<string, unknown>): boole
 interface Bounds {
   deadline: number;
   maxDocs: number;
+}
+
+/** Écriture refusée parce que le document a changé depuis sa lecture (gRPC 9). */
+function isPreconditionFailure(e: unknown): boolean {
+  const code = (e as { code?: unknown } | null)?.code;
+  return code === 9 || code === "failed-precondition" || code === "FAILED_PRECONDITION";
 }
 
 // ── Phase 1 : recettes ──────────────────────────────────────────────────────
@@ -272,9 +299,18 @@ async function runRecipesPhase(
 
       response.examinees += 1;
       const data = doc.data() as Record<string, unknown>;
-      const { patch, removed } = cleanupRecipe(data);
+      const { patch, removed, withParentheses } = cleanupRecipe(data);
+      if (withParentheses.length > 0) {
+        response.aRevoirALaMain += 1;
+        review.add({
+          kind: "recipe",
+          id: doc.id,
+          label: recipeReviewLabel(doc.id, data),
+          reason: `Ustensile avec parenthèse, laissé tel quel : ${namesList(withParentheses)}. À corriger à la main`,
+        });
+      }
       if (Object.keys(patch).length === 0) {
-        response.dejaPropres += 1;
+        if (withParentheses.length === 0) response.dejaPropres += 1;
         cursor = doc.id;
         continue;
       }
@@ -294,10 +330,34 @@ async function runRecipesPhase(
       }
 
       try {
-        await doc.ref.update(patch);
+        // Conditionnée à la version lue : une modification faite depuis la
+        // lecture de la page n'est pas écrasée.
+        await doc.ref.update(patch, { lastUpdateTime: doc.updateTime });
         response.corrigees += 1;
         consecutiveFailures = 0;
       } catch (e) {
+        if (isPreconditionFailure(e)) {
+          // Pas une panne : la recette a bougé. Elle est relue au passage
+          // suivant, qui repart du début une fois la collection parcourue.
+          response.aReprendre += 1;
+          consecutiveFailures = 0;
+          review.add({
+            kind: "recipe",
+            id: doc.id,
+            label: recipeReviewLabel(doc.id, data),
+            reason: "Modifiée pendant le passage : relancer pour la corriger",
+          });
+          await logInfo({
+            message: "Ustensiles — recette modifiée pendant le passage, laissée",
+            correlationId: ctx.correlationId,
+            userId: ctx.userId,
+            moduleType: "DESIGN",
+            feature: FEATURE,
+            extra: { recipeId: doc.id },
+          });
+          cursor = doc.id;
+          continue;
+        }
         response.echouees += 1;
         consecutiveFailures += 1;
         review.add({
@@ -349,11 +409,16 @@ async function runSheetsPhase(
   // curseur. La phase est sautée tant qu'une recette peut encore citer une
   // fiche ; elle se rejoue entière au passage suivant si le délai l'arrête.
   const sheets = await db.collection(COLL_NUTRITION_INGREDIENTS).get();
+  let consecutiveFailures = 0;
   for (const doc of sheets.docs) {
     const data = doc.data() as Record<string, unknown>;
     if (!isUtensilSheet(doc.id, data)) continue;
     if (Date.now() > bounds.deadline) {
       response.stoppedByDeadline = true;
+      return;
+    }
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      response.stoppedByErrors = true;
       return;
     }
     response.fichesTrouvees += 1;
@@ -363,17 +428,24 @@ async function runSheetsPhase(
         : doc.id;
 
     try {
-      const values = sheetUsageValues(doc.id, data);
-      const users = await db
-        .collection(COLL_RECIPES)
-        .where("ingredients_index", "array-contains-any", values)
-        .limit(1)
-        .get();
+      let user: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      for (const values of sheetUsageBatches(doc.id, data)) {
+        const found = await db
+          .collection(COLL_RECIPES)
+          .where("ingredients_index", "array-contains-any", values)
+          .limit(1)
+          .get();
+        if (!found.empty) {
+          user = found.docs[0];
+          break;
+        }
+      }
       // À blanc, les recettes n'ont pas été corrigées : une recette qui la
       // cite encore est celle que le passage réel corrigera d'abord.
-      if (!users.empty && !dryRun) {
+      if (user && !dryRun) {
+        consecutiveFailures = 0;
         response.fichesEncoreCitees += 1;
-        const first = users.docs[0];
+        const first = user;
         review.add({
           kind: "ingredient",
           id: doc.id,
@@ -385,6 +457,7 @@ async function runSheetsPhase(
         });
         continue;
       }
+      consecutiveFailures = 0;
       if (dryRun) {
         response.fichesSupprimees += 1;
         review.add({
@@ -399,6 +472,7 @@ async function runSheetsPhase(
       response.fichesSupprimees += 1;
     } catch (e) {
       response.fichesEchouees += 1;
+      consecutiveFailures += 1;
       review.add({
         kind: "ingredient",
         id: doc.id,
@@ -471,13 +545,15 @@ export interface UtensilsCleanupPassOptions {
 /**
  * Ce que l'état du backfill retient d'un passage (`backfills/runner.ts`).
  *
- * Un essai à blanc qui trouve quelque chose le met dans « à revoir » : il ne
- * peut donc marquer le backfill terminé que s'il ne trouve rien à corriger.
+ * Un essai à blanc qui trouve quelque chose reste « incomplet », avec ce qu'il
+ * a trouvé pour reste : la tuile ne doit pas afficher « Terminé » alors que
+ * rien n'est corrigé. Il ne marque le backfill terminé que s'il ne trouve rien.
  */
 export function summarizeUtensilsCleanup(r: UtensilsCleanupResponse): PassSummary {
+  const found = r.essaiABlanc ? r.corrigees + r.fichesSupprimees : 0;
   return {
-    complete: r.completed,
-    remaining: r.completed ? 0 : null,
+    complete: r.completed && found === 0,
+    remaining: r.completed ? found : null,
     toReview: r.aRevoir.total,
     spendCapHit: false,
     // Une écriture en échec se retente au passage suivant, sans appel de
@@ -527,7 +603,11 @@ export async function runUtensilsCleanupPass(
   }
 
   response.completed =
-    response.recettesParcourues && response.fichesParcourues && response.echouees === 0;
+    response.recettesParcourues &&
+    response.fichesParcourues &&
+    response.echouees === 0 &&
+    response.aReprendre === 0 &&
+    response.fichesEchouees === 0;
 
   // Le curseur revient au début quand toutes les recettes sont passées ; sinon
   // il retient la dernière examinée.

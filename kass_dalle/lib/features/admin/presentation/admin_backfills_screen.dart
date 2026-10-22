@@ -146,18 +146,22 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
       case BackfillKeys.utensilsCleanup:
-        return 'Retire des recettes les ustensiles écrits comme ingrédients '
-            '(papier sulfurisé, film alimentaire, piques…) : ils restent '
-            'cités dans les étapes, comme ustensiles. Une fois toutes les '
-            'recettes parcourues, supprime leurs fiches du référentiel '
-            'nutrition qu\'aucune recette ne cite plus.\n\n'
-            'L\'essai à blanc ne modifie rien : il liste dans « À revoir » '
-            'les recettes et les fiches qui seraient corrigées. Décochez-le '
-            'pour corriger.\n\n'
-            'Aucun appel d\'IA pour ce passage. Chaque recette corrigée voit '
+        return 'Avec « Essai à blanc » cochée, rien n\'est modifié : le passage '
+            'liste dans « À revoir » les recettes et les fiches du '
+            'référentiel qu\'il corrigerait. Décochez « Essai à blanc » '
+            'ci-dessous pour corriger.\n\n'
+            'Corrigé, ce passage retire des recettes les ustensiles écrits '
+            'comme ingrédients (papier sulfurisé, film alimentaire, '
+            'piques…) : ils restent cités dans les étapes, comme ustensiles. '
+            'Une fois toutes les recettes parcourues, il supprime les fiches '
+            'du référentiel d\'ustensiles qu\'aucune recette ne cite plus. '
+            'Un ustensile suivi d\'une parenthèse n\'est pas touché : la '
+            'recette passe dans « À revoir ».\n\n'
+            'Aucun appel d\'IA par le passage. Chaque recette corrigée voit '
             'sa nutrition, ses courses et ses allergènes recalculés, comme '
-            'après une modification de ses ingrédients. Deux mille recettes '
-            'par passage.';
+            'après une modification : ce recalcul peut appeler l\'IA, sur le '
+            'plafond du propriétaire de la recette. Deux mille recettes par '
+            'passage.';
       default:
         return '';
     }
@@ -278,18 +282,33 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       case BackfillKeys.utensilsCleanup:
         final r = await _repo.backfillUtensilsCleanup(dryRun: dryRun);
         final blanc = (r['essaiABlanc'] ?? 0) == 1;
+        final complet = (r['completed'] ?? 0) == 1;
+        final trouve = (r['corrigees'] ?? 0) + (r['fichesSupprimees'] ?? 0);
+        final String fin;
+        if (!complet) {
+          fin = ' — incomplet, relancer';
+        } else if (!blanc) {
+          fin = ' — terminé';
+        } else if (trouve > 0) {
+          fin = ' — essai terminé : décochez « Essai à blanc » pour corriger';
+        } else {
+          fin = ' — essai terminé : rien à corriger';
+        }
         return _fromCounts(
           r,
           '${blanc ? 'Essai à blanc, rien n\'est modifié. ' : ''}'
           'Recettes : examinées=${r['examinees']}, '
           '${blanc ? 'à corriger' : 'corrigées'}=${r['corrigees']}, '
-          'déjà propres=${r['dejaPropres']}, échecs=${r['echouees']} | '
-          'Fiches d\'ustensiles : trouvées=${r['fichesTrouvees']}, '
-          '${blanc ? 'à supprimer' : 'supprimées'}=${r['fichesSupprimees']}, '
-          'encore citées=${r['fichesEncoreCitees']}, '
-          'échecs=${r['fichesEchouees']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${(r['recettesParcourues'] ?? 0) == 1 ? '' : ' (fiches examinées une fois toutes les recettes parcourues)'}'
+          'déjà propres=${r['dejaPropres']}, '
+          'à revoir à la main=${r['aRevoirALaMain']}, '
+          'modifiées pendant le passage=${r['aReprendre']}, '
+          'échecs=${r['echouees']} | '
+          'Fiches du référentiel : '
+          '${(r['recettesParcourues'] ?? 0) == 1 ? 'trouvées=${r['fichesTrouvees']}, '
+                    '${blanc ? 'à supprimer' : 'supprimées'}=${r['fichesSupprimees']}, '
+                    'encore citées=${r['fichesEncoreCitees']}, '
+                    'échecs=${r['fichesEchouees']}' : 'non examinées, elles le seront une fois toutes les recettes parcourues'}'
+          '$fin'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
@@ -330,6 +349,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     BackfillDefinition def, {
     required String checkboxLabel,
     required bool initialValue,
+    String Function(bool checked)? confirmLabelFor,
   }) async {
     var checked = initialValue;
     final confirmed = await showDialog<bool>(
@@ -360,7 +380,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Lancer'),
+              child: Text(confirmLabelFor?.call(checked) ?? 'Lancer'),
             ),
           ],
         ),
@@ -376,7 +396,19 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     var retryExcluded = false;
     var dryRun = false;
     final bool ok;
-    if (done) {
+    if (def.key == BackfillKeys.utensilsCleanup) {
+      // Cochée par défaut, même pour une relance après « terminé » : un
+      // lancement ne modifie rien tant qu'on ne la décoche pas.
+      final answer = await _confirmWithCheckbox(
+        def,
+        checkboxLabel: 'Essai à blanc : ne rien modifier',
+        initialValue: true,
+        confirmLabelFor: (checked) =>
+            checked ? 'Lancer l\'essai' : 'Corriger les recettes',
+      );
+      ok = answer.ok;
+      dryRun = answer.checked;
+    } else if (done) {
       ok = await _confirm(
         title: 'Relancer « ${def.title} » ?',
         content:
@@ -394,16 +426,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       );
       ok = answer.ok;
       retryExcluded = answer.checked;
-    } else if (def.key == BackfillKeys.utensilsCleanup) {
-      // Cochée par défaut : un premier lancement ne modifie rien et montre
-      // ce qui serait corrigé.
-      final answer = await _confirmWithCheckbox(
-        def,
-        checkboxLabel: 'Essai à blanc : ne rien modifier',
-        initialValue: true,
-      );
-      ok = answer.ok;
-      dryRun = answer.checked;
     } else {
       ok = await _confirm(
         title: def.title,
