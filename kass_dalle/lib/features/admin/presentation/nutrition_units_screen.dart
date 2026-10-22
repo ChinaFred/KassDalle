@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import 'admin_providers.dart';
 import '../data/nutrition_units_repository.dart';
@@ -9,7 +8,6 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/error_message.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
-import '../../../core/router/app_router.dart';
 
 const _measurementTypes = <String>['weight', 'volume', 'count', 'unknown'];
 const _statuses = <String>['known', 'unknown', 'pending_review', 'deprecated'];
@@ -48,9 +46,10 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
         title: const Text('Unités de mesure'),
         actions: [
           // L'icône « Initialiser les unités par défaut » est retirée le
-          // 21/10/2026 (v0.24.40) : le semis vit dans Admin › Backfills,
-          // « Semer les unités standard ». Cet écran montre et corrige ; il
-          // ne lance pas d'opération de masse.
+          // 21/10/2026 (v0.24.40) : le semis est passé dans Admin › Backfills,
+          // « Semer les unités standard », lui-même retiré le 22/10/2026
+          // (v0.24.50), une fois les unités standard semées en production.
+          // Cet écran montre et corrige ; il ne lance pas d'opération de masse.
           IconButton(
             tooltip: 'Ajouter une unité',
             onPressed: _openCreateDialog,
@@ -100,19 +99,10 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
                   return items.isEmpty
                       // Pas de bouton de semis ici : une écriture de masse
                       // passe par Admin › Backfills (CLAUDE.md).
-                      ? AppEmptyState(
+                      ? const AppEmptyState(
                           icon: Icons.straighten_outlined,
                           title: 'Aucune unité',
-                          message:
-                              'Ajoutez-en une avec « Nouvelle unité ». Pour '
-                              'créer les unités standard (gramme, cuillère à '
-                              'soupe, verre…), lancez « Semer les unités '
-                              'standard » dans Admin › Backfills.',
-                          action: TextButton(
-                            onPressed: () =>
-                                context.push(AppRoutes.adminBackfills),
-                            child: const Text('Ouvrir les backfills'),
-                          ),
+                          message: 'Ajoutez-en une avec « Nouvelle unité ».',
                         )
                       : const AppEmptyState(
                           icon: Icons.search_off,

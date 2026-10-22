@@ -11,7 +11,6 @@ abstract final class BackfillFailureKind {
   static const ingredient = 'ingredient';
   static const unit = 'unit';
   static const recipe = 'recipe';
-  static const account = 'account';
 
   /// Un repas planifié (`planned_meals`) : affiché sans lien.
   static const meal = 'meal';
@@ -23,7 +22,7 @@ abstract final class BackfillFailureKind {
   static const invitation = 'invitation';
 }
 
-/// Un élément à revoir : un ingrédient, une unité, une recette, un compte.
+/// Un élément à revoir : un ingrédient, une unité, une recette, un ticket…
 class BackfillFailure {
   final String kind;
   final String id;

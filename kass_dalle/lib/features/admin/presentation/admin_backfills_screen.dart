@@ -145,24 +145,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'passage suivant.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
-      case BackfillKeys.defaultUnits:
-        return 'Crée dans le référentiel les unités de mesure standard qui '
-            'manquent (gramme, cuillère à soupe, verre, pincée…), et complète '
-            'celles qui n\'ont pas encore leur grammage, leur volume, leur '
-            'libellé ou leur type. Une valeur déjà saisie n\'est jamais '
-            'remplacée.\n\n'
-            'Aucun appel d\'IA. Les quarante unités standard sont examinées '
-            'en un passage. Relancer ne réécrit pas une unité déjà complète.';
-      case BackfillKeys.usersSchemaCheck:
-        return 'Lit la fiche de chaque compte et liste celles qui posent un '
-            'problème, avec la raison et son effet : un champ illisible '
-            '(absent ou de mauvais type) fait disparaître la fiche de '
-            'Comptes ; un rôle absent ou inconnu laisse le compte sans droit, '
-            'affiché « en attente » ; un indicateur de révocation absent fait '
-            'échouer toute règle qui le lit pour ce compte.\n\n'
-            'Lecture seule : aucun compte n\'est modifié. Aucun appel d\'IA. '
-            'Tous les comptes sont lus en un passage ; on peut relancer après '
-            'une correction.';
       default:
         return '';
     }
@@ -277,29 +259,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.defaultUnits:
-        final r = await _repo.backfillDefaultUnits();
-        return _fromCounts(
-          r,
-          'Unités standard : examinées=${r['examinees']}, '
-          'créées=${r['creees']}, complétées=${r['completees']}, '
-          'déjà à jour=${r['dejaAJour']}, en erreur=${r['echouees']}, '
-          'restantes=${r['restantes']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.usersSchemaCheck:
-        final r = await _repo.backfillUsersSchemaCheck();
-        return _fromCounts(
-          r,
-          'Comptes : examinés=${r['examines']}, conformes=${r['conformes']}, '
-          'à revoir=${r['nonConformes']}, contrôles en échec=${r['echoues']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
-          '${_flag(r, 'stoppedByBudget', ' (plus de 5 000 comptes : lecture arrêtée)')}'
-          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer)')}',
         );
       default:
         throw StateError('Backfill inconnu : ${def.key}');
@@ -889,6 +848,22 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // la main : 7 repas déplacés du 2 au 29 octobre, 0 échec. Aucun parcours
   // de l'application ne change le planning d'un repas existant.
   //
+  // Deux ponctuels, menés au bout et marqués terminés en production, sont
+  // retirés en v0.24.50 (22 octobre 2026) :
+  //
+  // « Semer les unités standard » (`backfillDefaultUnitsFn`, v0.24.40,
+  // terminé le 21/10 en v0.24.41) a créé dans `nutrition_units` les unités
+  // standard absentes et complété grammage, volume, libellé et type de celles
+  // qui en manquaient, sans remplacer une valeur saisie. Dernier passage :
+  // 2 unités créées, 38 complétées, 0 échec. L'enrichissement des
+  // référentiels et l'écran Unités de mesure tiennent le référentiel à jour.
+  //
+  // « Contrôler les comptes » (`backfillUsersSchemaCheckFn`, v0.24.42,
+  // terminé le 22/10 en v0.24.46) a lu, sans rien écrire, chaque document
+  // `users/{uid}` et listé ceux qui s'écartaient du schéma de
+  // `firestore.rules`. Dernier passage : 7 comptes lus, 0 à revoir, 0 échec.
+  // Les règles refusent désormais toute écriture hors schéma.
+  //
   // Depuis v0.23.45, chaque backfill est classé ponctuel ou récurrent
   // (`backfill_registry.dart`, `functions/src/backfills/registry.ts`). Un
   // ponctuel terminé reste visible en bas de l'écran jusqu'à son retrait du
@@ -1041,8 +1016,6 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.recipeRoles: Icons.restaurant_outlined,
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
-    BackfillKeys.defaultUnits: Icons.straighten_outlined,
-    BackfillKeys.usersSchemaCheck: Icons.manage_accounts_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

@@ -24,6 +24,8 @@
  * et `illustration_folders_move`.
  * Retiré en v0.24.44, sur demande, sans être terminé (ponctuel réutilisable) :
  * `move_meals_to_group`.
+ * Retirés en v0.24.50, une fois terminés en production : `default_units` et
+ * `users_schema_check`.
  * Leurs documents `app_config/backfill_run_<clé>` restent en base ; plus rien
  * ne les lit. La liste complète, avec les versions : skill `backfill`,
  * « Backfills retirés ».
@@ -38,8 +40,6 @@ export const BACKFILL_KEYS = [
   "recipe_roles",
   "shopping_products",
   "refresh_sodium",
-  "default_units",
-  "users_schema_check",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -111,26 +111,6 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     usesAi: true,
     defaultSchedule: null,
   },
-  // Les unités standard du référentiel `nutrition_units`. Ponctuel : la liste
-  // est fixe, et une fois semée rien ne la défait, sinon une suppression à la
-  // main dans l'écran Unités de mesure — que ce passage, relancé, répare.
-  {
-    key: "default_units",
-    kind: "ponctuel",
-    title: "Semer les unités standard",
-    usesAi: false,
-    defaultSchedule: null,
-  },
-  // Lecture seule : liste les comptes dont le document s'écarte du schéma de
-  // `firestore.rules` (v0.24.30, v0.24.32). Terminé quand un passage complet
-  // ne trouve rien à revoir.
-  {
-    key: "users_schema_check",
-    kind: "ponctuel",
-    title: "Contrôler les comptes",
-    usesAi: false,
-    defaultSchedule: null,
-  },
 ];
 
 /** La définition d'une clé, ou `null` si elle n'existe pas. */
@@ -147,14 +127,11 @@ export function recurrentKeys(): BackfillKey[] {
 /**
  * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
  * ensemble : l'enrichissement des référentiels et la réparation du sel
- * réécrivent tous deux `per100g` des ingrédients ; l'enrichissement et le
- * semis des unités standard écrivent tous deux `grams_per_unit` dans
- * `nutrition_units`. Un passage de l'un est refusé pendant que l'autre tient
+ * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est refusé pendant que l'autre tient
  * son verrou. Un backfill peut appartenir à plusieurs groupes.
  */
 const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
   ["enrich_referentials", "refresh_sodium"],
-  ["enrich_referentials", "default_units"],
 ];
 
 /** Les autres backfills dont le verrou bloque [key], dans l'ordre des groupes. */

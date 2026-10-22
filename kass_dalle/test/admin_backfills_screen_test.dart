@@ -52,7 +52,7 @@ void main() {
   ) async {
     await _pump(tester, size: const Size(400, 4800), runs: runs);
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (2)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (0)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(
       find.text('Programmation : Tous les jours à 5 h'),
@@ -71,7 +71,7 @@ void main() {
   testWidgets('état d\'un backfill retiré du code : ignoré, sans erreur', (
     tester,
   ) async {
-    // Les ponctuels retirés en v0.23.52, v0.24.33, v0.24.37 et v0.24.44 laissent leur
+    // Les ponctuels retirés en v0.23.52, v0.24.33, v0.24.37, v0.24.44 et v0.24.50 laissent leur
     // `app_config/backfill_run_<clé>` en base, terminé ou même en cours.
     await _pump(
       tester,
@@ -107,10 +107,20 @@ void main() {
           'dernier_passage_statut': 'termine',
           'last_report': {'deplaces': 7, 'echoues': 0},
         }),
+        'default_units': BackfillRunState.fromMap('default_units', {
+          'termine_le': DateTime.utc(2026, 10, 21, 10),
+          'termine_par': 'auto',
+          'dernier_passage_statut': 'termine',
+        }),
+        'users_schema_check': BackfillRunState.fromMap('users_schema_check', {
+          'termine_le': DateTime.utc(2026, 10, 22, 10),
+          'termine_par': 'auto',
+          'dernier_passage_statut': 'termine',
+        }),
       },
     );
     expect(find.text('Récurrents (5)'), findsOneWidget);
-    expect(find.text('Ponctuels à lancer (2)'), findsOneWidget);
+    expect(find.text('Ponctuels à lancer (0)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(find.text('Durées estimées'), findsNothing);
     expect(find.text('Protéine et féculent des plats'), findsNothing);
@@ -118,6 +128,8 @@ void main() {
     expect(find.text('Livres système des comptes'), findsNothing);
     expect(find.text('Ranger les illustrations'), findsNothing);
     expect(find.text('Déplacer mes repas vers un groupe'), findsNothing);
+    expect(find.text('Semer les unités standard'), findsNothing);
+    expect(find.text('Contrôler les comptes'), findsNothing);
     expect(find.textContaining('ancienne erreur'), findsNothing);
     expect(tester.takeException(), isNull);
   });

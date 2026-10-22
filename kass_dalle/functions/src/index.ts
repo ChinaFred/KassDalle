@@ -170,8 +170,8 @@ export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdm
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
-export { backfillDefaultUnitsFn } from "./callable/defaultUnitsBackfillCallable";
-export { backfillUsersSchemaCheckFn } from "./callable/usersSchemaCheckBackfillCallable";
+// `backfillDefaultUnitsFn` (v0.24.40) et `backfillUsersSchemaCheckFn` (v0.24.42) sont retirés en
+// v0.24.50 : lancés en production et marqués terminés, leur travail est fait.
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en
 // v0.23.23 : lancés en production, leur travail est fait. Les déclencheurs `syncUserClaims`
 // et `syncGroupReach` tiennent profils et portée à jour.
