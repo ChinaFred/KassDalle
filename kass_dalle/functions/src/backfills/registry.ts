@@ -24,7 +24,7 @@
  * et `illustration_folders_move`.
  * Retiré en v0.24.44, sur demande, sans être terminé (ponctuel réutilisable) :
  * `move_meals_to_group`.
- * Retirés en v0.24.51, une fois terminés en production : `default_units` et
+ * Retirés en v0.24.52, une fois terminés en production : `default_units` et
  * `users_schema_check`.
  * Leurs documents `app_config/backfill_run_<clé>` restent en base ; plus rien
  * ne les lit. La liste complète, avec les versions : skill `backfill`,

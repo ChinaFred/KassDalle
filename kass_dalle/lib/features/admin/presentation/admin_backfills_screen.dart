@@ -849,7 +849,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // de l'application ne change le planning d'un repas existant.
   //
   // Deux ponctuels, menés au bout et marqués terminés en production, sont
-  // retirés en v0.24.51 (22 octobre 2026) :
+  // retirés en v0.24.52 (22 octobre 2026) :
   //
   // « Semer les unités standard » (`backfillDefaultUnitsFn`, v0.24.40,
   // terminé le 21/10 en v0.24.41) a créé dans `nutrition_units` les unités

@@ -1975,7 +1975,7 @@ sequenceDiagram
     SP->>PL: codeFill — premier candidat libre, aucun appel
     Note over SP: modelStatus budget · « Rien n'a été facturé »<br/>+ « Ces consignes n'ont pas été suivies : « … » » (degradedNotice)
   else
-    SP->>M: callModel(planning, maxTokens 4 000, entity planning_run)
+    SP->>M: callModel(planning, maxTokens 16 000, entity planning_run)
     alt réponse lisible
       M-->>SP: [{slot, recipe_id, starter_id, dessert_id}]
       SP->>PL: validateModelChoices — hors liste ou en double : premier candidat libre

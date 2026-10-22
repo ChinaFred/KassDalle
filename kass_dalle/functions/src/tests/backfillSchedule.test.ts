@@ -475,7 +475,7 @@ describe("registre et validation", () => {
     assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 1);
     assert.equal(new Set(BACKFILLS.map((b) => b.key)).size, BACKFILLS.length);
     assert.equal(backfillDefinition("inconnu"), null);
-    // Ponctuels retirés en v0.23.52, v0.24.33, v0.24.37, v0.24.44 et v0.24.51 : leur clé n'est plus connue.
+    // Ponctuels retirés en v0.23.52, v0.24.33, v0.24.37, v0.24.44 et v0.24.52 : leur clé n'est plus connue.
     for (const retired of [
       "recipe_protein",
       "estimated_times",

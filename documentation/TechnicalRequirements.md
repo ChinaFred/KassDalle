@@ -2010,7 +2010,7 @@ charge `raw_cooklang` et efface `draft_cooklang` à l'enregistrement.
 
 Les unités standard (gramme, cuillère à soupe, verre, pincée…) ont été semées par le
 backfill ponctuel « Semer les unités standard » (`backfillDefaultUnitsFn`, v0.24.40), terminé
-en production le 21/10/2026 et retiré du code en v0.24.51 ; jusqu'en v0.24.39, ce semis
+en production le 21/10/2026 et retiré du code en v0.24.52 ; jusqu'en v0.24.39, ce semis
 s'écrivait depuis le client. Une unité semée porte `display_label`, `aliases`,
 `measurement_type`, `grams_per_unit` (poids et petites mesures) ou `volume_ml_per_unit`
 (volumes), `status: known` et `source: builtin`. L'écran Unités de mesure
@@ -2362,7 +2362,7 @@ est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/back
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
 récurrents ; `refresh_sodium` — ponctuel). Les ponctuels `default_units` et
-`users_schema_check` sont retirés en v0.24.51, une fois terminés en production ; leurs documents
+`users_schema_check` sont retirés en v0.24.52, une fois terminés en production ; leurs documents
 `app_config/backfill_run_default_units` et `app_config/backfill_run_users_schema_check` restent
 en base, plus rien ne les lit.
 Le ponctuel réutilisable `move_meals_to_group` (« Déplacer mes repas vers un groupe ») est
@@ -3123,7 +3123,7 @@ service cloud.firestore {
 
 | Collection | Lecture | Écriture |
 |---|---|---|
-| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. **Rôle** (v0.24.32, ticket #163) : `role` ne prend que `pending`, `reader`, `editor` ou `admin`, écrit à l'identique ; un `superadmin` ou un `admin ` est refusé. Le serveur lit le champ de la même façon (`readRole`, `functions/src/security/roles.ts`) : une autre valeur vaut « aucun rôle », dans les claims (`syncUserClaims`) comme dans les gardes des callables (`requireAuth`). Les lectures retiraient auparavant les espaces, et un `admin ` y devenait administrateur. Côté client, `UserRole` lit aussi le nom à l'identique et rabat une valeur inconnue sur `pending`. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Les documents écrits avant ces règles ont été contrôlés par le backfill ponctuel « Contrôler les comptes » (`backfillUsersSchemaCheckFn`, v0.24.42), en lecture seule : dernier passage, 7 comptes lus, 0 à revoir ; terminé en production le 22/10/2026, retiré du code en v0.24.51. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
+| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. **Rôle** (v0.24.32, ticket #163) : `role` ne prend que `pending`, `reader`, `editor` ou `admin`, écrit à l'identique ; un `superadmin` ou un `admin ` est refusé. Le serveur lit le champ de la même façon (`readRole`, `functions/src/security/roles.ts`) : une autre valeur vaut « aucun rôle », dans les claims (`syncUserClaims`) comme dans les gardes des callables (`requireAuth`). Les lectures retiraient auparavant les espaces, et un `admin ` y devenait administrateur. Côté client, `UserRole` lit aussi le nom à l'identique et rabat une valeur inconnue sur `pending`. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Les documents écrits avant ces règles ont été contrôlés par le backfill ponctuel « Contrôler les comptes » (`backfillUsersSchemaCheckFn`, v0.24.42), en lecture seule : dernier passage, 7 comptes lus, 0 à revoir ; terminé en production le 22/10/2026, retiré du code en v0.24.52. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` |
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
@@ -5329,8 +5329,10 @@ qui n'a pas été traduit part dans `=== PRÉFÉRENCES GÉNÉRALES ===` ou
 `[PRÉFÉRENCES DU JOUR : …]`. Un texte non compris part en entier, comme avant. Un créneau sans choix à faire (un seul candidat partout) n'est pas envoyé. Le
 nombre de parts n'est plus une consigne : « les quantités sont recalculées à l'affichage ».
 Le modèle rend `[{slot, recipe_id, starter_id?, dessert_id?}]`, sans phrase. `maxTokens` :
-4 000 (`PLANNING_MAX_TOKENS`) ; sur Gemini, la sortie reste bornée par
-`thinking_budgets.planning`.
+16 000 (`PLANNING_MAX_TOKENS`). Sur Claude, la réflexion compte dans ce plafond : à 4 000,
+Sonnet 5 en effort `low` les a consommés en réflexion sans rendre de texte (22 oct. 2026),
+d'où l'avis « L'IA n'a pas répondu ». Gemini ne reçoit pas `maxTokens` : sa sortie reste
+bornée par `thinking_budgets.planning`, et la constante ne sert qu'au coût plafond.
 
 **Lecture de la réponse** (`validateModelChoices`) : un identifiant hors de la tête du
 créneau, déjà pris, ou un créneau oublié est remplacé par le premier candidat libre de la
