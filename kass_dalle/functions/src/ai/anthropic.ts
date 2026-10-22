@@ -26,6 +26,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 import { logDebug, logError, logInfo } from "../logging";
+import { DEFAULT_CODE_EFFORT, type AnthropicEffort } from "./featureEfforts";
 import {
   ModelCallError,
   type ModelCallContext,
@@ -121,8 +122,6 @@ export function toAnthropicContent(parts: ModelPart[]): Anthropic.ContentBlockPa
   });
 }
 
-type AnthropicEffort = NonNullable<ModelCallContext["effort"]>;
-
 /**
  * Modèles qui refusent `thinking: { type: "adaptive" }` et `output_config.effort`.
  *
@@ -149,13 +148,14 @@ export interface AnthropicRequestShape {
 }
 
 /**
- * Forme de la requête pour un modèle et un effort demandé (`low` par défaut).
+ * Forme de la requête pour un modèle et un effort demandé
+ * (`DEFAULT_CODE_EFFORT`, `low`, par défaut).
  *
  * Fonction pure, testée seule (`tests/anthropicRequestShape.test.ts`) : un
  * paramètre refusé par un modèle fait échouer 100 % de ses appels.
  */
 export function requestShapeFor(model: string, effort?: AnthropicEffort): AnthropicRequestShape {
-  const requested = effort ?? "low";
+  const requested = effort ?? DEFAULT_CODE_EFFORT;
   const id = model.trim().toLowerCase();
   const withoutThinking = MODELS_WITHOUT_ADAPTIVE_THINKING.some(
     (prefix) => id === prefix || id.startsWith(`${prefix}-`),
@@ -164,6 +164,17 @@ export function requestShapeFor(model: string, effort?: AnthropicEffort): Anthro
     return { thinking: null, effort: null, droppedEffort: effort ?? null };
   }
   return { thinking: { type: "adaptive" }, effort: requested, droppedEffort: null };
+}
+
+/**
+ * Le modèle reçoit-il un effort de réflexion ?
+ *
+ * Lu par `ANTHROPIC_MODEL_CHOICES` (`supportsEffort`) : l'écran Admin › Moteur
+ * d'IA remplace le sélecteur de réflexion par « Pas de réflexion avec … » sur
+ * un tel modèle. Une seule règle, celle de `requestShapeFor`.
+ */
+export function modelSupportsEffort(model: string): boolean {
+  return requestShapeFor(model).effort !== null;
 }
 
 /**

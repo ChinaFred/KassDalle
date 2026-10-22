@@ -25,7 +25,8 @@ import {
 } from "../config";
 import { requireAdmin } from "./_auth";
 import type { AiProvider } from "../ai/types";
-import { anthropicApiKey } from "../ai/anthropic";
+import { anthropicApiKey, modelSupportsEffort } from "../ai/anthropic";
+import { codeEffortFor, type AnthropicEffort } from "../ai/featureEfforts";
 import { AI_ROUTING_POLICY_DOC_ID, getAiRoutingPolicy, type AiRoutingPolicy } from "../ai/router";
 import { logError } from "../logging";
 import {
@@ -105,9 +106,9 @@ const PROVIDERS: readonly AiProvider[] = ["gemini", "anthropic"];
  * Efforts de réflexion Claude proposés à l'écran, du plus rapide au plus
  * appliqué.
  *
- * Le code de chaque poste garde le sien par défaut ; ce choix n'écrit une
- * exception que si l'administrateur en pose une explicitement (voir
- * `resolveAnthropicEffort`).
+ * Sans réglage, chaque poste garde l'effort de son code (`codeEffortFor`).
+ * L'administrateur pose un effort par défaut (`anthropicEffort`) ou un effort
+ * par poste (`anthropicEfforts`) ; voir `resolveAnthropicEffort`.
  */
 export const ANTHROPIC_EFFORT_CHOICES: Array<{
   id: "low" | "medium" | "high";
@@ -119,7 +120,7 @@ export const ANTHROPIC_EFFORT_CHOICES: Array<{
   { id: "high", label: "Haute", hint: "Le plus de soin, le plus cher." },
 ];
 
-export const ANTHROPIC_MODEL_CHOICES: Array<{ id: string; label: string; hint: string }> = [
+const MODEL_CHOICES_BASE: Array<{ id: string; label: string; hint: string }> = [
   {
     id: "claude-opus-5",
     label: "Opus 5",
@@ -138,6 +139,22 @@ export const ANTHROPIC_MODEL_CHOICES: Array<{ id: string; label: string; hint: s
       "Sans réflexion : le réglage d'effort ne s'y applique pas.",
   },
 ];
+
+/**
+ * `supportsEffort` vient de `requestShapeFor` (`modelSupportsEffort`) : la
+ * règle qui décide de la requête décide aussi de l'écran. Faux pour Haiku 4.5,
+ * qui part sans réflexion ; l'écran remplace alors les puces de réflexion par
+ * « Pas de réflexion avec Haiku 4.5. ».
+ */
+export const ANTHROPIC_MODEL_CHOICES: Array<{
+  id: string;
+  label: string;
+  hint: string;
+  supportsEffort: boolean;
+}> = MODEL_CHOICES_BASE.map((choice) => ({
+  ...choice,
+  supportsEffort: modelSupportsEffort(choice.id),
+}));
 
 export const ROUTABLE_FEATURES: Array<{
   id: string;
@@ -419,6 +436,23 @@ export const ROUTABLE_FEATURES: Array<{
     group: "Bac à sable",
   },
 ];
+
+/**
+ * Les postes tels que l'écran les reçoit : chacun avec l'effort que son code
+ * demande (`codeEffortFor`, `ai/featureEfforts.ts`).
+ *
+ * L'écran en a besoin pour afficher « Selon le poste (haute) » quand la
+ * réflexion par défaut vaut « Selon le poste », et pour figer cette valeur
+ * sur les postes qui la suivent quand l'administrateur pose un défaut.
+ */
+export function routableFeaturesForScreen(): Array<
+  (typeof ROUTABLE_FEATURES)[number] & { codeEffort: AnthropicEffort }
+> {
+  return ROUTABLE_FEATURES.map((feature) => ({
+    ...feature,
+    codeEffort: codeEffortFor(feature.id),
+  }));
+}
 
 /**
  * Postes qui **produisent** une image, et que rien ne peut router.
@@ -745,7 +779,7 @@ export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
     // posée » : sans cette information, une bascule sans effet reste une
     // énigme pour celui qui l'a demandée.
     anthropicKeyPresent: anthropicApiKey() != null,
-    routableFeatures: ROUTABLE_FEATURES,
+    routableFeatures: routableFeaturesForScreen(),
     anthropicModelChoices: ANTHROPIC_MODEL_CHOICES,
     anthropicEffortChoices: ANTHROPIC_EFFORT_CHOICES,
     imageGenerationFeatures: IMAGE_GENERATION_FEATURES,
@@ -797,12 +831,14 @@ export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOp
   const payload = presetPolicyToMap(policy) as Record<string, unknown>;
 
   const writeData: Record<string, unknown> = {
-    // Les quatre champs simples s'écrivent en entier, plafond global à `null`
-    // compris : c'est ainsi qu'on revient au comportement du modèle après
-    // avoir posé un plafond. Un champ simplement omis en fusion laisserait
-    // l'ancienne valeur en place.
+    // Les cinq champs simples s'écrivent en entier, plafond global et effort
+    // par défaut à `null` compris : c'est ainsi qu'on revient au comportement
+    // du modèle après avoir posé un plafond, ou à l'effort de chaque poste
+    // après avoir posé un défaut. Un champ simplement omis en fusion
+    // laisserait l'ancienne valeur en place.
     default_provider: payload.default_provider,
     anthropic_model: payload.anthropic_model,
+    anthropic_effort: payload.anthropic_effort,
     fallback_enabled: payload.fallback_enabled,
     thinking_budget: payload.thinking_budget,
     updated_at: FieldValue.serverTimestamp(),
@@ -950,6 +986,7 @@ export const aiRoutingPresetsFn = onCall<AiRoutingPresetsRequest>(callableOpts, 
       const writeData: Record<string, unknown> = {
         "policy.default_provider": nextPolicy.default_provider,
         "policy.anthropic_model": nextPolicy.anthropic_model,
+        "policy.anthropic_effort": nextPolicy.anthropic_effort,
         "policy.fallback_enabled": nextPolicy.fallback_enabled,
         "policy.thinking_budget": nextPolicy.thinking_budget,
         updated_at: FieldValue.serverTimestamp(),

@@ -32,6 +32,7 @@ void main() {
     Map<String, int> thinkingBudgets = const {},
     Map<String, String> anthropicModels = const {},
     Map<String, String> anthropicEfforts = const {},
+    String? anthropicEffort,
   }) => AiRoutingPolicy(
     defaultProvider: defaultProvider,
     features: features,
@@ -41,10 +42,11 @@ void main() {
     thinkingBudgets: thinkingBudgets,
     anthropicModels: anthropicModels,
     anthropicEfforts: anthropicEfforts,
+    anthropicEffort: anthropicEffort,
   );
 
   group('parseRoutingPolicy', () {
-    test('les huit réglages survivent au transport', () {
+    test('les neuf réglages survivent au transport', () {
       final read = parseRoutingPolicy({
         'defaultProvider': 'anthropic',
         'features': {'generate': 'gemini'},
@@ -54,6 +56,7 @@ void main() {
         'thinkingBudgets': {'generate': 0},
         'anthropicModels': {'transcription_page': 'claude-haiku-4-5'},
         'anthropicEfforts': {'transcription_page': 'medium'},
+        'anthropicEffort': 'low',
       });
 
       expect(read.defaultProvider, AiProvider.anthropic);
@@ -64,6 +67,38 @@ void main() {
       expect(read.thinkingBudgets, {'generate': 0});
       expect(read.anthropicModels, {'transcription_page': 'claude-haiku-4-5'});
       expect(read.anthropicEfforts, {'transcription_page': 'medium'});
+      expect(read.anthropicEffort, 'low');
+    });
+
+    test(
+      'un effort par défaut absent, nul ou vide vaut « Selon le poste »',
+      () {
+        expect(parseRoutingPolicy({}).anthropicEffort, isNull);
+        expect(
+          parseRoutingPolicy({'anthropicEffort': null}).anthropicEffort,
+          isNull,
+        );
+        expect(
+          parseRoutingPolicy({'anthropicEffort': ''}).anthropicEffort,
+          isNull,
+        );
+      },
+    );
+
+    test("toMap transporte l'effort par défaut, nul compris", () {
+      expect(
+        policy(anthropicEffort: 'high').toMap()['anthropicEffort'],
+        'high',
+      );
+      final map = policy().toMap();
+      expect(map.containsKey('anthropicEffort'), isTrue);
+      expect(map['anthropicEffort'], isNull);
+    });
+
+    test("copyWith efface l'effort par défaut sur demande seulement", () {
+      final p = policy(anthropicEffort: 'medium');
+      expect(p.copyWith(fallbackEnabled: false).anthropicEffort, 'medium');
+      expect(p.copyWith(clearAnthropicEffort: true).anthropicEffort, isNull);
     });
 
     test('un plafond coupé ne se confond pas avec un plafond absent', () {
@@ -266,6 +301,54 @@ void main() {
 
       expect(diff.lines, hasLength(1));
       expect(diff.lines.single, '1 poste passe à Claude');
+    });
+
+    test("l'effort par défaut a sa ligne", () {
+      final diff = AiRoutingDiff.between(
+        current: policy(),
+        next: policy(anthropicEffort: 'low'),
+        features: catalogue,
+      );
+      expect(
+        diff.lines.single,
+        'Réflexion de Claude par défaut : selon le poste → basse',
+      );
+    });
+
+    test("l'effort comparé est celui que le poste reçoit", () {
+      // Le poste suit le défaut « basse » d'un côté, il a « basse » à la main
+      // de l'autre : même effort reçu, seul le lien change.
+      const sur = {'generate': AiProvider.anthropic};
+      final diff = AiRoutingDiff.between(
+        current: policy(features: sur, anthropicEffort: 'low'),
+        next: policy(
+          features: sur,
+          anthropicEffort: 'low',
+          anthropicEfforts: {'generate': 'low'},
+        ),
+        features: catalogue,
+      );
+      expect(
+        diff.lines.single,
+        "1 poste passe de « Défaut » à un choix propre, ou l'inverse, à "
+        'valeur égale',
+      );
+    });
+
+    test("un modèle figé égal au défaut se voit dans l'écart", () {
+      // Sans cette ligne, une configuration qui ne diffère que par là se
+      // dirait « déjà le réglage affiché » et ne se chargerait pas.
+      const sur = {'generate': AiProvider.anthropic};
+      final diff = AiRoutingDiff.between(
+        current: policy(features: sur),
+        next: policy(
+          features: sur,
+          anthropicModels: {'generate': 'claude-sonnet-5'},
+        ),
+        features: catalogue,
+      );
+      expect(diff.isNotEmpty, isTrue);
+      expect(diff.lines.single, contains('choix propre'));
     });
 
     test('un plafond par poste est compté séparément du plafond global', () {

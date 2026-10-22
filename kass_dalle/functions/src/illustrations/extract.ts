@@ -43,6 +43,7 @@
  */
 
 import { callModel } from "../ai/router";
+import { codeEffortFor } from "../ai/featureEfforts";
 import { filePart, textPart, type ModelCallContext, type ModelCallResult } from "../ai/types";
 import { logAiText, logError } from "../logging";
 import { IllustrationLedger } from "./ledger";
@@ -851,7 +852,7 @@ async function askJson(args: {
     feature,
     moduleType: "DESIGN",
     timeoutMs: 60_000,
-    effort: "high",
+    effort: codeEffortFor(feature),
   };
 
   const startedAt = Date.now();

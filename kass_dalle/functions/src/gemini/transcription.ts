@@ -13,6 +13,7 @@
 import { extractJsonObject } from "./client";
 import { logAiText, logError } from "../logging";
 import { callModel } from "../ai/router";
+import { codeEffortFor } from "../ai/featureEfforts";
 import { attachmentPart } from "../ai/attachment";
 import { filePart, textPart, type ModelCallContext, type ModelCallResult } from "../ai/types";
 import {
@@ -323,8 +324,9 @@ export async function transcribePage(
       // calories ne réclame aucun raisonnement. Appliqué ici, il donnait un
       // modèle pressé : « en poudre » recollé au mauvais ingrédient, une
       // énumération de grains de poivre et de graines de coriandre résumée en
-      // « les épices ». Des phrases élégantes, et fausses.
-      effort: "high",
+      // « les épices ». Des phrases élégantes, et fausses. L'effort vit dans
+      // `ai/featureEfforts.ts`, que l'écran Admin › Moteur d'IA lit aussi.
+      effort: codeEffortFor("transcription_page"),
     },
     maxTokens: TRANSCRIPTION_MAX_TOKENS,
   });
@@ -366,7 +368,7 @@ export async function transcribeText(
     ],
     // Même soin que pour une page : c'est la passe qui décide de ce qui est
     // recopié et de ce qui est perdu.
-    ctx: { ...ctx, feature, timeoutMs: 2 * 60 * 1000, effort: "high" },
+    ctx: { ...ctx, feature, timeoutMs: 2 * 60 * 1000, effort: codeEffortFor(feature) },
     maxTokens: TRANSCRIPTION_MAX_TOKENS,
   });
 

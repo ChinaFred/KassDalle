@@ -70,12 +70,21 @@ class RoutableFeature {
   /// Pourquoi le choix est verrouillé, tel que le serveur le formule.
   final String? lockedReason;
 
+  /// Effort de réflexion Claude que le code du poste demande (`low`,
+  /// `medium`, `high`), `null` sur un backend qui ne l'envoie pas.
+  ///
+  /// C'est ce que le poste reçoit quand ni lui ni le défaut n'ont de réglage
+  /// (« Selon le poste (haute) »). La valeur vit côté serveur, dans
+  /// `ai/featureEfforts.ts` : ce client ne la recopie pas.
+  final String? codeEffort;
+
   const RoutableFeature({
     required this.id,
     required this.label,
     this.group = 'Autres',
     this.providers,
     this.lockedReason,
+    this.codeEffort,
   });
 
   /// Fournisseurs proposables à l'écran pour ce poste.
@@ -118,6 +127,7 @@ List<RoutableFeature> parseRoutableFeatures(Object? raw) {
                     .toList(growable: false)
               : null,
           lockedReason: map['lockedReason'] as String?,
+          codeEffort: _nonEmptyString(map['codeEffort']),
         );
       })
       .where((f) => f.id.isNotEmpty)
@@ -150,15 +160,21 @@ class AiRoutingPolicy {
   /// carotte est un rappel de connaissances répété quinze fois par recette.
   final Map<String, String> anthropicModels;
 
-  /// Effort de réflexion Claude par poste — `null` pour un poste sans réglage.
+  /// Effort de réflexion Claude par poste — l'emporte sur [anthropicEffort].
   ///
   /// Le modèle se choisissait déjà poste par poste ; l'effort restait une
   /// constante de code, qui ne se changeait qu'en redéployant. Une mesure du
   /// 27 septembre 2026 a montré que, pour la lecture de page, le levier qui
   /// économise vraiment est le modèle — et que l'effort mérite le même geste
-  /// sans déploiement. Absent d'un poste, ce poste garde l'effort que son
-  /// propre code demande : aucun effort commun n'a de sens pour tous.
+  /// sans déploiement.
   final Map<String, String> anthropicEfforts;
+
+  /// Effort de réflexion Claude par défaut, `null` pour « Selon le poste ».
+  ///
+  /// `null` : un poste sans réglage propre garde l'effort de son code
+  /// ([RoutableFeature.codeEffort]). Sinon, cet effort sert les postes sans
+  /// réglage propre.
+  final String? anthropicEffort;
 
   const AiRoutingPolicy({
     required this.defaultProvider,
@@ -169,6 +185,7 @@ class AiRoutingPolicy {
     this.thinkingBudgets = const {},
     this.anthropicModels = const {},
     this.anthropicEfforts = const {},
+    this.anthropicEffort,
   });
 
   AiProvider providerFor(String featureId) =>
@@ -182,12 +199,14 @@ class AiRoutingPolicy {
   String anthropicModelFor(String featureId) =>
       anthropicModels[featureId] ?? anthropicModel;
 
-  /// Effort de réflexion réglé pour un poste, ou `null` s'il n'y en a pas.
+  /// Effort que reçoit un poste servi par Claude : le sien, à défaut celui de
+  /// la politique, à défaut celui de son code. `null` quand aucun n'est connu
+  /// (backend qui n'envoie pas l'effort du code).
   ///
-  /// Contrairement au modèle, il n'y a pas de repli global à proposer : `null`
-  /// veut dire « ce poste garde l'effort de son propre code », pas « aucun
-  /// effort ».
-  String? anthropicEffortFor(String featureId) => anthropicEfforts[featureId];
+  /// Même ordre que `resolveAnthropicEffort` côté serveur, rejoué ici pour
+  /// l'affichage seul : le serveur décide de l'appel.
+  String? effectiveEffortFor(RoutableFeature feature) =>
+      anthropicEfforts[feature.id] ?? anthropicEffort ?? feature.codeEffort;
 
   AiRoutingPolicy copyWith({
     AiProvider? defaultProvider,
@@ -202,6 +221,9 @@ class AiRoutingPolicy {
     Map<String, int>? thinkingBudgets,
     Map<String, String>? anthropicModels,
     Map<String, String>? anthropicEfforts,
+    // Même raison que le plafond : `null` veut dire « Selon le poste ».
+    String? anthropicEffort,
+    bool clearAnthropicEffort = false,
   }) {
     return AiRoutingPolicy(
       defaultProvider: defaultProvider ?? this.defaultProvider,
@@ -214,6 +236,9 @@ class AiRoutingPolicy {
       thinkingBudgets: thinkingBudgets ?? this.thinkingBudgets,
       anthropicModels: anthropicModels ?? this.anthropicModels,
       anthropicEfforts: anthropicEfforts ?? this.anthropicEfforts,
+      anthropicEffort: clearAnthropicEffort
+          ? null
+          : (anthropicEffort ?? this.anthropicEffort),
     );
   }
 
@@ -228,6 +253,7 @@ class AiRoutingPolicy {
     'thinkingBudgets': thinkingBudgets,
     'anthropicModels': anthropicModels,
     'anthropicEfforts': anthropicEfforts,
+    'anthropicEffort': anthropicEffort,
   };
 }
 
@@ -244,17 +270,20 @@ class AnthropicModelChoice {
     required this.id,
     required this.label,
     required this.hint,
+    this.supportsEffort = true,
   });
 
   final String id;
   final String label;
   final String hint;
+
+  /// Faux quand le modèle part sans réflexion (Haiku 4.5) : l'écran remplace
+  /// alors les puces de réflexion par « Pas de réflexion avec … ». Le serveur
+  /// le déduit de `requestShapeFor`.
+  final bool supportsEffort;
 }
 
 /// Un effort de réflexion Claude proposé à l'écran, et ce à quoi il sert.
-///
-/// Le code de chaque poste garde le sien par défaut : choisir ici n'écrit une
-/// exception que pour CE poste, jamais un réglage global.
 class AnthropicEffortChoice {
   const AnthropicEffortChoice({
     required this.id,
@@ -269,7 +298,7 @@ class AnthropicEffortChoice {
 
 /// Une configuration de routage enregistrée.
 ///
-/// Elle porte les sept réglages de l'écran, moteur par défaut compris. La
+/// Elle porte tous les réglages de l'écran, moteur par défaut compris. La
 /// charger REMPLACE le brouillon en entier : un poste absent de la
 /// configuration retombe sur le moteur par défaut, il ne conserve pas sa valeur
 /// courante. Une fusion rendrait le résultat dépendant de ce qui était en place
@@ -515,6 +544,7 @@ class AiRoutingRepository {
             id: m['id'] as String? ?? '',
             label: m['label'] as String? ?? '',
             hint: m['hint'] as String? ?? '',
+            supportsEffort: m['supportsEffort'] != false,
           );
         })
         .where((c) => c.id.isNotEmpty)
@@ -582,8 +612,14 @@ AiRoutingPolicy parseRoutingPolicy(Map<String, dynamic> data) {
         if (entry.value is String && (entry.value as String).isNotEmpty)
           entry.key: entry.value as String,
     },
+    anthropicEffort: _nonEmptyString(data['anthropicEffort']),
   );
 }
+
+/// Une chaîne non vide, sinon `null` : un champ absent, nul ou vide vaut
+/// « pas de réglage ».
+String? _nonEmptyString(Object? value) =>
+    value is String && value.isNotEmpty ? value : null;
 
 /// Lit la liste des configurations déclarée par le serveur.
 ///

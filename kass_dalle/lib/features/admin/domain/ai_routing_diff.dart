@@ -2,7 +2,7 @@ import '../data/ai_routing_repository.dart';
 
 /// Ce qu'un chargement de configuration changerait, en clair.
 ///
-/// Charger une configuration remplace huit réglages, dont quatre par poste :
+/// Charger une configuration remplace neuf réglages, dont quatre par poste :
 /// quarante-trois bascules, quarante-trois modèles Claude, quarante-trois
 /// efforts de réflexion, quarante-trois plafonds de raisonnement. Appliquer
 /// cela sans rien montrer, c'est écrire à l'aveugle — et une bascule n'échoue
@@ -44,6 +44,12 @@ class AiRoutingDiff {
         '${next.anthropicModel}',
       );
     }
+    if (current.anthropicEffort != next.anthropicEffort) {
+      lines.add(
+        'Réflexion de Claude par défaut : ${_effort(current.anthropicEffort)} → '
+        '${_effort(next.anthropicEffort)}',
+      );
+    }
     if (current.thinkingBudget != next.thinkingBudget) {
       lines.add(
         'Raisonnement de Gemini : ${_budget(current.thinkingBudget)} → '
@@ -56,6 +62,7 @@ class AiRoutingDiff {
     var modeles = 0;
     var efforts = 0;
     var plafonds = 0;
+    var liens = 0;
 
     for (final feature in features) {
       // Un poste verrouillé ne se route pas : sa valeur ne commanderait rien,
@@ -83,11 +90,21 @@ class AiRoutingDiff {
         }
         // Même garde que le modèle : un effort réglé sur un poste servi par
         // Gemini ne commande rien, et un poste qui vient de basculer est déjà
-        // annoncé par la ligne des bascules.
-        if (current.anthropicEffortFor(feature.id) !=
-            next.anthropicEffortFor(feature.id)) {
+        // annoncé par la ligne des bascules. L'effort comparé est celui que
+        // le poste reçoit : le sien, le défaut, ou celui de son code.
+        if (current.effectiveEffortFor(feature) !=
+            next.effectiveEffortFor(feature)) {
           efforts++;
         }
+      }
+
+      // Même valeur, autre lien : un poste qui passe de « Défaut » à un choix
+      // propre (ou l'inverse) ne change rien aujourd'hui, mais il ne suivra
+      // plus (ou suivra) le prochain changement du défaut. Sans cette ligne,
+      // une configuration qui ne diffère que par là se dirait « déjà le
+      // réglage affiché » et ne se chargerait pas.
+      if (avant == apres && _linkChanged(current, next, feature, avant)) {
+        liens++;
       }
 
       // Comparaison des exceptions seules : le plafond global est déjà annoncé
@@ -121,6 +138,12 @@ class AiRoutingDiff {
         '${efforts > 1 ? 'changent' : 'change'} d\'effort de réflexion',
       );
     }
+    if (liens > 0) {
+      lines.add(
+        '$liens ${_postes(liens)} ${_passent(liens)} de « Défaut » à un choix '
+        'propre, ou l\'inverse, à valeur égale',
+      );
+    }
     if (plafonds > 0) {
       lines.add(
         '$plafonds ${_postes(plafonds)} ${plafonds > 1 ? 'changent' : 'change'} '
@@ -130,6 +153,38 @@ class AiRoutingDiff {
 
     return AiRoutingDiff(lines);
   }
+
+  /// Vrai quand un réglage du poste passe de « Défaut » à un choix propre, ou
+  /// l'inverse, sans que la valeur reçue change.
+  static bool _linkChanged(
+    AiRoutingPolicy current,
+    AiRoutingPolicy next,
+    RoutableFeature feature,
+    AiProvider provider,
+  ) {
+    final id = feature.id;
+    if (current.features.containsKey(id) != next.features.containsKey(id)) {
+      return true;
+    }
+    if (provider != AiProvider.anthropic) return false;
+    if (current.anthropicModelFor(id) == next.anthropicModelFor(id) &&
+        current.anthropicModels.containsKey(id) !=
+            next.anthropicModels.containsKey(id)) {
+      return true;
+    }
+    return current.effectiveEffortFor(feature) ==
+            next.effectiveEffortFor(feature) &&
+        current.anthropicEfforts.containsKey(id) !=
+            next.anthropicEfforts.containsKey(id);
+  }
+
+  static String _effort(String? value) => switch (value) {
+    null => 'selon le poste',
+    'low' => 'basse',
+    'medium' => 'moyenne',
+    'high' => 'haute',
+    _ => value,
+  };
 
   static String _onOff(bool value) => value ? 'activé' : 'coupé';
 

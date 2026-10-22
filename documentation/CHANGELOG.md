@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.50 — technique
+### v0.24.53 — technique
 
 Durcissements des Cloud Functions, fin du ticket #163 (lot 9 de l'audit #151). Les points 3,
 4, 6 et 7 du ticket étaient déjà livrés (v0.24.31 et v0.24.32) ; cette version ferme les
@@ -36,6 +36,58 @@ au plus, avec le nombre de refus. La classe d'échantillonnage du webhook des ti
 (`SignatureRejectionLog`) devient `LogSampler` dans `utils/logSampler.ts`, partagée, avec
 une variante par clé (`KeyedLogSampler`). Aucun droit retiré, aucun poste d'IA nouveau.
 Tests : `logSampler.test.ts`, `sandboxGuard.test.ts`.
+
+### v0.24.52 — technique
+
+Retrait de deux backfills ponctuels terminés en production, d'après la liste « Copier la
+liste » d'Admin › Backfills : « Semer les unités standard » (`default_units`, terminé le
+21/10/2026 en v0.24.41, 2 unités créées, 38 complétées, 0 échec) et « Contrôler les comptes »
+(`users_schema_check`, terminé le 22/10/2026 en v0.24.46, 7 comptes lus, 0 à revoir). Sortent
+du code : les callables `backfillDefaultUnitsFn` et `backfillUsersSchemaCheckFn`, leurs
+exports, `nutrition/defaultUnits.ts` et `security/userDocument.ts` (que seuls ces callables
+lisaient), leurs tests, leurs entrées dans les deux registres et dans `backfill_schedule.json`,
+le groupe de verrou `enrich_referentials`/`default_units`, les méthodes du repository, les
+`case` de l'écran, les résumés, les icônes, et la nature `account` de la feuille « À revoir »
+avec sa consigne `kAccountFailuresHelp`, que plus rien ne produit. L'écran Unités de mesure
+vide ne renvoie plus vers Admin › Backfills. Les documents `app_config/backfill_run_<clé>`
+restent en base ; plus rien ne les lit. Aucun poste d'IA n'est concerné : les deux passages
+n'appelaient pas de modèle.
+
+### v0.24.51 — technique
+
+- Planning : le plafond de sortie du poste `planning` passe de 4 000 à 16 000 jetons
+  (`PLANNING_MAX_TOKENS`). Sur Claude Sonnet 5, la réflexion adaptative compte dans
+  `max_tokens` : le 22 octobre, l'appel a consommé ses 4 000 jetons en réflexion sans
+  rendre de texte, et le planning est retombé sur le choix par le code avec l'avis
+  « L'IA n'a pas répondu ». Le coût plafond estimé passe de 0,05 $ à 0,17 $ sur Sonnet 5,
+  sous le plafond de 0,50 € par génération. Gemini ne reçoit pas ce plafond : seule son
+  estimation de coût change.
+
+### v0.24.50 — fonctionnel
+
+- Admin › Moteur d'IA : chaque poste propose « Défaut (…) » pour le moteur, le modèle de
+  Claude et la réflexion, à côté des choix propres. Un choix propre s'enregistre même s'il
+  est égal au défaut. Avant, changer le modèle global faisait basculer tous les postes qui
+  n'avaient jamais été touchés, et ceux réglés à la main sur la même valeur.
+- Changer un défaut ne modifie plus aucun poste existant : l'écran écrit d'abord l'ancienne
+  valeur sur chaque poste qui le suivait, après une confirmation qui les compte. Le nouveau
+  défaut sert aux postes remis sur « Défaut », passés sur Claude ou ajoutés par une mise à
+  jour.
+- Nouveau réglage « Réflexion de Claude par défaut » (Selon le poste, Basse, Moyenne, Haute).
+  Chaque défaut affiche le nombre de postes qui le suivent, et le filtre « Suivent un défaut »
+  les liste. Un poste sur Haiku 4.5 affiche « Pas de réflexion avec Haiku 4.5. ».
+
+### v0.24.50 — technique
+
+- Nouveau champ `anthropic_effort` dans `app_config/ai_routing_policy` et dans les
+  configurations enregistrées. Absent, il vaut « Selon le poste » : le comportement en ligne
+  ne change pas, aucun backfill. `readRoutingPolicy` ne retire plus un modèle par poste égal
+  au défaut.
+- L'effort de réflexion prévu par le code de chaque poste vit dans `ai/featureEfforts.ts`
+  (`CODE_EFFORTS`, `codeEffortFor`), lu par les appels et envoyé à l'écran. Un test refuse un
+  `effort: "high"` écrit en dur ailleurs. Nouvelle logique dupliquée : l'ordre de résolution
+  de l'effort, verrouillé par `ai_effort_resolution.json` et déclaré dans `CLAUDE.md` et le
+  skill `logique-dupliquee` ; le skill `nouveau-poste-ia` cite `CODE_EFFORTS`.
 
 ### v0.24.49 — technique
 
