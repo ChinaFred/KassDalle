@@ -49,6 +49,27 @@ void main() {
     });
   });
 
+  // Le serveur refuse tout `book_id` présent qui n'est pas un identifiant
+  // (`assertJobTargetBook`, ticket #163, point 11) : une chaîne vide s'écrit
+  // `null`, « sans livre ».
+  group('ProcessingJob.bookId', () {
+    test('une chaîne vide s\'écrit null', () {
+      final job = ProcessingJob.fromFirestore('j1', {
+        ...document(),
+        'book_id': '',
+      });
+      expect(job.toFirestore()['book_id'], isNull);
+    });
+
+    test('un identifiant s\'écrit tel quel', () {
+      final job = ProcessingJob.fromFirestore('j1', {
+        ...document(),
+        'book_id': 'b1',
+      });
+      expect(job.toFirestore()['book_id'], 'b1');
+    });
+  });
+
   group('ProcessingJob.budgetLimitUsd', () {
     Map<String, dynamic> livre({num? plafond}) => {
       ...document(),

@@ -292,6 +292,9 @@ class _BookPageContent extends ConsumerWidget {
     // Créateur ou administrateur seulement, éditeur compris : miroir de la
     // règle `recipes` de `firestore.rules`.
     final canEdit = user?.canModifyRecipe(recipe.createdBy) ?? false;
+    // Modifier la page : propriétaire ET éditeur (`/recipes/:id/edit` est
+    // fermé au lecteur, tickets #162 et #163).
+    final canEnrich = user?.canEnrichRecipe(recipe.createdBy) ?? false;
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
@@ -338,7 +341,7 @@ class _BookPageContent extends ConsumerWidget {
               tooltip: 'Détacher du livre',
               onPressed: () => _detachBookPage(context, ref, recipe),
             ),
-          if (canEdit)
+          if (canEnrich)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Modifier la page',

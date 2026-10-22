@@ -157,6 +157,13 @@ beforeEach(async () => {
       created_by: OTHER,
       review_status: "validated",
     },
+    "recipes/editor-in-other-book": {
+      title: "Ma page chez un autre",
+      book_id: "public-other",
+      created_by: EDITOR,
+      review_status: "validated",
+      is_private: false,
+    },
     "recipes/draft-reader": {
       title: "Mon brouillon",
       created_by: READER,
@@ -1621,7 +1628,8 @@ describe("recipes — lecture", () => {
 describe("recipes — écriture", () => {
   // Le lecteur ne crée aucune recette (refonte de l'écran Explorer, lot 2) :
   // ni saisie, ni copie, ni création par l'IA, ni import. Ses recettes
-  // existantes restent les siennes : il les modifie et les supprime.
+  // existantes restent les siennes : il les valide (brouillon), les détache
+  // d'un livre et les supprime, sans les modifier (tickets #162 et #163).
   it("un lecteur ne crée pas de recette, même à son nom", async () => {
     await assertFails(
       db("reader")
@@ -1687,10 +1695,128 @@ describe("recipes — écriture", () => {
     );
   });
 
-  it("un lecteur modifie sa recette", async () => {
-    await assertSucceeds(
+  // Décision de l'administrateur (tickets #162 et #163) : un lecteur ne
+  // modifie plus sa recette. Il garde deux écritures : valider un brouillon
+  // (champs de `validateDraft`) et détacher d'un livre (champs de
+  // `detachRecipeFromBook`).
+  it("un lecteur ne modifie plus le texte de sa recette", async () => {
+    await assertFails(
       db("reader").doc("recipes/draft-reader").update({ title: "y" }),
     );
+    await assertFails(
+      db("reader")
+        .doc("recipes/reader-in-other-book")
+        .update({ raw_cooklang: "Cuire.", updated_at: new Date() }),
+    );
+  });
+
+  it("un lecteur valide son brouillon (champs de validateDraft)", async () => {
+    await assertSucceeds(
+      db("reader").doc("recipes/draft-reader").update({
+        titre: "Mon brouillon",
+        raw_cooklang: "Cuire @farine{200%g}.",
+        draft_cooklang: "Cuire @farine{200%g}.",
+        review_status: "validated",
+        "tags.cuisines": ["française"],
+        ingredients_index: ["farine"],
+        ingredients: [{ name: "farine", qty: 200, unit: "g" }],
+        portions: 4,
+        book_id: null,
+        book_titre: null,
+        fidelity_level: deleteField(),
+        fidelity_findings: deleteField(),
+        duplicate_of: deleteField(),
+        updated_at: new Date(),
+      }),
+    );
+  });
+
+  // La validation peut ranger le brouillon dans un livre : seulement l'un des
+  // siens (`bookCheck(true)`), avec sa confidentialité.
+  it("un lecteur ne valide pas son brouillon dans le livre d'un autre", async () => {
+    await assertFails(
+      db("reader").doc("recipes/draft-reader").update({
+        review_status: "validated",
+        book_id: "public-other",
+        book_titre: "Livre d'un autre",
+        is_private: false,
+        updated_at: new Date(),
+      }),
+    );
+  });
+
+  it("un lecteur valide son brouillon dans l'un de ses livres", async () => {
+    await assertSucceeds(
+      db("reader").doc("recipes/draft-reader").update({
+        review_status: "validated",
+        book_id: "public-reader",
+        book_titre: "Mon livre",
+        is_private: false,
+        updated_at: new Date(),
+      }),
+    );
+  });
+
+  it("un lecteur ne valide pas en modifiant aussi un autre champ", async () => {
+    await assertFails(
+      db("reader").doc("recipes/draft-reader").update({
+        review_status: "validated",
+        raw_cooklang: "Cuire.",
+        image_urls: ["https://example.com/x.jpg"],
+        updated_at: new Date(),
+      }),
+    );
+  });
+
+  it("un lecteur ne repasse pas une recette validée par la validation", async () => {
+    await assertFails(
+      db("reader").doc("recipes/reader-in-other-book").update({
+        review_status: "validated",
+        raw_cooklang: "Autre texte.",
+        updated_at: new Date(),
+      }),
+    );
+  });
+
+  it("un lecteur ne remet pas son brouillon en brouillon par ce chemin", async () => {
+    await assertFails(
+      db("reader").doc("recipes/draft-reader").update({
+        review_status: "draft",
+        raw_cooklang: "Cuire.",
+      }),
+    );
+  });
+
+  it("un lecteur détache sa recette d'un livre", async () => {
+    await assertSucceeds(
+      db("reader").doc("recipes/reader-in-other-book").update({
+        book_id: null,
+        book_titre: null,
+        updated_at: new Date(),
+      }),
+    );
+  });
+
+  it("un lecteur ne détache pas en changeant aussi le titre", async () => {
+    await assertFails(
+      db("reader").doc("recipes/reader-in-other-book").update({
+        book_id: null,
+        book_titre: null,
+        title: "Autre",
+      }),
+    );
+  });
+
+  it("un lecteur ne range pas sa recette dans un autre livre par le détachement", async () => {
+    await assertFails(
+      db("reader")
+        .doc("recipes/draft-reader")
+        .update({ book_id: "public-reader", book_titre: "Mon livre" }),
+    );
+  });
+
+  it("un lecteur supprime toujours sa recette", async () => {
+    await assertSucceeds(db("reader").doc("recipes/draft-reader").delete());
   });
 
   it("un lecteur ne supprime pas la recette d'un autre", async () => {
@@ -1857,7 +1983,9 @@ describe("recipes — adresse de la page d'origine (source_url)", () => {
 
   it("une édition qui réécrit la même adresse passe", async () => {
     await assertSucceeds(
-      db("reader")
+      // Un lecteur ne modifie plus sa recette (tickets #162 et #163) :
+      // l'administrateur porte le cas.
+      db("admin")
         .doc("recipes/web-reader")
         .update({
           title: "Quiche lorraine",
@@ -1948,7 +2076,9 @@ describe("recipes — auteur et nutrition de la page d'origine", () => {
 
   it("une édition qui réécrit le même auteur passe", async () => {
     await assertSucceeds(
-      db("reader")
+      // Un lecteur ne modifie plus sa recette (tickets #162 et #163) :
+      // l'administrateur porte le cas.
+      db("admin")
         .doc("recipes/web-reader")
         .update({ title: "Quiche lorraine", source_author: "Marie Dupont" }),
     );
@@ -2021,7 +2151,9 @@ describe("recipes — confidentialité suivant le livre", () => {
 
   it("déplacée dans un livre privé avec is_private:true : accepté", async () => {
     await assertSucceeds(
-      db("reader")
+      // Un lecteur ne modifie plus sa recette (tickets #162 et #163) :
+      // l'administrateur porte le cas.
+      db("admin")
         .doc("recipes/draft-reader")
         .update({ book_id: "private-reader", is_private: true }),
     );
@@ -2029,7 +2161,7 @@ describe("recipes — confidentialité suivant le livre", () => {
 
   it("une écriture qui ne touche ni livre ni confidentialité n'est pas contrôlée", async () => {
     await assertSucceeds(
-      db("reader").doc("recipes/in-reader-private-book").update({ title: "y" }),
+      db("admin").doc("recipes/in-reader-private-book").update({ title: "y" }),
     );
   });
 
@@ -2060,7 +2192,7 @@ describe("recipes — confidentialité suivant le livre", () => {
 
   it("recette sans livre passée à is_private:true : acceptée", async () => {
     await assertSucceeds(
-      db("reader").doc("recipes/draft-reader").update({ is_private: true }),
+      db("admin").doc("recipes/draft-reader").update({ is_private: true }),
     );
   });
 
@@ -2147,7 +2279,7 @@ describe("recipes — ranger dans ses propres livres", () => {
 
   it("une page déjà rangée chez un autre se modifie sans changer de livre", async () => {
     await assertSucceeds(
-      db("reader").doc("recipes/reader-in-other-book").update({ title: "y" }),
+      db("editor").doc("recipes/editor-in-other-book").update({ title: "y" }),
     );
   });
 
@@ -5591,7 +5723,7 @@ describe("recipes — durées estimées (estimated_times)", () => {
 
   it("une édition qui ne touche pas l'estimation passe", async () => {
     await assertSucceeds(
-      db("reader")
+      db("admin")
         .doc("recipes/estimated-reader")
         .update({ title: "Gratin dauphinois" }),
     );

@@ -47,10 +47,23 @@ export function targetBookDenial(args: {
 
 /**
  * Lève [TargetBookNotOwned] si le job vise le livre d'un autre. Un job sans
- * livre passe. Le rôle administrateur n'est relu que hors propriété.
+ * livre (`book_id` absent ou nul) passe. Le rôle administrateur n'est relu que
+ * hors propriété.
+ *
+ * Un `book_id` présent qui n'est pas une chaîne non vide — chaîne vide, nombre,
+ * liste, objet — est refusé, et le job part en `foreign_book` (ticket #163,
+ * point 11). Il passait auparavant pour « sans livre », et la suite du
+ * pipeline le lisait chacune à sa façon. Le client n'écrit que `null` ou un
+ * identifiant (`ProcessingJob.toFirestore`).
  */
 export async function assertJobTargetBook(bookId: unknown, ownerUid: string): Promise<void> {
-  if (typeof bookId !== "string" || bookId.length === 0) return;
+  if (bookId === undefined || bookId === null) return;
+  if (typeof bookId !== "string" || bookId.length === 0) {
+    throw new TargetBookNotOwned(
+      typeof bookId === "string" ? bookId : "",
+      "Identifiant de livre invalide.",
+    );
+  }
   const snap = isValidDocumentId(bookId)
     ? await getFirestore().collection(COLL_BOOKS).doc(bookId).get()
     : null;

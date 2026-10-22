@@ -25,12 +25,20 @@ class EditorOnlyGate extends ConsumerWidget {
   /// L'écran gardé, construit seulement pour un éditeur ou un administrateur.
   final WidgetBuilder builder;
 
+  /// Où ramène le bouton de l'état verrouillé : la bibliothèque par défaut.
+  final String fallbackLocation;
+
+  /// Libellé de ce bouton.
+  final String fallbackLabel;
+
   const EditorOnlyGate({
     super.key,
     required this.appBarTitle,
     required this.lockedTitle,
     required this.lockedMessage,
     required this.builder,
+    this.fallbackLocation = AppRoutes.books,
+    this.fallbackLabel = 'Retour à la bibliothèque',
   });
 
   @override
@@ -61,8 +69,8 @@ class EditorOnlyGate extends ConsumerWidget {
           title: lockedTitle,
           message: lockedMessage,
           action: FilledButton.tonal(
-            onPressed: () => context.go(AppRoutes.books),
-            child: const Text('Retour à la bibliothèque'),
+            onPressed: () => context.go(fallbackLocation),
+            child: Text(fallbackLabel),
           ),
         ),
       );

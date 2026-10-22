@@ -72,13 +72,30 @@ class AppUser {
   /// seulement des écrans vides et des erreurs de permission.
   bool get canRead => !isRevoked && role != UserRole.pending;
 
-  /// Peut modifier ou supprimer la recette créée par [createdBy].
+  /// Peut supprimer la recette créée par [createdBy], valider ce brouillon et
+  /// la détacher d'un livre — les seuls gestes d'écriture d'un lecteur sur sa
+  /// recette.
   ///
-  /// Miroir de la règle `recipes` de `firestore.rules` : on ne modifie que ses
+  /// Miroir de la règle `recipes` de `firestore.rules` : on n'agit que sur ses
   /// propres recettes, éditeur compris ; l'administrateur agit comme le
-  /// créateur. Un `created_by` vide n'appartient à personne.
+  /// créateur. Un `created_by` vide n'appartient à personne. Toute autre
+  /// écriture (texte, photos, tags, type de page, couverture, IA) demande
+  /// [canEnrichRecipe] : un lecteur créateur n'a plus que la validation et
+  /// le détachement (`readerValidatesDraft`, `readerDetachesFromBook`).
   bool canModifyRecipe(String createdBy) =>
       canRead && (isAdmin || (createdBy.isNotEmpty && createdBy == uid));
+
+  /// Peut enrichir la recette créée par [createdBy] : la modifier dans
+  /// l'éditeur, y ajouter une photo ou une illustration, changer la couverture
+  /// « Recette libre », lancer une action d'IA sur elle.
+  ///
+  /// Propriétaire (ou administrateur) ET éditeur : un lecteur ne voit pas ces
+  /// boutons, même sur ses propres recettes (tickets #162 et #163). Les
+  /// callables qui les servent exigent `requireEditor`, et la quarantaine
+  /// n'accepte que le dépôt d'un éditeur (`storage.rules`). Un bouton interdit
+  /// est masqué, jamais grisé.
+  bool canEnrichRecipe(String createdBy) =>
+      canEdit && canModifyRecipe(createdBy);
 
   /// Peut modifier ou supprimer le livre créé par [createdBy] — et donc
   /// changer sa couverture.

@@ -521,14 +521,20 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
               iconColor: cs.onSurface,
               onTap: () => _addNewBlock('- '),
             ),
-            const CooklangToolbarDivider(),
-            CooklangToolbarButton(
-              icon: Icons.image_outlined,
-              tooltip: 'Image',
-              bgColor: cs.surfaceContainerHighest,
-              iconColor: cs.onSurface,
-              onTap: _insertImage,
-            ),
+            // « Image » n'apparaît que s'il y a quoi insérer : une
+            // illustration de la recette, ou le droit d'en envoyer une (un
+            // lecteur n'a ni l'un ni l'autre, tickets #162 et #163).
+            if (widget.illustrationUrls.isNotEmpty ||
+                widget.onUploadImage != null) ...[
+              const CooklangToolbarDivider(),
+              CooklangToolbarButton(
+                icon: Icons.image_outlined,
+                tooltip: 'Image',
+                bgColor: cs.surfaceContainerHighest,
+                iconColor: cs.onSurface,
+                onTap: _insertImage,
+              ),
+            ],
           ],
         ),
       ),

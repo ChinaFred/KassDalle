@@ -20,6 +20,104 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.66 — fonctionnel
+
+Tickets #162 et #163 : enrichir une recette demande d'en être propriétaire et éditeur. Un
+lecteur ne voit plus, même sur ses propres recettes, « Modifier la recette » ou « Modifier la
+page », « Changer la couverture » de la recette libre, l'ajout d'une photo ou d'une
+illustration, ni les actions d'IA de la relecture d'un brouillon (icône de la barre, bouton
+« IA » de l'éditeur, `?ai=true`, cadrage depuis le scan, retouche). Il garde la relecture et la
+validation de ses brouillons, le détachement d'un livre et la suppression. Les boutons sont
+masqués, jamais grisés. Sur grand écran, sa vignette « Recette libre » n'a plus de badge, et
+l'appui agrandit la couverture quand elle existe.
+
+L'onglet Photos d'une de ses recettes ou de ses brouillons dit, sans bouton : « Ajouter des
+photos est réservé aux éditeurs. Demandez à un administrateur de vous nommer éditeur. ».
+Ouvertes par un lien, `/recipes/{id}/edit` affiche « Modification réservée aux éditeurs » et
+`/books/new` « Création réservée aux éditeurs ». Le bouton de « Modification réservée aux
+éditeurs » ramène à la fiche (« Retour à la recette »). La feuille d'insertion d'image de
+l'éditeur disparaît quand il n'y a ni photo à insérer ni droit d'en envoyer une. Un refus
+reçu en cours de session par un compte qui n'est plus éditeur s'affiche sans « Réessayer »,
+avec le préfixe de l'action : « Couverture non mise à jour. Ajouter des photos est réservé
+aux éditeurs. », « Recette non corrigée. L'IA est réservée aux éditeurs. ». Un éditeur refusé
+pour une autre raison (un format que la quarantaine n'accepte pas) lit le message habituel.
+
+Pour tous les rôles : « Créer une image IA » de l'état vide des photos d'un brouillon suit le
+droit de produire une image, et non plus celui d'envoyer une photo. Le bouton « Suggérer les
+tags » revient dans le panneau de métadonnées (bloc Catégorisation), pour un éditeur ou un
+administrateur, avec l'infobulle « Proposer cuisine, type, rôle, protéine et féculent avec
+l'IA ».
+
+Un lecteur ne modifie plus ses recettes, règles Firestore comprises. Il garde trois gestes
+d'écriture sur elles : valider un brouillon, détacher d'un livre, supprimer. Ses autres
+boutons d'écriture disparaissent aussi : retirer une photo, « Supprimer le scan source »,
+type de page de la relecture, « Ranger » dans la file des brouillons, intégration, retrait et
+remise à zéro du dressage dans la recette.
+
+L'IA qui modifie une recette ou publie une image est réservée aux éditeurs ; la recherche web
+reste ouverte au lecteur (décision de l'administrateur) : « Chercher sur le web » est une
+fonction de lecture, plafonnée à 50 recherches par jour et par compte. Un lecteur ne demande ni ne
+régénère plus de conseil de dressage et ne relance plus le calcul de la nutrition, même sur sa
+recette ; il lit le conseil et la nutrition déjà enregistrés. Le calcul automatique de la
+nutrition à l'enregistrement continue pour toutes les recettes.
+
+### v0.24.66 — technique
+
+Ticket #163, point 1 : `polishCooklangFn`, `polishMarkdownFn`, `refineRecipeFn`,
+`extractBookCoverFn` (`book_cover`, non déployée), `suggestRecipeTagsFn`,
+`detectAndCropIllustrationsFn` et `scanAndPromoteUploadFn` (`upload_security_scan`) passent
+de `requireAuth` à `requireEditor`. Aucun appelant légitime d'un lecteur n'y passait après le
+masquage des écrans ; la capture d'un ticket passe par `tickets/{uid}/…` et
+`attachTicketScreenshot`. Test sur le source : `tests/editorCallables.test.ts`.
+
+Ticket #162, point 2 : `storage.rules`, le dépôt dans `quarantine/{uid}/` exige `isEditor()`
+(jeton, puis document `users/{uid}`). `isReaderImageUnder` est retirée. Le propriétaire garde
+la lecture de sa quarantaine ; `tickets/{uid}/…` ne change pas. Tests `rules-tests` : dépôt
+refusé au lecteur, permis à l'éditeur et à l'administrateur, capture de ticket permise au
+lecteur.
+
+Ticket #163, point 11 : `assertJobTargetBook` refuse en `foreign_book` (`TargetBookNotOwned`)
+tout `book_id` présent qui n'est pas une chaîne non vide ; absent ou `null` passe sans livre.
+`ProcessingJob.toFirestore` écrit `null` au lieu d'une chaîne vide (`/scan?bookId=`).
+
+Règle `recipes` de `firestore.rules` : la mise à jour exige `isEditor()`, sauf deux
+écritures d'un lecteur créateur. `readerValidatesDraft` : champs de `validateDraft` seuls
+(`affectedKeys().hasOnly`), statut `draft` ou `inReview` vers `validated`.
+`readerDetachesFromBook` : `book_id`, `book_titre` et `updated_at` seuls, les deux premiers à
+`null`. La suppression ne change pas. Tests `rules-tests` : modification de texte refusée au
+lecteur, validation et détachement permis, validation qui touche un autre champ refusée ;
+sept tests qui faisaient écrire un lecteur pour vérifier une autre règle passent par
+l'administrateur ou une recette d'éditeur (`recipes/editor-in-other-book`).
+
+IA qui modifie une recette ou publie une image réservée aux éditeurs ; `searchWebRecipesFn`
+garde `requireAuth` (recherche web ouverte au lecteur, 50 par jour). `suggestPlatingFn`,
+`computeRecipeNutritionFn` et
+`moderateAndPromoteImagesFn` passent de `requireAuth` à `requireEditor` (aucune destination
+d'un lecteur n'y passe : la capture d'un ticket suit `attachTicketScreenshot`).
+`assertCanNormalizeReferentials` (`normalizeRecipeReferentialsFn`) n'accepte plus qu'un
+éditeur ou un administrateur ; `referentialNormalizationDenial` ne prend plus que le rôle.
+`onRecipeWritten` ne change pas. `tests/editorCallables.test.ts` couvre les dix callables.
+
+Tests `rules-tests` ajoutés : validation d'un brouillon de lecteur rangée dans le livre d'un
+autre refusée, dans l'un de ses livres acceptée. La purge des `error_reports` (ticket #162,
+point 3) et la règle de date d'un rapport sont celles de la v0.24.63 (backfill récurrent
+`retention`, `timestamp` au plus un jour dans le futur) : ce livrable n'en ajoute pas d'autre.
+
+Dressage : `kPlatingImagesEditorOnlyMessage` et sa ligne sont retirés. Un lecteur ne voit plus
+le conseil qu'en lecture, la ligne « Les visuels d'étape sont réservés aux éditeurs. » ne
+pouvait plus s'afficher.
+
+Client : `AppUser.canEnrichRecipe(createdBy)` (`canEdit && canModifyRecipe`) commande tout
+geste qui écrit autre chose que la validation et le détachement ; `canModifyRecipe` garde
+« Valider », « Détacher du livre » et « Supprimer ». `photoFailureMessage`,
+`aiFailureMessage` (paramètre `canEdit` : le message de rôle seulement pour un compte qui
+n'est plus éditeur, préfixe gardé) et `isPermissionRefusal` dans
+`core/widgets/error_message.dart`. `EditorOnlyGate` reçoit `fallbackLocation` et
+`fallbackLabel` (bibliothèque par défaut). Le paramètre `canEdit` de `PrepareTab` et
+`MobileUnifiedBody`, que plus rien ne lisait, est retiré.
+Code mort retiré : `RecipeDetailBody` (`recipe_detail_widgets.dart`), qu'aucun écran
+n'instanciait.
+
 ### v0.24.65 — technique
 
 `deploy.ps1`, l'outil de secours, affiche au démarrage la branche, le dernier commit et les

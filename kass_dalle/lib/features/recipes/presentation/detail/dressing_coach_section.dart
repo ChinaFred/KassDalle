@@ -26,11 +26,12 @@ import '../../../../core/theme/app_icon_size.dart';
 class DressingCoachSection extends ConsumerStatefulWidget {
   final Recipe recipe;
 
-  /// Créateur de la recette ou administrateur : autorise la demande d'un
-  /// conseil, la génération de visuels et l'écriture dans la recette. Le
-  /// conseil et ses visuels s'écrivent sur la recette partagée, et
-  /// `suggestPlatingFn` / `generatePlatingImageFn` refusent les autres. Un
-  /// conseil enregistré reste affiché à tous.
+  /// Créateur éditeur de la recette ou administrateur
+  /// (`AppUser.canEnrichRecipe`) : autorise la demande d'un conseil, la
+  /// génération de visuels et l'écriture dans la recette. Le conseil et ses
+  /// visuels s'écrivent sur la recette partagée, et `suggestPlatingFn` /
+  /// `generatePlatingImageFn` exigent `requireEditor` et la propriété. Un
+  /// conseil enregistré reste affiché à tous, lecteur compris.
   final bool canEdit;
 
   const DressingCoachSection({
@@ -406,9 +407,11 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
     return _AdviceView(
       advice: advice,
       canEdit: widget.canEdit,
-      // Le visuel d'étape exige en plus le rôle éditeur
-      // (`generatePlatingImageFn` appelle `requireEditor`) : un lecteur
-      // créateur de sa recette garde le conseil, pas les visuels.
+      // Le visuel d'étape exige le rôle éditeur (`generatePlatingImageFn`
+      // appelle `requireEditor`). Un lecteur, même créateur, ne demande ni ne
+      // régénère de conseil : il lit celui qui est enregistré, sans action.
+      // Le rôle est relu ici en plus de [canEdit], au cas où un écran le
+      // passerait à tort.
       canGenerateImages:
           widget.canEdit &&
           (ref.watch(appUserProvider).value?.canEdit ?? false),
@@ -553,6 +556,12 @@ class _AdviceView extends StatelessWidget {
   /// Créateur ou admin, et rôle éditeur : seul cas où un visuel d'étape peut
   /// être produit.
   final bool canGenerateImages;
+
+  /// Régénérer, intégrer, retirer ou remettre à zéro : même condition que
+  /// les visuels. Un lecteur, même créateur, ne demande ni ne régénère de
+  /// conseil (`suggestPlatingFn` exige `requireEditor`) et n'écrit sur sa
+  /// recette que la validation et le détachement (`firestore.rules`).
+  bool get canWriteRecipe => canGenerateImages;
   final int? generatingImageIndex;
   final Object? error;
   final void Function(int index) onGenerateImage;
@@ -612,17 +621,6 @@ class _AdviceView extends StatelessWidget {
           ),
           const SizedBox(height: 12),
         ],
-        if (canEdit &&
-            !canGenerateImages &&
-            advice.etapes.any((step) => step.imageUrl == null)) ...[
-          Text(
-            kPlatingImagesEditorOnlyMessage,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-        ],
         if (advice.pieges.isNotEmpty) ...[
           PlatingListCard(
             title: 'Ce qui rate sur ce plat',
@@ -650,19 +648,19 @@ class _AdviceView extends StatelessWidget {
             // L'ordre suit le cycle de travail : refaire le conseil, remettre
             // les visuels à zéro, puis porter le résultat dans la recette — et
             // le retrait en dernier, parce qu'il défait tout le reste.
-            if (canEdit)
+            if (canWriteRecipe)
               OutlinedButton.icon(
                 onPressed: busy ? null : onRegenerate,
                 icon: const Icon(Icons.refresh, size: AppIconSize.small),
                 label: const Text('Régénérer'),
               ),
-            if (canEdit && onResetImages != null)
+            if (canWriteRecipe && onResetImages != null)
               OutlinedButton.icon(
                 onPressed: busy ? null : onResetImages,
                 icon: const Icon(Icons.restart_alt, size: AppIconSize.small),
                 label: const Text('Réinitialiser les visuels'),
               ),
-            if (canEdit)
+            if (canWriteRecipe)
               FilledButton.tonalIcon(
                 onPressed: busy ? null : onInsertIntoRecipe,
                 icon: const Icon(
@@ -675,7 +673,7 @@ class _AdviceView extends StatelessWidget {
                       : 'Intégrer à la recette',
                 ),
               ),
-            if (canEdit && onRemoveFromRecipe != null)
+            if (canWriteRecipe && onRemoveFromRecipe != null)
               TextButton.icon(
                 onPressed: onRemoveFromRecipe,
                 icon: const Icon(

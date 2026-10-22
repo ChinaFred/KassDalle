@@ -260,7 +260,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           stackTrace: stackTrace,
         );
         if (mounted) {
-          context.showFailureSnackBar('Couverture non enregistrée', e);
+          context.showErrorSnackBar(
+            photoFailureMessage(
+              'Couverture non enregistrée',
+              e,
+              canEdit: ref.read(canEditProvider),
+            ),
+          );
         }
       } finally {
         if (mounted) setState(() => _uploadingCover = false);
@@ -314,7 +320,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showFailureSnackBar('Couverture non enregistrée', e);
+        context.showErrorSnackBar(
+          photoFailureMessage(
+            'Couverture non enregistrée',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _uploadingCover = false);
@@ -482,9 +494,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               stackTrace: stackTrace,
               context: {'etape': 'couverture', 'book_id': newId},
             );
+            // Le rôle relu au moment de l'échec, comme les autres envois :
+            // `appUser` date du début de l'enregistrement. Écran fermé : le
+            // message habituel, sans lecture du provider.
+            final canEditNow = !mounted || ref.read(canEditProvider);
             coverFailure =
                 'Livre ajouté. '
-                '${failureMessage('Couverture non enregistrée', error)}';
+                '${photoFailureMessage('Couverture non enregistrée', error, canEdit: canEditNow)}';
           }
         }
       } else {

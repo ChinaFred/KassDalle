@@ -1059,14 +1059,14 @@ qui est arrivé à `geminiCallables.ts` : tous ses postes (extraction, refine,
 génération, recherche, tags, planning, courses, dressage) ignoraient la bascule
 vers Claude. `callModel` émet désormais un `WARNING` dans ce cas.
 
-**Seuls le créateur de la recette et un administrateur demandent un conseil.** Le conseil, son
-instruction libre et ses visuels s'écrivent sur la recette partagée : `suggestPlatingFn` et
-`generatePlatingImageFn` refusent les autres comptes avant l'appel de modèle (§4). Le client ne
+**Seuls le créateur éditeur de la recette et un administrateur demandent un conseil.** Le
+conseil, son instruction libre et ses visuels s'écrivent sur la recette partagée :
+`suggestPlatingFn` et `generatePlatingImageFn` exigent `requireEditor` (v0.24.66 pour le
+premier) puis refusent les autres comptes avant l'appel de modèle (§4). Le client ne
 leur montre ni « Demander un dressage sur mesure », ni « Régénérer », ni les boutons de visuel ;
 sans conseil enregistré, l'onglet affiche une ligne de texte (`kPlatingAdviceReservedMessage`).
-Le visuel d'étape exige en plus le rôle éditeur : pour le créateur qui n'est que lecteur, les
-boutons de visuel sont masqués et une ligne le dit (`kPlatingImagesEditorOnlyMessage`) ; il
-garde « Régénérer », « Intégrer » et « Retirer ».
+Le lecteur, même créateur, lit le conseil enregistré sans aucune action : ni demande, ni
+« Régénérer », ni visuel, ni « Intégrer », ni « Retirer ».
 
 Même règle pour le conseil de conservation. `StorageRepository.ensure` rend un
 `StorageAdviceLookup` : `StorageAdviceAvailable` (conseil relu, ou produit si
@@ -3092,7 +3092,8 @@ service cloud.firestore {
 
       allow read: if canReadRecipe(resource.data);
       // Création : éditeur et administrateur seulement. Le lecteur ne crée aucune
-      // recette (saisie, copie, création par l'IA, import) ; il garde les siennes.
+      // recette (saisie, copie, création par l'IA, import) ; il garde les siennes,
+      // qu'il supprime, valide ou détache d'un livre (ci-dessous).
       // `estimated_times` (durées estimées) : serveur seul, ni posé, ni changé,
       // ni effacé par un client, administrateur compris.
       allow create: if isEditor() && request.resource.data.created_by == request.auth.uid
@@ -3102,7 +3103,28 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(serverOnlyRetryFields())
         && !request.resource.data.keys().hasAny(serverOnlyComputedFields())
         && bookCheck(true) && sourceUrlAccepted();
+      // Un lecteur créateur n'a plus que deux écritures (v0.24.66, tickets #162
+      // et #163) : valider un brouillon, avec exactement les champs de
+      // `validateDraft`, de `draft`/`inReview` vers `validated` ; détacher
+      // d'un livre, avec exactement ceux de `detachRecipeFromBook`.
+      function readerValidatesDraft() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'titre', 'raw_cooklang', 'draft_cooklang', 'review_status', 'tags',
+            'ingredients_index', 'ingredients', 'portions', 'book_id', 'book_titre',
+            'is_private', 'page_number', 'fidelity_level', 'fidelity_findings',
+            'duplicate_of', 'updated_at'
+          ])
+          && resource.data.get('review_status', null) in ['draft', 'inReview']
+          && request.resource.data.get('review_status', null) == 'validated';
+      }
+      function readerDetachesFromBook() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['book_id', 'book_titre', 'updated_at'])
+          && request.resource.data.get('book_id', null) == null
+          && request.resource.data.get('book_titre', null) == null;
+      }
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
+        && (isEditor() || readerValidatesDraft() || readerDetachesFromBook())
         && !changes('source_url') && !changes('source_site') && !changes('source_author')
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyRetryFields())
@@ -3291,10 +3313,11 @@ Non traité : le détachement réveille `onRecipeWritten`, qui peut lancer `sync
 `normalizeRecipeReferentialsFn` crée et enrichit des fiches `nutrition_ingredients` à partir
 des noms reçus. `assertCanNormalizeReferentials` (`callable/_recipeAccess.ts`, décision pure
 `referentialNormalizationDenial` testée) la réserve à l'éditeur et à l'administrateur
-(`isEditorAccount`), et au lecteur créateur de la recette `recipeId` : c'est le seul parcours
-qui l'y amène, l'enregistrement d'une de ses recettes (`RecipeRepository.updateRecipe`). Les
-noms restent ceux de la requête, la normalisation précédant l'enregistrement. Un lecteur sans
-`recipeId`, ou sur la recette d'un autre, reçoit `permission-denied` avant toute écriture.
+(`isEditorAccount`), avec ou sans `recipeId`. Depuis la v0.24.66, le lecteur n'y passe plus,
+même pour sa propre recette : il ne modifie plus ses recettes (`RecipeRepository.updateRecipe`,
+seul parcours qui l'y amenait), et l'IA qui modifie une recette ou publie une image est réservée aux éditeurs ; la recherche web reste ouverte au lecteur. Il reçoit
+`permission-denied` avant toute écriture. Les noms restent ceux de la requête, la
+normalisation précédant l'enregistrement.
 
 **Les callables qui écrivent sur une recette suivent `allow update`.** `suggestPlatingFn`,
 `suggestStorageAdviceFn`, `generatePlatingImageFn` et `computeRecipeNutritionFn` lisent et
@@ -3302,6 +3325,12 @@ noms restent ceux de la requête, la normalisation précédant l'enregistrement.
 (`callable/_recipeAccess.ts`, décision pure `recipeWriteDenial` testée) les fait refuser en
 `permission-denied` à tout compte qui n'est ni le créateur (`created_by` non vide, égal à
 l'appelant) ni un administrateur (relu par `isAdminAccount`), avant tout appel de modèle.
+Les quatre exigent d'abord `requireEditor` : `suggestStorageAdviceFn` et
+`generatePlatingImageFn` depuis leur création, `suggestPlatingFn` et
+`computeRecipeNutritionFn` depuis la v0.24.66 (l'IA qui modifie une recette ou publie une image est réservée aux éditeurs ; la recherche web reste ouverte au lecteur : `searchWebRecipesFn` garde
+`requireAuth`, une fonction de lecture plafonnée à 50 recherches par jour). Un lecteur
+créateur lit le conseil et la nutrition enregistrés ; la fiche ne lui montre ni demande, ni
+« Régénérer », ni recalcul (`canEnrichRecipe`).
 Une recette absente répond `not-found`. Ce contrôle couvre aussi la confidentialité : le
 créateur et l'administrateur lisent une recette privée. `generatePlatingImageFn` exige en plus
 le rôle éditeur. Conséquence : l'instruction libre `plating_advice.user_instruction` n'est plus
@@ -3348,9 +3377,9 @@ déjà ces droits (`roleOf()`, v0.24.30).
 **Coût.** Une lecture Firestore par requête Storage qui atteint le second contrôle : un dépôt
 dans la quarantaine (photo, scan, livre), une capture de ticket, une lecture ou un listage
 d'administrateur, et depuis la v0.24.55 le `get` d'un fichier publié (`isApprovedReader()`).
-Les deux branches du dépôt en quarantaine sont ordonnées pour qu'un lecteur
-comme un éditeur ne lisent le document qu'une fois, et le type et la taille se testent avant
-le rôle. Ne coûtent **aucune** lecture : les images affichées, servies par URL de
+Le dépôt en quarantaine ne lit le document qu'une fois, et le type et la taille se testent
+avant le rôle. Un lecteur, dont le jeton n'annonce ni `editor` ni `admin`, est refusé sans
+lecture. Ne coûtent **aucune** lecture : les images affichées, servies par URL de
 téléchargement (les règles ne s'évaluent pas), la lecture par un compte de ses propres
 fichiers (`isOwner`), et tout dépôt ou listage d'un compte dont le jeton n'annonce aucun
 rôle. Le `get` d'un fichier publié lit le document même pour un compte en attente : seuls
@@ -3467,15 +3496,6 @@ service firebase.storage {
            ];
     }
 
-    // Ce qu'un lecteur dépose : une photo JPEG ou PNG, hors de `livres/`
-    // (couverture « Recette libre », illustration d'une de ses recettes).
-    // `livres/` s'exclut par le nom complet : les deux blocs se recouvrent.
-    function isReaderImageUnder(maxBytes) {
-      return request.resource.size < maxBytes
-        && baseContentType() in ['image/jpeg', 'image/png']
-        && !request.resource.name.matches('quarantine/[^/]+/livres/.*');
-    }
-
     // Administrateur, selon le jeton ET le document. Sert les lectures qui ne
     // sont pas ouvertes à la famille : images refusées par la modération,
     // quarantaine des autres, listages. Ici, l'absence de preuve vaut refus.
@@ -3504,14 +3524,17 @@ service firebase.storage {
     // image « à revoir » attend ici, et personne ne tranche sur une photo qu'il
     // ne peut pas voir.
     //
-    // Un lecteur n'y dépose que des photos ; un éditeur ou un administrateur,
-    // tous les types d'un import (v0.24.32, ticket #162). Type et taille avant
-    // le rôle : un dépôt refusé pour son contenu ne lit pas Firestore.
+    // Dépôt réservé aux éditeurs et aux administrateurs (v0.24.66, ticket
+    // #162, point 2) : un lecteur n'ajoute plus de photo, et
+    // `scanAndPromoteUploadFn` exige `requireEditor`. Le propriétaire garde la
+    // lecture de sa quarantaine. La capture d'un ticket passe par
+    // `tickets/{uid}/`, ouvert au lecteur. Type et taille avant le rôle : un
+    // dépôt refusé pour son contenu ne lit pas Firestore.
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
       allow write: if isOwner(uid)
-        && ((isImportableUnder(50 * 1024 * 1024) && isEditor())
-            || (isReaderImageUnder(50 * 1024 * 1024) && isApproved()));
+        && isImportableUnder(50 * 1024 * 1024)
+        && isEditor();
     }
 
     // Un livre entier — PDF, EPUB ou Word — à découper en recettes. Plafond de
@@ -3590,16 +3613,17 @@ service firebase.storage {
 > lui-même, sous son uid, un fichier nommé `screenshot.png` ou `screenshot.jpg`. La
 > suppression est refusée à tous (aucune purge en V1).
 >
-> **Ce que dépose un lecteur** (v0.24.32, ticket #162). Un lecteur n'importe pas : la
-> création d'un job (`processing_jobs`, `isEditor()`), `analyzeBookImport` et l'extraction
-> de texte (`requireEditor`) lui sont refusées. Il déposait pourtant des PDF, des documents
-> Word et du texte jusqu'à 50 Mo, et des livres jusqu'à 300 Mo sous `livres/`, que rien ne
-> traitait ensuite. Il ne dépose plus que des photos JPEG ou PNG, hors de `livres/` : la
-> couverture « Recette libre » et l'illustration d'une de ses recettes, que
-> `ImageModerationService` envoie toujours sous l'un de ces deux types canoniques. Les autres
-> envois vers la quarantaine (`ScanUploadService`, `RecipeRepository.uploadScanFile` pour le
-> texte collé de la création à la main) servent l'import et la création de recette, réservés
-> à l'éditeur. Testé dans `rules-tests` (« quarantaine — ce que dépose un lecteur »).
+> **Un lecteur ne dépose rien en quarantaine** (v0.24.66, ticket #162, point 2). Un
+> lecteur n'importe pas : la création d'un job (`processing_jobs`, `isEditor()`),
+> `analyzeBookImport` et l'extraction de texte (`requireEditor`) lui sont refusées. Depuis la
+> v0.24.32, il ne déposait plus que des photos JPEG ou PNG — couverture « Recette libre »,
+> illustration d'une de ses recettes. Ajouter une photo est désormais réservé à l'éditeur :
+> l'écran masque ces gestes (`AppUser.canEnrichRecipe`), `scanAndPromoteUploadFn` exige
+> `requireEditor`, et le dépôt exige `isEditor()`, jeton puis document `users/{uid}`, comme
+> les autres dépôts. Le propriétaire garde la lecture de sa quarantaine. La capture d'un
+> ticket ne passe pas par la quarantaine (`tickets/{uid}/…`, ouvert au lecteur). Testé dans
+> `rules-tests` (« quarantaine — propriété et rôle », « quarantaine — un lecteur ne dépose
+> rien »).
 
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
 `[firebase_storage/unauthorized]` peut vouloir dire six choses : le chemin n'appartient
@@ -3659,8 +3683,8 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   production : une requête qui perd son filtre `is_private` ou `created_by` y échoue, même sur
   une collection vide.
 - La création d'une recette a ses tests : un `reader` ne crée pas de recette, même à son nom,
-  ni de copie ; un éditeur et un administrateur créent la leur ; un `reader` modifie toujours
-  la sienne. Les cas de confidentialité et de rangement à la création sont rejoués avec
+  ni de copie ; un éditeur et un administrateur créent la leur ; un `reader` ne modifie plus
+  la sienne, mais la valide (brouillon), la détache d'un livre et la supprime (v0.24.66). Les cas de confidentialité et de rangement à la création sont rejoués avec
   l'éditeur. `users/{uid}/preferences/explore_filters` se lit et s'écrit par son titulaire et
   par un administrateur, dans la forme bornée par `isExploreFilters` (clé inconnue refusée) ;
   l'interrupteur `filters.count_estimated_times` s'y enregistre sans changer la règle (il vit
@@ -5942,8 +5966,26 @@ ainsi que `searchRecipesFn` (classement facturé). L'interface masque les points
 « Générer avec l'IA » et « Concevoir avec l'IA » du planning, source « Conception IA » de Nouveau
 planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien »,
 « Importer » des pages « Sur le web », et le bandeau d'import au
-retour du navigateur de l'Explorer. Il garde la modification et la suppression de ses recettes existantes, et
-« Raffiner le brouillon par IA » sur ses brouillons (`refineRecipeFn`, `requireAuth`).
+retour du navigateur de l'Explorer. Il garde la relecture et la validation de ses brouillons,
+le détachement d'un livre et la suppression de ses recettes existantes. Il ne les **enrichit**
+plus (v0.24.66, tickets #162 et #163) : `polishCooklangFn`, `polishMarkdownFn`,
+`refineRecipeFn`, `extractBookCoverFn` (`book_cover`), `suggestRecipeTagsFn`,
+`detectAndCropIllustrationsFn` et `scanAndPromoteUploadFn` (`upload_security_scan`) exigent
+`requireEditor`. L'interface teste `AppUser.canEnrichRecipe(createdBy)` — `canEdit` et
+`canModifyRecipe` — et masque « Modifier la recette », la couverture « Recette libre »,
+l'ajout de photo ou d'illustration, l'IA de la relecture d'un brouillon et « Suggérer les
+tags » ; `/recipes/:recipeId/edit` passe par `EditorOnlyGate`. Un refus reçu en cours de
+session s'affiche par `photoFailureMessage` ou `aiFailureMessage`
+(`core/widgets/error_message.dart`), sans « Réessayer ».
+
+La règle `recipes` le fait respecter (§4, `readerValidatesDraft`, `readerDetachesFromBook`) :
+un lecteur créateur n'écrit plus sur sa recette que la validation d'un brouillon et le
+détachement d'un livre ; la suppression ne change pas. Les écrans suivent :
+`canModifyRecipe` commande « Valider », « Détacher du livre » et « Supprimer » ;
+`canEnrichRecipe` commande tout geste qui écrit autre chose — suppression d'une photo
+(`image_urls`), « Supprimer le scan source », type de page de la relecture, « Ranger » d'un
+brouillon sans validation (file des brouillons), intégration, retrait et remise à zéro du
+dressage dans la recette, nettoyage de l'ancienne section de conservation.
 
 ### Les réponses JSON
 
@@ -6441,7 +6483,7 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `suggestRecipeTagsFn` | `suggest_tags` | `titre` → 5 000 car., requis ; `cooklang` → 100 000 car. |
 | `generateRecipeIllustrationFn` | `generate_recipe_illustration` | `recipeTitle` → 5 000 car., requis ; `recipeContext` → 100 000 car., requis ; `userInstruction`, `style` → 5 000 car. |
 | `suggestPlatingFn` | `plating_coach` | `userInstruction` → 5 000 car. |
-| `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. Garde (v0.23.48) : éditeur ou admin, ou lecteur créateur de la recette `recipeId` (`assertCanNormalizeReferentials`, `callable/_recipeAccess.ts`) — la fonction écrit dans le référentiel partagé `nutrition_ingredients` |
+| `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. Garde (v0.24.66) : éditeur ou admin seulement (`assertCanNormalizeReferentials`, `callable/_recipeAccess.ts`) — la fonction écrit dans le référentiel partagé `nutrition_ingredients` |
 
 **Liste blanche.** `refineRecipeFn`, `searchRecipesFn`, `suggestMealPlanFn` et
 `generateRecipeConceptFn` passent au générateur un objet construit par
@@ -8218,20 +8260,20 @@ l'impose : la création d'un `processing_job`, seul point qui lance le pipeline 
 (`analyzeBookFileFn`) exige `requireEditor`. Un `reader` qui ouvre `/scan` par un lien voit un
 état « Import réservé aux éditeurs » au lieu du formulaire, et aucune entrée vers `/scan` ne
 lui est montrée. `quarantine/{uid}/` (`storage.rules`) et `scanAndPromoteUploadFn`
-(`requireAuth`) restent ouverts au `reader` : il y dépose le fichier source de ses propres
-recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
+(`requireEditor`) sont fermés au `reader` depuis la v0.24.66 (ticket #162, point 2 ; ticket
+#163, point 1).
 
 | Route | Écran | Droit effectif |
 |---|---|---|
 | `/` | `BookListScreen` | `reader` — l'accueil *est* la bibliothèque |
 | `/books` | `BookListScreen` | `reader` |
 | `/books/validation` | `BookValidationScreen` | `editor` |
-| `/books/new` | `BookFormScreen` | `editor` |
+| `/books/new` | `BookFormScreen` | `editor` — gardée par `EditorOnlyGate` (v0.24.66) : un `reader` arrivé par un lien voit « Création réservée aux éditeurs » sous la barre « Nouveau livre » |
 | `/books/:bookId/edit` | `BookFormScreen` | `editor` |
 | `/recipes` | `RecipeListScreen` | `reader` |
 | `/recipes/new` | `RecipeCreateScreen` | `editor` — gardée par `EditorOnlyGate` : un `reader` arrivé par un lien voit « Création réservée aux éditeurs », comme sur `/scan`. Paramètre `?sourceUrl=` : l'adresse d'un import par lien qui a échoué, rappelée en haut de l'écran (« Page à recopier : »), jamais enregistrée sur la recette |
 | `/recipes/:recipeId` | `RecipeDetailScreen` | `reader` |
-| `/recipes/:recipeId/edit` | `RecipeEditScreen` | `reader` sur les siennes, `editor` sur celles d'autrui |
+| `/recipes/:recipeId/edit` | `RecipeEditScreen` | `editor` sur les siennes, `admin` sur toutes — gardée par `EditorOnlyGate` (v0.24.66, tickets #162 et #163) : un `reader` voit « Modification réservée aux éditeurs », même sur sa recette ; un éditeur sur la recette d'un autre voit `NotOwnerScaffold` |
 | `/book-pages/:pageId` | `BookPageDetailScreen` | `reader` — page de livre sans transition |
 | `/scan` | `ScanScreen` | `editor` |
 | `/drafts` | `WorkQueueScreen` | `reader` |
@@ -8664,7 +8706,7 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
 
 ### 7. Cloud Functions
 
-- **`moderateAndPromoteImagesFn`** (callable, `requireAuth`) — `{ items: [{ quarantinePath,
+- **`moderateAndPromoteImagesFn`** (callable, `requireEditor` depuis la v0.24.66 : un lecteur n'ajoute plus de photo, la capture d'un ticket passe par `attachTicketScreenshot`) — `{ items: [{ quarantinePath,
   targetKind, ownerId?, origin? }] }`, de 1 à 25 images par appel (un `contentType` envoyé
   par un client ancien est ignoré). Chaque
   `quarantinePath` doit commencer par `quarantine/{uid de l'appelant}/`, sinon

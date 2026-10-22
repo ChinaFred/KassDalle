@@ -747,8 +747,8 @@ service cloud.firestore {
       // Création : éditeur et administrateur, toujours à leur propre nom. Le
       // lecteur ne crée aucune recette — ni saisie, ni copie, ni création par
       // l'IA, ni import (refonte de l'écran Explorer, lot 2). Ses recettes
-      // existantes restent les siennes : la mise à jour et la suppression
-      // ci-dessous ne demandent que d'en être le créateur. Le serveur (Admin
+      // existantes restent les siennes : il les supprime, valide ses
+      // brouillons et les détache d'un livre (ci-dessous). Le serveur (Admin
       // SDK) écrit hors de ces règles.
       //
       // `estimated_times` (durées estimées par l'IA) s'écrit par le serveur
@@ -764,8 +764,41 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(serverOnlyComputedFields())
         && bookCheck(true) && sourceUrlAccepted();
 
-      // Mise à jour et suppression : le créateur ou un administrateur.
+      // Les deux seules écritures d'un lecteur sur sa recette (décision de
+      // l'administrateur, tickets #162 et #163) : valider un brouillon et
+      // détacher une recette d'un livre. Il ne modifie plus le texte, les
+      // photos ni les tags d'une recette validée ; l'éditeur et
+      // l'administrateur gardent toute mise à jour.
+      //
+      // Validation : exactement les champs de `validateDraft`
+      // (`recipe_repository.dart`), d'un brouillon (`draft`, `inReview`) vers
+      // `validated`. Le titre, le texte, les tags et le livre relus dans la
+      // relecture en font partie : c'est ce que le lecteur valide.
+      function readerValidatesDraft() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'titre', 'raw_cooklang', 'draft_cooklang', 'review_status', 'tags',
+            'ingredients_index', 'ingredients', 'portions', 'book_id', 'book_titre',
+            'is_private', 'page_number', 'fidelity_level', 'fidelity_findings',
+            'duplicate_of', 'updated_at'
+          ])
+          && resource.data.get('review_status', null) in ['draft', 'inReview']
+          && request.resource.data.get('review_status', null) == 'validated';
+      }
+
+      // Détachement : exactement les champs de `detachRecipeFromBook`
+      // (fiche recette, page de livre), `book_id` et `book_titre` à null.
+      function readerDetachesFromBook() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['book_id', 'book_titre', 'updated_at'])
+          && request.resource.data.get('book_id', null) == null
+          && request.resource.data.get('book_titre', null) == null;
+      }
+
+      // Mise à jour : le créateur ou un administrateur ; un lecteur créateur,
+      // seulement pour valider un brouillon ou détacher d'un livre.
+      // Suppression : le créateur ou un administrateur, tout rôle nommé.
       allow update: if isApproved() && (isCreator(resource.data) || isAdmin()) && keepsCreator()
+        && (isEditor() || readerValidatesDraft() || readerDetachesFromBook())
         && !changes('source_url') && !changes('source_site') && !changes('source_author')
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlySourceFields())
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOnlyRetryFields())

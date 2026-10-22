@@ -20,6 +20,7 @@ import '../detail/recipe_detail_illustrations.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/widgets/error_message.dart';
 import '../../../../core/services/gemini_providers.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
@@ -119,7 +120,13 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showFailureSnackBar('Recette non corrigée', e);
+      context.showErrorSnackBar(
+        aiFailureMessage(
+          'Recette non corrigée',
+          e,
+          canEdit: ref.read(canEditProvider),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
@@ -177,7 +184,13 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showFailureSnackBar('Illustrations non extraites', e);
+        context.showErrorSnackBar(
+          aiFailureMessage(
+            'Illustrations non extraites',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
@@ -313,7 +326,15 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         error: e,
         stackTrace: stackTrace,
       );
-      if (mounted) context.showFailureSnackBar('Photo non enregistrée', e);
+      if (mounted) {
+        context.showErrorSnackBar(
+          photoFailureMessage(
+            'Photo non enregistrée',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }

@@ -29,7 +29,11 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
   final String recipeId;
   final TextEditingController ctrl;
   final Recipe recipe;
-  final bool canEdit;
+
+  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : ajouter ou
+  /// supprimer une illustration, recalculer la nutrition, demander un conseil
+  /// de dressage. Un propriétaire lecteur n'a aucun de ces gestes.
+  final bool canEnrich;
   final int? basePortions;
   final int? selectedPortions;
   final ValueChanged<int>? onSelectedPortionsChanged;
@@ -43,7 +47,7 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
     required this.recipeId,
     required this.ctrl,
     required this.recipe,
-    required this.canEdit,
+    required this.canEnrich,
     this.basePortions,
     this.selectedPortions,
     this.onSelectedPortionsChanged,
@@ -110,8 +114,10 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
             child: NutritionDetailsSection(
               recipe: recipe,
               selectedPortions: selectedPortions,
-              // Le calcul s'écrit sur la recette : créateur ou administrateur.
-              onRecompute: widget.canEdit
+              // Le calcul appelle l'IA et s'écrit sur la recette : créateur
+              // éditeur ou administrateur (`computeRecipeNutritionFn`,
+              // `requireEditor`).
+              onRecompute: widget.canEnrich
                   ? () async {
                       await ref
                           .read(recipeRepositoryProvider)
@@ -124,9 +130,12 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
           _MobileSection(
             icon: Icons.style_outlined,
             title: 'Dressage',
+            // Le conseil appelle l'IA (`suggestPlatingFn`, `requireEditor`) :
+            // créateur éditeur ou administrateur ; un conseil enregistré reste
+            // lisible par tous.
             child: DressingCoachSection(
               recipe: recipe,
-              canEdit: widget.canEdit,
+              canEdit: widget.canEnrich,
             ),
           ),
           const SizedBox(height: 12),
@@ -141,11 +150,11 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
       selectedPortions: selectedPortions,
       onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
       illustrationUrls: recipe.imageUrls.isNotEmpty ? recipe.imageUrls : null,
-      onAddIllustration: widget.canEdit ? addIllustration : null,
+      onAddIllustration: widget.canEnrich ? addIllustration : null,
       onTapIllustration: recipe.imageUrls.isNotEmpty
           ? (i) => showGallery(recipe.imageUrls, i)
           : null,
-      onDeleteIllustration: widget.canEdit ? deleteIllustration : null,
+      onDeleteIllustration: widget.canEnrich ? deleteIllustration : null,
       onCreateShoppingList: recipe.ingredients.isNotEmpty
           ? () => addRecipeToShoppingList(
               context,

@@ -245,10 +245,13 @@ void main() {
       expect(user('editor').canModifyBook('moi'), isTrue);
     });
 
-    test('un lecteur modifie sa recette, pas un livre', () {
-      expect(user('reader').canModifyRecipe('moi'), isTrue);
-      expect(user('reader').canModifyBook('moi'), isFalse);
-    });
+    test(
+      'un lecteur agit sur sa recette (valider, détacher, supprimer), pas sur un livre',
+      () {
+        expect(user('reader').canModifyRecipe('moi'), isTrue);
+        expect(user('reader').canModifyBook('moi'), isFalse);
+      },
+    );
 
     test('un administrateur modifie le contenu de tous', () {
       expect(user('admin').canModifyRecipe('autre'), isTrue);
@@ -262,6 +265,18 @@ void main() {
     test('révoqué ou en attente : rien', () {
       expect(user('editor', isRevoked: true).canModifyRecipe('moi'), isFalse);
       expect(user('pending').canModifyRecipe('moi'), isFalse);
+    });
+
+    // Tickets #162 et #163 : enrichir une recette (photo, couverture, IA,
+    // éditeur) demande d'en être propriétaire ET éditeur.
+    test('canEnrichRecipe : propriétaire et éditeur', () {
+      expect(user('editor').canEnrichRecipe('moi'), isTrue);
+      expect(user('editor').canEnrichRecipe('autre'), isFalse);
+      expect(user('admin').canEnrichRecipe('autre'), isTrue);
+      expect(user('reader').canEnrichRecipe('moi'), isFalse);
+      expect(user('editor', isRevoked: true).canEnrichRecipe('moi'), isFalse);
+      expect(user('pending').canEnrichRecipe('moi'), isFalse);
+      expect(user('editor').canEnrichRecipe(''), isFalse);
     });
   });
 }
