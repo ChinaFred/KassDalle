@@ -40,6 +40,7 @@ export const BACKFILL_KEYS = [
   "recipe_roles",
   "shopping_products",
   "refresh_sodium",
+  "utensils_cleanup",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -111,6 +112,15 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     usesAi: true,
     defaultSchedule: null,
   },
+  {
+    key: "utensils_cleanup",
+    kind: "ponctuel",
+    title: "Retirer les ustensiles des ingrédients",
+    // Le passage n'appelle aucun modèle, mais chaque recette corrigée est
+    // recalculée par `onRecipeWritten`, qui peut en appeler un.
+    usesAi: true,
+    defaultSchedule: null,
+  },
 ];
 
 /** La définition d'une clé, ou `null` si elle n'existe pas. */
@@ -127,11 +137,16 @@ export function recurrentKeys(): BackfillKey[] {
 /**
  * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
  * ensemble : l'enrichissement des référentiels et la réparation du sel
- * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est refusé pendant que l'autre tient
+ * réécrivent tous deux `per100g` des ingrédients. Le nettoyage des ustensiles
+ * supprime des fiches que ces deux-là, et les allergènes, pourraient recréer
+ * par une écriture fusionnée. Un passage de l'un est refusé pendant que l'autre tient
  * son verrou. Un backfill peut appartenir à plusieurs groupes.
  */
 const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
   ["enrich_referentials", "refresh_sodium"],
+  ["utensils_cleanup", "enrich_referentials"],
+  ["utensils_cleanup", "refresh_sodium"],
+  ["utensils_cleanup", "allergens"],
 ];
 
 /** Les autres backfills dont le verrou bloque [key], dans l'ordre des groupes. */
