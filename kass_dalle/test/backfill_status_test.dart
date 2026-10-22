@@ -450,6 +450,7 @@ void main() {
       ]);
       expect(sections.ponctuelsALancer.map((d) => d.key), [
         'utensils_cleanup',
+        'recipe_styles',
         'test_ponctuel',
       ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['refresh_sodium']);
@@ -460,6 +461,7 @@ void main() {
       expect(sections.ponctuelsALancer.map((d) => d.key), [
         'refresh_sodium',
         'utensils_cleanup',
+        'recipe_styles',
       ]);
       expect(sections.ponctuelsTermines, isEmpty);
     });

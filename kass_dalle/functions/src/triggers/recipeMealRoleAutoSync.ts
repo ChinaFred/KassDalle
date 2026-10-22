@@ -15,16 +15,15 @@
  * que pour une recette classée — un trou ici est un trou silencieux là-bas.
  */
 
-import { isDeepStrictEqual } from "node:util";
-
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { recipeBudgetUserId } from "../ai/budget";
 import { BACKFILL_FAILURE_LIMIT, readFailureCount } from "../backfills/failureMemory";
 import { COLL_RECIPES, GEMINI_API_KEY } from "../config";
-import { containsPatch, mainIngredientsPatch } from "../gemini/mealRole";
+import { containsPatch, mainIngredientsPatch, stylesPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
+import { onlyFieldsChanged, onlyStyleTagsChanged } from "./styleTagsEcho";
 
 const FEATURE = "inline_meal_role_classification";
 
@@ -73,7 +72,9 @@ export function mealRoleContentChanged(
  *  - non si l'écriture ne change que la mémoire des échecs : c'est le
  *    backfill qui vient de compter un échec, ou ce déclencheur qui vient de
  *    remettre le compteur à zéro. Sans cette garde, chaque échec du backfill
- *    coûtait un second appel, ici, dans la seconde.
+ *    coûtait un second appel, ici, dans la seconde ;
+ *  - non si l'écriture ne change que le style (`onlyStyleTagsChanged`) : le
+ *    backfill « Style des recettes » ne classe pas les rôles.
  */
 export function mealRoleCallAllowed(
   data: Record<string, unknown>,
@@ -91,6 +92,7 @@ export function mealRoleCallAllowed(
     return false;
   }
   if (beforeData && onlyFieldsChanged(beforeData, data, MEAL_ROLE_MEMORY_FIELDS)) return false;
+  if (beforeData && onlyStyleTagsChanged(beforeData, data)) return false;
   return true;
 }
 
@@ -114,22 +116,6 @@ export function mealRoleFailureResetNeeded(
   return (
     readFailureCount(data.meal_role_failure_count) > 0 && mealRoleContentChanged(data, beforeData)
   );
-}
-
-/** Vrai quand au moins un champ a changé, et seulement parmi [fields]. */
-function onlyFieldsChanged(
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
-  fields: ReadonlySet<string>,
-): boolean {
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  let changed = false;
-  for (const key of keys) {
-    if (isDeepStrictEqual(before[key], after[key])) continue;
-    if (!fields.has(key)) return false;
-    changed = true;
-  }
-  return changed;
 }
 
 /**
@@ -210,6 +196,8 @@ export async function syncRecipeMealRole(args: {
     // Ce que la recette apporte, corrigé à la main (`contains_manual`), n'est
     // jamais réécrit par le modèle.
     const contains = containsPatch(tags, fields.contains);
+    // Le style, corrigé à la main (`styles_manual`), n'est jamais réécrit.
+    const styles = stylesPatch(tags, fields);
     await getFirestore()
       .collection(COLL_RECIPES)
       .doc(recipeId)
@@ -222,6 +210,12 @@ export async function syncRecipeMealRole(args: {
         ...(patch.main_starch ? { "tags.main_starch": patch.main_starch } : {}),
         ...(fields.mainIngredientsChecked
           ? { "tags.main_ingredients_checked_at": FieldValue.serverTimestamp() }
+          : {}),
+        ...("styles" in styles
+          ? {
+              "tags.styles": styles.styles,
+              "tags.styles_checked_at": FieldValue.serverTimestamp(),
+            }
           : {}),
         "tags.roles_tagged_at": FieldValue.serverTimestamp(),
       });

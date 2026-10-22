@@ -35,6 +35,7 @@ abstract final class BackfillKeys {
   static const refreshSodium = 'refresh_sodium';
   static const utensilsCleanup = 'utensils_cleanup';
   static const retention = 'retention';
+  static const recipeStyles = 'recipe_styles';
 }
 
 class BackfillDefinition {
@@ -168,6 +169,17 @@ const List<BackfillDefinition> kBackfillRegistry = [
     // recalculée par le déclencheur d'écriture, qui peut en appeler un.
     usesAi: true,
     passLimit: 'Chaque passage examine au plus 2 000 recettes.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.recipeStyles,
+    kind: BackfillKind.ponctuel,
+    title: 'Style des recettes',
+    description:
+        "Attribue jusqu'à trois styles (street food, brunch, réconfortant…) "
+        'aux recettes pas encore examinées. Une correction à la main est '
+        'gardée.',
+    usesAi: true,
+    passLimit: 'Chaque passage traite au plus 40 recettes.',
   ),
 ];
 

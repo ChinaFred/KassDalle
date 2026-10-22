@@ -59,6 +59,20 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// plus, ni ici ni côté serveur.
   bool containsManual = false;
 
+  /// Style de la recette (`tags.styles`) tel que le formulaire le montre :
+  /// celui de la base à l'ouverture, puis les pastilles « Style » ou
+  /// « Suggérer les tags ». Une valeur hors vocabulaire lue en base reste.
+  List<String> selectedStyles = const [];
+
+  /// Vrai dès que [selectedStyles] a été corrigé à la main, ou quand la base
+  /// porte déjà une correction (`styles_manual`) : le modèle ne le réécrit
+  /// plus, ni ici ni côté serveur.
+  bool stylesManual = false;
+
+  /// Marqueur d'examen du style (`styles_checked_at`) : celui de la base,
+  /// ou l'heure de la suggestion quand le modèle a répondu.
+  DateTime? stylesCheckedAt;
+
   /// Marqueur d'examen (`main_ingredients_checked_at`) que l'enregistrement
   /// écrira. Celui de la base à l'ouverture ; l'heure du choix quand
   /// l'utilisateur a renseigné les deux champs ; `null` dès que l'un des deux
@@ -117,6 +131,9 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         : null;
     selectedContains = List<String>.from(recipe.tags.contains);
     containsManual = recipe.tags.containsManual;
+    selectedStyles = List<String>.from(recipe.tags.styles);
+    stylesManual = recipe.tags.stylesManual;
+    stylesCheckedAt = recipe.tags.stylesCheckedAt;
     formInitialized = true;
   }
 
@@ -180,6 +197,13 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   void setContains(List<String> v) => setState(() {
     selectedContains = orderedMealContains(v);
     containsManual = true;
+  });
+
+  /// Correction à la main du style (pastilles « Style ») : la liste du
+  /// formulaire devient une correction, que le modèle ne remplace plus.
+  void setStyles(List<String> v) => setState(() {
+    selectedStyles = orderedRecipeStyles(v);
+    stylesManual = true;
   });
 
   static bool _sameContains(List<String> a, List<String> b) =>
@@ -257,6 +281,9 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       contains: selectedContains,
       containsManual: containsManual,
       suggestedSides: aiClassifiedInSession ? suggestedSidesByAI : null,
+      styles: selectedStyles,
+      stylesManual: stylesManual,
+      stylesCheckedAt: stylesCheckedAt,
       difficulty: difficultyCtrl.text.trim().isEmpty
           ? null
           : difficultyCtrl.text.trim(),
@@ -289,6 +316,10 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       prepTime: tags.prepTime,
       cookTime: tags.cookTime,
       restTime: tags.restTime,
+      // Le style ne dépend pas du rôle : il reste.
+      styles: tags.styles,
+      stylesManual: tags.stylesManual,
+      stylesCheckedAt: tags.stylesCheckedAt,
     );
   }
 
@@ -345,6 +376,17 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           if (result.mainIngredientsChecked) {
             mainIngredientsCheckedAt = DateTime.now();
           }
+        });
+      }
+      if (result.stylesChecked) {
+        setState(() {
+          // Un style corrigé à la main n'est jamais remplacé par le modèle.
+          selectedStyles = mealStylesAfterSuggestion(
+            manual: stylesManual,
+            current: selectedStyles,
+            suggested: result.styles,
+          );
+          if (!stylesManual) stylesCheckedAt = DateTime.now();
         });
       }
       context.showSuccessSnackBar('Tags suggérés par l\'IA ✓');

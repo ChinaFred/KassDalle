@@ -577,7 +577,7 @@
       "why": "une salade ne se réchauffe pas"
     }
   ],
-  "_hard_filter_comment": "Filtres d'une recette pour un créneau, dans l'ordre : role, excluded (une exclusion comprise des textes est violée — allergène, protéine ou féculent principal ; plat, entrée et dessert ; jamais relâchée), prep (durée maximale, plat seulement ; relâchée en dernier, max_duration), rest (créneau d'aujourd'hui ou passé), rating (note personnelle <= 3), dismissed, in_cycle, unverified (exclusion non vérifiable, seulement quand les recettes vérifiées sont exigées), preference (protéine ou féculent voulus, léger : plat seulement, relâchée). slot.criteria : les critères compris des textes (planning_criteria.json). null : la recette passe.",
+  "_hard_filter_comment": "Filtres d'une recette pour un créneau, dans l'ordre : role, excluded (une exclusion comprise des textes est violée — allergène, protéine ou féculent principal ; plat, entrée et dessert ; jamais relâchée), prep (durée maximale, plat seulement ; relâchée en dernier, max_duration), rest (créneau d'aujourd'hui ou passé), rating (note personnelle <= 3), dismissed, in_cycle, unverified (exclusion non vérifiable, seulement quand les recettes vérifiées sont exigées), preference (protéine ou féculent voulus, léger, style voulu : plat seulement, relâchée). slot.criteria : les critères compris des textes (planning_criteria.json). null : la recette passe.",
   "hard_filter": [
     {
       "recipe": { "id": "r", "prep": 45 },
@@ -806,6 +806,30 @@
       "today": "2026-10-10",
       "expected": null,
       "why": "les préférences ne bornent que le plat"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "plat", "styles": [] },
+      "slot": { "date": "2026-10-16", "criteria": { "wanted_styles": ["street_food"] } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": "preference",
+      "why": "street food voulu, recette examinée sans style : écartée tant qu'un plat du style existe"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "plat", "styles": ["barbecue", "street_food"] },
+      "slot": { "date": "2026-10-16", "criteria": { "wanted_styles": ["street_food"] } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "street food voulu : un plat qui porte le style passe"
+    },
+    {
+      "recipe": { "id": "r", "meal_role": "plat" },
+      "slot": { "date": "2026-10-16", "criteria": { "wanted_styles": ["street_food"] } },
+      "role": "main",
+      "today": "2026-10-10",
+      "expected": null,
+      "why": "style jamais examiné : passe, faute de preuve contraire"
     }
   ],
   "freshness": [
@@ -999,7 +1023,7 @@
       "why": "la tête de deux prend deux protéines différentes, « inconnue » compte comme une catégorie"
     }
   ],
-  "_preselect_comment": "Têtes de liste par créneau (ensembles triés), relâchements. Les créneaux déjà assignés n'ont pas de liste. Les têtes évitent ce qui est déjà en tête d'un autre créneau tant que le corpus le permet.",
+  "_preselect_comment": "Têtes de liste par créneau (ensembles triés), relâchements. Quand aucun plat ne passe, les filtres se relâchent un à un, dans cet ordre : wanted_starches, wanted_proteins, light, in_cycle, variety_window, max_duration. Le style voulu (wanted_styles) en dernier : quand toute cette cascade ne trouve aucun plat du style, il se relâche et la cascade reprend du début sans lui (relaxed commence alors par wanted_styles). Les exclusions jamais. plat_unmet.detail, quand il est donné, est la phrase exacte de l'écart. Les créneaux déjà assignés n'ont pas de liste. Les têtes évitent ce qui est déjà en tête d'un autre créneau tant que le corpus le permet.",
   "preselect": [
     {
       "slots": [{ "date": "2026-10-12" }, { "date": "2026-10-13" }, { "date": "2026-10-14" }],
@@ -1305,7 +1329,13 @@
       "today": "2026-10-10",
       "expected": { "slots": [{ "slot": 0, "plats": ["p2"], "repeat": [], "relaxed": [] }] },
       "why": "poisson voulu : seul le poisson est proposé"
-    }
+    },
+    {"slots": [{"date": "2026-10-16", "criteria": {"wanted_styles": ["street_food"]}}], "recipes": [{"id": "p1", "meal_role": "plat", "styles": ["street_food"]}, {"id": "p2", "meal_role": "plat", "styles": ["frais_estival"]}, {"id": "p3", "meal_role": "plat"}], "policy": {}, "seed": 1, "today": "2026-10-10", "expected": {"slots": [{"slot": 0, "plats": ["p1", "p3"], "repeat": [], "relaxed": []}]}, "why": "street food voulu le vendredi : le plat du style passe, la salade estivale non ; celui jamais examiné passe faute de preuve"},
+    {"slots": [{"date": "2026-10-16", "criteria": {"wanted_styles": ["street_food"]}}], "recipes": [{"id": "p1", "meal_role": "plat", "styles": ["frais_estival"]}, {"id": "p2", "meal_role": "plat", "styles": []}], "policy": {}, "seed": 1, "today": "2026-10-10", "expected": {"slots": [{"slot": 0, "plats": ["p1", "p2"], "repeat": [], "relaxed": ["wanted_styles"], "plat_unmet": {"p1": [{"key": "wanted_styles", "status": "relaxed", "detail": "Aucun plat street food dans vos recettes"}], "p2": [{"key": "wanted_styles", "status": "relaxed", "detail": "Aucun plat street food dans vos recettes"}]}}]}, "why": "aucun plat street food dans les recettes : un plat ordinaire, l'écart le dit"},
+    {"slots": [{"date": "2026-10-16", "dismissed": ["p1"], "criteria": {"wanted_styles": ["street_food"]}}], "recipes": [{"id": "p1", "meal_role": "plat", "styles": ["street_food"]}, {"id": "p2", "meal_role": "plat", "styles": []}], "policy": {}, "seed": 1, "today": "2026-10-10", "expected": {"slots": [{"slot": 0, "plats": ["p2"], "repeat": [], "relaxed": ["wanted_styles"], "plat_unmet": {"p2": [{"key": "wanted_styles", "status": "relaxed", "detail": "Pas un plat street food : peu d'autres choix"}]}}]}, "why": "le seul plat street food est écarté pour ce créneau : un autre plat, « peu d'autres choix »"},
+    {"slots": [{"date": "2026-10-16", "criteria": {"wanted_proteins": ["poisson"], "wanted_styles": ["street_food"]}}], "recipes": [{"id": "p1", "meal_role": "plat", "main_protein": "boeuf", "styles": ["street_food"]}, {"id": "p2", "meal_role": "plat", "main_protein": "poisson", "styles": []}], "policy": {}, "seed": 1, "today": "2026-10-10", "expected": {"slots": [{"slot": 0, "plats": ["p1"], "repeat": [], "relaxed": ["wanted_proteins"], "plat_unmet": {"p1": [{"key": "wanted_proteins", "status": "relaxed"}]}}]}, "why": "poisson et street food voulus, aucun plat ne tient les deux : la protéine se relâche avant le style"},
+    {"slots": [{"date": "2026-10-16", "criteria": {"max_duration": 30, "wanted_styles": ["street_food"]}}], "recipes": [{"id": "p1", "meal_role": "plat", "prep": 60, "styles": ["street_food"]}, {"id": "p2", "meal_role": "plat", "prep": 20, "styles": []}], "policy": {}, "seed": 1, "today": "2026-10-10", "expected": {"slots": [{"slot": 0, "plats": ["p1"], "repeat": [], "relaxed": ["in_cycle", "variety_window", "max_duration"], "plat_unmet": {"p1": [{"key": "max_duration", "status": "relaxed"}]}}]}, "why": "street food et 30 min voulus, le burger prend une heure : la durée se relâche avant le style"},
+    {"slots": [{"date": "2026-10-16", "criteria": {"wanted_starches": ["riz"], "wanted_proteins": ["poisson"]}}], "recipes": [{"id": "p1", "meal_role": "plat", "main_protein": "poisson", "main_starch": "pates"}, {"id": "p2", "meal_role": "plat", "main_protein": "boeuf", "main_starch": "riz"}], "policy": {}, "seed": 1, "today": "2026-10-10", "expected": {"slots": [{"slot": 0, "plats": ["p1"], "repeat": [], "relaxed": ["wanted_starches"], "plat_unmet": {"p1": [{"key": "wanted_starches", "status": "relaxed"}]}}]}, "why": "poisson et riz voulus, aucun plat ne tient les deux : le féculent se relâche seul, la protéine tient"}
   ],
   "_validate_choice_comment": "Lecture de la réponse du modèle contre les listes envoyées. Un identifiant hors de la tête du créneau, ou déjà pris, est remplacé par le premier candidat libre (source code). Un créneau absent de la réponse aussi.",
   "validate_choice": [

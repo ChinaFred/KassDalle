@@ -425,6 +425,10 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
       return '${_count(n('recalculees'), 'recalculée', 'recalculées')}, '
           '${_count(n('identiques'), 'identique', 'identiques')}, '
           '${_count(n('echouees'), 'échec', 'échecs')}';
+    case BackfillKeys.recipeStyles:
+      return '${_count(n('stylees'), 'examinée', 'examinées')}, '
+          '${_count(n('echouees'), 'échec', 'échecs')}, '
+          '${restantes('restantes', 'restante', 'restantes')}';
     case BackfillKeys.refreshSodium:
       return '${_count(n('refreshedIngredients'), 'ingrédient repris', 'ingrédients repris')}, '
           '${_count(n('failedIngredients'), 'échec', 'échecs')}';

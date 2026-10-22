@@ -67,6 +67,8 @@ function tagged(): TaggedRecipe {
     mainProtein: null,
     mainStarch: null,
     mainIngredientsChecked: false,
+    styles: [],
+    stylesChecked: false,
   };
 }
 

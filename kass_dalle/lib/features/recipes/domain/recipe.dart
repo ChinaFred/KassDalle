@@ -315,6 +315,22 @@ class RecipeTags {
   /// pas : la recette serait sinon requestionnée et refacturée.
   final DateTime? mainIngredientsCheckedAt;
 
+  /// Style de la recette (`tags.styles`) : zéro à trois clés de
+  /// [kRecipeStyles] (`street_food`, `reconfortant`…), posées par le modèle
+  /// avec le rôle ou par le backfill « Style des recettes ». Lu par la
+  /// présélection du planning quand une consigne demande un style.
+  final List<String> styles;
+
+  /// Vrai quand [styles] a été corrigé à la main (`styles_manual`, booléen
+  /// strict). Le modèle ne le réécrit plus (`mealStylesAfterSuggestion`).
+  final bool stylesManual;
+
+  /// Quand le modèle a examiné le style (`styles_checked_at`), même sans en
+  /// retenir aucun. Sans ce marqueur, ni correction à la main, ni style posé,
+  /// le style est inconnu : le planning ne l'envoie pas. Gardé ici pour
+  /// qu'une carte `tags` réécrite en bloc ne l'efface pas.
+  final DateTime? stylesCheckedAt;
+
   const RecipeTags({
     this.themes = const [],
     this.cuisines = const [],
@@ -331,6 +347,9 @@ class RecipeTags {
     this.mainProtein,
     this.mainStarch,
     this.mainIngredientsCheckedAt,
+    this.styles = const [],
+    this.stylesManual = false,
+    this.stylesCheckedAt,
   });
 
   factory RecipeTags.fromMap(Map<String, dynamic> data) {
@@ -353,8 +372,15 @@ class RecipeTags {
       mainIngredientsCheckedAt: _dateOrNull(
         data['main_ingredients_checked_at'],
       ),
+      styles: _stringList(data['styles']),
+      stylesManual: data['styles_manual'] == true,
+      stylesCheckedAt: _dateOrNull(data['styles_checked_at']),
     );
   }
+
+  /// Les chaînes d'une liste ; une autre valeur vaut une liste vide.
+  static List<String> _stringList(Object? v) =>
+      v is List ? v.whereType<String>().toList(growable: false) : const [];
 
   static String? _stringOrNull(Object? v) => v is String ? v : null;
 
@@ -394,8 +420,20 @@ class RecipeTags {
         'main_starch': ?mainStarch,
         'main_ingredients_checked_at': ?mainIngredientsCheckedAt,
       },
+      // Le style, écrit seulement quand il est connu : examiné, corrigé à la
+      // main, ou posé. Une carte réécrite en bloc depuis un objet lu en base
+      // le garde ; un objet construit sans lui n'efface rien.
+      if (stylesKnown) 'styles': styles,
+      if (stylesManual) 'styles_manual': true,
+      'styles_checked_at': ?stylesCheckedAt,
     };
   }
+
+  /// Vrai quand le style de la recette est connu : examiné par le modèle,
+  /// corrigé à la main, ou posé. Faux : le planning ne l'envoie pas, et une
+  /// préférence de style laisse passer la recette.
+  bool get stylesKnown =>
+      stylesCheckedAt != null || stylesManual || styles.isNotEmpty;
 
   /// Vrai quand la recette a été classée : rôle connu.
   bool get hasMealRole => mealRole != null && mealRole!.isNotEmpty;
@@ -432,6 +470,9 @@ class RecipeTags {
       mainProtein: mainProtein,
       mainStarch: mainStarch,
       mainIngredientsCheckedAt: mainIngredientsCheckedAt,
+      styles: styles,
+      stylesManual: stylesManual,
+      stylesCheckedAt: stylesCheckedAt,
     );
   }
 
@@ -451,6 +492,9 @@ class RecipeTags {
     String? mainProtein,
     String? mainStarch,
     DateTime? mainIngredientsCheckedAt,
+    List<String>? styles,
+    bool? stylesManual,
+    DateTime? stylesCheckedAt,
   }) {
     return RecipeTags(
       themes: themes ?? this.themes,
@@ -469,6 +513,9 @@ class RecipeTags {
       mainStarch: mainStarch ?? this.mainStarch,
       mainIngredientsCheckedAt:
           mainIngredientsCheckedAt ?? this.mainIngredientsCheckedAt,
+      styles: styles ?? this.styles,
+      stylesManual: stylesManual ?? this.stylesManual,
+      stylesCheckedAt: stylesCheckedAt ?? this.stylesCheckedAt,
     );
   }
 }

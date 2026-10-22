@@ -9,7 +9,11 @@
 ///
 /// Deux régimes. Une **exclusion** (allergène, protéine principale, féculent
 /// principal) ne se relâche jamais. Une **préférence** (protéine ou féculent
-/// voulus, durée maximale, léger) se relâche faute d'autre choix.
+/// voulus, durée maximale, léger, style voulu) se relâche faute d'autre choix.
+///
+/// Un texte peut réserver des critères à un jour de semaine nommé (« street
+/// food le vendredi ») : ils vivent à part (`criteria_by_weekday`) et ne
+/// valent que ce jour-là (`criteriaForWeekday`).
 ///
 /// Logique dupliquée : `functions/src/gemini/planningCriteria.ts` porte la
 /// même lecture, la même réunion et le même prédicat d'exclusion, verrouillés
@@ -43,7 +47,8 @@ enum CriterionKey {
   wantedProteins('wanted_proteins', CriterionRegime.preference),
   wantedStarches('wanted_starches', CriterionRegime.preference),
   maxDuration('max_duration', CriterionRegime.preference),
-  light('light', CriterionRegime.preference);
+  light('light', CriterionRegime.preference),
+  wantedStyles('wanted_styles', CriterionRegime.preference);
 
   final String key;
   final CriterionRegime regime;
@@ -87,6 +92,9 @@ class PlanningCriteria {
   final int? maxDuration;
   final bool light;
 
+  /// Styles voulus (`kRecipeStyles`) : un plat qui porte l'un d'eux suffit.
+  final List<String> wantedStyles;
+
   const PlanningCriteria({
     this.excludedAllergens = const [],
     this.excludedProteins = const [],
@@ -95,6 +103,7 @@ class PlanningCriteria {
     this.wantedStarches = const [],
     this.maxDuration,
     this.light = false,
+    this.wantedStyles = const [],
   });
 
   static const empty = PlanningCriteria();
@@ -114,6 +123,7 @@ class PlanningCriteria {
     ],
     maxDuration: maxDuration,
     light: light,
+    wantedStyles: wantedStyles,
   );
 
   /// Lecture tolérante d'un objet stocké, en snake_case : une valeur hors
@@ -137,10 +147,11 @@ class PlanningCriteria {
       wantedStarches: _vocabularyList(raw['wanted_starches'], kMainStarches),
       maxDuration: _readDuration(raw['max_duration']),
       light: raw['light'] == true,
+      wantedStyles: _vocabularyList(raw['wanted_styles'], kRecipeStyles),
     )._withoutConflicts();
   }
 
-  /// La forme canonique : les sept clés.
+  /// La forme canonique : les huit clés.
   Map<String, Object?> toMap() => {
     'excluded_allergens': excludedAllergens,
     'excluded_proteins': excludedProteins,
@@ -149,6 +160,7 @@ class PlanningCriteria {
     'wanted_starches': wantedStarches,
     'max_duration': maxDuration,
     'light': light,
+    'wanted_styles': wantedStyles,
   };
 
   /// Préférences générales et note du jour réunies : listes en union, durée
@@ -173,8 +185,18 @@ class PlanningCriteria {
           ? null
           : durations.reduce((a, b) => a < b ? a : b),
       light: list.any((p) => p.light),
+      wantedStyles: union((p) => p.wantedStyles, kRecipeStyles),
     )._withoutConflicts();
   }
+
+  /// Vrai sans aucun critère.
+  bool get isEmpty =>
+      !hasExclusions &&
+      wantedProteins.isEmpty &&
+      wantedStarches.isEmpty &&
+      maxDuration == null &&
+      !light &&
+      wantedStyles.isEmpty;
 
   bool get hasExclusions =>
       excludedAllergens.isNotEmpty ||
@@ -195,7 +217,76 @@ class PlanningCriteria {
       'plutôt ${wantedStarches.map(_starchWord).join(' ou ')}',
     if (maxDuration != null) '$maxDuration min max',
     if (light) 'léger',
+    if (wantedStyles.isNotEmpty)
+      'style ${wantedStyles.map(recipeStyleShortWord).join(' ou ')}',
   ];
+}
+
+/// Le mot court d'un style, dans une phrase : « Compris : style street
+/// food ». Une valeur inconnue reste telle quelle.
+String recipeStyleShortWord(String key) => switch (key) {
+  'street_food' => 'street food',
+  'reconfortant' => 'réconfortant',
+  'healthy' => 'healthy',
+  'frais_estival' => 'frais',
+  'hiver' => "d'hiver",
+  'terroir' => 'terroir',
+  'bistrot' => 'bistrot',
+  'gastronomique' => 'gastronomique',
+  'plat_unique' => 'plat unique',
+  'a_partager' => 'à partager',
+  'aperitif_dinatoire' => 'apéritif dînatoire',
+  'sur_le_pouce' => 'sur le pouce',
+  'pique_nique' => 'pique-nique',
+  'barbecue' => 'barbecue',
+  'festif' => 'festif',
+  'brunch' => 'brunch',
+  'enfants' => 'pour les enfants',
+  'soiree_plateau' => 'soirée plateau',
+  _ => key,
+};
+
+/// Jour de semaine lisible : « 1 » (lundi) à « 7 » (dimanche).
+final RegExp _weekdayKey = RegExp(r'^[1-7]$');
+
+/// Les critères qu'un texte réserve à un jour de semaine, lus dans
+/// `criteria_by_weekday` (clés "1" à "7"). Lecture tolérante : une clé hors
+/// bornes, une valeur qui n'est pas un objet ou un objet sans critère est
+/// écartée. Même lecture que `readCriteriaByWeekday` côté serveur
+/// (`weekday_read_cases` de `planning_criteria.json`).
+Map<int, PlanningCriteria> readCriteriaByWeekday(Object? raw) {
+  if (raw is! Map) return const {};
+  final out = <int, PlanningCriteria>{};
+  for (final e in raw.entries) {
+    final key = e.key;
+    if (key is! String || !_weekdayKey.hasMatch(key)) continue;
+    if (e.value is! Map) continue;
+    final c = PlanningCriteria.fromMap(e.value);
+    if (!c.isEmpty) out[int.parse(key)] = c;
+  }
+  return out;
+}
+
+/// La forme stockée : `{ "5": { …les huit clés… } }`, jours croissants.
+Map<String, Object?> criteriaByWeekdayToMap(
+  Map<int, PlanningCriteria> byWeekday,
+) {
+  final days = byWeekday.keys.toList()..sort();
+  return {
+    for (final d in days)
+      if (!byWeekday[d]!.isEmpty) '$d': byWeekday[d]!.toMap(),
+  };
+}
+
+/// Les critères d'un texte pour un jour : ceux de tous les jours réunis à
+/// ceux réservés à [weekday] (`weekday_cases` de `planning_criteria.json`).
+PlanningCriteria criteriaForWeekday(
+  PlanningCriteria criteria,
+  Map<int, PlanningCriteria> byWeekday,
+  int weekday,
+) {
+  final day = byWeekday[weekday];
+  return day == null ? criteria : PlanningCriteria.merge([criteria, day]);
 }
 
 String _proteinWord(String key) => switch (key) {
@@ -405,7 +496,13 @@ String? exclusionWarning(PlanningCriteria c, CriteriaItem item) {
 class ConstraintTranslation {
   /// Le texte traduit, sans espaces en bord.
   final String text;
+
+  /// Critères valables tous les jours.
   final PlanningCriteria criteria;
+
+  /// Critères que le texte réserve à un jour de semaine (1 = lundi … 7 =
+  /// dimanche) : « street food le vendredi ». Vide sans critère de ce genre.
+  final Map<int, PlanningCriteria> criteriaByWeekday;
 
   /// Ce que le modèle n'a pas su traduire : transmis à l'IA, non vérifié.
   final String untranslated;
@@ -418,11 +515,13 @@ class ConstraintTranslation {
     required this.criteria,
     required this.untranslated,
     this.translated = true,
+    this.criteriaByWeekday = const {},
   });
 
   /// Une traduction en échec : tout le texte reste non vérifié.
   const ConstraintTranslation.failed(this.text)
     : criteria = PlanningCriteria.empty,
+      criteriaByWeekday = const {},
       untranslated = text,
       translated = false;
 
@@ -439,8 +538,22 @@ class ConstraintTranslation {
     return ConstraintTranslation(
       text: text.trim(),
       criteria: PlanningCriteria.fromMap(raw['criteria']),
+      criteriaByWeekday: readCriteriaByWeekday(raw['criteria_by_weekday']),
       untranslated: untranslated is String ? untranslated.trim() : '',
     );
+  }
+
+  /// Ce que le client affiche après « Compris : » : les critères de tous
+  /// les jours, puis ceux réservés à un jour, suivis de ce jour — « sans
+  /// porc · style street food le vendredi ».
+  List<String> get labels {
+    final days = criteriaByWeekday.keys.toList()..sort();
+    return [
+      ...criteria.labels,
+      for (final d in days)
+        for (final l in criteriaByWeekday[d]!.labels)
+          '$l le ${weekdayLabel(d).toLowerCase()}',
+    ];
   }
 }
 
@@ -460,13 +573,19 @@ Map<String, ConstraintTranslation> readConstraintTranslations(
 }
 
 /// Les critères compris pour [texts] — préférences générales, note du jour
-/// —, réunis. Un texte absent des traductions ne compte pas.
+/// —, réunis. Un texte absent des traductions ne compte pas. Avec
+/// [weekday], les critères qu'un texte réserve à ce jour s'ajoutent ; sans
+/// lui, seuls ceux de tous les jours comptent.
 PlanningCriteria criteriaForTexts(
   Map<String, ConstraintTranslation> translations,
-  Iterable<String> texts,
-) => PlanningCriteria.merge([
+  Iterable<String> texts, {
+  int? weekday,
+}) => PlanningCriteria.merge([
   for (final t in texts)
-    if (translations[t.trim()] case final tr?) tr.criteria,
+    if (translations[t.trim()] case final tr?)
+      weekday == null
+          ? tr.criteria
+          : criteriaForWeekday(tr.criteria, tr.criteriaByWeekday, weekday),
 ]);
 
 /// Les critères compris d'un repas à la date [date] : les préférences
@@ -480,7 +599,7 @@ PlanningCriteria criteriaForDay({
 }) => criteriaForTexts(translations, [
   prefs.globalConstraints,
   (dayConstraint ?? prefs.dailyConstraints[date.weekday])?.notes ?? '',
-]);
+], weekday: date.weekday);
 
 // ── Écarts stockés sur le repas ──────────────────────────────────────────────
 

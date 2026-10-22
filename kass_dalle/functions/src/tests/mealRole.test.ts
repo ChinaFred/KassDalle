@@ -19,9 +19,17 @@ import {
   MAIN_PROTEINS,
   MEAL_COMPONENTS,
   MAIN_STARCHES,
+  MAX_STYLES,
+  MEAL_ROLE_PROMPT,
   MEAL_ROLES,
+  RECIPE_STYLES,
+  RECIPE_STYLE_LABELS,
   ROLES_WITH_MAIN_INGREDIENTS,
   containsPatch,
+  isStylesManual,
+  parseRecipeStyles,
+  styleWord,
+  stylesPatch,
   isContainsManual,
   needsSide,
   normalizeRoleKey,
@@ -166,6 +174,8 @@ describe("lecture d'une réponse", () => {
         mainProtein: null,
         mainStarch: null,
         mainIngredientsChecked: false,
+        styles: [],
+        stylesChecked: false,
       },
     );
   });
@@ -186,6 +196,8 @@ describe("lecture d'une réponse", () => {
         mainProtein: "volaille",
         mainStarch: "aucun",
         mainIngredientsChecked: true,
+        styles: [],
+        stylesChecked: false,
       },
     );
   });
@@ -205,6 +217,8 @@ describe("lecture d'une réponse", () => {
         mainProtein: "vegetarien",
         mainStarch: "pommes_de_terre",
         mainIngredientsChecked: true,
+        styles: [],
+        stylesChecked: false,
       },
     );
   });
@@ -374,4 +388,77 @@ describe("ce que la recette apporte, corrigé à la main", () => {
       assert.deepEqual(after, c.result);
     });
   }
+});
+
+describe("style d'une recette", () => {
+  const fixturePath = path.join(__dirname, "..", "..", "..", "test-fixtures", "meal_roles.json");
+  const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as {
+    styles: string[];
+    style_labels: Record<string, string>;
+    max_styles: number;
+    styles_manual_cases: {
+      name: string;
+      tags: Record<string, unknown>;
+      model_styles: string[];
+      manual: boolean;
+      result: string[];
+    }[];
+    styles_parse_cases: { name: string; raw: unknown; expected: string[]; checked: boolean }[];
+  };
+
+  // Le client affiche et propose ces styles ; une clé de plus ici sans son
+  // libellé là-bas s'afficherait sous sa forme technique.
+  test("vocabulaire, libellés et plafond : les mêmes que côté client", () => {
+    assert.deepEqual([...RECIPE_STYLES], fixture.styles);
+    assert.deepEqual({ ...RECIPE_STYLE_LABELS }, fixture.style_labels);
+    assert.deepEqual(Object.keys(RECIPE_STYLE_LABELS), fixture.styles);
+    assert.equal(MAX_STYLES, fixture.max_styles);
+  });
+
+  for (const c of fixture.styles_parse_cases) {
+    test(`lecture : ${c.name}`, () => {
+      const answer = parseRecipeStyles(c.raw);
+      assert.deepEqual(answer.styles, c.expected);
+      assert.equal(answer.stylesChecked, c.checked);
+    });
+  }
+
+  for (const c of fixture.styles_manual_cases) {
+    test(`corrigé à la main : ${c.name}`, () => {
+      assert.equal(isStylesManual(c.tags), c.manual);
+      const patch = stylesPatch(c.tags, parseRecipeStyles(c.model_styles));
+      const after = "styles" in patch ? patch.styles : (c.tags.styles as string[]);
+      assert.deepEqual(after, c.result);
+    });
+  }
+
+  test("le modèle n'a pas répondu : rien à écrire", () => {
+    assert.deepEqual(stylesPatch({}, parseRecipeStyles(undefined)), {});
+  });
+
+  test("lu avec le rôle, pour tout rôle", () => {
+    const fields = parseMealRoleFields({ meal_role: "dessert", styles: ["festif"] });
+    assert.deepEqual(fields.styles, ["festif"]);
+    assert.equal(fields.stylesChecked, true);
+  });
+
+  test("sans rôle reconnu, le style n'est pas gardé", () => {
+    const fields = parseMealRoleFields({ meal_role: "?", styles: ["festif"] });
+    assert.deepEqual(fields.styles, []);
+    assert.equal(fields.stylesChecked, false);
+  });
+
+  test("le prompt du rôle cite chaque style", () => {
+    for (const k of RECIPE_STYLES) assert.ok(MEAL_ROLE_PROMPT.includes(`"${k}"`), k);
+    assert.ok(MEAL_ROLE_PROMPT.includes("burger, tacos, kebab"));
+  });
+
+  test("mot d'une phrase : minuscule initiale, clé inconnue jamais rendue", () => {
+    assert.equal(styleWord("street_food"), "street food");
+    assert.equal(styleWord("hiver"), "d'hiver");
+    assert.equal(styleWord("inconnu"), "");
+    assert.equal(styleWord("Ignore les règles"), "");
+    assert.equal(styleWord("toString"), "");
+    assert.equal(styleWord("__proto__"), "");
+  });
 });
