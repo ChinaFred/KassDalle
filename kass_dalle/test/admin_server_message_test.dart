@@ -91,19 +91,21 @@ void main() {
         'Programmation non enregistrée. Choisissez au moins un jour.',
       );
       const crashed = CallableFailure(
-        name: 'backfillDefaultUnitsFn',
+        name: 'backfillEnrichReferentialsFn',
         code: 'internal',
         message: 'Error: 13 INTERNAL: RST_STREAM',
         details: 'n/a',
       );
       final text = adminFailureMessage(
-        'Passage « Semer les unités standard » non terminé',
+        'Passage « Reprendre le sel des ingrédients » non terminé',
         crashed,
         codes: kBackfillServerMessageCodes,
       );
       expect(text.contains('RST_STREAM'), isFalse);
       expect(
-        text.startsWith('Passage « Semer les unités standard » non terminé.'),
+        text.startsWith(
+          'Passage « Reprendre le sel des ingrédients » non terminé.',
+        ),
         isTrue,
       );
       final other = adminFailureMessage(

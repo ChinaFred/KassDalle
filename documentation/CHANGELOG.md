@@ -20,6 +20,22 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.52 — technique
+
+Retrait de deux backfills ponctuels terminés en production, d'après la liste « Copier la
+liste » d'Admin › Backfills : « Semer les unités standard » (`default_units`, terminé le
+21/10/2026 en v0.24.41, 2 unités créées, 38 complétées, 0 échec) et « Contrôler les comptes »
+(`users_schema_check`, terminé le 22/10/2026 en v0.24.46, 7 comptes lus, 0 à revoir). Sortent
+du code : les callables `backfillDefaultUnitsFn` et `backfillUsersSchemaCheckFn`, leurs
+exports, `nutrition/defaultUnits.ts` et `security/userDocument.ts` (que seuls ces callables
+lisaient), leurs tests, leurs entrées dans les deux registres et dans `backfill_schedule.json`,
+le groupe de verrou `enrich_referentials`/`default_units`, les méthodes du repository, les
+`case` de l'écran, les résumés, les icônes, et la nature `account` de la feuille « À revoir »
+avec sa consigne `kAccountFailuresHelp`, que plus rien ne produit. L'écran Unités de mesure
+vide ne renvoie plus vers Admin › Backfills. Les documents `app_config/backfill_run_<clé>`
+restent en base ; plus rien ne les lit. Aucun poste d'IA n'est concerné : les deux passages
+n'appelaient pas de modèle.
+
 ### v0.24.51 — technique
 
 - Planning : le plafond de sortie du poste `planning` passe de 4 000 à 16 000 jetons

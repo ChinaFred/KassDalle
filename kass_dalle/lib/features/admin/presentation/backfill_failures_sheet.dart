@@ -32,7 +32,6 @@ const _kindOrder = [
   BackfillFailureKind.ingredient,
   BackfillFailureKind.unit,
   BackfillFailureKind.recipe,
-  BackfillFailureKind.account,
   BackfillFailureKind.meal,
   BackfillFailureKind.ticket,
   BackfillFailureKind.invitation,
@@ -42,7 +41,6 @@ String _groupLabel(String kind, int count) => switch (kind) {
   BackfillFailureKind.ingredient => 'Ingrédients ($count)',
   BackfillFailureKind.unit => 'Unités ($count)',
   BackfillFailureKind.recipe => 'Recettes ($count)',
-  BackfillFailureKind.account => 'Comptes ($count)',
   BackfillFailureKind.meal => 'Repas planifiés ($count)',
   BackfillFailureKind.ticket => 'Tickets ($count)',
   BackfillFailureKind.invitation => 'Invitations ($count)',
@@ -56,13 +54,6 @@ bool _isOpenable(BackfillFailure f) =>
     f.kind == BackfillFailureKind.unit ||
     f.kind == BackfillFailureKind.recipe ||
     f.kind == BackfillFailureKind.ticket;
-
-/// Ce que l'administrateur fait d'un compte à revoir : rien ne le corrige
-/// depuis l'application.
-const kAccountFailuresHelp =
-    'Ces fiches ne se corrigent pas depuis l\'application. Corrigez-les dans '
-    'la console Firebase (Firestore › users › identifiant affiché), puis '
-    'relancez le contrôle.';
 
 /// Tri par raison puis par nom : les éléments qui ont la même cause se suivent.
 List<BackfillFailure> _sorted(Iterable<BackfillFailure> items) {
@@ -117,27 +108,12 @@ class BackfillFailuresSheet extends StatelessWidget {
           ? '$n éléments. Touchez une ligne pour l\'ouvrir.'
           : '$n éléments.';
     }
-    final accounts = failures.items.any(
-      (f) => f.kind == BackfillFailureKind.account,
-    );
-    return accounts ? '$count $kAccountFailuresHelp' : count;
+    return count;
   }
 
-  /// Sous-titre d'une ligne : la raison, et pour un compte l'identifiant
-  /// complet du document, à chercher dans la console Firebase. L'identifiant
-  /// reste à l'écran : la ligne copiée (`copyLine`) n'en porte que le début,
-  /// déjà dans le nom, et aucun uid ne part sur GitHub.
-  Widget? _lineSubtitle(BackfillFailure f) {
-    final parts = [
-      if (f.reason.isNotEmpty) f.reason,
-      if (f.kind == BackfillFailureKind.account) 'Identifiant : ${f.id}',
-    ];
-    if (parts.isEmpty) return null;
-    // Sélectionnable : l'identifiant se recopie dans la console à la main.
-    return f.kind == BackfillFailureKind.account
-        ? SelectableText(parts.join('\n'))
-        : Text(parts.join('\n'));
-  }
+  /// Sous-titre d'une ligne : la raison, s'il y en a une.
+  Widget? _lineSubtitle(BackfillFailure f) =>
+      f.reason.isEmpty ? null : Text(f.reason);
 
   void _open(BuildContext context, BackfillFailure f) {
     switch (f.kind) {
