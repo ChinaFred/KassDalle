@@ -8117,7 +8117,9 @@ pourtant, et une réimplémentation doit connaître leur contrat :
   ne rend plus son texte brut (v0.24.50, ticket #163) : `sandboxFailure` la journalise
   (`logError`, compte, poste, `correlationId`), sauf erreur du fournisseur déjà journalisée,
   puis `toHttpsError` renvoie le texte fixe des callables d'IA ; une `HttpsError` déjà rédigée
-  (image trop lourde, plafond d'IA) passe telle quelle ;
+  (image trop lourde) passe telle quelle, et un plafond d'IA (`BudgetExceededError`) ou un
+  chemin refusé (`StoragePathRefusedError`) sort par `toHttpsError` avec son message, sans
+  ligne ERROR ;
 - rien n'y est enregistré — ni Firestore, ni Storage sur les chemins de production ;
 - le bac à sable **lit** le code de l'application, ne l'édite jamais : une expérience qui
   doit modifier un comportement existant en copie le code.

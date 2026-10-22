@@ -31,14 +31,15 @@ describe("KeyedLogSampler", () => {
     assert.equal(log.record("op|b", 30_000), null);
   });
 
-  test("au-delà de maxKeys, la table repart de zéro", () => {
+  test("au-delà de maxKeys, la clé la plus ancienne sort seule", () => {
     const log = new KeyedLogSampler(60_000, 2);
     assert.equal(log.record("a", 0), 1);
     assert.equal(log.record("b", 0), 1);
     assert.equal(log.record("a", 1), null);
-    // Troisième clé : la table est vidée, puis « c » y entre seule.
+    // Troisième clé : « a », la plus ancienne, sort ; « b » garde son état.
     assert.equal(log.record("c", 2), 1);
+    assert.equal(log.record("b", 3), null);
     // « a » repart d'un compteur neuf : son premier refus s'écrit.
-    assert.equal(log.record("a", 3), 1);
+    assert.equal(log.record("a", 4), 1);
   });
 });

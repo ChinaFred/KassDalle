@@ -19,6 +19,7 @@ import {
   UNEXPECTED_CALLABLE_MESSAGE,
 } from "../callable/_callableErrors";
 import { GeminiError } from "../gemini/client";
+import { BudgetExceededError } from "../ai/budget";
 
 type SandboxCall = { run: (req: CallableRequest<unknown>) => Promise<unknown> };
 
@@ -112,5 +113,15 @@ describe("sandboxFailure — aucun texte brut renvoyé (ticket #163)", () => {
   test("une HttpsError déjà rédigée passe telle quelle", async () => {
     const original = new HttpsError("invalid-argument", "Image trop lourde.");
     assert.equal(await sandboxFailure(original, ctx, "sandbox_detect_orientation"), original);
+  });
+
+  test("un plafond d'IA sort en resource-exhausted avec son message", async () => {
+    const err = await sandboxFailure(
+      new BudgetExceededError({ reason: "cost", message: "Plafond atteint." }),
+      ctx,
+      "sandbox_detect_page",
+    );
+    assert.equal(err.code, "resource-exhausted");
+    assert.equal(err.message, "Plafond atteint.");
   });
 });

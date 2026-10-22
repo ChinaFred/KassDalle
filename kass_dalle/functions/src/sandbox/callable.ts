@@ -17,6 +17,8 @@ import { requireAdmin, type AuthContext } from "../callable/_auth";
 import { callableErrorAlreadyLogged, toHttpsError } from "../callable/_callableErrors";
 import { PAGE_IMAGE_MAX_BYTES } from "../callable/_inputBounds";
 import { logError } from "../logging";
+import { BudgetExceededError } from "../ai/budget";
+import { StoragePathRefusedError } from "../utils/storagePath";
 import { readModelChoice } from "./model";
 import { detectOrientation } from "./orientation";
 import { detectPageQuad } from "./page";
@@ -126,6 +128,11 @@ export async function sandboxFailure(
   feature: string,
 ): Promise<HttpsError> {
   if (err instanceof HttpsError) return err;
+  // Plafond d'IA et chemin refusé : des refus attendus, au message rédigé côté
+  // serveur, que `toHttpsError` rend tels quels. Pas de ligne ERROR pour eux.
+  if (err instanceof BudgetExceededError || err instanceof StoragePathRefusedError) {
+    return toHttpsError(err, { alreadyLogged: true });
+  }
   if (!callableErrorAlreadyLogged(err)) {
     await logError({
       message: "sandboxFn : expérience en échec — texte fixe renvoyé au client",
