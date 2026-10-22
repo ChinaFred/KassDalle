@@ -650,7 +650,8 @@ stateDiagram-v2
     <p class="sec-note">
       Un seul chemin : un push sur <code>master</code>. La CI valide le commit, puis le workflow
       « Déploiement » le met en ligne. <code>deploy.ps1</code> ne sert qu'en secours, quand GitHub
-      Actions est indisponible. Détails : <span class="path">TechnicalRequirements.md</span>,
+      Actions est indisponible ; il montre la branche, le dernier commit et les fichiers modifiés,
+      et ne part qu'après un « oui » tapé. Détails : <span class="path">TechnicalRequirements.md</span>,
       « Déploiement automatique ».
     </p>
     <figure class="fig">

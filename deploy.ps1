@@ -72,6 +72,39 @@ function Assert-UpToDateWithOrigin {
 
 Assert-UpToDateWithOrigin
 
+function Confirm-Deploy {
+    <#
+        Montre ce qui va partir, et attend un « oui ».
+
+        Le script construit et met en ligne l'etat du dossier, commite et
+        pousse. Lance depuis la mauvaise branche, ou avec des fichiers
+        modifies par megarde, il publie ce que personne n'a voulu publier.
+        Une reponse autre que « oui » arrete le script avant tout build.
+    #>
+    $branch = (git -C $root rev-parse --abbrev-ref HEAD).Trim()
+    $head = (git -C $root log -1 --format="%h %s").Trim()
+    $status = git -C $root status --short
+    Write-Host ""
+    Write-Host "Branche : $branch" -ForegroundColor Cyan
+    Write-Host "Dernier commit : $head" -ForegroundColor Cyan
+    if ($status) {
+        Write-Host "Fichiers modifies (ils partiront avec le deploiement) :" -ForegroundColor Yellow
+        $status | ForEach-Object { Write-Host "  $_" }
+    } else {
+        Write-Host "Aucun fichier modifie." -ForegroundColor Cyan
+    }
+    if ($branch -ne "master") {
+        Write-Host "Attention : la branche n'est pas master." -ForegroundColor Yellow
+    }
+    Write-Host ""
+    $answer = Read-Host "Deployer cet etat en production ? Tapez oui pour continuer"
+    if ($answer.Trim().ToLowerInvariant() -ne "oui") {
+        throw "Deploiement annule : rien n'a ete construit ni mis en ligne."
+    }
+}
+
+Confirm-Deploy
+
 function Invoke-FirebaseCli {
     param(
         [Parameter(Mandatory = $true)][string[]]$FirebaseArgs,
