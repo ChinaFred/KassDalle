@@ -565,7 +565,43 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'Valider'), findsOneWidget);
     });
 
-    testWidgets('une ligne au texte par défaut, à 360 px', (tester) async {
+    // Le libellé du bouton combiné, au texte par défaut : lignes occupées
+    // et échelle effective (1 sans réduction). Dans la police de test, chaque
+    // caractère est aussi large que la taille de police : 34 caractères à
+    // 14 px font 476 px.
+    ({int lines, double scale}) combinedLayout(WidgetTester tester) {
+      final label = find.text(combined);
+      final paragraph = tester.renderObject<RenderParagraph>(label);
+      final line = paragraph.getFullHeightForCaret(
+        const TextPosition(offset: 0),
+      );
+      final fitted = find.ancestor(of: label, matching: find.byType(FittedBox));
+      final scale = fitted.evaluate().isEmpty
+          ? 1.0
+          : tester.getSize(fitted).width / paragraph.size.width;
+      return (lines: (paragraph.size.height / line).round(), scale: scale);
+    }
+
+    testWidgets('réduction légère : une ligne, sans troncature', (
+      tester,
+    ) async {
+      // 542 px : 452 px de place pour 476 px de libellé, réduction de 5 %.
+      await pump(
+        tester,
+        status: 'analyzed',
+        size: const Size(542, 800),
+        textScale: 1.0,
+      );
+      expect(tester.takeException(), isNull);
+      final layout = combinedLayout(tester);
+      expect(layout.lines, 1);
+      expect(layout.scale, lessThan(1.0));
+      expect(layout.scale, greaterThanOrEqualTo(0.9));
+    });
+
+    testWidgets('réduction forte (360 px) : le libellé passe à la ligne', (
+      tester,
+    ) async {
       await pump(
         tester,
         status: 'analyzed',
@@ -573,18 +609,24 @@ void main() {
         textScale: 1.0,
       );
       expect(tester.takeException(), isNull);
-      final label = find.text(combined);
-      expect(
-        find.ancestor(of: label, matching: find.byType(FittedBox)),
-        findsOneWidget,
+      final layout = combinedLayout(tester);
+      expect(layout.scale, 1.0);
+      expect(layout.lines, greaterThan(1));
+    });
+
+    testWidgets('écran large à 800 px : jamais réduit sous 0,9', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        status: 'analyzed',
+        size: const Size(800, 800),
+        textScale: 1.0,
       );
-      // Une ligne : sans réduction, la police de test en faisait deux
-      // (40 px pour une ligne de 20 px).
-      final paragraph = tester.renderObject<RenderParagraph>(label);
-      final line = paragraph.getFullHeightForCaret(
-        const TextPosition(offset: 0),
-      );
-      expect(paragraph.size.height, lessThan(line * 1.5));
+      expect(tester.takeException(), isNull);
+      final layout = combinedLayout(tester);
+      expect(layout.scale, greaterThanOrEqualTo(0.9));
+      if (layout.scale == 1.0) expect(layout.lines, greaterThan(1));
     });
 
     testWidgets('texte agrandi : le libellé garde sa taille', (tester) async {
