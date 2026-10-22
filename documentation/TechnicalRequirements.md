@@ -5325,8 +5325,10 @@ qui n'a pas été traduit part dans `=== PRÉFÉRENCES GÉNÉRALES ===` ou
 `[PRÉFÉRENCES DU JOUR : …]`. Un texte non compris part en entier, comme avant. Un créneau sans choix à faire (un seul candidat partout) n'est pas envoyé. Le
 nombre de parts n'est plus une consigne : « les quantités sont recalculées à l'affichage ».
 Le modèle rend `[{slot, recipe_id, starter_id?, dessert_id?}]`, sans phrase. `maxTokens` :
-4 000 (`PLANNING_MAX_TOKENS`) ; sur Gemini, la sortie reste bornée par
-`thinking_budgets.planning`.
+16 000 (`PLANNING_MAX_TOKENS`). Sur Claude, la réflexion compte dans ce plafond : à 4 000,
+Sonnet 5 en effort `low` les a consommés en réflexion sans rendre de texte (22 oct. 2026),
+d'où l'avis « L'IA n'a pas répondu ». Gemini ne reçoit pas `maxTokens` : sa sortie reste
+bornée par `thinking_budgets.planning`, et la constante ne sert qu'au coût plafond.
 
 **Lecture de la réponse** (`validateModelChoices`) : un identifiant hors de la tête du
 créneau, déjà pris, ou un créneau oublié est remplacé par le premier candidat libre de la

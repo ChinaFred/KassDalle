@@ -58,8 +58,8 @@ describe("coût plafond d'un appel", () => {
     assert.ok(withTable > 0);
   });
 
-  test("plafonds de sortie : 4 000 pour le planning, 6 000 pour une conception", () => {
-    assert.equal(PLANNING_MAX_TOKENS, 4_000);
+  test("plafonds de sortie : 16 000 pour le planning, 6 000 pour une conception", () => {
+    assert.equal(PLANNING_MAX_TOKENS, 16_000);
     assert.equal(PLANNING_CONCEPT_MAX_TOKENS, 6_000);
   });
 });

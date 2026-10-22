@@ -20,6 +20,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.51 — technique
+
+- Planning : le plafond de sortie du poste `planning` passe de 4 000 à 16 000 jetons
+  (`PLANNING_MAX_TOKENS`). Sur Claude Sonnet 5, la réflexion adaptative compte dans
+  `max_tokens` : le 22 octobre, l'appel a consommé ses 4 000 jetons en réflexion sans
+  rendre de texte, et le planning est retombé sur le choix par le code avec l'avis
+  « L'IA n'a pas répondu ». Le coût plafond estimé passe de 0,05 $ à 0,17 $ sur Sonnet 5,
+  sous le plafond de 0,50 € par génération. Gemini ne reçoit pas ce plafond : seule son
+  estimation de coût change.
+
 ### v0.24.50 — fonctionnel
 
 - Admin › Moteur d'IA : chaque poste propose « Défaut (…) » pour le moteur, le modèle de
