@@ -150,7 +150,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'captures jointes à un ticket que plus aucun ticket ne cite '
             '(dépôt abandonné, capture remplacée). Une capture rattachée à '
             'son ticket reste, quel que soit son âge.\n\n'
-            'Aucun appel d\'IA. Cinq mille rapports et cinq mille captures '
+            'Aucun appel d\'IA. Cinq mille rapports et cinq mille captures supprimés '
             'par passage. À '
             'programmer chaque jour pour que la règle des 90 jours tienne '
             'seule.';

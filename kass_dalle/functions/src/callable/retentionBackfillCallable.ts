@@ -59,7 +59,7 @@ const DEFAULT_MAX_REPORTS = 5000;
 const BATCH_SIZE = 400;
 /** Marge gardée sur le délai de la fonction. */
 const DEADLINE_MARGIN_MS = 45_000;
-/** Captures examinées par passage, au plus. */
+/** Suppressions de captures tentées par passage, au plus ; le délai borne l'examen. */
 const MAX_SCREENSHOTS_PER_PASS = 5000;
 /** Fichiers de `tickets/` listés par page. */
 const SCREENSHOT_PAGE_SIZE = 500;
@@ -253,7 +253,10 @@ async function runScreenshotsPhase(
         response.stoppedByErrors = true;
         return;
       }
-      if (response.capturesExaminees >= MAX_SCREENSHOTS_PER_PASS) {
+      // Le plafond compte les suppressions tentées, pas les fichiers examinés :
+      // des captures rattachées en tête de liste, jamais supprimées, ne
+      // doivent pas arrêter chaque passage au même endroit.
+      if (response.capturesSupprimees + response.capturesEchouees >= MAX_SCREENSHOTS_PER_PASS) {
         response.stoppedByBudget = true;
         return;
       }
