@@ -160,14 +160,24 @@ export function readRoutingPolicy(
       refuse(`Modèle Claude inconnu pour ${feature} : ${wanted}.`);
       continue;
     }
-    // Un poste réglé sur le modèle par défaut n'a pas besoin d'exception :
-    // la garder figerait ce poste le jour où le défaut change.
-    if (wanted !== anthropicModel) anthropicModels[feature] = wanted;
+    // Un choix explicite se garde, même égal au défaut : c'est lui qui fige
+    // le poste quand le défaut change. « Défaut » s'écrit en retirant la clé.
+    anthropicModels[feature] = wanted;
   }
 
-  // L'effort n'a pas de valeur par défaut commune à valider : un poste sans
-  // réglage garde celui de son propre code, jamais celui d'un autre poste.
   const EFFORTS = new Set(["low", "medium", "high"]);
+
+  // Effort par défaut : absent, nul ou vide = « selon le poste », chaque poste
+  // garde l'effort de son code.
+  let anthropicEffort: "low" | "medium" | "high" | null = null;
+  const rawEffort = (raw as { anthropicEffort?: unknown }).anthropicEffort;
+  if (rawEffort != null && rawEffort !== "") {
+    if (typeof rawEffort === "string" && EFFORTS.has(rawEffort)) {
+      anthropicEffort = rawEffort as "low" | "medium" | "high";
+    } else {
+      refuse(`Effort de réflexion par défaut invalide : ${String(rawEffort)}.`);
+    }
+  }
   const anthropicEfforts: Record<string, "low" | "medium" | "high"> = {};
   for (const [feature, effort] of Object.entries(
     (raw.anthropicEfforts ?? {}) as Record<string, unknown>,
@@ -214,6 +224,7 @@ export function readRoutingPolicy(
       anthropicModel,
       anthropicModels,
       anthropicEfforts,
+      anthropicEffort,
       fallbackEnabled: raw.fallbackEnabled !== false,
       thinkingBudget,
       thinkingBudgets,
@@ -253,6 +264,7 @@ export function presetPolicyToMap(policy: AiRoutingPolicy): Record<string, unkno
     anthropic_model: policy.anthropicModel,
     anthropic_models: policy.anthropicModels,
     anthropic_efforts: policy.anthropicEfforts,
+    anthropic_effort: policy.anthropicEffort,
     fallback_enabled: policy.fallbackEnabled,
     thinking_budget: policy.thinkingBudget,
     thinking_budgets: policy.thinkingBudgets,
@@ -279,6 +291,9 @@ export function presetPolicyFromMap(
     anthropicModel: typeof data.anthropic_model === "string" ? data.anthropic_model : undefined,
     anthropicModels: asRecord(data.anthropic_models),
     anthropicEfforts: asRecord(data.anthropic_efforts),
+    // Passé tel quel : `readRoutingPolicy` écarte et signale une valeur
+    // illisible au lieu de la taire ici.
+    anthropicEffort: (data.anthropic_effort ?? null) as AiRoutingPolicy["anthropicEffort"],
     fallbackEnabled: data.fallback_enabled !== false,
     thinkingBudget: data.thinking_budget == null ? null : (data.thinking_budget as number),
     thinkingBudgets: asRecord(data.thinking_budgets),

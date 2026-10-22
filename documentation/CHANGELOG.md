@@ -18,6 +18,34 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-22
+
+### v0.24.50 — fonctionnel
+
+- Admin › Moteur d'IA : chaque poste propose « Défaut (…) » pour le moteur, le modèle de
+  Claude et la réflexion, à côté des choix propres. Un choix propre s'enregistre même s'il
+  est égal au défaut. Avant, changer le modèle global faisait basculer tous les postes qui
+  n'avaient jamais été touchés, et ceux réglés à la main sur la même valeur.
+- Changer un défaut ne modifie plus aucun poste existant : l'écran écrit d'abord l'ancienne
+  valeur sur chaque poste qui le suivait, après une confirmation qui les compte. Le nouveau
+  défaut sert aux postes remis sur « Défaut », passés sur Claude ou ajoutés par une mise à
+  jour.
+- Nouveau réglage « Réflexion de Claude par défaut » (Selon le poste, Basse, Moyenne, Haute).
+  Chaque défaut affiche le nombre de postes qui le suivent, et le filtre « Suivent un défaut »
+  les liste. Un poste sur Haiku 4.5 affiche « Pas de réflexion avec Haiku 4.5. ».
+
+### v0.24.50 — technique
+
+- Nouveau champ `anthropic_effort` dans `app_config/ai_routing_policy` et dans les
+  configurations enregistrées. Absent, il vaut « Selon le poste » : le comportement en ligne
+  ne change pas, aucun backfill. `readRoutingPolicy` ne retire plus un modèle par poste égal
+  au défaut.
+- L'effort de réflexion prévu par le code de chaque poste vit dans `ai/featureEfforts.ts`
+  (`CODE_EFFORTS`, `codeEffortFor`), lu par les appels et envoyé à l'écran. Un test refuse un
+  `effort: "high"` écrit en dur ailleurs. Nouvelle logique dupliquée : l'ordre de résolution
+  de l'effort, verrouillé par `ai_effort_resolution.json` et déclaré dans `CLAUDE.md` et le
+  skill `logique-dupliquee` ; le skill `nouveau-poste-ia` cite `CODE_EFFORTS`.
+
 ## 2026-10-21
 
 ### v0.24.43 — fonctionnel

@@ -75,20 +75,62 @@ imposait le même modèle à tous les autres. Transcrire une page de livre deman
 précision et se paie à la page ; estimer les calories d'une carotte est un rappel de
 connaissances répété quinze fois par recette. Écran **Admin → Moteur d'IA** : le sélecteur
 n'apparaît que sous un poste effectivement routé vers Claude — l'afficher inactif ailleurs
-ferait croire qu'il manque un réglage alors qu'il manque une bascule ; un poste réglé sur le
-défaut **n'écrit rien**, pour ne pas le figer le jour où le défaut change ; et seuls les
+ferait croire qu'il manque un réglage alors qu'il manque une bascule ; et seuls les
 identifiants de `ANTHROPIC_MODEL_CHOICES` sont acceptés à l'écriture, tous présents dans la
 grille tarifaire — un modèle hors grille se facturerait sans montant et gonflerait
-`total_unpriced_calls`.
+`total_unpriced_calls`. La liste du sélecteur « Modèle de Claude par défaut » vient aussi de
+`ANTHROPIC_MODEL_CHOICES` (elle n'est plus écrite dans l'écran, prix compris).
+
+**Un choix explicite égal au défaut est un choix propre, et changer un défaut fige d'abord
+(depuis le 22 octobre 2026).** Les trois défauts — moteur (`defaultProvider`), modèle de
+Claude (`anthropicModel`), réflexion de Claude (`anthropicEffort`) — servent les postes qui
+n'ont pas de clé dans `features`, `anthropicModels` ou `anthropicEfforts`. Chaque poste
+propose « Défaut (…) », qui retire la clé ; tout autre choix l'écrit, même égal au défaut —
+`readRoutingPolicy` ne retire plus un modèle par poste égal au défaut, et « Tout Gemini » /
+« Tout Claude » écrivent des choix explicites. Quand l'administrateur change un défaut,
+l'écran écrit d'abord l'ancienne valeur sur chaque poste qui la suivait, puis change le
+défaut (`AiRoutingDefaults`, `features/admin/domain/ai_routing_defaults.dart`, testé dans
+`test/ai_routing_defaults_test.dart`) ; une confirmation compte ces postes (« 12 postes
+suivent le modèle par défaut : ils garderont Sonnet 5. … »), et n'apparaît pas quand aucun
+poste ne suit le défaut. Le modèle et la réflexion ne comptent que les postes servis par
+Claude ; un poste verrouillé ne suit aucun défaut. Sous « Selon le poste », c'est l'effort du
+code de chaque poste qui est figé ; un poste dont le serveur n'envoie pas cet effort n'est pas
+figé. Le nouveau défaut ne sert donc qu'aux postes remis sur « Défaut », à ceux qu'ajoute
+une mise à jour et, pour le modèle et la réflexion de Claude, aux postes passés ensuite sur
+Claude : la confirmation de ces deux défauts le dit (`defaultChangeMessage`, `claudeOnly`).
+Chaque défaut affiche « Suivi par N postes », et le filtre « Suivent un
+défaut (N) » liste les postes qui en suivent au moins un. La liste filtrée est figée à
+l'appui sur le filtre : un poste qui reçoit un choix propre reste affiché jusqu'au prochain
+appui. Filtre actif, « Tout Gemini » et « Tout Claude » n'agissent que sur les postes
+affichés, hors verrouillés, comme les raccourcis de groupe. `AiRoutingDiff` compte à part les
+postes qui passent de « Défaut » à un choix propre à valeur égale, sans quoi une
+configuration qui ne diffère que par là se dirait « déjà le réglage affiché ».
 
 **L'effort de réflexion Claude se choisit aussi par POSTE, depuis le 27 septembre 2026.**
 `AiRoutingPolicy.anthropicEfforts` (`Record<feature, "low"|"medium"|"high">`) est résolu par
 `resolveAnthropicEffort(policy, feature)` et appliqué dans `callModel`, avant l'appel Claude.
-Contrairement au modèle, il n'y a pas de repli global : un poste sans réglage garde l'effort
-que **son propre code** pose (`ModelCallContext.effort`), parce qu'aucun effort commun n'a de
-sens entre la lecture d'une page et un rappel de calories. Écran **Admin → Moteur d'IA**, même
-sélecteur de visibilité que le modèle, avec une puce « Réglage du code » qui efface
-l'exception plutôt que de la pointer vers une valeur partagée.
+Ordre de résolution : le réglage du poste, puis l'effort par défaut de la politique
+(`anthropicEffort`, `"low"|"medium"|"high"|null`), puis l'effort que **le code du poste**
+demande. `null` (« Selon le poste », champ absent au déploiement) garde le comportement
+d'avant : chaque poste reçoit l'effort de son code. Écran **Admin → Moteur d'IA**, même
+sélecteur de visibilité que le modèle : « Défaut (basse) | Basse | Moyenne | Haute », où la
+parenthèse dit l'effort que le poste reçoit en suivant le défaut — « Selon le poste (haute) »
+quand le défaut vaut « Selon le poste ». Réglage général « Réflexion de Claude par défaut » :
+« Selon le poste » | Basse | Moyenne | Haute ; quand le modèle par défaut est Haiku 4.5, une
+ligne dit « Ignorée sur Haiku 4.5. S'applique aux postes réglés sur Sonnet 5 ou Opus 5. »
+
+**L'effort du code a une seule source, `ai/featureEfforts.ts`.** `CODE_EFFORTS` nomme les
+postes qui demandent autre chose que `DEFAULT_CODE_EFFORT` (`low`) : `high` pour
+`transcription_page`, `text_extraction`, `url_import_fallback`, `detect_illustrations`, les
+quatre `page_illustrations_*` et les trois `sandbox_detect_*` ; `medium` pour
+`recipe_translation`. Les appels lisent `codeEffortFor(feature)` au lieu de recopier la valeur
+(`transcription.ts`, `detector.ts`, `illustrations/extract.ts`, `translation.ts`, le bac à
+sable), `requestShapeFor` applique `DEFAULT_CODE_EFFORT` quand l'appel n'en précise aucun, et
+`getAiRoutingPolicyFn` envoie `codeEffort` avec chaque poste (`routableFeaturesForScreen`).
+`tests/featureEfforts.test.ts` vérifie que chaque clé est un poste de `ROUTABLE_FEATURES`,
+que l'écran reçoit `codeEffortFor` de chaque poste, et que `TAGGING_EFFORT`
+(`gemini/tagging.ts`, gardé pour sa logique de reprise) vaut l'effort de `recipe_tagging` et
+`url_import`.
 
 **Le soin se choisit par poste.** `ModelCallContext.effort` (`low` par défaut) pilote
 `output_config.effort` chez Claude. Ce réglage était figé à `low` pour tous les postes, avec
@@ -114,9 +156,12 @@ is not supported on this model » à `thinking: { type: "adaptive" }`, et refuse
 (`{ type: "enabled", budget_tokens }`) ; il n'en reçoit pas, parce qu'il sert de modèle
 rapide et bon marché pour un rappel de connaissances. Un effort réglé dans Admin → Moteur
 d'IA sur un poste servi par Haiku n'est pas transmis : une ligne DEBUG « effort … non
-transmis » le dit, et l'appel part quand même. Le sélecteur d'effort reste affiché sous
-Haiku ; l'indication du modèle (`ANTHROPIC_MODEL_CHOICES`) précise « Sans réflexion : le
-réglage d'effort ne s'y applique pas ». Avant ce correctif, tous les appels routés vers
+transmis » le dit, et l'appel part quand même. `ANTHROPIC_MODEL_CHOICES` porte
+`supportsEffort`, calculé par `modelSupportsEffort` (`requestShapeFor`) : faux pour Haiku 4.5.
+Sous un poste effectivement sur Haiku 4.5, l'écran remplace les puces de réflexion par « Pas
+de réflexion avec Haiku 4.5. », suivi, si une réflexion est enregistrée, de « Réflexion haute
+enregistrée, ignorée tant que le poste est sur Haiku 4.5. » ; la valeur enregistrée est
+gardée. Avant ce correctif, tous les appels routés vers
 Haiku échouaient et se repliaient sur Gemini. Un balisage coupé au plafond
 (`runTaggingAttempts`, `gemini/tagging.ts`) n'est pas refait à l'effort suivant quand le modèle
 qui a répondu ne reçoit pas l'effort (`effortReachesModel` : Haiku 4.5, ou Gemini, dont l'appel
@@ -2246,7 +2291,7 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 
 | Document | Ce qu'il décide |
 |---|---|
-| `ai_routing_policy` | Quel moteur sert quel poste, et les budgets de réflexion |
+| `ai_routing_policy` | Quel moteur sert quel poste, et les budgets de réflexion. Champs : `default_provider` (`"gemini"`/`"anthropic"`), `features` (`Map` poste → fournisseur), `anthropic_model` (`String`, modèle de Claude par défaut), `anthropic_models` (`Map` poste → modèle), `anthropic_effort` (`"low"`/`"medium"`/`"high"`, absent ou `null` = « Selon le poste », depuis le 22 octobre 2026 ; aucun backfill : l'absence garde le comportement d'avant), `anthropic_efforts` (`Map` poste → effort), `fallback_enabled` (`bool`), `thinking_budget` (`int?`), `thinking_budgets` (`Map` poste → `int`), `updated_at`, `updated_by`. Une clé de poste présente est un choix propre, même égale au défaut |
 | `ai_pricing` | La grille tarifaire — **plus aucun prix n'existe dans le code** ; la table du serveur ne sert qu'à semer ce document au premier démarrage. Par modèle (`models.{id}`) : `input_per_million`, `output_per_million`, `image_output_per_unit`, `analyzed_image_per_unit`, `free_units_per_month`, `grounded_search_per_unit` (`Number`, prix d'un appel ancré dans la recherche Google), `introductory` |
 | `ai_budget_policy` | Plafonds quotidiens par compte, en euros et en nombre d'appels, et le seuil d'alerte mensuel |
 | `app_check_policy` | Mode d'attestation : `off`, `monitor`, `enforce` |
@@ -2352,7 +2397,7 @@ abandonner le tick. Aucune migration manuelle.
 ### 3.13 bis Collection `ai_routing_presets` — les configurations de routage
 
 Un document par configuration enregistrée. Chacun porte `name`, `name_key` (le
-nom en minuscules, qui interdit deux homonymes), `policy` — les sept réglages de
+nom en minuscules, qui interdit deux homonymes), `policy` — tous les réglages de
 l'écran, aux mêmes clés que `ai_routing_policy` —, `created_at`, `updated_at` et
 `updated_by`.
 

@@ -73,11 +73,23 @@ export interface AiRoutingPolicy {
    * le modèle — et que l'effort, lui, mérite d'être ajusté sans attendre un
    * déploiement, comme le modèle.
    *
-   * Absent d'un poste, ce poste garde l'effort que son propre code demande :
-   * ce champ ne fixe pas de défaut global, parce qu'aucun effort commun n'a de
-   * sens — la nutrition veut `low`, la lecture de page veut `high`.
+   * Absent d'un poste, ce poste suit `anthropicEffort`, puis, à défaut,
+   * l'effort que son propre code demande (`codeEffortFor`).
    */
   anthropicEfforts: Record<string, "low" | "medium" | "high">;
+  /**
+   * Effort de réflexion Claude PAR DÉFAUT, `null` pour « selon le poste ».
+   *
+   * `null` (champ `anthropic_effort` absent ou nul) : chaque poste sans
+   * réglage propre garde l'effort de son code — la nutrition `low`, la lecture
+   * de page `high`. C'est le comportement d'avant ce champ, inchangé tant que
+   * personne ne pose de valeur.
+   *
+   * L'écran Admin › Moteur d'IA fige les postes qui suivaient l'ancien défaut
+   * avant de le changer : un nouveau défaut ne sert qu'aux postes remis
+   * explicitement sur « Défaut » et à ceux qu'ajoute une mise à jour.
+   */
+  anthropicEffort: "low" | "medium" | "high" | null;
   /** Repli automatique sur l'autre moteur en cas d'échec technique. */
   fallbackEnabled: boolean;
   /**
@@ -111,6 +123,7 @@ export const DEFAULT_AI_ROUTING_POLICY: AiRoutingPolicy = {
   anthropicModel: ANTHROPIC_MODEL,
   anthropicModels: {},
   anthropicEfforts: {},
+  anthropicEffort: null,
   fallbackEnabled: true,
   thinkingBudget: null,
   thinkingBudgets: {},
@@ -162,18 +175,17 @@ function isEffort(value: unknown): value is "low" | "medium" | "high" {
  * Effort de réflexion imposé à un poste par la politique, ou `null` en
  * l'absence de réglage.
  *
- * `null` n'est pas un défaut à appliquer : c'est le signal que le poste garde
- * l'effort qu'il pose lui-même dans son propre code. Contrairement au modèle
- * (`resolveAnthropicModel`), il n'existe pas de repli global sensé — aucun
- * effort commun ne convient à la fois à la lecture d'une page et à un rappel
- * de calories.
+ * Le réglage du poste d'abord, puis l'effort par défaut de la politique.
+ * `null` n'est pas un effort : c'est le signal que le poste garde celui que
+ * son propre code demande (`codeEffortFor`, `ai/featureEfforts.ts`).
  */
 export function resolveAnthropicEffort(
   policy: AiRoutingPolicy,
   feature: string,
 ): "low" | "medium" | "high" | null {
   const perFeature = policy.anthropicEfforts[feature];
-  return isEffort(perFeature) ? perFeature : null;
+  if (isEffort(perFeature)) return perFeature;
+  return isEffort(policy.anthropicEffort) ? policy.anthropicEffort : null;
 }
 
 let cachedPolicy: { value: AiRoutingPolicy; readAt: number } | null = null;
@@ -233,6 +245,7 @@ export async function getAiRoutingPolicy(): Promise<AiRoutingPolicy> {
           : DEFAULT_AI_ROUTING_POLICY.anthropicModel,
       anthropicModels,
       anthropicEfforts,
+      anthropicEffort: isEffort(data.anthropic_effort) ? data.anthropic_effort : null,
       fallbackEnabled: data.fallback_enabled !== false,
       thinkingBudget: readBudget(data.thinking_budget),
       thinkingBudgets,
@@ -361,8 +374,9 @@ async function callProvider(args: {
     if (!key) {
       throw new ModelCallError("Clé Anthropic absente de l'environnement", "anthropic", false);
     }
-    // Un effort réglé depuis Admin l'emporte sur celui du code ; en son
-    // absence, le poste garde l'effort qu'il pose lui-même.
+    // Un effort réglé depuis Admin (celui du poste, sinon le défaut)
+    // l'emporte sur celui du code ; en son absence, le poste garde l'effort
+    // qu'il pose lui-même.
     const effortOverride = resolveAnthropicEffort(args.policy, args.ctx.feature);
     return callAnthropic({
       apiKey: key,

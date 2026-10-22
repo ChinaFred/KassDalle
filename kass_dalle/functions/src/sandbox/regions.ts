@@ -13,6 +13,7 @@
 
 import { askModel, type SandboxModelChoice } from "./model";
 import type { SandboxEngine } from "./page";
+import { codeEffortFor } from "../ai/featureEfforts";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import { logAiText, logError } from "../logging";
 
@@ -251,7 +252,7 @@ export async function detectPageRegions(args: {
 
   const { result, requested } = await askModel({
     parts: [filePart(mimeType, bytes), textPart(entete + DETECT_PROMPT)],
-    ctx: { ...ctx, timeoutMs: 60_000, effort: "high" },
+    ctx: { ...ctx, timeoutMs: 60_000, effort: codeEffortFor(ctx.feature) },
     choice,
   });
 

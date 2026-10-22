@@ -2293,7 +2293,39 @@ classDiagram
   }
 
   class ProcessingJob
-  class AiRoutingPolicy
+
+  class AiRoutingPolicy {
+    +AiProvider defaultProvider
+    +Map~String,AiProvider~ features
+    +String anthropicModel
+    +Map~String,String~ anthropicModels
+    +String? anthropicEffort
+    +Map~String,String~ anthropicEfforts
+    +effectiveEffortFor(feature) String?
+  }
+
+  class RoutableFeature {
+    +String id
+    +String label
+    +String group
+    +AiProvider? lockedProvider
+    +String? codeEffort
+  }
+
+  class AnthropicModelChoice {
+    +String id
+    +String label
+    +bool supportsEffort
+  }
+
+  class AiRoutingDefaults {
+    +followingProvider(policy, features) List~RoutableFeature~$
+    +followingModel(policy, features) List~RoutableFeature~$
+    +followingEffort(policy, features) List~RoutableFeature~$
+    +changeDefaultProvider(policy, features, next) AiRoutingPolicy$
+    +changeDefaultModel(policy, features, next) AiRoutingPolicy$
+    +changeDefaultEffort(policy, features, next) AiRoutingPolicy$
+  }
 
   DeadLetter --> ProcessingJob : relaunchedIntoJobId
   LogEntry ..> DeadLetter : même correlationId
@@ -2310,6 +2342,10 @@ classDiagram
   BackfillRunState ..&gt; BackfillDefinition : même clé
   BackfillSchedules "1" *-- "0..5" BackfillSchedule : une par récurrent
   AiRoutingDiff ..&gt; AiRoutingPolicy : compare la politique en place et celle à charger
+  AiRoutingDefaults ..&gt; AiRoutingPolicy : fige les postes qui suivaient, puis change le défaut
+  AiRoutingDefaults ..&gt; RoutableFeature : codeEffort figé sous « Selon le poste »
+  AiRoutingPolicy ..&gt; RoutableFeature : effectiveEffortFor lit codeEffort
+  AiRoutingPolicy ..&gt; AnthropicModelChoice : anthropicModel parmi les choix du serveur
 </pre>
       </div>
       <figcaption>
@@ -2342,6 +2378,16 @@ classDiagram
         <span class="expect">
           <b><code>AiRoutingDiff</code></b> liste en clair ce que changerait le chargement d'une
           configuration de routage enregistrée, avant de l'appliquer.
+          <b><code>AiRoutingPolicy</code></b> est <code>app_config/ai_routing_policy</code>
+          (<code>anthropic_effort</code> et <code>anthropic_efforts</code> dans Firestore) ;
+          <code>anthropicEffort</code> à <code>null</code> vaut « Selon le poste ».
+          <code>effectiveEffortFor</code> rejoue pour l'affichage l'ordre du serveur : effort du
+          poste, puis défaut, puis <code>RoutableFeature.codeEffort</code>, envoyé par le serveur
+          depuis <code>ai/featureEfforts.ts</code> (fixture <code>ai_effort_resolution.json</code>).
+          <b><code>AiRoutingDefaults</code></b> change un défaut sans toucher un poste existant :
+          il écrit d'abord l'ancienne valeur sur chaque poste qui la suivait.
+          <code>AnthropicModelChoice.supportsEffort</code> à faux (Haiku 4.5) remplace le
+          sélecteur de réflexion par « Pas de réflexion avec … ».
           <b><code>RecipeRolesBackfillReport</code></b> est le compte rendu d'un passage de
           <code>backfillRecipeRolesFn</code>, lu dans la réponse de la fonction ou dans
           <code>last_report</code> de <code>app_config/backfill_run_recipe_roles</code>.

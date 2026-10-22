@@ -345,7 +345,7 @@ Les cinq skills de Kass'Dalle, à prendre comme modèles :
 
 | Skill | Procédure |
 |---|---|
-| `nouveau-poste-ia` | inscrire un poste de coût d'IA aux trois endroits (imputation, routage, catalogue comptable) |
+| `nouveau-poste-ia` | inscrire un poste de coût d'IA aux trois endroits (imputation, routage, catalogue comptable), et son effort de réflexion Claude dans `CODE_EFFORTS` quand il n'est pas `low` |
 | `logique-dupliquee` | changer une logique écrite deux fois (Dart et TypeScript) : fixture partagée d'abord, puis les deux côtés |
 | `backfill` | écrire une reprise de données lancée depuis l'écran d'administration ; la retirer du code une fois terminée, d'après le texte « Copier la liste » des ponctuels terminés que l'utilisateur colle à la session, et tenir la liste des backfills retirés avec leur version |
 | `experience-sandbox` | ajouter ou porter une expérience du bac à sable |
