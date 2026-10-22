@@ -8286,6 +8286,25 @@ formulaires d'administration sont bornés. Une page poussée hors de la coquille
 `ReadableWidth` elle-même : l'Explorer en mode choix (`SearchScreen` avec `pick`) l'enveloppe
 autour du corps, sous une barre de titre pleine largeur.
 
+**Visionneuse d'image.** Toute image agrandie s'ouvre par `showAppImageViewer`
+(`core/presentation/app_image_viewer.dart`) : `Dialog.fullscreen` en `AppTheme.dark` quel que
+soit le thème choisi, barre avec « Fermer » (`CloseButton`) à gauche, titre et « 2 / 5 » au
+centre (lu « {itemLabel} 2 sur 5 »), actions de l'écran à droite. Zoom de 1 à 6 (pincement,
+molette, double appui 1× ↔ 2,5× sur le point touché) ; galerie par glissement, flèches
+désactivées aux extrémités et touches ← → ; le glissement ne change pas de page tant que
+l'image est zoomée, et le zoom revient à 1 à chaque changement d'image ; Échap ferme. Une
+image est une URL (`AppViewerImage.network`, chargée par `AppNetworkImage`) ou des octets
+(`AppViewerImage.memory`). Chargement : `AppLoadingState` « Chargement de l'image… » ; échec
+de chargement : `AppErrorState` « Image indisponible. » avec « Réessayer », qui vide le cache
+de l'URL (`CachedNetworkImage.evictFromCache`) et recharge ; URL refusée par `isAppImageUrl`
+ou octets illisibles : « Image indisponible. » sans bouton. Points d'ouverture : couverture
+de la recette et du livre, illustrations (`showIllustrationGallery`,
+`recipe_detail_illustrations.dart` : fiche, onglet Photos, édition, brouillon, liste du
+livre), illustrations d'une page de livre (galerie de la page à partir de l'image touchée),
+visuel de montage, document original (action « Télécharger »), capture d'un ticket.
+`test/widgets/app_image_viewer_test.dart` couvre Fermer, Échap, le compteur, les flèches,
+les touches, le zoom et les états d'erreur.
+
 **Garde de sortie et déconnexion.** Un écran qui retient l'utilisateur pose son garde dans
 `leaveGuardProvider` et un `PopScope(canPop: false)` : préférences du planning, création d'un
 planning, « Suggérer un plat », invitation par e-mail, scan, Explorer, idée de l'IA, ticket, formulaire de livre

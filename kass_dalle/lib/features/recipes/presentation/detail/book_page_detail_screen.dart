@@ -11,6 +11,7 @@ import '../recipe_providers.dart';
 import '../source_viewer.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import 'book_reader_navigation.dart';
+import 'recipe_detail_illustrations.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/widgets/app_states.dart';
@@ -406,8 +407,8 @@ class _BookPageContent extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  for (final url in images) ...[
-                    _SidebarImage(url: url),
+                  for (var i = 0; i < images.length; i++) ...[
+                    _SidebarImage(images: images, index: i),
                     const SizedBox(height: 8),
                   ],
                 ],
@@ -516,7 +517,10 @@ class _BookPageContent extends ConsumerWidget {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: [for (final url in images) _ImageThumbnail(url: url)],
+              children: [
+                for (var i = 0; i < images.length; i++)
+                  _ImageThumbnail(images: images, index: i),
+              ],
             ),
           ],
           const SizedBox(height: 80),
@@ -614,48 +618,71 @@ class _PageTextContent extends StatelessWidget {
   }
 }
 
-// ── Sidebar image (wide layout) ────────────────────────────────────────────────
+// ── Visionneuse des illustrations de la page ─────────────────────────────────
 
-class _SidebarImage extends StatelessWidget {
-  final String url;
-  const _SidebarImage({required this.url});
+/// Ouvre la galerie des illustrations de la page, à partir de celle touchée.
+/// Une image hors de Kass'Dalle n'y entre pas : elle n'est pas affichée, et
+/// sa vignette n'ouvre rien.
+void _openPageGallery(BuildContext context, List<String> images, int index) {
+  final viewable = [
+    for (var i = 0; i < images.length; i++)
+      if (isAppImageUrl(images[i])) i,
+  ];
+  final start = viewable.indexOf(index);
+  if (start < 0) return;
+  showIllustrationGallery(
+    context,
+    [for (final i in viewable) images[i]],
+    initialIndex: start,
+    title: 'Illustrations de la page',
+  );
+}
+
+/// Déclencheur d'une vignette : bouton annoncé « Agrandir l'illustration »
+/// quand l'image s'ouvre, image seule sinon.
+class _GalleryTrigger extends StatelessWidget {
+  final List<String> images;
+  final int index;
+  final Widget child;
+
+  const _GalleryTrigger({
+    required this.images,
+    required this.index,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
     // Une image hors de Kass'Dalle n'ouvre pas de visionneuse.
-    return GestureDetector(
-      onTap: !isAppImageUrl(url)
-          ? null
-          : () => showDialog<void>(
-              context: context,
-              builder: (_) => Dialog.fullscreen(
-                backgroundColor: Colors.black,
-                child: Stack(
-                  children: [
-                    Center(
-                      child: InteractiveViewer(
-                        minScale: 0.5,
-                        maxScale: 6,
-                        child: AppNetworkImage(imageUrl: url),
-                      ),
-                    ),
-                    Positioned(
-                      top: 16,
-                      right: 16,
-                      child: IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        tooltip: 'Fermer',
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+    if (!isAppImageUrl(images[index])) return child;
+    return Semantics(
+      button: true,
+      label: 'Agrandir l\'illustration',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _openPageGallery(context, images, index),
+        child: child,
+      ),
+    );
+  }
+}
+
+// ── Sidebar image (wide layout) ────────────────────────────────────────────────
+
+class _SidebarImage extends StatelessWidget {
+  final List<String> images;
+  final int index;
+  const _SidebarImage({required this.images, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    return _GalleryTrigger(
+      images: images,
+      index: index,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: AppNetworkImage(
-          imageUrl: url,
+          imageUrl: images[index],
           width: double.infinity,
           fit: BoxFit.cover,
           placeholder: (_, _) => Container(
@@ -679,18 +706,19 @@ class _SidebarImage extends StatelessWidget {
 // ── Image thumbnail ────────────────────────────────────────────────────────────
 
 class _ImageThumbnail extends StatelessWidget {
-  final String url;
-  const _ImageThumbnail({required this.url});
+  final List<String> images;
+  final int index;
+  const _ImageThumbnail({required this.images, required this.index});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      // Une image hors de Kass'Dalle n'ouvre pas de visionneuse.
-      onTap: isAppImageUrl(url) ? () => _showFullscreen(context) : null,
+    return _GalleryTrigger(
+      images: images,
+      index: index,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: AppNetworkImage(
-          imageUrl: url,
+          imageUrl: images[index],
           width: 120,
           height: 90,
           fit: BoxFit.cover,
@@ -708,35 +736,6 @@ class _ImageThumbnail extends StatelessWidget {
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: const Icon(Icons.broken_image_outlined),
           ),
-        ),
-      ),
-    );
-  }
-
-  void _showFullscreen(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => Dialog.fullscreen(
-        backgroundColor: Colors.black,
-        child: Stack(
-          children: [
-            Center(
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 6,
-                child: AppNetworkImage(imageUrl: url),
-              ),
-            ),
-            Positioned(
-              top: 16,
-              right: 16,
-              child: IconButton(
-                tooltip: 'Fermer',
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ),
-          ],
         ),
       ),
     );

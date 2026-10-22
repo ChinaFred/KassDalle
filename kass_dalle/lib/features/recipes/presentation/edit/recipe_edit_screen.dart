@@ -320,11 +320,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   }
 
   void _showIllustrationGallery(List<String> urls, int startIndex) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) =>
-          IllustrationGallery(urls: urls, initialIndex: startIndex),
-    );
+    showIllustrationGallery(context, urls, initialIndex: startIndex);
   }
 
   Future<void> _save(Recipe recipe) async {
