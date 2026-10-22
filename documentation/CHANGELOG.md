@@ -20,6 +20,27 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.55 — technique
+
+Durcissements des règles Firestore et Storage, ticket #162 (audit #151), limités aux points
+qui ne retirent aucun droit utilisé par le client. Storage : le `get` d'un fichier de
+`covers/`, `scans/`, `illustrations/`, `recipes/` et `users/` exige un compte nommé selon son
+document `users/{uid}` (`isApprovedReader()`). Un compte en attente, révoqué à l'instant ou
+sans document ne lit plus ces fichiers par le SDK ; un compte nommé à l'instant les lit sans
+attendre son jeton, comme le routeur l'ouvre sur le rôle du document. Coût : une lecture
+Firestore par téléchargement d'octets (`getData`) ; l'affichage par URL n'en coûte aucune.
+
+Firestore : un compteur de `app_config/usage` écrit par un compte non administrateur monte
+au plus d'un pas par écriture, 1 pour `scans_AAAA_MM` et 21 × 50 Mio pour `storage_bytes`
+(`countsUp(champ, pas)`), ce qu'écrit `UsageTracker.recordScan`. `planned_meals.components`
+est une liste de 100 entrées au plus, à la création et à toute mise à jour qui le modifie ;
+l'éditeur en écrit 70 au plus. Points du ticket non codés : la quarantaine réservée aux
+éditeurs (retire un droit du lecteur), le volume d'`error_reports` (les règles ne comptent
+pas), la liste fermée des champs de `planned_meals` (`PlannedMeal.extra`) et
+`revokeRefreshTokens` (change la connexion). Les points 4 (politiques d'IA) et 5 (`users`,
+`groups`) étaient déjà livrés en v0.24.30 et v0.24.31. Tests ajoutés dans
+`rules-tests/test/storage.test.mjs` et `firestore.test.mjs`.
+
 ### v0.24.54 — technique
 
 Durcissements des Cloud Functions, fin du ticket #163 (lot 9 de l'audit #151). Les points 3,

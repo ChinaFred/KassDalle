@@ -23,9 +23,11 @@ service firebase.storage {
     //
     // Coût : une lecture Firestore par requête qui atteint le contrôle de
     // rôle — dépôts dans `quarantine/` et `tickets/`, listages et lectures
-    // d'administrateur. Les images affichées passent par une URL de
-    // téléchargement, que les règles n'évaluent pas, et les `get` des
-    // dossiers publiés restent sur le jeton seul (`isActive()`).
+    // d'administrateur, et depuis la v0.24.55 chaque `get` d'un dossier
+    // publié (`isApprovedReader()`). Les images affichées passent par une URL
+    // de téléchargement, que les règles n'évaluent pas : seuls les
+    // téléchargements d'octets du client (`getData`, retouche d'une image,
+    // extraction d'illustrations) atteignent ce `get`.
     //
     // Prérequis hors dépôt : le compte de service Storage
     // (`service-<numéro>@gcp-sa-firebasestorage.iam.gserviceaccount.com`)
@@ -48,9 +50,8 @@ service firebase.storage {
     /// personne dehors. La présence se teste avant la valeur : comparer une
     /// clé absente lève une erreur, et l'erreur refusait l'accès.
     ///
-    /// Ne lit que le jeton : garde les `get` des dossiers publiés, dont les
-    /// fichiers restent de toute façon joignables par leur URL de
-    /// téléchargement. Le document n'y ajouterait qu'une lecture facturée.
+    /// Ne lit que le jeton : garde les listages de `scans/` (propriétaire)
+    /// et la lecture d'une capture de ticket par son auteur.
     function isActive() {
       return isAuthenticated()
         && (!('revoked' in request.auth.token) || request.auth.token.revoked != true);
@@ -104,13 +105,30 @@ service firebase.storage {
 
     /// Un compte nommé : le sas d'entrée vaut aussi pour les dépôts de fichiers.
     ///
-    /// Ne concerne que l'ÉCRITURE. Les lectures restent sur `isActive()` : un
-    /// essai d'aligner la lecture sur le rôle (2026-10-05) a coupé l'accès au
-    /// fondateur lui-même, le temps que son jeton porte le claim. Revenu en
-    /// arrière : un gain de confidentialité faible contre un compte en attente
-    /// ne vaut pas le risque de couper l'accès à un compte déjà approuvé.
+    /// Sert l'ÉCRITURE : le jeton ET le document doivent accorder le rôle. Un
+    /// compte nommé à l'instant attend son jeton pour déposer.
     function isApproved() {
       return hasRoleIn(['reader', 'editor', 'admin']);
+    }
+
+    /// Un compte nommé, selon le rôle de son document : sert le `get` des
+    /// dossiers publiés (ticket #162, point 1).
+    ///
+    /// Un compte en attente n'y lit plus rien. Le claim de rôle n'est pas la
+    /// première porte (il ne sert qu'en repli, ci-dessous ; `isActive()` lit
+    /// la révocation du jeton) : un essai d'aligner la lecture sur le rôle du JETON (2026-10-05) a coupé
+    /// l'accès au fondateur, le temps que son jeton porte le claim. Le routeur
+    /// du client ouvre l'application sur le rôle du document
+    /// (`resolveRedirect`, `AppUser.isPending`) ; la lecture suit la même
+    /// source, et un compte nommé à l'instant lit tout de suite. Un document
+    /// sans rôle se replie sur le claim (`roleOf`), un compte sans document
+    /// est refusé, comme un compte révoqué par le document.
+    ///
+    /// Coût : une lecture Firestore par `get`. Seuls les téléchargements
+    /// d'octets du client l'atteignent ; l'affichage d'une image passe par son
+    /// URL de téléchargement.
+    function isApprovedReader() {
+      return isActive() && hasDocRoleIn(userDoc(), ['reader', 'editor', 'admin']);
     }
 
     function isOwner(uid) {
@@ -183,8 +201,8 @@ service firebase.storage {
     // modération avant d'atterrir ici. Laisser le client y écrire en direct
     // rendrait la modération contournable en une ligne de code.
     match /covers/{allPaths=**} {
-      // Lire un fichier par son adresse : tout compte actif. Lister : admin.
-      allow get: if isActive();
+      // Lire un fichier par son adresse : tout compte nommé. Lister : admin.
+      allow get: if isApprovedReader();
       allow list: if isAdmin();
       allow write: if false;
     }
@@ -243,11 +261,11 @@ service firebase.storage {
 
     // Scans validés (écriture uniquement via Admin SDK / Cloud Functions).
     //
-    // Lire un fichier dont on a l'adresse reste ouvert ; LISTER le dossier
-    // d'un autre ne l'est pas — un listage donnait les noms des fichiers
-    // sources de chacun. Le client ne liste jamais ces dossiers.
+    // Lire un fichier dont on a l'adresse reste ouvert à tout compte nommé ;
+    // LISTER le dossier d'un autre ne l'est pas — un listage donnait les noms
+    // des fichiers sources de chacun. Le client ne liste jamais ces dossiers.
     match /scans/{uid}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isActive() && (isOwner(uid) || isAdmin());
       allow write: if false;
     }
@@ -269,8 +287,8 @@ service firebase.storage {
 
     // Illustrations extraites par l'IA (scan + ré-extraction manuelle)
     match /illustrations/{uid}/{allPaths=**} {
-      // Lire un fichier par son adresse : tout compte actif. Lister : admin.
-      allow get: if isActive();
+      // Lire un fichier par son adresse : tout compte nommé. Lister : admin.
+      allow get: if isApprovedReader();
       allow list: if isAdmin();
       allow write: if false;
     }
@@ -281,7 +299,7 @@ service firebase.storage {
     // déposer l'image modérée. Lister le dossier d'une recette — qui peut
     // être privée — est réservé à l'administrateur ; le client ne liste pas.
     match /recipes/{recipeId}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isAdmin();
       allow write: if false;
     }
@@ -304,8 +322,8 @@ service firebase.storage {
 
     // Couverture « Recette libre » par utilisateur
     match /users/{uid}/{allPaths=**} {
-      // Lire un fichier par son adresse : tout compte actif. Lister : admin.
-      allow get: if isActive();
+      // Lire un fichier par son adresse : tout compte nommé. Lister : admin.
+      allow get: if isApprovedReader();
       allow list: if isAdmin();
       allow write: if false;
     }
