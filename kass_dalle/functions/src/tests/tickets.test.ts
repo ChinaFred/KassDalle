@@ -49,7 +49,7 @@ import {
   labelNames,
   readRemoteIssue,
 } from "../tickets/github";
-import { SignatureRejectionLog, updatesFromEvent } from "../tickets/webhook";
+import { updatesFromEvent } from "../tickets/webhook";
 import { GITHUB_TICKETS_MAINTAINER_ID } from "../config";
 
 const REPO = "ChinaFred/KassDalle";
@@ -843,16 +843,6 @@ describe("updatesFromEvent", () => {
       assert.equal(isTrustedPrAuthor({ id: 1, association: a }, MAINTAINER_ID), false);
     }
     assert.equal(isTrustedPrAuthor({ id: null, association: undefined }, MAINTAINER_ID), false);
-  });
-
-  test("SignatureRejectionLog : un relevé par intervalle, avec le compte", () => {
-    const log = new SignatureRejectionLog(60_000);
-    assert.equal(log.record(0), 1);
-    assert.equal(log.record(10_000), null);
-    assert.equal(log.record(59_999), null);
-    assert.equal(log.record(60_000), 3);
-    assert.equal(log.record(60_001), null);
-    assert.equal(log.record(200_000), 2);
   });
 
   test("autre dépôt, autre événement, action non suivie : rien", () => {

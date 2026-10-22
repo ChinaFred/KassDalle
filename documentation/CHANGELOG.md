@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.54 — fonctionnel
+### v0.24.56 — fonctionnel
 
 Le papier sulfurisé, le film alimentaire, les piques à brochette et les autres ustensiles ou
 consommables ne sont plus ajoutés aux ingrédients d'une recette importée, retouchée par l'IA ou
@@ -29,7 +29,7 @@ liste quand on les écrit avec `@`, et ils ne créent plus de fiche dans le réf
 Les recettes et les fiches déjà concernées (`papier_sulfurise`…) ne sont pas reprises dans cette
 version : leur nettoyage viendra par un backfill.
 
-### v0.24.54 — technique
+### v0.24.56 — technique
 
 Régression du 20 août 2026 (v0.21.31) : `TAGGING_PROMPT` ne nommait plus le papier sulfurisé ni
 l'aluminium, et son travail 2 exigeait une entrée par ligne de la liste du livre. Le prompt
@@ -50,6 +50,44 @@ attendue) ; une entrée n'est écartée que si son nom et sa ligne sont des uste
 qu'un aliment mal rattaché (« papier sulfurisé » sur « 50 g de cacahuètes ») reste signalé.
 « Ramequin » reste hors liste : c'est aussi un fromage. Aucun schéma ne change ; aucun backfill
 dans cette version.
+
+### v0.24.55 — technique
+
+Durcissements des règles Firestore et Storage, ticket #162 (audit #151), limités aux points
+qui ne retirent aucun droit utilisé par le client. Storage : le `get` d'un fichier de
+`covers/`, `scans/`, `illustrations/`, `recipes/` et `users/` exige un compte nommé selon son
+document `users/{uid}` (`isApprovedReader()`). Un compte en attente, révoqué à l'instant ou
+sans document ne lit plus ces fichiers par le SDK ; un compte nommé à l'instant les lit sans
+attendre son jeton, comme le routeur l'ouvre sur le rôle du document. Coût : une lecture
+Firestore par téléchargement d'octets (`getData`) ; l'affichage par URL n'en coûte aucune.
+
+Firestore : un compteur de `app_config/usage` écrit par un compte non administrateur monte
+au plus d'un pas par écriture, 1 pour `scans_AAAA_MM` et 21 × 50 Mio pour `storage_bytes`
+(`countsUp(champ, pas)`), ce qu'écrit `UsageTracker.recordScan`. `planned_meals.components`
+est une liste de 100 entrées au plus, à la création et à toute mise à jour qui le modifie ;
+l'éditeur en écrit 70 au plus. Points du ticket non codés : la quarantaine réservée aux
+éditeurs (retire un droit du lecteur), le volume d'`error_reports` (les règles ne comptent
+pas), la liste fermée des champs de `planned_meals` (`PlannedMeal.extra`) et
+`revokeRefreshTokens` (change la connexion). Les points 4 (politiques d'IA) et 5 (`users`,
+`groups`) étaient déjà livrés en v0.24.30 et v0.24.31. Tests ajoutés dans
+`rules-tests/test/storage.test.mjs` et `firestore.test.mjs`.
+
+### v0.24.54 — technique
+
+Durcissements des Cloud Functions, fin du ticket #163 (lot 9 de l'audit #151). Les points 3,
+4, 6 et 7 du ticket étaient déjà livrés (v0.24.31 et v0.24.32) ; cette version ferme les
+trois restes. `sandboxFn` ne renvoie plus le texte brut d'une erreur d'expérience
+(`err.message`, qui pouvait contenir un message du fournisseur ou du SDK) : `sandboxFailure`
+la journalise avec le compte, le poste et le `correlationId`, puis `toHttpsError` renvoie le
+texte fixe des callables d'IA. `recordUsage` revérifie la forme du `scanId`
+(`isValidScanId`) avant d'écrire `scan_spend/{scanId}` : un chemin d'appel qui oublierait le
+contrôle d'entrée ne peut plus y poser un identifiant arbitraire ; le coût reste dans
+`ai_usage` et la dépense du jour. Les refus d'accès d'`ensureAdminWithAudit` sont
+échantillonnés par opération et par compte : une ligne `WARNING` par minute et par instance
+au plus, avec le nombre de refus. La classe d'échantillonnage du webhook des tickets
+(`SignatureRejectionLog`) devient `LogSampler` dans `utils/logSampler.ts`, partagée, avec
+une variante par clé (`KeyedLogSampler`). Aucun droit retiré, aucun poste d'IA nouveau.
+Tests : `logSampler.test.ts`, `sandboxGuard.test.ts`.
 
 ### v0.24.53 — technique
 
