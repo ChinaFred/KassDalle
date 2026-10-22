@@ -6862,7 +6862,8 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 
 ### En-têtes de sécurité et CSP
 
-`firebase.json` pose `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` et une
+`firebase.json` pose `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+`Strict-Transport-Security`, `Permissions-Policy` et une
 `Content-Security-Policy-Report-Only`. La CSP est **en rapport seul** : elle ne bloque rien,
 et chaque violation part en rapport vers `/csp-report` (directive `report-uri`, chemin
 relatif, même origine que la page). Hosting réécrit ce chemin vers `cspReportFn`, qui
@@ -6871,12 +6872,44 @@ présent, Chromium ignore `report-uri` et passe par la Reporting API, dont l'env
 être vérifié en local (aucun rapport reçu en 75 s sous Chromium sans interface, alors que
 `report-uri` arrive aussitôt).
 
+**`Strict-Transport-Security` (v0.24.53, Issue #164)** : `max-age=31536000; includeSubDomains`,
+sans `preload`. Firebase Hosting sert déjà HTTPS seul ; l'en-tête rend la règle explicite
+pour un an. `preload` n'est pas posé : l'inscription dans la liste des navigateurs ne se
+retire pas en quelques jours.
+
+**`Permissions-Policy` (v0.24.53, Issue #164).** Les fonctions du navigateur que le web
+appelle restent ouvertes à la page (`(self)`), les autres sont fermées (`()`), iframes
+comprises. Relevé fait dans `lib/`, `web/` et le `main.dart.js` construit :
+
+| Fonction | Valeur | Raison |
+|---|---|---|
+| `camera` | `(self)` | photo d'un livre ou d'une page (`image_picker`, `ImageSource.camera`) ; sur le web c'est un `<input capture>`, laissé ouvert pour ne rien couper |
+| `clipboard-read` | `(self)` | collage d'une URL dans l'import par lien (`Clipboard.getData`) |
+| `clipboard-write` | `(self)` | boutons « Copier » (journaux, rapports d'erreur, liste de courses, invitations…) |
+| `screen-wake-lock` | `(self)` | écran allumé sur la fiche recette (`wakelock_plus`, `navigator.wakeLock`) |
+| `microphone`, `geolocation`, `payment`, `usb`, `serial`, `hid`, `midi`, `accelerometer`, `gyroscope`, `magnetometer`, `display-capture`, `fullscreen`, `browsing-topics` | `()` | aucun appel dans le code ni dans le build (`getUserMedia`, `geolocation`, `PaymentRequest`, `requestFullscreen`… absents de `main.dart.js`) ; `Dialog.fullscreen` est un widget Flutter, pas l'API du navigateur |
+
+`identity-credentials-get` et `publickey-credentials-get` ne sont pas cités : Google Identity
+Services, chargé par `google_sign_in_web`, peut passer par FedCM, et la valeur par défaut
+(`self`) reste en place. `bluetooth` n'est pas cité : Chromium ne le reconnaît pas et
+affiche un avertissement en console.
+
 **Directives (validées sur le build réel, Issue #160).** Le build `flutter build web
 --release` servi avec les en-têtes de `firebase.json`, la CSP passée en mode bloquant,
 ouvert dans Chromium jusqu'à l'écran de connexion, avec et sans Trusted Types : aucune
 violation. L'ancienne politique en levait trois, qui auraient empêché le démarrage en mode
 bloquant : les deux scripts en ligne de `index.html`, et le téléchargement de
 `canvaskit.wasm` depuis `www.gstatic.com` (`connect-src`).
+
+Rejouée en v0.24.53 sur le build de cette version, avec `Permissions-Policy` et
+`Strict-Transport-Security` : CSP bloquante, Chromium 1194 sans interface, écran de
+connexion rendu, aucune violation et aucun rapport reçu par `/csp-report`. Le proxy de
+l'environnement refuse `www.gstatic.com` et `www.google.com` : CanvasKit et le SDK Firebase JS
+12.19.0 ont été servis sous leur URL d'origine depuis des copies locales (la CSP juge
+l'URL), et `recaptcha/enterprise.js` est resté en échec réseau, sans violation. Un second
+passage avec `require-trusted-types-for 'script'` ajouté lève deux violations : le
+`<script src>` de `wakelock_plus` (`no_sleep.js`) et celui de reCAPTCHA Enterprise injecté
+par App Check. Cette directive n'est donc pas posée.
 
 | Directive | Valeurs | Pour quoi |
 |---|---|---|
@@ -7355,6 +7388,14 @@ Il reste une fenêtre de quelques secondes entre la seconde vérification et la 
 `firebase deploy`. Le workflow recopie aussi l'APK en ligne juste avant son hosting : un
 `deploy.ps1` qui publierait un nouvel APK à ce moment le verrait remplacé par l'ancien. En cas de
 doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
+
+**Le commit de `deploy.ps1` se confirme (v0.24.53, Issue #164).** Avant son `git add -A`,
+le script affiche `git status --short` et demande « Commiter et pousser ces fichiers ?
+(O/N) ». Toute autre réponse que `O`, ou une console non interactive, l'arrête en erreur
+sans commit ni push. La production porte déjà ces changements à ce stade : vérifier les
+fichiers, puis les commiter et les pousser à la main après `git pull --no-rebase`, avec la
+ligne `Deploy-Source: deploy.ps1` pour que le workflow ne les redéploie pas. Sans fichier
+modifié, rien n'est demandé.
 
 **L'APK en ligne est vérifié deux fois.** Avant les Functions, `.github/scripts/keep-online-apk.sh`
 télécharge la paire APK + manifeste, pour qu'une paire incohérente arrête tout avant le premier

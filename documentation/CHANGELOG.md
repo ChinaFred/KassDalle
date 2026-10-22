@@ -20,6 +20,19 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.53 — technique
+
+Hébergement (tickets #160 et #164). `firebase.json` pose deux nouveaux en-têtes sur tout le
+site : `Strict-Transport-Security: max-age=31536000; includeSubDomains`, sans `preload`, et
+une `Permissions-Policy` qui laisse à la page la caméra, le presse-papiers (lecture et
+écriture) et le maintien de l'écran allumé, seules fonctions du navigateur que le web
+appelle, et ferme les treize autres (micro, géolocalisation, paiement, plein écran…). Aucun
+en-tête `Cache-Control` ne change. La CSP reste en `Report-Only` : rejouée en mode bloquant
+sur le build de cette version, jusqu'à l'écran de connexion, elle ne lève aucune violation.
+Le passage en bloquant attend la lecture des rapports de production et un essai connecté.
+`deploy.ps1` affiche `git status --short` avant son `git add -A` et demande une
+confirmation (O/N) : sans « O », il s'arrête sans commit ni push.
+
 ### v0.24.49 — technique
 
 Fichier de vérification Google Search Console publié à la racine du site
