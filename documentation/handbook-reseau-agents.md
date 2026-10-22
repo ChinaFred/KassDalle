@@ -178,8 +178,8 @@ déploie. Séquence après un travail demandé :
 3. vérifier le numéro de version contre `origin/master`, puis pousser ;
 4. suivre le workflow « Déploiement », puis annoncer la version déployée.
 
-L'outil de secours (`deploy.ps1` dans Kass'Dalle) montre la branche, le dernier commit et les
-fichiers modifiés, puis attend un « oui » tapé avant tout build : lancé depuis la mauvaise
+L'outil de secours (`deploy.ps1` dans Kass'Dalle) refuse une autre branche que `master`, montre
+le dernier commit et les fichiers modifiés, puis attend un « oui » tapé avant tout build : lancé depuis la mauvaise
 branche ou avec des fichiers modifiés par mégarde, il publierait ce que personne n'a voulu.
 
 ## Documentation à tenir à jour

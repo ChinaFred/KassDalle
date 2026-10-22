@@ -83,7 +83,9 @@ function Confirm-Deploy {
     #>
     $branch = (git -C $root rev-parse --abbrev-ref HEAD).Trim()
     $head = (git -C $root log -1 --format="%h %s").Trim()
-    $status = git -C $root status --short
+    # Chaque fichier non suivi nomme, pas seulement son dossier : un secret
+    # depose dans un dossier neuf doit se voir avant le « oui ».
+    $status = git -C $root status --short --untracked-files=all
     Write-Host ""
     Write-Host "Branche : $branch" -ForegroundColor Cyan
     Write-Host "Dernier commit : $head" -ForegroundColor Cyan
@@ -93,12 +95,15 @@ function Confirm-Deploy {
     } else {
         Write-Host "Aucun fichier modifie." -ForegroundColor Cyan
     }
-    if ($branch -ne "master") {
-        Write-Host "Attention : la branche n'est pas master." -ForegroundColor Yellow
-    }
     Write-Host ""
+    # Une branche de travail en avance sur origin/master passe le controle
+    # ci-dessus, mais son code n'a pas eu de CI : seul master se deploie.
+    if ($branch -ne "master") {
+        throw "Deploiement refuse : la branche est $branch. Seul master se deploie (git switch master)."
+    }
     $answer = Read-Host "Deployer cet etat en production ? Tapez oui pour continuer"
-    if ($answer.Trim().ToLowerInvariant() -ne "oui") {
+    # "$answer" : une entree fermee (Ctrl+Z) rend $null, lu comme une chaine vide.
+    if ("$answer".Trim().ToLowerInvariant() -ne "oui") {
         throw "Deploiement annule : rien n'a ete construit ni mis en ligne."
     }
 }

@@ -7604,9 +7604,10 @@ propres au PC.
 déploiements simultanés publient chacun leur version, et le dernier arrivé l'emporte. Trois
 protections, et une consigne :
 
-- `deploy.ps1` affiche au démarrage la branche, le dernier commit et `git status --short`, signale
-  une branche autre que `master`, et n'avance qu'après un « oui » tapé (`Confirm-Deploy`,
-  v0.24.65) : toute autre réponse l'arrête avant le moindre build ;
+- `deploy.ps1` affiche au démarrage la branche, le dernier commit et `git status --short
+  --untracked-files=all`, refuse une branche autre que `master` (son code n'a pas eu de CI), et
+  n'avance qu'après un « oui » tapé (`Confirm-Deploy`, v0.24.65) : toute autre réponse l'arrête
+  avant le moindre build ;
 - `deploy.ps1` refuse de partir si le PC est en retard sur `origin/master`, et le vérifie de
   nouveau juste avant `firebase deploy`, après les builds web et APK qui durent plusieurs
   minutes ;

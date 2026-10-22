@@ -23,8 +23,8 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 ### v0.24.65 — technique
 
 `deploy.ps1`, l'outil de secours, affiche au démarrage la branche, le dernier commit et les
-fichiers modifiés (`git status --short`), signale une branche autre que `master`, puis attend un
-« oui » tapé (`Confirm-Deploy`). Toute autre réponse l'arrête avant le moindre build. Lancé
+fichiers modifiés (`git status --short --untracked-files=all`), refuse une branche autre que
+`master`, dont le code n'a pas eu de CI, puis attend un « oui » tapé (`Confirm-Deploy`). Toute autre réponse l'arrête avant le moindre build. Lancé
 depuis la mauvaise branche ou avec des fichiers modifiés par mégarde, il publiait ce que
 personne n'avait voulu publier.
 
