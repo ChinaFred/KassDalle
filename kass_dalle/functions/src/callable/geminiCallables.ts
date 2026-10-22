@@ -22,7 +22,7 @@ import {
   MAX_CALLABLE_INSTANCES,
   REGION,
 } from "../config";
-import { requireAdmin, requireAuth, requireEditor, type AuthContext } from "./_auth";
+import { requireAdmin, requireEditor, type AuthContext } from "./_auth";
 import { assertCanModifyRecipe } from "./_recipeAccess";
 import {
   readConceptInput,
@@ -1457,7 +1457,8 @@ function readStoredAdvice(data: Record<string, unknown> | undefined): StoredPlat
  * tiers.
  */
 export const suggestPlatingFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "plating_coach");
+  // Éditeur ou administrateur (v0.24.63) : toute IA leur est réservée.
+  const ctx = await requireEditor(req, "plating_coach");
   const raw = (req.data ?? {}) as Record<string, unknown>;
   const recipeId = typeof raw.recipeId === "string" ? raw.recipeId : undefined;
   if (!recipeId) {

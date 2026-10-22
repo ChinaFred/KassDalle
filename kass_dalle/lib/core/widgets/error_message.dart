@@ -247,27 +247,36 @@ bool isPermissionRefusal(Object? error) {
 }
 
 /// Refus d'un envoi de photo ou de couverture reçu en cours de session : le
-/// compte n'est plus éditeur (tickets #162 et #163). Pas de « Réessayer » : le
-/// rôle ne changera pas d'un appui à l'autre.
-const kPhotoEditorOnlyRefusal =
-    'Photo non envoyée. Ajouter des photos est réservé aux éditeurs.';
+/// compte n'est plus éditeur (tickets #162 et #163). [what] garde le préfixe
+/// de l'écran (« Couverture non enregistrée », « Illustration non envoyée »).
+/// Pas de « Réessayer » : le rôle ne changera pas d'un appui à l'autre.
+String photoEditorOnlyRefusal(String what) =>
+    '${_sentence(what.trimRight())} Ajouter des photos est réservé aux '
+    'éditeurs.';
 
 /// Refus d'une action d'IA reçu en cours de session : [what] garde le
 /// préfixe de l'écran (« Recette non corrigée », « Recette non améliorée »).
 String aiEditorOnlyRefusal(String what) =>
     '${_sentence(what.trimRight())} L\'IA est réservée aux éditeurs.';
 
-/// Le message d'un échec d'envoi de photo : [kPhotoEditorOnlyRefusal] pour un
-/// refus de droits, [failureMessage] sinon.
-String photoFailureMessage(String what, Object? error) =>
-    isPermissionRefusal(error)
-    ? kPhotoEditorOnlyRefusal
+/// Le message d'un échec d'envoi de photo : [photoEditorOnlyRefusal] pour un
+/// refus de droits reçu par un compte qui n'est plus éditeur ([canEdit]
+/// faux), [failureMessage] sinon. Un éditeur refusé pour une autre raison —
+/// un format que la quarantaine n'accepte pas — ne lit pas qu'il lui faut le
+/// rôle éditeur.
+String photoFailureMessage(
+  String what,
+  Object? error, {
+  required bool canEdit,
+}) => (!canEdit && isPermissionRefusal(error))
+    ? photoEditorOnlyRefusal(what)
     : failureMessage(what, error);
 
 /// Le message d'un échec d'action d'IA : [aiEditorOnlyRefusal] pour un refus
-/// de droits, [failureMessage] sinon.
-String aiFailureMessage(String what, Object? error) =>
-    isPermissionRefusal(error)
+/// de droits reçu par un compte qui n'est plus éditeur ([canEdit] faux),
+/// [failureMessage] sinon.
+String aiFailureMessage(String what, Object? error, {required bool canEdit}) =>
+    (!canEdit && isPermissionRefusal(error))
     ? aiEditorOnlyRefusal(what)
     : failureMessage(what, error);
 

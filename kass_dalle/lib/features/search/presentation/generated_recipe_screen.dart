@@ -14,6 +14,7 @@ import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/error_message.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../../core/theme/app_icon_size.dart';
@@ -347,7 +348,13 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar(aiFailureMessage('Recette non améliorée', e));
+        context.showErrorSnackBar(
+          aiFailureMessage(
+            'Recette non améliorée',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _refining = false);

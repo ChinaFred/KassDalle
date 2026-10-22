@@ -10,7 +10,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kass_dalle/core/widgets/error_message.dart';
+import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
+import 'package:kass_dalle/features/auth/presentation/editor_only_gate.dart';
 import 'package:kass_dalle/features/books/domain/book.dart';
 import 'package:kass_dalle/features/books/presentation/book_providers.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
@@ -70,35 +72,139 @@ void main() {
       code: 'unavailable',
     );
 
-    test('photo ou couverture : message de rôle, sans la cause technique', () {
-      expect(isPermissionRefusal(storageRefusal), isTrue);
-      expect(
-        photoFailureMessage('Couverture non mise à jour', storageRefusal),
-        'Photo non envoyée. Ajouter des photos est réservé aux éditeurs.',
-      );
-    });
+    test(
+      'photo ou couverture, compte qui n\'est plus éditeur : préfixe gardé',
+      () {
+        expect(isPermissionRefusal(storageRefusal), isTrue);
+        expect(
+          photoFailureMessage(
+            'Couverture non mise à jour',
+            storageRefusal,
+            canEdit: false,
+          ),
+          'Couverture non mise à jour. Ajouter des photos est réservé aux '
+          'éditeurs.',
+        );
+        expect(
+          photoFailureMessage(
+            'Couverture non enregistrée',
+            storageRefusal,
+            canEdit: false,
+          ),
+          'Couverture non enregistrée. Ajouter des photos est réservé aux '
+          'éditeurs.',
+        );
+      },
+    );
 
-    test('IA : le préfixe de l\'action est gardé', () {
+    test('IA, compte qui n\'est plus éditeur : le préfixe est gardé', () {
       expect(
-        aiFailureMessage('Recette non corrigée', callableRefusal),
+        aiFailureMessage(
+          'Recette non corrigée',
+          callableRefusal,
+          canEdit: false,
+        ),
         'Recette non corrigée. L\'IA est réservée aux éditeurs.',
       );
       expect(
-        aiFailureMessage('Recette non améliorée', callableRefusal),
+        aiFailureMessage(
+          'Recette non améliorée',
+          callableRefusal,
+          canEdit: false,
+        ),
         'Recette non améliorée. L\'IA est réservée aux éditeurs.',
+      );
+    });
+
+    // Un éditeur refusé pour une autre raison (format que la quarantaine
+    // n'accepte pas, recette d'un autre) ne lit pas qu'il lui faut le rôle.
+    test('éditeur refusé : message habituel, sans mention du rôle', () {
+      expect(
+        photoFailureMessage(
+          'Photo non enregistrée',
+          storageRefusal,
+          canEdit: true,
+        ),
+        failureMessage('Photo non enregistrée', storageRefusal),
+      );
+      expect(
+        aiFailureMessage(
+          'Recette non corrigée',
+          callableRefusal,
+          canEdit: true,
+        ),
+        failureMessage('Recette non corrigée', callableRefusal),
       );
     });
 
     test('une autre panne garde le message habituel', () {
       expect(isPermissionRefusal(network), isFalse);
       expect(
-        photoFailureMessage('Photo non enregistrée', network),
+        photoFailureMessage('Photo non enregistrée', network, canEdit: false),
         failureMessage('Photo non enregistrée', network),
       );
       expect(
-        aiFailureMessage('Recette non corrigée', network),
+        aiFailureMessage('Recette non corrigée', network, canEdit: false),
         failureMessage('Recette non corrigée', network),
       );
+    });
+  });
+
+  group('EditorOnlyGate', () {
+    AppUser reader() => AppUser(
+      uid: 'moi',
+      email: 'lecteur@example.com',
+      displayName: 'Lecteur',
+      role: UserRole.reader,
+      createdAt: DateTime(2026),
+      lastSeenAt: DateTime(2026),
+    );
+
+    Future<void> pumpGate(WidgetTester tester, EditorOnlyGate gate) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appUserProvider.overrideWith((ref) => Stream.value(reader())),
+          ],
+          child: MaterialApp(home: gate),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('par défaut, le bouton ramène à la bibliothèque', (
+      tester,
+    ) async {
+      await pumpGate(
+        tester,
+        EditorOnlyGate(
+          appBarTitle: 'Nouveau livre',
+          lockedTitle: 'Création réservée aux éditeurs',
+          lockedMessage: 'Réservé.',
+          builder: (_) => const Text('formulaire'),
+        ),
+      );
+      expect(find.text('Création réservée aux éditeurs'), findsOneWidget);
+      expect(find.text('Retour à la bibliothèque'), findsOneWidget);
+      expect(find.text('formulaire'), findsNothing);
+    });
+
+    testWidgets('« Modifier la recette » : le bouton ramène à la recette', (
+      tester,
+    ) async {
+      await pumpGate(
+        tester,
+        EditorOnlyGate(
+          appBarTitle: 'Modifier la recette',
+          lockedTitle: 'Modification réservée aux éditeurs',
+          lockedMessage: 'Réservé.',
+          fallbackLocation: '/recipes/r1',
+          fallbackLabel: 'Retour à la recette',
+          builder: (_) => const Text('formulaire'),
+        ),
+      );
+      expect(find.text('Retour à la recette'), findsOneWidget);
+      expect(find.text('Retour à la bibliothèque'), findsNothing);
     });
   });
 

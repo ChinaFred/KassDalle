@@ -8,6 +8,7 @@ import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/services/photo_capture_service.dart';
 import '../recipe_providers.dart';
+import '../../../auth/presentation/auth_providers.dart';
 import 'recipe_detail_illustrations.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/widgets/error_message.dart';
@@ -110,7 +111,11 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
       );
       if (mounted) {
         context.showErrorSnackBar(
-          photoFailureMessage('Illustration non envoyée', e),
+          photoFailureMessage(
+            'Illustration non envoyée',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
         );
       }
       if (mounted) setState(() => uploadingIllustration = false);

@@ -261,7 +261,11 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         );
         if (mounted) {
           context.showErrorSnackBar(
-            photoFailureMessage('Couverture non enregistrée', e),
+            photoFailureMessage(
+              'Couverture non enregistrée',
+              e,
+              canEdit: ref.read(canEditProvider),
+            ),
           );
         }
       } finally {
@@ -317,7 +321,11 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       );
       if (mounted) {
         context.showErrorSnackBar(
-          photoFailureMessage('Couverture non enregistrée', e),
+          photoFailureMessage(
+            'Couverture non enregistrée',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
         );
       }
     } finally {
@@ -488,7 +496,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
             );
             coverFailure =
                 'Livre ajouté. '
-                '${photoFailureMessage('Couverture non enregistrée', error)}';
+                '${photoFailureMessage('Couverture non enregistrée', error, canEdit: appUser.canEdit)}';
           }
         }
       } else {

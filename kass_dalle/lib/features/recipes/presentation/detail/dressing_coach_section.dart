@@ -26,11 +26,12 @@ import '../../../../core/theme/app_icon_size.dart';
 class DressingCoachSection extends ConsumerStatefulWidget {
   final Recipe recipe;
 
-  /// Créateur de la recette ou administrateur : autorise la demande d'un
-  /// conseil, la génération de visuels et l'écriture dans la recette. Le
-  /// conseil et ses visuels s'écrivent sur la recette partagée, et
-  /// `suggestPlatingFn` / `generatePlatingImageFn` refusent les autres. Un
-  /// conseil enregistré reste affiché à tous.
+  /// Créateur éditeur de la recette ou administrateur
+  /// (`AppUser.canEnrichRecipe`) : autorise la demande d'un conseil, la
+  /// génération de visuels et l'écriture dans la recette. Le conseil et ses
+  /// visuels s'écrivent sur la recette partagée, et `suggestPlatingFn` /
+  /// `generatePlatingImageFn` exigent `requireEditor` et la propriété. Un
+  /// conseil enregistré reste affiché à tous, lecteur compris.
   final bool canEdit;
 
   const DressingCoachSection({
@@ -657,7 +658,7 @@ class _AdviceView extends StatelessWidget {
             // L'ordre suit le cycle de travail : refaire le conseil, remettre
             // les visuels à zéro, puis porter le résultat dans la recette — et
             // le retrait en dernier, parce qu'il défait tout le reste.
-            if (canEdit)
+            if (canWriteRecipe)
               OutlinedButton.icon(
                 onPressed: busy ? null : onRegenerate,
                 icon: const Icon(Icons.refresh, size: AppIconSize.small),

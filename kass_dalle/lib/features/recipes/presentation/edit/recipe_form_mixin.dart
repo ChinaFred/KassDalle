@@ -398,7 +398,13 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar(aiFailureMessage('Tags non suggérés', e));
+        context.showErrorSnackBar(
+          aiFailureMessage(
+            'Tags non suggérés',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => suggestingTags = false);

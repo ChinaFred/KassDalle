@@ -20,7 +20,7 @@ import {
   ANTHROPIC_API_KEY,
   MAX_CALLABLE_INSTANCES,
 } from "../config";
-import { requireAdmin, requireAuth } from "./_auth";
+import { requireAdmin, requireAuth, requireEditor } from "./_auth";
 import { assertCanModifyRecipe, assertCanNormalizeReferentials } from "./_recipeAccess";
 import {
   LIST_MAX_ITEMS,
@@ -198,7 +198,10 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
     secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
   },
   async (req) => {
-    const ctx = await requireAuth(req, "calcul_nutrition");
+    // Toute IA est réservée aux éditeurs (v0.24.63, tickets #162 et #163) ;
+    // la propriété de la recette se vérifie ensuite. `onRecipeWritten`
+    // calcule pour toutes les recettes, hors de cette garde.
+    const ctx = await requireEditor(req, "calcul_nutrition");
     const recipeId = req.data?.recipeId;
     if (!recipeId || typeof recipeId !== "string") {
       throw new HttpsError("invalid-argument", "recipeId est requis.");
@@ -253,8 +256,8 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
   async (req) => {
     const ctx = await requireAuth(req, "normalisation_referentiels");
     const data = (req.data ?? {}) as Record<string, unknown>;
-    // Écrit dans le référentiel partagé : éditeur, ou lecteur sur sa propre
-    // recette (`assertCanNormalizeReferentials`).
+    // Écrit dans le référentiel partagé : éditeur ou administrateur
+    // seulement (`assertCanNormalizeReferentials`).
     await assertCanNormalizeReferentials({
       recipeId: data.recipeId,
       callerUid: ctx.userId,

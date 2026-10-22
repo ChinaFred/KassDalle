@@ -120,7 +120,13 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showErrorSnackBar(aiFailureMessage('Recette non corrigée', e));
+      context.showErrorSnackBar(
+        aiFailureMessage(
+          'Recette non corrigée',
+          e,
+          canEdit: ref.read(canEditProvider),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
@@ -179,7 +185,11 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       );
       if (mounted) {
         context.showErrorSnackBar(
-          aiFailureMessage('Illustrations non extraites', e),
+          aiFailureMessage(
+            'Illustrations non extraites',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
         );
       }
     } finally {
@@ -318,7 +328,11 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       );
       if (mounted) {
         context.showErrorSnackBar(
-          photoFailureMessage('Photo non enregistrée', e),
+          photoFailureMessage(
+            'Photo non enregistrée',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
         );
       }
     } finally {

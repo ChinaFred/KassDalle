@@ -44,10 +44,10 @@ class PrepareTab extends ConsumerStatefulWidget {
   final String recipeId;
   final TextEditingController ctrl;
   final Recipe recipe;
-  final bool canEdit;
 
-  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : ajouter une
-  /// illustration. Un propriétaire lecteur garde la suppression ([canEdit]).
+  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : ajouter ou
+  /// supprimer une illustration, recalculer la nutrition, demander un conseil
+  /// de dressage. Un propriétaire lecteur n'a aucun de ces gestes.
   final bool canEnrich;
   final int? basePortions;
   final int? selectedPortions;
@@ -61,7 +61,6 @@ class PrepareTab extends ConsumerStatefulWidget {
     required this.recipeId,
     required this.ctrl,
     required this.recipe,
-    required this.canEdit,
     required this.canEnrich,
     this.basePortions,
     this.selectedPortions,

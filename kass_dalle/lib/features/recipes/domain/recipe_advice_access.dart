@@ -12,8 +12,8 @@ library;
 /// Aucun conseil de dressage enregistré, et l'utilisateur ne peut pas en
 /// demander.
 const kPlatingAdviceReservedMessage =
-    'Aucun conseil de dressage pour cette recette. Seuls son créateur et un '
-    'administrateur peuvent en demander un.';
+    'Aucun conseil de dressage pour cette recette. Seuls son créateur, s\'il '
+    'est éditeur, et un administrateur peuvent en demander un.';
 
 /// Aucun conseil de conservation enregistré, et l'utilisateur ne peut pas en
 /// demander.
@@ -27,8 +27,8 @@ const kRecipeNotFoundMessage = 'Recette introuvable.';
 /// Aucune nutrition calculée, et l'utilisateur ne peut pas lancer le calcul.
 const kNutritionReservedMessage =
     'Aucune donnée nutritionnelle calculée. Le calcul se fait à '
-    'l\'enregistrement de la recette ; seuls son créateur et un '
-    'administrateur peuvent le relancer.';
+    'l\'enregistrement de la recette ; seuls son créateur, s\'il est '
+    'éditeur, et un administrateur peuvent le relancer.';
 
 /// Le créateur d'une recette qui n'a que le rôle lecteur : il demande le
 /// conseil de dressage, pas ses visuels d'étape (`generatePlatingImageFn`

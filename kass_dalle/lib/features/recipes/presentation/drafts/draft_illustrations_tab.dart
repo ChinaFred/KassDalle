@@ -198,7 +198,13 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
           stackTrace: stackTrace,
         );
         if (!mounted) return;
-        context.showErrorSnackBar(aiFailureMessage('Image non générée', e));
+        context.showErrorSnackBar(
+          aiFailureMessage(
+            'Image non générée',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
+        );
       } finally {
         if (mounted) setState(() => _generatingAi = false);
       }
@@ -287,7 +293,11 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
       );
       if (!mounted) return;
       context.showErrorSnackBar(
-        photoFailureMessage('Photo non enregistrée', e),
+        photoFailureMessage(
+          'Photo non enregistrée',
+          e,
+          canEdit: ref.read(canEditProvider),
+        ),
       );
     } finally {
       if (mounted) setState(() => _uploadingManual = false);

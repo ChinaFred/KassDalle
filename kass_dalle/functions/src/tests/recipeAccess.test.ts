@@ -66,49 +66,15 @@ describe("privacyWithoutBook", () => {
 });
 
 // Audit sécurité : la normalisation écrit dans le référentiel partagé
-// `nutrition_ingredients`. Un lecteur ne l'appelle que pour l'une de ses
-// recettes ; l'éditeur, toujours.
+// `nutrition_ingredients` et appelle des modèles. Éditeur et administrateur
+// seulement (v0.24.63, tickets #162 et #163) : le lecteur n'y passe plus, même
+// pour sa propre recette.
 describe("referentialNormalizationDenial", () => {
-  const own = { created_by: "lecteur", is_private: false };
-
-  test("éditeur et administrateur normalisent, avec ou sans recette", () => {
-    for (const recipeId of [undefined, "r1"]) {
-      assert.equal(
-        referentialNormalizationDenial({
-          callerIsEditor: true,
-          recipeId,
-          recipeData: undefined,
-          callerUid: "editeur",
-        }),
-        null,
-      );
-    }
+  test("éditeur et administrateur normalisent", () => {
+    assert.equal(referentialNormalizationDenial({ callerIsEditor: true }), null);
   });
 
-  test("un lecteur normalise sa propre recette", () => {
-    assert.equal(
-      referentialNormalizationDenial({
-        callerIsEditor: false,
-        recipeId: "r1",
-        recipeData: own,
-        callerUid: "lecteur",
-      }),
-      null,
-    );
-  });
-
-  test("un lecteur est refusé sans recette, sur une recette absente ou d'un autre", () => {
-    const cases = [
-      { recipeId: undefined, recipeData: undefined },
-      { recipeId: "absente", recipeData: undefined },
-      { recipeId: "r2", recipeData: { created_by: "auteur", is_private: false } },
-      { recipeId: "r3", recipeData: { created_by: "", is_private: false } },
-    ];
-    for (const c of cases) {
-      assert.notEqual(
-        referentialNormalizationDenial({ callerIsEditor: false, callerUid: "lecteur", ...c }),
-        null,
-      );
-    }
+  test("un lecteur est refusé, même pour sa propre recette", () => {
+    assert.notEqual(referentialNormalizationDenial({ callerIsEditor: false }), null);
   });
 });

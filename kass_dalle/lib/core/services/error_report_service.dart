@@ -105,7 +105,12 @@ class ErrorReport {
   Map<String, dynamic> toFirestore() => {
     'user_id': userId,
     'job_id': jobId == null ? null : truncate(jobId!, maxShortText),
-    'timestamp': Timestamp.fromDate(timestamp),
+    // L'heure du serveur, jamais celle de l'appareil : `firestore.rules`
+    // exige `timestamp == request.time` (ticket #162). Une horloge en avance
+    // aurait fait échapper un rapport à la purge des 90 jours, et un rapport
+    // daté à la main servait à ranger le journal à sa guise. [timestamp] ne
+    // sert plus qu'à la lecture.
+    'timestamp': FieldValue.serverTimestamp(),
     'app_version': truncate(appVersion, maxAppVersion),
     'feature': truncate(feature, maxShortText),
     'error_type': truncate(errorType, maxShortText),

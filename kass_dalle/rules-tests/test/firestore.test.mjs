@@ -1731,6 +1731,32 @@ describe("recipes — écriture", () => {
     );
   });
 
+  // La validation peut ranger le brouillon dans un livre : seulement l'un des
+  // siens (`bookCheck(true)`), avec sa confidentialité.
+  it("un lecteur ne valide pas son brouillon dans le livre d'un autre", async () => {
+    await assertFails(
+      db("reader").doc("recipes/draft-reader").update({
+        review_status: "validated",
+        book_id: "public-other",
+        book_titre: "Livre d'un autre",
+        is_private: false,
+        updated_at: new Date(),
+      }),
+    );
+  });
+
+  it("un lecteur valide son brouillon dans l'un de ses livres", async () => {
+    await assertSucceeds(
+      db("reader").doc("recipes/draft-reader").update({
+        review_status: "validated",
+        book_id: "public-reader",
+        book_titre: "Mon livre",
+        is_private: false,
+        updated_at: new Date(),
+      }),
+    );
+  });
+
   it("un lecteur ne valide pas en modifiant aussi un autre champ", async () => {
     await assertFails(
       db("reader").doc("recipes/draft-reader").update({
@@ -2692,7 +2718,8 @@ function errorReport(uid) {
   return {
     user_id: uid,
     job_id: null,
-    timestamp: new Date("2026-10-12T00:00:00Z"),
+    // L'heure du serveur, comme `ErrorReport.toFirestore` (ticket #162).
+    timestamp: serverTimestamp(),
     app_version: "0.23.48+395",
     feature: "recipe_save",
     error_type: "FirebaseException",
@@ -2730,6 +2757,36 @@ describe("données personnelles — pending et révoqué", () => {
           .set({ ...errorReport(PERSONAS.pending.uid), [field]: huge }),
       );
     }
+  });
+
+  // Ticket #162 : `timestamp` est l'heure du serveur. Un rapport daté par
+  // le client — dans le futur, il échapperait à la purge des 90 jours — est
+  // refusé ; sans `timestamp`, aussi.
+  it("un rapport d'erreur daté dans le futur est refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("error_reports/new")
+        .set({ ...errorReport(READER), timestamp: new Date("2099-01-01T00:00:00Z") }),
+    );
+  });
+
+  it("un rapport d'erreur daté par le client (passé) ou sans date est refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("error_reports/new")
+        .set({ ...errorReport(READER), timestamp: new Date("2026-10-12T00:00:00Z") }),
+    );
+    const undated = { ...errorReport(READER) };
+    delete undated.timestamp;
+    await assertFails(db("reader").doc("error_reports/new").set(undated));
+  });
+
+  it("un rapport d'erreur à l'heure du serveur est accepté", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("error_reports/new")
+        .set({ ...errorReport(READER), timestamp: serverTimestamp() }),
+    );
   });
 
   it("un rapport d'erreur au champ inconnu est refusé", async () => {

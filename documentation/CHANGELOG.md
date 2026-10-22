@@ -34,11 +34,13 @@ l'appui agrandit la couverture quand elle existe.
 L'onglet Photos d'une de ses recettes ou de ses brouillons dit, sans bouton : « Ajouter des
 photos est réservé aux éditeurs. Demandez à un administrateur de vous nommer éditeur. ».
 Ouvertes par un lien, `/recipes/{id}/edit` affiche « Modification réservée aux éditeurs » et
-`/books/new` « Création réservée aux éditeurs ». La feuille d'insertion d'image de l'éditeur
-disparaît quand il n'y a ni photo à insérer ni droit d'en envoyer une. Un refus reçu en cours
-de session s'affiche sans « Réessayer » : « Photo non envoyée. Ajouter des photos est réservé
-aux éditeurs. », ou « Recette non corrigée. L'IA est réservée aux éditeurs. » (le préfixe de
-l'action est gardé).
+`/books/new` « Création réservée aux éditeurs ». Le bouton de « Modification réservée aux
+éditeurs » ramène à la fiche (« Retour à la recette »). La feuille d'insertion d'image de
+l'éditeur disparaît quand il n'y a ni photo à insérer ni droit d'en envoyer une. Un refus
+reçu en cours de session par un compte qui n'est plus éditeur s'affiche sans « Réessayer »,
+avec le préfixe de l'action : « Couverture non mise à jour. Ajouter des photos est réservé
+aux éditeurs. », « Recette non corrigée. L'IA est réservée aux éditeurs. ». Un éditeur refusé
+pour une autre raison (un format que la quarantaine n'accepte pas) lit le message habituel.
 
 Pour tous les rôles : « Créer une image IA » de l'état vide des photos d'un brouillon suit le
 droit de produire une image, et non plus celui d'envoyer une photo. Le bouton « Suggérer les
@@ -51,6 +53,11 @@ d'écriture sur elles : valider un brouillon, détacher d'un livre, supprimer. S
 boutons d'écriture disparaissent aussi : retirer une photo, « Supprimer le scan source »,
 type de page de la relecture, « Ranger » dans la file des brouillons, intégration, retrait et
 remise à zéro du dressage dans la recette.
+
+Toute IA est réservée aux éditeurs (décision de l'administrateur). Un lecteur ne demande ni ne
+régénère plus de conseil de dressage et ne relance plus le calcul de la nutrition, même sur sa
+recette ; il lit le conseil et la nutrition déjà enregistrés. Le calcul automatique de la
+nutrition à l'enregistrement continue pour toutes les recettes.
 
 ### v0.24.63 — technique
 
@@ -86,10 +93,28 @@ lecteur, validation et détachement permis, validation qui touche un autre champ
 sept tests qui faisaient écrire un lecteur pour vérifier une autre règle passent par
 l'administrateur ou une recette d'éditeur (`recipes/editor-in-other-book`).
 
+Toute IA réservée aux éditeurs : `suggestPlatingFn`, `computeRecipeNutritionFn` et
+`moderateAndPromoteImagesFn` passent de `requireAuth` à `requireEditor` (aucune destination
+d'un lecteur n'y passe : la capture d'un ticket suit `attachTicketScreenshot`).
+`assertCanNormalizeReferentials` (`normalizeRecipeReferentialsFn`) n'accepte plus qu'un
+éditeur ou un administrateur ; `referentialNormalizationDenial` ne prend plus que le rôle.
+`onRecipeWritten` ne change pas. `tests/editorCallables.test.ts` couvre les dix callables.
+
+`error_reports` : `isErrorReport` exige `timestamp == request.time`, et
+`ErrorReport.toFirestore` écrit `FieldValue.serverTimestamp()`. Un rapport daté par le client
+— dans le futur, il échappait à la purge des 90 jours — est refusé. Tests `rules-tests` :
+rapport daté dans le futur, dans le passé ou sans date refusé, rapport à l'heure du serveur
+accepté. Ajout aussi : validation d'un brouillon de lecteur rangée dans le livre d'un autre
+refusée, dans l'un de ses livres acceptée.
+
 Client : `AppUser.canEnrichRecipe(createdBy)` (`canEdit && canModifyRecipe`) commande tout
 geste qui écrit autre chose que la validation et le détachement ; `canModifyRecipe` garde
 « Valider », « Détacher du livre » et « Supprimer ». `photoFailureMessage`,
-`aiFailureMessage` et `isPermissionRefusal` dans `core/widgets/error_message.dart`.
+`aiFailureMessage` (paramètre `canEdit` : le message de rôle seulement pour un compte qui
+n'est plus éditeur, préfixe gardé) et `isPermissionRefusal` dans
+`core/widgets/error_message.dart`. `EditorOnlyGate` reçoit `fallbackLocation` et
+`fallbackLabel` (bibliothèque par défaut). Le paramètre `canEdit` de `PrepareTab` et
+`MobileUnifiedBody`, que plus rien ne lisait, est retiré.
 Code mort retiré : `RecipeDetailBody` (`recipe_detail_widgets.dart`), qu'aucun écran
 n'instanciait.
 

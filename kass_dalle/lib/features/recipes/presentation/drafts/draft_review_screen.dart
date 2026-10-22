@@ -372,7 +372,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       );
       if (mounted) {
         context.showErrorSnackBar(
-          photoFailureMessage('Photo non enregistrée', e),
+          photoFailureMessage(
+            'Photo non enregistrée',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
         );
       }
     } finally {
@@ -470,7 +474,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       );
       if (mounted) {
         context.showErrorSnackBar(
-          aiFailureMessage('Illustrations non extraites', e),
+          aiFailureMessage(
+            'Illustrations non extraites',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
         );
       }
     } finally {
@@ -549,7 +557,13 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showErrorSnackBar(aiFailureMessage('Recette non améliorée', e));
+        context.showErrorSnackBar(
+          aiFailureMessage(
+            'Recette non améliorée',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);

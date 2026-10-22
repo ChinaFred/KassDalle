@@ -13,7 +13,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 
 import { MAX_CALLABLE_INSTANCES, REGION } from "../config";
-import { isAdminAccount, requireAdmin, requireAuth } from "./_auth";
+import { isAdminAccount, requireAdmin, requireEditor } from "./_auth";
 import { logError, logInfo, logWarn } from "../logging";
 import { isWellFormedObjectPath } from "../utils/storagePath";
 import { moderationImageMime, storedModerationMime } from "../utils/uploadSecurity";
@@ -146,7 +146,10 @@ export function moderationRefusal(err: unknown): HttpsError | null {
  * office.
  */
 export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, MODERATION_FEATURE);
+  // Éditeur ou administrateur (v0.24.63, tickets #162 et #163) : un lecteur
+  // n'ajoute plus de photo, et la quarantaine lui est fermée. La capture
+  // d'un ticket ne passe pas par ici (`attachTicketScreenshot`).
+  const ctx = await requireEditor(req, MODERATION_FEATURE);
   const items = parseItems(req.data, ctx.userId);
 
   try {

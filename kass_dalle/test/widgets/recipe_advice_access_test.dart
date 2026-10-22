@@ -108,17 +108,36 @@ void main() {
       expect(find.text(kPlatingImagesEditorOnlyMessage), findsNothing);
     });
 
-    testWidgets('le créateur lecteur régénère, sans visuels', (tester) async {
+    // Toute IA est réservée aux éditeurs (v0.24.63) : la fiche passe
+    // `canEnrichRecipe`, faux pour un lecteur même créateur. Il lit le conseil
+    // enregistré, sans « Régénérer » ni visuels.
+    testWidgets('le créateur lecteur lit le conseil, sans régénérer', (
+      tester,
+    ) async {
       backend = TestBackend(user: testUser(role: UserRole.reader));
       final recipe = testRecipe();
       await backend.seedRecipe(recipe);
       await seedAdvice(recipe.id);
-      await pump(tester, DressingCoachSection(recipe: recipe, canEdit: true));
+      await pump(tester, DressingCoachSection(recipe: recipe, canEdit: false));
 
+      expect(find.text('Un lit, puis le reste.'), findsOneWidget);
       expect(find.text('Illustrer cette étape'), findsNothing);
-      expect(find.text('Régénérer'), findsOneWidget);
-      expect(find.text(kPlatingImagesEditorOnlyMessage), findsOneWidget);
+      expect(find.text('Régénérer'), findsNothing);
     });
+
+    testWidgets(
+      'un lecteur ne régénère pas, même si l\'écran le laisse passer',
+      (tester) async {
+        backend = TestBackend(user: testUser(role: UserRole.reader));
+        final recipe = testRecipe();
+        await backend.seedRecipe(recipe);
+        await seedAdvice(recipe.id);
+        await pump(tester, DressingCoachSection(recipe: recipe, canEdit: true));
+
+        expect(find.text('Régénérer'), findsNothing);
+        expect(find.text('Intégrer à la recette'), findsNothing);
+      },
+    );
 
     testWidgets('un autre compte lit le conseil, sans action', (tester) async {
       final recipe = testRecipe(createdBy: 'uid-autre');

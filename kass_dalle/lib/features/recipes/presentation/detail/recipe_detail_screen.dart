@@ -277,7 +277,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
       );
       if (mounted) {
         context.showErrorSnackBar(
-          photoFailureMessage('Couverture non mise à jour', e),
+          photoFailureMessage(
+            'Couverture non mise à jour',
+            e,
+            canEdit: ref.read(canEditProvider),
+          ),
         );
       }
     } finally {
@@ -478,7 +482,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                     recipeId: recipeId,
                     ctrl: ctrl,
                     recipe: recipe,
-                    canEdit: canEdit,
                     canEnrich: canEnrich,
                     basePortions: _basePortions,
                     selectedPortions: _selectedPortions,
@@ -530,7 +533,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                                 recipeId: recipeId,
                                 ctrl: ctrl,
                                 recipe: recipe,
-                                canEdit: canEdit,
                                 canEnrich: canEnrich,
                                 basePortions: _basePortions,
                                 selectedPortions: _selectedPortions,
@@ -545,9 +547,10 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                               recipe: recipe,
                               basePortions: _basePortions,
                               selectedPortions: _selectedPortions,
-                              canRecompute: canEdit,
+                              // IA réservée aux éditeurs (tickets #162, #163).
+                              canRecompute: canEnrich,
                             ),
-                            DressingTab(recipe: recipe, canEdit: canEdit),
+                            DressingTab(recipe: recipe, canEdit: canEnrich),
                             CommunityTab(
                               recipeId: recipeId,
                               annotationsKey: _annotationsKey,

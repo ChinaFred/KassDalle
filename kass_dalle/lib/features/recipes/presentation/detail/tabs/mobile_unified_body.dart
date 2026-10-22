@@ -29,10 +29,10 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
   final String recipeId;
   final TextEditingController ctrl;
   final Recipe recipe;
-  final bool canEdit;
 
-  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : ajouter une
-  /// illustration. Un propriétaire lecteur garde la suppression ([canEdit]).
+  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : ajouter ou
+  /// supprimer une illustration, recalculer la nutrition, demander un conseil
+  /// de dressage. Un propriétaire lecteur n'a aucun de ces gestes.
   final bool canEnrich;
   final int? basePortions;
   final int? selectedPortions;
@@ -47,7 +47,6 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
     required this.recipeId,
     required this.ctrl,
     required this.recipe,
-    required this.canEdit,
     required this.canEnrich,
     this.basePortions,
     this.selectedPortions,
@@ -115,8 +114,10 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
             child: NutritionDetailsSection(
               recipe: recipe,
               selectedPortions: selectedPortions,
-              // Le calcul s'écrit sur la recette : créateur ou administrateur.
-              onRecompute: widget.canEdit
+              // Le calcul appelle l'IA et s'écrit sur la recette : créateur
+              // éditeur ou administrateur (`computeRecipeNutritionFn`,
+              // `requireEditor`).
+              onRecompute: widget.canEnrich
                   ? () async {
                       await ref
                           .read(recipeRepositoryProvider)
@@ -129,9 +130,12 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
           _MobileSection(
             icon: Icons.style_outlined,
             title: 'Dressage',
+            // Le conseil appelle l'IA (`suggestPlatingFn`, `requireEditor`) :
+            // créateur éditeur ou administrateur ; un conseil enregistré reste
+            // lisible par tous.
             child: DressingCoachSection(
               recipe: recipe,
-              canEdit: widget.canEdit,
+              canEdit: widget.canEnrich,
             ),
           ),
           const SizedBox(height: 12),

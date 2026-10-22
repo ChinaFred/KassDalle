@@ -357,9 +357,10 @@ class NutritionDetailsSection extends ConsumerStatefulWidget {
   final Recipe recipe;
   final int? selectedPortions;
 
-  /// Relance le calcul. Null quand l'utilisateur n'est ni le créateur de la
-  /// recette ni un administrateur : le calcul s'écrit sur la recette, et
-  /// `computeRecipeNutritionFn` refuse les autres. La nutrition enregistrée
+  /// Relance le calcul. Null sauf pour le créateur éditeur de la recette ou
+  /// un administrateur (`AppUser.canEnrichRecipe`) : le calcul appelle l'IA
+  /// et s'écrit sur la recette, et `computeRecipeNutritionFn` exige
+  /// `requireEditor` puis la propriété. La nutrition enregistrée
   /// reste affichée à tous.
   final Future<void> Function()? onRecompute;
 

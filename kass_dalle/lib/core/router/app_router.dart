@@ -392,6 +392,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                           'Modifier une recette est réservé aux éditeurs et '
                           'aux administrateurs. Demandez à un administrateur '
                           'de vous nommer éditeur.',
+                      // Le lecteur revient à la fiche qu'il voulait modifier.
+                      fallbackLocation:
+                          '/recipes/${state.pathParameters['recipeId']!}',
+                      fallbackLabel: 'Retour à la recette',
                       builder: (_) => RecipeEditScreen(
                         recipeId: state.pathParameters['recipeId']!,
                       ),
