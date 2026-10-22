@@ -20,6 +20,31 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.59 — fonctionnel
+
+*Admin › Backfills* : nouveau ponctuel « Retirer les ustensiles des ingrédients ». Il retire
+des recettes déjà importées le papier sulfurisé, le film alimentaire et les autres ustensiles
+que d'anciens imports avaient pris pour des ingrédients, puis supprime leurs fiches du
+référentiel nutrition (`papier_sulfurise`…). La confirmation porte une case « Essai à blanc :
+ne rien modifier », cochée par défaut : le passage liste alors dans « À revoir » les recettes et
+les fiches qui seraient corrigées, sans rien écrire.
+
+### v0.24.59 — technique
+
+Nouveau callable `backfillUtensilsCleanupFn` (backfill ponctuel `utensils_cleanup`, aux deux
+registres et dans `backfill_schedule.json`), sans appel de modèle. Recettes : `retagUtensils`
+sur `raw_cooklang` et `draft_cooklang`, noms reconnus par `isUtensil` retirés de `ingredients`
+et de `ingredients_index` ; seuls les champs changés sont écrits, et `onRecipeWritten`
+recalcule nutrition, courses et allergènes. Fiches : après le parcours de toutes les
+recettes, une fiche `nutrition_ingredients` dont l'identifiant ou le nom canonique est un
+ustensile est supprimée si aucune recette ne la cite dans `ingredients_index`. `dryRun` vaut
+vrai par défaut et a son propre curseur (`utensils_cleanup_dry_run_backfill_checkpoint`).
+`LOCK_GROUPS` : le nettoyage ne tourne ni avec `enrich_referentials`, ni avec
+`refresh_sodium`, ni avec `allergens`, qui écrivent les fiches. La boîte à case de l'écran
+(`_confirmWithCheckbox`) sert désormais aussi « Réessayer aussi les éléments exclus après 3
+échecs ». Tests : `utensilsCleanup.test.ts`, `backfillSchedule.test.ts`,
+`backfill_status_test.dart`.
+
 ### v0.24.58 — technique
 
 Hébergement (tickets #160 et #164). `firebase.json` pose deux nouveaux en-têtes sur tout le

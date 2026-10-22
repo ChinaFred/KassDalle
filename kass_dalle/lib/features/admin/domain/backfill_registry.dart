@@ -33,6 +33,7 @@ abstract final class BackfillKeys {
   static const recipeRoles = 'recipe_roles';
   static const shoppingProducts = 'shopping_products';
   static const refreshSodium = 'refresh_sodium';
+  static const utensilsCleanup = 'utensils_cleanup';
 }
 
 class BackfillDefinition {
@@ -144,6 +145,16 @@ const List<BackfillDefinition> kBackfillRegistry = [
     description: 'Corrige le sel compté deux fois dans les ingrédients salés.',
     usesAi: true,
     passLimit: 'Chaque passage travaille au plus huit minutes.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.utensilsCleanup,
+    kind: BackfillKind.ponctuel,
+    title: 'Retirer les ustensiles des ingrédients',
+    description:
+        'Retire le papier sulfurisé et les autres ustensiles des ingrédients '
+        'des recettes, puis supprime leurs fiches nutrition.',
+    usesAi: false,
+    passLimit: 'Chaque passage examine au plus 2 000 recettes.',
   ),
 ];
 

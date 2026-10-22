@@ -428,6 +428,17 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
     case BackfillKeys.refreshSodium:
       return '${_count(n('refreshedIngredients'), 'ingrédient repris', 'ingrédients repris')}, '
           '${_count(n('failedIngredients'), 'échec', 'échecs')}';
+    case BackfillKeys.utensilsCleanup:
+      // Un essai à blanc compte ce qui serait corrigé : le résumé le dit
+      // d'abord, pour qu'on ne le lise pas comme un nettoyage fait.
+      if (report['essaiABlanc'] == true) {
+        return 'Essai à blanc : '
+            '${_count(n('corrigees'), 'recette à corriger', 'recettes à corriger')}, '
+            '${_count(n('fichesSupprimees'), 'fiche à supprimer', 'fiches à supprimer')}';
+      }
+      return '${_count(n('corrigees'), 'recette corrigée', 'recettes corrigées')}, '
+          '${_count(n('fichesSupprimees'), 'fiche supprimée', 'fiches supprimées')}, '
+          '${_count(n('echouees') + n('fichesEchouees'), 'échec', 'échecs')}';
     default:
       return '';
   }

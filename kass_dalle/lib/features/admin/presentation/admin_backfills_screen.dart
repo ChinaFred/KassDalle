@@ -145,6 +145,19 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'passage suivant.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
+      case BackfillKeys.utensilsCleanup:
+        return 'Retire des recettes les ustensiles écrits comme ingrédients '
+            '(papier sulfurisé, film alimentaire, piques…) : ils restent '
+            'cités dans les étapes, comme ustensiles. Une fois toutes les '
+            'recettes parcourues, supprime leurs fiches du référentiel '
+            'nutrition qu\'aucune recette ne cite plus.\n\n'
+            'L\'essai à blanc ne modifie rien : il liste dans « À revoir » '
+            'les recettes et les fiches qui seraient corrigées. Décochez-le '
+            'pour corriger.\n\n'
+            'Aucun appel d\'IA pour ce passage. Chaque recette corrigée voit '
+            'sa nutrition, ses courses et ses allergènes recalculés, comme '
+            'après une modification de ses ingrédients. Deux mille recettes '
+            'par passage.';
       default:
         return '';
     }
@@ -178,9 +191,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
   /// Lance le passage de [def] et met en forme son compte rendu.
   /// [retryExcluded] : la case « Réessayer aussi les éléments exclus après 3 échecs ».
+  /// [dryRun] : la case « Essai à blanc » des ustensiles.
   Future<_PassOutcome> _runPass(
     BackfillDefinition def, {
     bool retryExcluded = false,
+    bool dryRun = false,
   }) async {
     switch (def.key) {
       case BackfillKeys.nutrition:
@@ -260,6 +275,24 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
+      case BackfillKeys.utensilsCleanup:
+        final r = await _repo.backfillUtensilsCleanup(dryRun: dryRun);
+        final blanc = (r['essaiABlanc'] ?? 0) == 1;
+        return _fromCounts(
+          r,
+          '${blanc ? 'Essai à blanc, rien n\'est modifié. ' : ''}'
+          'Recettes : examinées=${r['examinees']}, '
+          '${blanc ? 'à corriger' : 'corrigées'}=${r['corrigees']}, '
+          'déjà propres=${r['dejaPropres']}, échecs=${r['echouees']} | '
+          'Fiches d\'ustensiles : trouvées=${r['fichesTrouvees']}, '
+          '${blanc ? 'à supprimer' : 'supprimées'}=${r['fichesSupprimees']}, '
+          'encore citées=${r['fichesEncoreCitees']}, '
+          'échecs=${r['fichesEchouees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${(r['recettesParcourues'] ?? 0) == 1 ? '' : ' (fiches examinées une fois toutes les recettes parcourues)'}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
       default:
         throw StateError('Backfill inconnu : ${def.key}');
     }
@@ -291,12 +324,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     return confirmed == true && mounted;
   }
 
-  /// Confirmation d'un backfill qui tient une mémoire des échecs : le texte
-  /// habituel, et la case « Réessayer aussi les éléments exclus après 3 échecs », décochée.
-  Future<({bool ok, bool retryExcluded})> _confirmWithRetry(
-    BackfillDefinition def,
-  ) async {
-    var retry = false;
+  /// Confirmation avec une case : le texte habituel, et [checkboxLabel],
+  /// cochée selon [initialValue]. Rend la réponse et l'état de la case.
+  Future<({bool ok, bool checked})> _confirmWithCheckbox(
+    BackfillDefinition def, {
+    required String checkboxLabel,
+    required bool initialValue,
+  }) async {
+    var checked = initialValue;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -310,11 +345,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
               Text(_confirmText(def)),
               const SizedBox(height: 8),
               CheckboxListTile(
-                value: retry,
-                onChanged: (v) => setDialogState(() => retry = v ?? false),
-                title: const Text(
-                  'Réessayer aussi les éléments exclus après 3 échecs',
-                ),
+                value: checked,
+                onChanged: (v) => setDialogState(() => checked = v ?? false),
+                title: Text(checkboxLabel),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
               ),
@@ -333,7 +366,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         ),
       ),
     );
-    return (ok: confirmed == true && mounted, retryExcluded: retry);
+    return (ok: confirmed == true && mounted, checked: checked);
   }
 
   Future<void> _launch(BackfillDefinition def, BackfillRunState? state) async {
@@ -341,6 +374,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     final done = state?.isDone ?? false;
     final doneAt = state?.termineLe;
     var retryExcluded = false;
+    var dryRun = false;
     final bool ok;
     if (done) {
       ok = await _confirm(
@@ -353,9 +387,23 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         confirmLabel: 'Relancer',
       );
     } else if (_retryableKeys.contains(def.key)) {
-      final answer = await _confirmWithRetry(def);
+      final answer = await _confirmWithCheckbox(
+        def,
+        checkboxLabel: 'Réessayer aussi les éléments exclus après 3 échecs',
+        initialValue: false,
+      );
       ok = answer.ok;
-      retryExcluded = answer.retryExcluded;
+      retryExcluded = answer.checked;
+    } else if (def.key == BackfillKeys.utensilsCleanup) {
+      // Cochée par défaut : un premier lancement ne modifie rien et montre
+      // ce qui serait corrigé.
+      final answer = await _confirmWithCheckbox(
+        def,
+        checkboxLabel: 'Essai à blanc : ne rien modifier',
+        initialValue: true,
+      );
+      ok = answer.ok;
+      dryRun = answer.checked;
     } else {
       ok = await _confirm(
         title: def.title,
@@ -367,7 +415,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
     setState(() => _launching.add(def.key));
     try {
-      final outcome = await _runPass(def, retryExcluded: retryExcluded);
+      final outcome = await _runPass(
+        def,
+        retryExcluded: retryExcluded,
+        dryRun: dryRun,
+      );
       if (!mounted) return;
       ref.invalidate(referentialKpisProvider);
       setState(() {
@@ -1016,6 +1068,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.recipeRoles: Icons.restaurant_outlined,
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
+    BackfillKeys.utensilsCleanup: Icons.cleaning_services_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;
