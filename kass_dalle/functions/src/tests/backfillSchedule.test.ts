@@ -472,13 +472,14 @@ describe("verrou commun", () => {
 });
 
 describe("registre et validation", () => {
-  test("cinq récurrents, deux ponctuels, clés uniques", () => {
+  test("six récurrents, deux ponctuels, clés uniques", () => {
     assert.deepEqual(recurrentKeys(), [
       "nutrition",
       "enrich_referentials",
       "allergens",
       "recipe_roles",
       "shopping_products",
+      "retention",
     ]);
     assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 2);
     assert.equal(new Set(BACKFILLS.map((b) => b.key)).size, BACKFILLS.length);

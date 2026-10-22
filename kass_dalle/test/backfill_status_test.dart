@@ -446,6 +446,7 @@ void main() {
         'allergens',
         'recipe_roles',
         'shopping_products',
+        'retention',
       ]);
       expect(sections.ponctuelsALancer.map((d) => d.key), [
         'utensils_cleanup',

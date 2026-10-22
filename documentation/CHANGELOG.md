@@ -20,6 +20,25 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.61 — fonctionnel
+
+*Admin › Backfills* : nouveau récurrent « Purger les rapports d'erreur anciens ». Il supprime
+les rapports d'erreur de plus de 90 jours, puis les captures jointes à un ticket que plus
+aucun ticket ne cite (dépôt abandonné, capture remplacée). Une capture rattachée à son ticket
+reste. Il n'a pas de programmation par défaut : à programmer chaque jour depuis sa tuile.
+
+### v0.24.61 — technique
+
+Nouveau callable `backfillRetentionFn` (backfill récurrent `retention`, aux deux registres et
+dans `backfill_schedule.json`, branché dans `scheduledPassFor`), sans appel de modèle. Phase 1 :
+`error_reports` dont `timestamp` précède maintenant − 90 jours, supprimés par lots de 400,
+5 000 au plus par passage. Phase 2 : fichiers `tickets/{uid}/{ticketId}/…` de Storage créés il
+y a plus d'un jour, supprimés quand le ticket manque, appartient à un autre compte ou ne les
+désigne pas par `screenshot_path`. Pas de TTL Firestore : il demanderait une date d'expiration
+écrite par le client, qu'une application restée sur une ancienne version n'écrirait pas.
+Aucune règle ne change. Tests : `retention.test.ts`, `backfillSchedule.test.ts`,
+`backfill_status_test.dart`, `admin_backfills_screen_test.dart`.
+
 ### v0.24.60 — fonctionnel
 
 Nouvelle recette, « Mettre en forme avec l'IA ». La conversion d'un texte collé dure une à

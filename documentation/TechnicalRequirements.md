@@ -2127,7 +2127,10 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 - `error_reports/{id}` : erreurs remontées par le client via `ErrorReportService` —
   `feature`, message, pile, `userId` et un `context` (chaîne JSON depuis v0.23.48, carte
   avant), champs et longueurs bornés par les règles (§7.7). C'est le seul endroit où un
-  échec côté client laisse une trace : `debugPrint` est invisible en production.
+  échec côté client laisse une trace : `debugPrint` est invisible en production. Conservés
+  90 jours d'après `timestamp` : le backfill récurrent « Purger les rapports d'erreur
+  anciens » (`retention`, v0.24.61, §7.10) supprime les plus anciens. Un rapport sans
+  `timestamp` n'est pas atteint par la requête et reste.
 
 ---
 
@@ -2370,8 +2373,8 @@ Firestore refusent l'écriture client, administrateur compris (`*_checkpoint`,
 **État et programmation des backfills** (v0.23.45). Chaque backfill d'Admin › Backfills
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
-`nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `refresh_sodium` et `utensils_cleanup` — ponctuels). Les ponctuels `default_units` et
+`nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products`,
+`retention` — récurrents ; `refresh_sodium` et `utensils_cleanup` — ponctuels). Les ponctuels `default_units` et
 `users_schema_check` sont retirés en v0.24.52, une fois terminés en production ; leurs documents
 `app_config/backfill_run_default_units` et `app_config/backfill_run_users_schema_check` restent
 en base, plus rien ne les lit.
@@ -6257,6 +6260,12 @@ en attente en écrit, et un rapport sans borne servait de stockage libre.
 `app_version` est obligatoire pour une raison simple : un rapport sans version ne se
 diagnostique pas, l'application se déployant plusieurs fois par jour.
 
+**Conservation : 90 jours** (v0.24.61). Le backfill récurrent `retention`
+(`backfillRetentionFn`) supprime les rapports dont `timestamp` est antérieur à maintenant −
+90 jours (`ERROR_REPORT_RETENTION_DAYS`). Pas de TTL Firestore : il demanderait une date
+d'expiration écrite par le client, qu'une application restée sur une ancienne version
+n'écrirait pas. Le serveur supprime ; il n'écrit toujours rien dans la collection.
+
 `save(...)` **retourne l'identifiant du document**. C'est ce numéro que l'écran peut montrer
 à l'utilisateur et qu'il communique à l'administrateur.
 
@@ -6649,6 +6658,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 |---|---|---|
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais. Lève les bornes de patience (vingt heures entre deux tentatives, cinq tentatives par liste d'ingrédients, exclusion du non-reprenable) ; le passage programmé les garde. Ne lève pas l'exclusion des ingrédients et unités que l'IA a manqués trois fois : l'enrichissement de la reprise ne les redemande jamais. Compte rendu : examinées, reprises, complétées, encore incomplètes (`echouees`), laissées faute de temps ou de plafond (`laissees`), non reprenables (`nonReprenables`), abandonnées (`abandonnees`) |
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients (backfill récurrent `enrich_referentials`) ; avec `refreshSodium`, la réparation du sel compté deux fois (backfill ponctuel `refresh_sodium`) : cibles = profils qui portent du sodium sans `sodium_repaired_at` (`isSodiumRepairTarget`), marque posée avec le profil réparé (`enrichedIngredientPayload`), un échec reste cible et compte dans `unresolvedFailures` ; le passage n'est complet que si son parcours a commencé au début de la collection et n'a pas buté sur l'échéance (`enrichPassCompleted`) — un passage repris à mi-chemin remet le curseur au début et se dit incomplet —, et il n'est marqué terminé qu'après un parcours entier sans échec ni élément à revoir. Mémoire des échecs (compteurs) hors `refreshSodium` : une unité (`ai_weight_failure_count`) ou un ingrédient (`enrichment_failure_count`) qui échoue trois fois n'est plus soumis au modèle, sauf `retryExcluded`. Une unité demandée il y a moins de vingt heures n'est pas soumise (elle ne compte pas comme un échec). Compte rendu : `excludedUnits`, `excludedIngredients`, `unresolvedFailures` en plus des compteurs |
+| `backfillRetentionFn` | `admin` | conservation (backfill récurrent `retention`), sans appel de modèle. Phase 1 : supprime par lots de 400 les `error_reports` dont `timestamp` est antérieur à maintenant − 90 jours, plus anciens d'abord, 5 000 au plus par passage ; un lot en échec est relu, trois échecs de suite arrêtent le passage. Phase 2 : liste `tickets/` dans Storage et supprime une capture créée il y a plus d'un jour dont le ticket n'existe pas, appartient à un autre compte ou ne la désigne pas (`screenshot_path`, `isOrphanScreenshot`) ; une capture rattachée reste, quel que soit son âge. Passage complet : rapports et captures parcourus, aucune capture en échec. Sans programmation par défaut : l'administrateur le programme chaque jour |
 | `backfillUtensilsCleanupFn` | `admin` | retire des recettes les ustensiles écrits comme ingrédients (backfill ponctuel `utensils_cleanup`), sans appel de modèle par le passage. Recettes (`cleanupRecipe`) : `@nom{…}` devient `#nom{…}` dans `raw_cooklang` et `draft_cooklang`, et le nom sort de `ingredients` et de `ingredients_index`, quand `isUtensilLine` le reconnaît ; un ustensile suivi d'une parenthèse (« caissettes (ou beurre) ») n'est pas touché et la recette est à revoir. Seuls les champs changés sont écrits, sous condition de la version lue (`lastUpdateTime`) : une recette modifiée entre-temps n'est pas écrasée, elle compte « à reprendre ». L'écriture réveille `onRecipeWritten` (nutrition, courses, allergènes), qui peut appeler un modèle sur le plafond du propriétaire de la recette. Fiches : une fois toutes les recettes parcourues, une fiche de `nutrition_ingredients` dont l'identifiant ou `canonical_name` est un ustensile (`isUtensilSheet`) est supprimée si aucune recette ne la cite : `ingredients_index` `array-contains-any` sur le nom canonique, l'identifiant et tous les alias, normalisés par `buildIngredientsIndex`, par lots de trente (`sheetUsageBatches`) ; une fiche encore citée reste, à revoir ; trois échecs de suite arrêtent la phase. `dryRun` (vrai par défaut) n'écrit ni ne supprime rien et liste ce qui serait corrigé ; un essai qui trouve quelque chose reste « incomplet », avec ce qu'il a trouvé pour reste. 2 000 recettes par appel par défaut, deux curseurs (réel, essai à blanc). Passage complet : recettes et fiches parcourues, aucun échec, aucune recette à reprendre |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. Le type de page se lit par `resolvePageType` : une page typée dans son seul CookLang (`>> page_type:`) est « hors recette », pas « sans ingrédient ». 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Un ingrédient qui échoue trois fois (`allergens_failure_count`) n'est plus soumis au modèle, sauf `retryExcluded`. Une page dont `resolvePageType` (le champ, sinon `>> page_type:` dans le CookLang) ne dit pas `recipe` est comptée « hors recette ». Compte rendu : ingrédients examinés, ignorés, en erreur, exclus (`ingredientsExclus`), échecs non exclus (`echecsNonExclus`) ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
@@ -6742,6 +6752,7 @@ aussitôt serait facturée pour la même absence de réponse. Un créneau tombé
 reporté d'une heure. Bornes par passage : nutrition 20 recettes, bornes de patience **actives**,
 sans point de reprise (le comportement de l'ancienne tâche de 5 h) ; rôle des recettes 40
 recettes ; allergènes 400 ingrédients et 500 recettes ; produits d'achat 500 recettes ;
+conservation 5 000 rapports d'erreur, puis toutes les captures de ticket ;
 enrichissement des référentiels, le délai seul — et en reprise à l'heure suivante, sans la
 phase 1 (poids des unités, sans curseur, que l'heure précédente vient de parcourir).
 
@@ -6843,6 +6854,7 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillNutritionFn` | recettes encore incomplètes, cause par cause : erreur de la reprise ; calcul en échec, avec la raison écrite dans `nutrition.quality.warnings` ; « Impossible à peser : œufs (pas de poids à la pièce), farine (quantité illisible) » d'après `missing_weight` ; « Sans valeurs pour 100 g : beurre » d'après `missing_profile`, et « Sans valeurs pour 100 g, plus redemandé à l'IA après 3 échecs : verjus » d'après `missing_profile_excluded` ; « Ingrédients non comptés : … » pour un instantané antérieur aux deux listes. Cinq noms au plus par cause. Les recettes reprises, les non reprenables et les abandonnées (« Abandonnée après 5 reprises — impossible à peser : … », cause en minuscule) |
 | `backfillRecipeRolesFn` | recettes que le modèle n'a pas su classer, recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième, « Plus redemandé à l'IA après 3 échecs » pour une recette sautée |
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
+| `backfillRetentionFn` | captures en échec de suppression (« Échec de suppression : … ») ; un lot de rapports en échec n'est que journalisé, un rapport ne s'ouvrant pas depuis la liste |
 | `backfillUtensilsCleanupFn` | essai à blanc : chaque recette à corriger (« Essai à blanc : papier sulfurisé serait retiré des ingrédients ») et chaque fiche à supprimer ; dans les deux modes : recettes avec un ustensile suivi d'une parenthèse (« Ustensile avec parenthèse, laissé tel quel : … »), recettes modifiées pendant le passage, recettes en échec d'écriture, fiches encore citées (« Fiche gardée : encore citée par « Tarte… » »), fiches en échec de suppression |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième échec d'un ingrédient, « Plus redemandé à l'IA après 3 échecs » pour un ingrédient sauté. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
 

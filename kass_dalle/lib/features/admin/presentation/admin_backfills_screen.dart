@@ -145,6 +145,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'passage suivant.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
+      case BackfillKeys.retention:
+        return 'Supprime les rapports d\'erreur de plus de 90 jours, puis les '
+            'captures jointes à un ticket que plus aucun ticket ne cite '
+            '(dépôt abandonné, capture remplacée). Une capture rattachée à '
+            'son ticket reste, quel que soit son âge.\n\n'
+            'Aucun appel d\'IA. Cinq mille rapports par passage. À '
+            'programmer chaque jour pour que la règle des 90 jours tienne '
+            'seule.';
       case BackfillKeys.utensilsCleanup:
         return 'Avec « Essai à blanc » cochée, rien n\'est modifié : le passage '
             'liste dans « À revoir » les recettes et les fiches du '
@@ -275,6 +283,20 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'sans ingrédients=${r['sansIngredients']}, '
           'hors recette=${r['horsRecette']}, échecs=${r['echouees']}'
           '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
+        );
+      case BackfillKeys.retention:
+        final r = await _repo.backfillRetention();
+        return _fromCounts(
+          r,
+          'Rapports d\'erreur supprimés=${r['rapportsSupprimes']} | '
+          'Captures : examinées=${r['capturesExaminees']}, '
+          'supprimées=${r['capturesSupprimees']}, '
+          'trop récentes pour être jugées=${r['capturesRecentes']}, '
+          'échecs=${r['capturesEchouees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
@@ -1091,6 +1113,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
     BackfillKeys.utensilsCleanup: Icons.cleaning_services_outlined,
+    BackfillKeys.retention: Icons.auto_delete_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;
