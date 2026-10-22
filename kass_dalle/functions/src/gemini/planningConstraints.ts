@@ -36,7 +36,7 @@ import {
 
 /**
  * Version du prompt : une entrée de cache d'une autre version est retraduite.
- * 2 (v0.24.61) : styles voulus (`styles_voulus`) et critères réservés à un
+ * 2 (v0.24.62) : styles voulus (`styles_voulus`) et critères réservés à un
  * jour de semaine (`par_jour`).
  */
 export const PLANNING_CONSTRAINTS_PROMPT_VERSION = 2;
