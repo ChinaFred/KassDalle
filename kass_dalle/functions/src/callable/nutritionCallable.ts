@@ -198,7 +198,8 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
     secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
   },
   async (req) => {
-    // Toute IA est réservée aux éditeurs (v0.24.63, tickets #162 et #163) ;
+    // L'IA qui modifie une recette est réservée aux éditeurs (v0.24.65,
+    // tickets #162 et #163) ;
     // la propriété de la recette se vérifie ensuite. `onRecipeWritten`
     // calcule pour toutes les recettes, hors de cette garde.
     const ctx = await requireEditor(req, "calcul_nutrition");

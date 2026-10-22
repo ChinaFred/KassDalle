@@ -1061,13 +1061,12 @@ vers Claude. `callModel` émet désormais un `WARNING` dans ce cas.
 
 **Seuls le créateur éditeur de la recette et un administrateur demandent un conseil.** Le
 conseil, son instruction libre et ses visuels s'écrivent sur la recette partagée :
-`suggestPlatingFn` et `generatePlatingImageFn` exigent `requireEditor` (v0.24.63 pour le
+`suggestPlatingFn` et `generatePlatingImageFn` exigent `requireEditor` (v0.24.65 pour le
 premier) puis refusent les autres comptes avant l'appel de modèle (§4). Le client ne
 leur montre ni « Demander un dressage sur mesure », ni « Régénérer », ni les boutons de visuel ;
 sans conseil enregistré, l'onglet affiche une ligne de texte (`kPlatingAdviceReservedMessage`).
-Le visuel d'étape exige en plus le rôle éditeur : pour le créateur qui n'est que lecteur, les
-boutons de visuel sont masqués et une ligne le dit (`kPlatingImagesEditorOnlyMessage`) ; il
-garde « Régénérer », « Intégrer » et « Retirer ».
+Le lecteur, même créateur, lit le conseil enregistré sans aucune action : ni demande, ni
+« Régénérer », ni visuel, ni « Intégrer », ni « Retirer ».
 
 Même règle pour le conseil de conservation. `StorageRepository.ensure` rend un
 `StorageAdviceLookup` : `StorageAdviceAvailable` (conseil relu, ou produit si
@@ -2144,7 +2143,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
   avant), champs et longueurs bornés par les règles (§7.7). C'est le seul endroit où un
   échec côté client laisse une trace : `debugPrint` est invisible en production. Conservés
   90 jours : `scheduledErrorReportsPurge` supprime chaque jour ceux dont `timestamp` est plus
-  ancien (§7.10, v0.24.63).
+  ancien (§7.10, v0.24.65).
 
 ---
 
@@ -3103,7 +3102,7 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(serverOnlyRetryFields())
         && !request.resource.data.keys().hasAny(serverOnlyComputedFields())
         && bookCheck(true) && sourceUrlAccepted();
-      // Un lecteur créateur n'a plus que deux écritures (v0.24.63, tickets #162
+      // Un lecteur créateur n'a plus que deux écritures (v0.24.65, tickets #162
       // et #163) : valider un brouillon, avec exactement les champs de
       // `validateDraft`, de `draft`/`inReview` vers `validated` ; détacher
       // d'un livre, avec exactement ceux de `detachRecipeFromBook`.
@@ -3188,7 +3187,7 @@ service cloud.firestore {
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
 | `meal_suggestions` | l'auteur (`author_uid`) ou le propriétaire du groupe (`group_owner_id`), compte nommé (`isApproved()`) ; un autre membre ne lit pas les suggestions des autres ; une requête sans l'un de ces deux filtres est refusée | création par un compte nommé, à son nom, sous l'identifiant imposé `{group_id}_{uid}_{day}_{0..4}` (`suggestionIds` : cinq au plus par auteur, groupe et jour), membre d'un groupe **actif** (`canReadGroupPlanning`, `planning_reach.group_ids`) et présent dans `member_ids` du groupe, **pas** son propriétaire ; `group_owner_id` égal à `owner_id` du groupe (une lecture de `groups/{group_id}`) ; forme `isMealSuggestion` : liste de champs fermée, `day` date réelle de la veille à J+60 (`isSuggestionDay`), recette (`recipe_id` + `recipe_titre` ≤ 200) **ou** nom libre (`free_title` ≤ 60), `note` ≤ 200, `created_at == request.time`. Aucune mise à jour. Suppression par l'auteur ou le propriétaire du groupe. Le serveur supprime celles d'un groupe supprimé et d'un membre sorti (`syncGroupReach`) |
-| `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` obligatoire et égal à `request.time` (v0.24.63, ticket #162 : l'heure du serveur, écrite par `FieldValue.serverTimestamp()` ; une date du client, dans le futur ou le passé, est refusée), textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
+| `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` obligatoire et égal à `request.time` (v0.24.65, ticket #162 : l'heure du serveur, écrite par `FieldValue.serverTimestamp()` ; une date du client, dans le futur ou le passé, est refusée), textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
 | `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** les documents de `isServerOnlyConfig`, écrits par le serveur seul : `backfill_schedules`, `backfill_run_*`, `tickets_status` et `apk_notification` — un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; depuis v0.24.31 (ticket #162), les politiques `ai_pricing` (`setAiPricingFn`), `ai_routing_policy` (`setAiRoutingPolicyFn`), `ai_budget_policy` (`setAiBudgetFn`), `app_check_policy` (`setAppCheckPolicyFn`) et `nutrition_source_policy` (`setNutritionSourcePolicyFn`), les documents serveur `image_moderation`, `currency_rate`, `anthropic_costs`, `planning_policy` (réglages de la présélection, lus par `gemini/planningStore.ts`) et `ai_budget_alert` (dernière alerte de budget, `scheduled/aiBudgetAlertSchedule.ts`), et les points de reprise `*_checkpoint` et `backfill_cursor_*` — une écriture directe contournait la validation de la callable (`readPolicyOrThrow`, garde-fou `enforce` d'App Check), sa trace d'audit et App Check. L'administrateur écrit encore `tickets` (plafonds, sans callable), `usage` et les autres réglages ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas et qui monte au plus d'un pas par écriture (`countsUp(champ, pas)`, v0.24.55, ticket #162) : 1 pour un compteur de scans, 21 × 50 Mio pour `storage_bytes` (21 pages d'un import, chacune sous le plafond de 50 Mo de la quarantaine ; un livre pèse moins de 300 Mo) — `UsageTracker.recordScan` n'écrit que ces incréments ; la borne vaut par écriture et non par durée, une suite d'écritures au pas maximal reste permise (la fermer demanderait un compteur tenu par le serveur) ; l'administrateur n'a pas de pas maximal |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
@@ -3313,9 +3312,9 @@ Non traité : le détachement réveille `onRecipeWritten`, qui peut lancer `sync
 `normalizeRecipeReferentialsFn` crée et enrichit des fiches `nutrition_ingredients` à partir
 des noms reçus. `assertCanNormalizeReferentials` (`callable/_recipeAccess.ts`, décision pure
 `referentialNormalizationDenial` testée) la réserve à l'éditeur et à l'administrateur
-(`isEditorAccount`), avec ou sans `recipeId`. Depuis la v0.24.63, le lecteur n'y passe plus,
+(`isEditorAccount`), avec ou sans `recipeId`. Depuis la v0.24.65, le lecteur n'y passe plus,
 même pour sa propre recette : il ne modifie plus ses recettes (`RecipeRepository.updateRecipe`,
-seul parcours qui l'y amenait), et toute IA est réservée aux éditeurs. Il reçoit
+seul parcours qui l'y amenait), et l'IA qui modifie une recette ou publie une image est réservée aux éditeurs ; la recherche web reste ouverte au lecteur. Il reçoit
 `permission-denied` avant toute écriture. Les noms restent ceux de la requête, la
 normalisation précédant l'enregistrement.
 
@@ -3327,7 +3326,8 @@ normalisation précédant l'enregistrement.
 l'appelant) ni un administrateur (relu par `isAdminAccount`), avant tout appel de modèle.
 Les quatre exigent d'abord `requireEditor` : `suggestStorageAdviceFn` et
 `generatePlatingImageFn` depuis leur création, `suggestPlatingFn` et
-`computeRecipeNutritionFn` depuis la v0.24.63 (toute IA est réservée aux éditeurs). Un lecteur
+`computeRecipeNutritionFn` depuis la v0.24.65 (l'IA qui modifie une recette ou publie une image est réservée aux éditeurs ; la recherche web reste ouverte au lecteur : `searchWebRecipesFn` garde
+`requireAuth`, une fonction de lecture plafonnée à 50 recherches par jour). Un lecteur
 créateur lit le conseil et la nutrition enregistrés ; la fiche ne lui montre ni demande, ni
 « Régénérer », ni recalcul (`canEnrichRecipe`).
 Une recette absente répond `not-found`. Ce contrôle couvre aussi la confidentialité : le
@@ -3523,7 +3523,7 @@ service firebase.storage {
     // image « à revoir » attend ici, et personne ne tranche sur une photo qu'il
     // ne peut pas voir.
     //
-    // Dépôt réservé aux éditeurs et aux administrateurs (v0.24.63, ticket
+    // Dépôt réservé aux éditeurs et aux administrateurs (v0.24.65, ticket
     // #162, point 2) : un lecteur n'ajoute plus de photo, et
     // `scanAndPromoteUploadFn` exige `requireEditor`. Le propriétaire garde la
     // lecture de sa quarantaine. La capture d'un ticket passe par
@@ -3612,7 +3612,7 @@ service firebase.storage {
 > lui-même, sous son uid, un fichier nommé `screenshot.png` ou `screenshot.jpg`. La
 > suppression est refusée à tous (aucune purge en V1).
 >
-> **Un lecteur ne dépose rien en quarantaine** (v0.24.63, ticket #162, point 2). Un
+> **Un lecteur ne dépose rien en quarantaine** (v0.24.65, ticket #162, point 2). Un
 > lecteur n'importe pas : la création d'un job (`processing_jobs`, `isEditor()`),
 > `analyzeBookImport` et l'extraction de texte (`requireEditor`) lui sont refusées. Depuis la
 > v0.24.32, il ne déposait plus que des photos JPEG ou PNG — couverture « Recette libre »,
@@ -3683,7 +3683,7 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   une collection vide.
 - La création d'une recette a ses tests : un `reader` ne crée pas de recette, même à son nom,
   ni de copie ; un éditeur et un administrateur créent la leur ; un `reader` ne modifie plus
-  la sienne, mais la valide (brouillon), la détache d'un livre et la supprime (v0.24.63). Les cas de confidentialité et de rangement à la création sont rejoués avec
+  la sienne, mais la valide (brouillon), la détache d'un livre et la supprime (v0.24.65). Les cas de confidentialité et de rangement à la création sont rejoués avec
   l'éditeur. `users/{uid}/preferences/explore_filters` se lit et s'écrit par son titulaire et
   par un administrateur, dans la forme bornée par `isExploreFilters` (clé inconnue refusée) ;
   l'interrupteur `filters.count_estimated_times` s'y enregistre sans changer la règle (il vit
@@ -5967,7 +5967,7 @@ planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depui
 « Importer » des pages « Sur le web », et le bandeau d'import au
 retour du navigateur de l'Explorer. Il garde la relecture et la validation de ses brouillons,
 le détachement d'un livre et la suppression de ses recettes existantes. Il ne les **enrichit**
-plus (v0.24.63, tickets #162 et #163) : `polishCooklangFn`, `polishMarkdownFn`,
+plus (v0.24.65, tickets #162 et #163) : `polishCooklangFn`, `polishMarkdownFn`,
 `refineRecipeFn`, `extractBookCoverFn` (`book_cover`), `suggestRecipeTagsFn`,
 `detectAndCropIllustrationsFn` et `scanAndPromoteUploadFn` (`upload_security_scan`) exigent
 `requireEditor`. L'interface teste `AppUser.canEnrichRecipe(createdBy)` — `canEdit` et
@@ -6315,7 +6315,7 @@ remontée.
 |---|---|---|
 | `user_id` | `string` | `anonymous` si aucun compte connecté |
 | `job_id` | `string?` | quand l'erreur se rattache à un import |
-| `timestamp` | `Timestamp` | heure du serveur (`FieldValue.serverTimestamp()`, imposée par les règles depuis la v0.24.63) ; les rapports antérieurs portent l'horloge de l'appareil |
+| `timestamp` | `Timestamp` | heure du serveur (`FieldValue.serverTimestamp()`, imposée par les règles depuis la v0.24.65) ; les rapports antérieurs portent l'horloge de l'appareil |
 | `app_version` | `string` | `kAppVersion`, synchronisé depuis `pubspec.yaml` |
 | `feature` | `string` | l'étape — `admin.saveAiPricing`, `auth_lightweight_sign_in` |
 | `error_type` | `string` | le type Dart de l'exception (`TimeoutException`, `FirebaseException`) |
@@ -6334,7 +6334,7 @@ diagnostique pas, l'application se déployant plusieurs fois par jour.
 `save(...)` **retourne l'identifiant du document**. C'est ce numéro que l'écran peut montrer
 à l'utilisateur et qu'il communique à l'administrateur.
 
-**Conservation : 90 jours** (v0.24.63, ticket #162, point 3). `scheduledErrorReportsPurge`
+**Conservation : 90 jours** (v0.24.65, ticket #162, point 3). `scheduledErrorReportsPurge`
 supprime chaque jour à 4 h les rapports dont `timestamp` précède l'instant de la passe moins
 90 jours. Un rapport sans `timestamp`, ou dont le champ n'est pas un `Timestamp`, n'entre
 pas dans la requête et reste : les règles n'en admettent pas d'autre type, et l'écran
@@ -6483,7 +6483,7 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `suggestRecipeTagsFn` | `suggest_tags` | `titre` → 5 000 car., requis ; `cooklang` → 100 000 car. |
 | `generateRecipeIllustrationFn` | `generate_recipe_illustration` | `recipeTitle` → 5 000 car., requis ; `recipeContext` → 100 000 car., requis ; `userInstruction`, `style` → 5 000 car. |
 | `suggestPlatingFn` | `plating_coach` | `userInstruction` → 5 000 car. |
-| `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. Garde (v0.24.63) : éditeur ou admin seulement (`assertCanNormalizeReferentials`, `callable/_recipeAccess.ts`) — la fonction écrit dans le référentiel partagé `nutrition_ingredients` |
+| `normalizeRecipeReferentialsFn` | `normalisation_referentiels` | `cooklang` → 100 000 car. ; `ingredients` → 500 éléments de 20 000 car. Garde (v0.24.65) : éditeur ou admin seulement (`assertCanNormalizeReferentials`, `callable/_recipeAccess.ts`) — la fonction écrit dans le référentiel partagé `nutrition_ingredients` |
 
 **Liste blanche.** `refineRecipeFn`, `searchRecipesFn`, `suggestMealPlanFn` et
 `generateRecipeConceptFn` passent au générateur un objet construit par
@@ -6723,7 +6723,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.45, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
 | `releaseNotificationSchedule` | `every 10 minutes`, heure de Paris | notifie les administrateurs d'un nouvel APK (v0.23.81). Lit `https://kassdale-6d948.web.app/apk_release.json?t=<horodatage>` (contourne le cache), réserve le couple `version+build` dans `app_config/apk_notification` par une transaction (deux passes qui se chevauchent n'envoient qu'une fois), lit les jetons `users/{uid}/devices/*` des comptes `role == "admin"` non révoqués, envoie par `sendEachForMulticast` (`firebase-admin/messaging`, chargé par `await import()`), supprime les jetons `registration-token-not-registered` et libère la réservation si aucun envoi n'a abouti. Manifeste illisible ou absent : `logError`, rien d'envoyé, nouvel essai 10 minutes plus tard. Code : `release_notifications/` et `scheduled/releaseNotificationSchedule.ts`. Aucun appel d'IA |
 | `scheduledAiBudgetAlert` | `0 7 * * *` — chaque matin à 7 h | compare le cumul du mois au seuil réglé. Se tait dans quatre cas : pas de seuil, pas de taux de change, seuil non franchi, alerte déjà émise |
-| `scheduledErrorReportsPurge` | `0 4 * * *` — chaque jour à 4 h, heure de Paris | supprime les rapports d'erreur (`error_reports`) dont `timestamp` a plus de 90 jours (v0.24.63, ticket #162, point 3) : requête `timestamp < échéance`, lots de 400 suppressions par écriture groupée, 50 lots au plus par passage (20 000 rapports) ; un arriéré plus gros se termine les jours suivants. Un lot en échec arrête la passe. Journalise le nombre supprimé, le nombre de lots, l'échéance et `complete` (`logInfo`, ou `logError` si la passe s'arrête), sous un `correlationId` `error_reports_purge_…`. Un rapport sans `timestamp` n'est pas touché. Code : `scheduled/errorReportsPurgeSchedule.ts` (`purgeInBatches`, testée sans émulateur). Aucun appel d'IA |
+| `scheduledErrorReportsPurge` | `0 4 * * *` — chaque jour à 4 h, heure de Paris | supprime les rapports d'erreur (`error_reports`) dont `timestamp` a plus de 90 jours (v0.24.65, ticket #162, point 3) : requête `timestamp < échéance`, lots de 400 suppressions par écriture groupée, 50 lots au plus par passage (20 000 rapports) ; un arriéré plus gros se termine les jours suivants. Un lot en échec arrête la passe. Journalise le nombre supprimé, le nombre de lots, l'échéance et `complete` (`logInfo`, ou `logError` si la passe s'arrête), sous un `correlationId` `error_reports_purge_…`. Un rapport sans `timestamp` n'est pas touché. Code : `scheduled/errorReportsPurgeSchedule.ts` (`purgeInBatches`, testée sans émulateur). Aucun appel d'IA |
 | `scheduledAiReconciliation` | `0 6 4 * *` — le 4 de chaque mois à 6 h | réconcilie le mois précédent avec la facturation BigQuery |
 | `ticketsSyncSchedule` | `every 60 minutes` | renvoie les tickets « Envoi en cours » de moins de dix essais, puis relit sur GitHub les Issues des tickets non finaux (webhook perdu) ; s'arrête au premier jeton refusé (§5, « Tickets ») |
 
@@ -8253,7 +8253,7 @@ l'impose : la création d'un `processing_job`, seul point qui lance le pipeline 
 (`analyzeBookFileFn`) exige `requireEditor`. Un `reader` qui ouvre `/scan` par un lien voit un
 état « Import réservé aux éditeurs » au lieu du formulaire, et aucune entrée vers `/scan` ne
 lui est montrée. `quarantine/{uid}/` (`storage.rules`) et `scanAndPromoteUploadFn`
-(`requireEditor`) sont fermés au `reader` depuis la v0.24.63 (ticket #162, point 2 ; ticket
+(`requireEditor`) sont fermés au `reader` depuis la v0.24.65 (ticket #162, point 2 ; ticket
 #163, point 1).
 
 | Route | Écran | Droit effectif |
@@ -8261,12 +8261,12 @@ lui est montrée. `quarantine/{uid}/` (`storage.rules`) et `scanAndPromoteUpload
 | `/` | `BookListScreen` | `reader` — l'accueil *est* la bibliothèque |
 | `/books` | `BookListScreen` | `reader` |
 | `/books/validation` | `BookValidationScreen` | `editor` |
-| `/books/new` | `BookFormScreen` | `editor` — gardée par `EditorOnlyGate` (v0.24.63) : un `reader` arrivé par un lien voit « Création réservée aux éditeurs » sous la barre « Nouveau livre » |
+| `/books/new` | `BookFormScreen` | `editor` — gardée par `EditorOnlyGate` (v0.24.65) : un `reader` arrivé par un lien voit « Création réservée aux éditeurs » sous la barre « Nouveau livre » |
 | `/books/:bookId/edit` | `BookFormScreen` | `editor` |
 | `/recipes` | `RecipeListScreen` | `reader` |
 | `/recipes/new` | `RecipeCreateScreen` | `editor` — gardée par `EditorOnlyGate` : un `reader` arrivé par un lien voit « Création réservée aux éditeurs », comme sur `/scan`. Paramètre `?sourceUrl=` : l'adresse d'un import par lien qui a échoué, rappelée en haut de l'écran (« Page à recopier : »), jamais enregistrée sur la recette |
 | `/recipes/:recipeId` | `RecipeDetailScreen` | `reader` |
-| `/recipes/:recipeId/edit` | `RecipeEditScreen` | `editor` sur les siennes, `admin` sur toutes — gardée par `EditorOnlyGate` (v0.24.63, tickets #162 et #163) : un `reader` voit « Modification réservée aux éditeurs », même sur sa recette ; un éditeur sur la recette d'un autre voit `NotOwnerScaffold` |
+| `/recipes/:recipeId/edit` | `RecipeEditScreen` | `editor` sur les siennes, `admin` sur toutes — gardée par `EditorOnlyGate` (v0.24.65, tickets #162 et #163) : un `reader` voit « Modification réservée aux éditeurs », même sur sa recette ; un éditeur sur la recette d'un autre voit `NotOwnerScaffold` |
 | `/book-pages/:pageId` | `BookPageDetailScreen` | `reader` — page de livre sans transition |
 | `/scan` | `ScanScreen` | `editor` |
 | `/drafts` | `WorkQueueScreen` | `reader` |
@@ -8680,7 +8680,7 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
 
 ### 7. Cloud Functions
 
-- **`moderateAndPromoteImagesFn`** (callable, `requireEditor` depuis la v0.24.63 : un lecteur n'ajoute plus de photo, la capture d'un ticket passe par `attachTicketScreenshot`) — `{ items: [{ quarantinePath,
+- **`moderateAndPromoteImagesFn`** (callable, `requireEditor` depuis la v0.24.65 : un lecteur n'ajoute plus de photo, la capture d'un ticket passe par `attachTicketScreenshot`) — `{ items: [{ quarantinePath,
   targetKind, ownerId?, origin? }] }`, de 1 à 25 images par appel (un `contentType` envoyé
   par un client ancien est ignoré). Chaque
   `quarantinePath` doit commencer par `quarantine/{uid de l'appelant}/`, sinon

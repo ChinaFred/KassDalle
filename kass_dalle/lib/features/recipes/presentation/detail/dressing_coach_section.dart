@@ -407,9 +407,11 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
     return _AdviceView(
       advice: advice,
       canEdit: widget.canEdit,
-      // Le visuel d'étape exige en plus le rôle éditeur
-      // (`generatePlatingImageFn` appelle `requireEditor`) : un lecteur
-      // créateur de sa recette garde le conseil, pas les visuels.
+      // Le visuel d'étape exige le rôle éditeur (`generatePlatingImageFn`
+      // appelle `requireEditor`). Un lecteur, même créateur, ne demande ni ne
+      // régénère de conseil : il lit celui qui est enregistré, sans action.
+      // Le rôle est relu ici en plus de [canEdit], au cas où un écran le
+      // passerait à tort.
       canGenerateImages:
           widget.canEdit &&
           (ref.watch(appUserProvider).value?.canEdit ?? false),
@@ -555,11 +557,10 @@ class _AdviceView extends StatelessWidget {
   /// être produit.
   final bool canGenerateImages;
 
-  /// Intégrer, retirer ou remettre à zéro réécrit la recette (`raw_cooklang`,
-  /// `plating_advice`) : même condition que les visuels. Un lecteur créateur
-  /// n'écrit sur sa recette que la validation et le détachement
-  /// (`firestore.rules`) ; il garde le conseil et « Régénérer », servis par
-  /// le serveur.
+  /// Régénérer, intégrer, retirer ou remettre à zéro : même condition que
+  /// les visuels. Un lecteur, même créateur, ne demande ni ne régénère de
+  /// conseil (`suggestPlatingFn` exige `requireEditor`) et n'écrit sur sa
+  /// recette que la validation et le détachement (`firestore.rules`).
   bool get canWriteRecipe => canGenerateImages;
   final int? generatingImageIndex;
   final Object? error;
@@ -617,17 +618,6 @@ class _AdviceView extends StatelessWidget {
             onRedoImage: canGenerateImages && i == advice.lastIllustratedIndex
                 ? () => onRedoImage(i)
                 : null,
-          ),
-          const SizedBox(height: 12),
-        ],
-        if (canEdit &&
-            !canGenerateImages &&
-            advice.etapes.any((step) => step.imageUrl == null)) ...[
-          Text(
-            kPlatingImagesEditorOnlyMessage,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
           ),
           const SizedBox(height: 12),
         ],

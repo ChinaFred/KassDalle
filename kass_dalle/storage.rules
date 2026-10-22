@@ -204,7 +204,7 @@ service firebase.storage {
     // écran qui compte devenait inutilisable.
     //
     // Dépôt réservé aux éditeurs et aux administrateurs (ticket #162,
-    // point 2). Un lecteur y déposait jusqu'à la v0.24.62 les photos à
+    // point 2). Un lecteur y déposait jusqu'à la v0.24.64 les photos à
     // modérer — couverture « Recette libre », illustration d'une de ses
     // recettes — et ne le fait plus : ajouter des photos est réservé aux
     // éditeurs, l'écran masque ces gestes et `scanAndPromoteUploadFn` exige

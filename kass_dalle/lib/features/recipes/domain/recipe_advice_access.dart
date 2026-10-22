@@ -29,9 +29,3 @@ const kNutritionReservedMessage =
     'Aucune donnée nutritionnelle calculée. Le calcul se fait à '
     'l\'enregistrement de la recette ; seuls son créateur, s\'il est '
     'éditeur, et un administrateur peuvent le relancer.';
-
-/// Le créateur d'une recette qui n'a que le rôle lecteur : il demande le
-/// conseil de dressage, pas ses visuels d'étape (`generatePlatingImageFn`
-/// exige le rôle éditeur).
-const kPlatingImagesEditorOnlyMessage =
-    'Les visuels d\'étape sont réservés aux éditeurs.';

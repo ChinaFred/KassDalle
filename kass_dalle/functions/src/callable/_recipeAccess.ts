@@ -68,7 +68,7 @@ export async function assertCanModifyRecipe(
  * administrateur seulement, avec ou sans recette : la création d'une recette
  * normalise avant que le document existe. Le lecteur y passait pour
  * enregistrer une de ses recettes ; il ne modifie plus ses recettes et toute
- * IA est réservée aux éditeurs (v0.24.63, tickets #162 et #163).
+ * IA est réservée aux éditeurs (v0.24.65, tickets #162 et #163).
  */
 export function referentialNormalizationDenial(args: { callerIsEditor: boolean }): string | null {
   if (args.callerIsEditor) return null;

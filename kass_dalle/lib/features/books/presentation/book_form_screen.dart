@@ -494,9 +494,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               stackTrace: stackTrace,
               context: {'etape': 'couverture', 'book_id': newId},
             );
+            // Le rôle relu au moment de l'échec, comme les autres envois :
+            // `appUser` date du début de l'enregistrement. Écran fermé : le
+            // message habituel, sans lecture du provider.
+            final canEditNow = !mounted || ref.read(canEditProvider);
             coverFailure =
                 'Livre ajouté. '
-                '${photoFailureMessage('Couverture non enregistrée', error, canEdit: appUser.canEdit)}';
+                '${photoFailureMessage('Couverture non enregistrée', error, canEdit: canEditNow)}';
           }
         }
       } else {

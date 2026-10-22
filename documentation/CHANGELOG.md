@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.63 — fonctionnel
+### v0.24.65 — fonctionnel
 
 Tickets #162 et #163 : enrichir une recette demande d'en être propriétaire et éditeur. Un
 lecteur ne voit plus, même sur ses propres recettes, « Modifier la recette » ou « Modifier la
@@ -54,12 +54,14 @@ boutons d'écriture disparaissent aussi : retirer une photo, « Supprimer le sca
 type de page de la relecture, « Ranger » dans la file des brouillons, intégration, retrait et
 remise à zéro du dressage dans la recette.
 
-Toute IA est réservée aux éditeurs (décision de l'administrateur). Un lecteur ne demande ni ne
+L'IA qui modifie une recette ou publie une image est réservée aux éditeurs ; la recherche web
+reste ouverte au lecteur (décision de l'administrateur) : « Chercher sur le web » est une
+fonction de lecture, plafonnée à 50 recherches par jour et par compte. Un lecteur ne demande ni ne
 régénère plus de conseil de dressage et ne relance plus le calcul de la nutrition, même sur sa
 recette ; il lit le conseil et la nutrition déjà enregistrés. Le calcul automatique de la
 nutrition à l'enregistrement continue pour toutes les recettes.
 
-### v0.24.63 — technique
+### v0.24.65 — technique
 
 Ticket #163, point 1 : `polishCooklangFn`, `polishMarkdownFn`, `refineRecipeFn`,
 `extractBookCoverFn` (`book_cover`, non déployée), `suggestRecipeTagsFn`,
@@ -93,7 +95,9 @@ lecteur, validation et détachement permis, validation qui touche un autre champ
 sept tests qui faisaient écrire un lecteur pour vérifier une autre règle passent par
 l'administrateur ou une recette d'éditeur (`recipes/editor-in-other-book`).
 
-Toute IA réservée aux éditeurs : `suggestPlatingFn`, `computeRecipeNutritionFn` et
+IA qui modifie une recette ou publie une image réservée aux éditeurs ; `searchWebRecipesFn`
+garde `requireAuth` (recherche web ouverte au lecteur, 50 par jour). `suggestPlatingFn`,
+`computeRecipeNutritionFn` et
 `moderateAndPromoteImagesFn` passent de `requireAuth` à `requireEditor` (aucune destination
 d'un lecteur n'y passe : la capture d'un ticket suit `attachTicketScreenshot`).
 `assertCanNormalizeReferentials` (`normalizeRecipeReferentialsFn`) n'accepte plus qu'un
@@ -105,7 +109,13 @@ d'un lecteur n'y passe : la capture d'un ticket suit `attachTicketScreenshot`).
 — dans le futur, il échappait à la purge des 90 jours — est refusé. Tests `rules-tests` :
 rapport daté dans le futur, dans le passé ou sans date refusé, rapport à l'heure du serveur
 accepté. Ajout aussi : validation d'un brouillon de lecteur rangée dans le livre d'un autre
-refusée, dans l'un de ses livres acceptée.
+refusée, dans l'un de ses livres acceptée. À la lecture, un rapport dont l'heure serveur n'est pas encore
+résolue (`hasPendingWrites`) prend l'heure locale au lieu du 1er janvier 1970
+(`ErrorReport.fromFirestore`, `pendingTimestamp`).
+
+Dressage : `kPlatingImagesEditorOnlyMessage` et sa ligne sont retirés. Un lecteur ne voit plus
+le conseil qu'en lecture, la ligne « Les visuels d'étape sont réservés aux éditeurs. » ne
+pouvait plus s'afficher.
 
 Client : `AppUser.canEnrichRecipe(createdBy)` (`canEdit && canModifyRecipe`) commande tout
 geste qui écrit autre chose que la validation et le détachement ; `canModifyRecipe` garde

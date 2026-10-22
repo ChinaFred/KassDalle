@@ -105,10 +105,10 @@ void main() {
 
       expect(find.text('Illustrer cette étape'), findsOneWidget);
       expect(find.text('Régénérer'), findsOneWidget);
-      expect(find.text(kPlatingImagesEditorOnlyMessage), findsNothing);
     });
 
-    // Toute IA est réservée aux éditeurs (v0.24.63) : la fiche passe
+    // L'IA qui modifie une recette est réservée aux éditeurs (v0.24.65) : la
+    // fiche passe
     // `canEnrichRecipe`, faux pour un lecteur même créateur. Il lit le conseil
     // enregistré, sans « Régénérer » ni visuels.
     testWidgets('le créateur lecteur lit le conseil, sans régénérer', (

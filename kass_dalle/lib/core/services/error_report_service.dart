@@ -169,13 +169,26 @@ class ErrorReport {
     return raw.toString();
   }
 
-  factory ErrorReport.fromFirestore(String id, Map<String, dynamic> data) {
+  /// [pendingTimestamp] remplace un `timestamp` encore absent : un rapport
+  /// qui vient d'être écrit porte `FieldValue.serverTimestamp()`, que le
+  /// cache local rend `null` tant que le serveur ne l'a pas résolu. Sans ce
+  /// repli, la liste l'affichait au 1er janvier 1970 pendant quelques
+  /// instants. Les flux de lecture le passent quand le document a une
+  /// écriture en attente (`hasPendingWrites`) ; un ancien rapport sans date
+  /// garde la date zéro.
+  factory ErrorReport.fromFirestore(
+    String id,
+    Map<String, dynamic> data, {
+    DateTime? pendingTimestamp,
+  }) {
     final parsed = _parseContext(data['context']);
     return ErrorReport(
       id: id,
       userId: _asNullableString(data['user_id']) ?? '',
       jobId: _asNullableString(data['job_id']),
-      timestamp: _parseTimestamp(data['timestamp']),
+      timestamp: data['timestamp'] == null && pendingTimestamp != null
+          ? pendingTimestamp
+          : _parseTimestamp(data['timestamp']),
       appVersion: _asNullableString(data['app_version']) ?? '',
       feature: _asNullableString(data['feature']) ?? '',
       errorType: _asNullableString(data['error_type']) ?? '',
@@ -326,7 +339,13 @@ class ErrorReportService {
           final reports = <ErrorReport>[];
           for (final d in snap.docs) {
             try {
-              final report = ErrorReport.fromFirestore(d.id, d.data());
+              final report = ErrorReport.fromFirestore(
+                d.id,
+                d.data(),
+                pendingTimestamp: d.metadata.hasPendingWrites
+                    ? DateTime.now()
+                    : null,
+              );
               reports.add(report);
               _reportParseFailure(report);
             } catch (error, stackTrace) {
@@ -355,7 +374,13 @@ class ErrorReportService {
           final reports = <ErrorReport>[];
           for (final d in snap.docs) {
             try {
-              final report = ErrorReport.fromFirestore(d.id, d.data());
+              final report = ErrorReport.fromFirestore(
+                d.id,
+                d.data(),
+                pendingTimestamp: d.metadata.hasPendingWrites
+                    ? DateTime.now()
+                    : null,
+              );
               reports.add(report);
               _reportParseFailure(report);
             } catch (error, stackTrace) {

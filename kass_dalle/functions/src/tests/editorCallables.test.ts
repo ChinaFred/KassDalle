@@ -1,6 +1,8 @@
 /**
  * Callables réservées aux éditeurs et aux administrateurs (tickets #162 et
- * #163, décision de l'administrateur : toute IA est réservée aux éditeurs).
+ * #163, décision de l'administrateur : l'IA qui modifie une recette ou publie
+ * une image est réservée aux éditeurs ; la recherche web, `searchWebRecipesFn`,
+ * reste ouverte au lecteur).
  *
  * Ces entrées écrivent dans une recette, préparent un import ou appellent un
  * modèle : polir le CookLang ou le Markdown, affiner une recette, lire une

@@ -1256,17 +1256,17 @@ sequenceDiagram
   U->>DC: ouvre l'onglet Dressage
   DC->>PR: read recipeId
   PR->>FS: get plating_advice
-  alt aucun conseil stocké, ni créateur ni admin
+  alt aucun conseil stocké, ni créateur éditeur ni admin
     FS-->>DC: vide
-    DC-->>U: Aucun conseil de dressage, seuls son créateur et un administrateur peuvent en demander un
-  else aucun conseil stocké, créateur ou admin
+    DC-->>U: Aucun conseil de dressage pour cette recette. Seuls son créateur, s'il est éditeur, et un administrateur peuvent en demander un.
+  else aucun conseil stocké, créateur éditeur ou admin
     FS-->>DC: vide
     DC-->>U: bouton Demander un dressage sur mesure
     U->>DC: contexte de service facultatif puis validation
     DC->>PR: generate recipeId, instruction
     PR->>CF: appel callable
     CF->>FS: lecture created_by, titre, raw_cooklang, tags, portions
-    CF->>CF: assertCanModifyRecipe, sinon permission-denied avant tout appel
+    CF->>CF: requireEditor puis assertCanModifyRecipe, sinon permission-denied avant tout appel
     CF->>RT: prompt de dressage, poste plating_coach
     RT->>M: appel du moteur retenu par la politique
     M-->>RT: JSON contenant, étapes, pièges, dernière minute
@@ -1284,8 +1284,8 @@ sequenceDiagram
   end
   DC-->>U: contenant, gestes numérotés, pièges, dernière minute
 
-  Note over DC,U: créateur lecteur : boutons de visuel masqués, ligne « réservés aux éditeurs »
-  opt créateur ou admin, rôle éditeur, sur n'importe quelle étape
+  Note over DC,U: lecteur, même créateur : conseil enregistré lu, sans aucune action
+  opt créateur éditeur ou admin, sur n'importe quelle étape
     U->>DC: Illustrer cette étape
     DC->>DC: missingImageIndexesUpTo, étapes à produire avant celle-ci
     opt plus d'un visuel nécessaire

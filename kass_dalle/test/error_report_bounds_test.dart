@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/services/error_report_service.dart';
 
@@ -88,5 +89,23 @@ void main() {
     // L'erreur de lecture est rendue, pour que le service la remonte.
     expect(broken.contextParseError, isA<FormatException>());
     expect(read.contextParseError, isNull);
+  });
+
+  // `timestamp` est écrit par le serveur (`FieldValue.serverTimestamp()`) :
+  // tant qu'il n'est pas résolu, le cache le rend `null`. La lecture prend
+  // alors la date fournie, au lieu du 1er janvier 1970.
+  test('un rapport en attente de son heure serveur prend la date fournie', () {
+    final now = DateTime.utc(2026, 10, 22, 12);
+    final pending = ErrorReport.fromFirestore('id', {
+      'timestamp': null,
+    }, pendingTimestamp: now);
+    expect(pending.timestamp, now);
+
+    final legacy = ErrorReport.fromFirestore('id', {'timestamp': null});
+    expect(legacy.timestamp, DateTime.fromMillisecondsSinceEpoch(0));
+  });
+
+  test('écrit l\'heure du serveur, jamais celle de l\'appareil', () {
+    expect(report().toFirestore()['timestamp'], isA<FieldValue>());
   });
 }
