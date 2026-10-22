@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.57 — technique
+### v0.24.58 — technique
 
 Hébergement (tickets #160 et #164). `firebase.json` pose deux nouveaux en-têtes sur tout le
 site : `Strict-Transport-Security: max-age=31536000; includeSubDomains`, sans `preload`, et
@@ -32,6 +32,37 @@ sur le build de cette version, jusqu'à l'écran de connexion, elle ne lève auc
 Le passage en bloquant attend la lecture des rapports de production et un essai connecté.
 `deploy.ps1` affiche chaque fichier modifié ou non suivi avant son `git add -A` et demande
 une confirmation (O/N) : sans « O » ou « o », il s'arrête sans commit ni push.
+
+### v0.24.57 — fonctionnel
+
+Le papier sulfurisé, le film alimentaire, les piques à brochette et les autres ustensiles ou
+consommables ne sont plus ajoutés aux ingrédients d'une recette importée, retouchée par l'IA ou
+imaginée. Ils restent cités dans les étapes comme ustensiles. L'éditeur ne les remet pas dans la
+liste quand on les écrit avec `@`, et ils ne créent plus de fiche dans le référentiel nutrition.
+Les recettes et les fiches déjà concernées (`papier_sulfurise`…) ne sont pas reprises dans cette
+version : leur nettoyage viendra par un backfill.
+
+### v0.24.57 — technique
+
+Régression du 20 août 2026 (v0.21.31) : `TAGGING_PROMPT` ne nommait plus le papier sulfurisé ni
+l'aluminium, et son travail 2 exigeait une entrée par ligne de la liste du livre. Le prompt
+remet la règle « emballages et consommables : toujours `#`, jamais `@` », avec la liste, et le
+travail 2 laisse une ligne de matériel sans entrée. `COOKLANG_RULES` (refine, génération)
+porte la même règle.
+
+Nouvelle liste fermée `test-fixtures/utensils.json`, rejouée par `nutrition/utensils.ts` et
+`lib/core/utils/utensils.dart` (ligne ajoutée au tableau « Logique dupliquée » de `CLAUDE.md`).
+Elle s'applique après le modèle : `withoutUtensils` en sortie de `tagAndNormalize` (import,
+texte collé, lien : entrée retirée, `@` réécrit en `#`), `withoutUtensilsInGenerated` en sortie
+de `refineRecipe` et `generateRecipe`, le parseur CookLang des deux côtés
+(`extractIngredients`, `extractIngredientsStructured`, cas ajouté à `cooklang_parsing.json`),
+`resolveOneIngredient` avant `ensureIngredientReference`, et les entrées de
+`syncRecipeNutrition`. `checkFidelity` n'attend plus d'entrée pour une ligne de matériel,
+reconnue sur la seule ligne du livre par `isUtensilLine` (une parenthèse la rend toujours
+attendue) ; une entrée n'est écartée que si son nom et sa ligne sont des ustensiles, pour
+qu'un aliment mal rattaché (« papier sulfurisé » sur « 50 g de cacahuètes ») reste signalé.
+« Ramequin » reste hors liste : c'est aussi un fromage. Aucun schéma ne change ; aucun backfill
+dans cette version.
 
 ### v0.24.56 — fonctionnel
 

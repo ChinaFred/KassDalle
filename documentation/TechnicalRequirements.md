@@ -1989,6 +1989,13 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
 | `first_seen_at` · `last_seen_at` · `updated_at` | `Timestamp` | Traçabilité |
 
+**Aucune fiche pour un ustensile** (v0.24.57). Un nom de la liste fermée `utensils.json`
+(`nutrition/utensils.ts`, `isUtensil`) ne crée ni ne met à jour aucun document : la
+normalisation (`resolveOneIngredient`, avant `ensureIngredientReference`) le retire de la liste
+qu'elle rend, et le déclencheur `syncRecipeNutrition` l'écarte de ses entrées avant le
+`create`. Les fiches déjà créées (`papier_sulfurise`…) restent en base : leur nettoyage est un
+backfill à venir.
+
 **Recettes qui citent un ingrédient** (v0.24.46). Au dépliage d'une fiche,
 *Admin › Référentiels › Ingrédients nutrition* lit les recettes par une requête
 `recipes` `where('ingredients_index', arrayContainsAny: valeurs)` `limit(21)`
@@ -4878,6 +4885,41 @@ la liste du CookLang par `pipeline/ingredientsFromCooklang.ts` quand elle arrive
 tout. La dérivation a lieu **avant** la normalisation référentiel, et ne rend ni la note ni le
 `source` — il n'y a pas de ligne de livre à citer.
 
+**Un ustensile n'est pas un ingrédient** (v0.24.57). Entre v0.21.31 et v0.24.52,
+`TAGGING_PROMPT` ne nommait plus le papier sulfurisé ni l'aluminium, et son travail 2 exigeait
+une entrée par ligne de la liste du livre : une ligne « 1 feuille de papier sulfurisé » devenait
+`@papier sulfurisé{1%feuille}`, une entrée de `ingredients`, puis une fiche
+`nutrition_ingredients`. Trois dispositions :
+
+- **le prompt** : le travail 1 range les emballages, supports de cuisson et consommables
+  (papier sulfurisé, papier cuisson, papier aluminium, aluminium, film alimentaire, film
+  étirable, papier absorbant, tapis de cuisson, cure-dents, piques à brochette, ficelle de
+  cuisine, poche à douille, caissettes, cercle à pâtisserie, emporte-pièce) en `#`, jamais en
+  `@` ; le travail 2 laisse une ligne de matériel sans entrée. `COOKLANG_RULES` (refine,
+  génération) porte la même interdiction ;
+- **la liste fermée** `utensils.json` (`nutrition/utensils.ts` ↔ `core/utils/utensils.dart`),
+  appliquée après le modèle. `tagAndNormalize` passe sa sortie par `withoutUtensils` : l'entrée
+  sort de la liste si son nom ET sa ligne du livre (`brut`, quand elle existe) sont reconnus,
+  `@nom{…}` devient `#nom{…}` (`retagUtensils`), et l'entrée écartée est gardée dans
+  `ustensilesEcartes`, pour le journal INFO seulement. Une entrée « papier sulfurisé »
+  rattachée à « 50 g de cacahuètes » reste dans la liste. Cela couvre l'import d'une page, le texte
+  collé et l'import par lien. `refineRecipe` et `generateRecipe` passent leur réponse par
+  `withoutUtensilsInGenerated` (texte, `ingredients`, `ingredients_index`). Le parseur CookLang
+  l'applique des deux côtés, la normalisation et le déclencheur nutrition aussi (§3.10) ;
+- **le contrôle de fidélité** : seule la ligne du livre décide. `checkFidelity` n'attend aucune
+  entrée pour une ligne que `isUtensilLine` reconnaît — `isUtensil` en plus strict : une ligne
+  qui contient une parenthèse est toujours attendue, la parenthèse pouvant citer un aliment
+  (« 12 caissettes en papier (ou 30 g de beurre pour le moule) »). `ustensilesEcartes` n'est
+  pas lu, et une entrée dont le nom est un ustensile ne couvre pas sa ligne. Une ligne d'aliment
+  sans entrée reste donc signalée (`ingredients_compte`), même si le modèle lui a rattaché un
+  ustensile.
+
+La liste est fermée et ne contient aucun aliment : « moule » seul est le mollusque, « ficelle »
+seule le pain, « brochette » seule le plat, et « ramequin » reste hors liste (ramequin du Bugey,
+ramequin vaudois) ; seuls les noms composés « moule à … » de la liste
+sont des ustensiles. Un ustensile hors liste écrit en `@` reste un ingrédient : l'ajouter se fait
+dans les deux fichiers et dans la fixture.
+
 `gemini/extractor.ts` ne porte plus que l'entrée « texte collé ». Les trois anciens appels
 qui vivaient là — classification, extraction depuis une image, extraction d'un document — ont
 été remplacés par la passe 1. Leurs trois postes de coût **restent au catalogue comptable**,
@@ -6820,8 +6862,11 @@ elle avait été enregistrée, et la recherche par ingrédient répondait en con
 typographiques ramenées à l'apostrophe droite, accents retirés, `s` final de chaque mot supprimé.
 Sans le dernier point, « oeufs » et « oeuf » comptaient pour deux ingrédients.
 
-**Une température n'est pas un ingrédient.** Un jeton dont le nom ressemble à `180°c` ou commence
-par un chiffre est écarté. Sans cette garde, l'index de recherche se remplissait de degrés.
+**Une température n'est pas un ingrédient, un ustensile non plus.** Un jeton dont le nom ressemble à `180°c` ou commence
+par un chiffre est écarté. Sans cette garde, l'index de recherche se remplissait de degrés. Un
+jeton qui nomme un ustensile de la liste fermée (`utensils.json` : `@papier sulfurisé{}`,
+`@film alimentaire{}`…) est écarté de la même façon par `extractIngredients` et
+`extractIngredientsStructured`, des deux côtés : l'éditeur ne le remet pas dans la liste.
 
 Un même ingrédient qui apparaît avec deux quantités différentes voit ses quantités **combinées** —
 « 45 g + une poignée » — plutôt que dédoublé.
@@ -6946,12 +6991,12 @@ présent, Chromium ignore `report-uri` et passe par la Reporting API, dont l'env
 être vérifié en local (aucun rapport reçu en 75 s sous Chromium sans interface, alors que
 `report-uri` arrive aussitôt).
 
-**`Strict-Transport-Security` (v0.24.57, Issue #164)** : `max-age=31536000; includeSubDomains`,
+**`Strict-Transport-Security` (v0.24.58, Issue #164)** : `max-age=31536000; includeSubDomains`,
 sans `preload`. Firebase Hosting sert déjà HTTPS seul ; l'en-tête rend la règle explicite
 pour un an. `preload` n'est pas posé : l'inscription dans la liste des navigateurs ne se
 retire pas en quelques jours.
 
-**`Permissions-Policy` (v0.24.57, Issue #164).** Les fonctions du navigateur que le web
+**`Permissions-Policy` (v0.24.58, Issue #164).** Les fonctions du navigateur que le web
 appelle restent ouvertes à la page (`(self)`), les autres sont fermées (`()`), iframes
 comprises. Relevé fait dans `lib/`, `web/` et le `main.dart.js` construit :
 
@@ -6975,7 +7020,7 @@ violation. L'ancienne politique en levait trois, qui auraient empêché le déma
 bloquant : les deux scripts en ligne de `index.html`, et le téléchargement de
 `canvaskit.wasm` depuis `www.gstatic.com` (`connect-src`).
 
-Rejouée en v0.24.57 sur le build de cette version, avec `Permissions-Policy` et
+Rejouée en v0.24.58 sur le build de cette version, avec `Permissions-Policy` et
 `Strict-Transport-Security` : CSP bloquante, Chromium 1194 sans interface, écran de
 connexion rendu, aucune violation et aucun rapport reçu par `/csp-report`. Le proxy de
 l'environnement refuse `www.gstatic.com` et `www.google.com` : CanvasKit et le SDK Firebase JS
@@ -7329,6 +7374,7 @@ Functions.
 | `page_homography.json` | redressement d'une page : taille de sortie, homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
 | `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines et des féculents principaux, des rôles qui portent ces deux derniers, et de ce que la recette apporte (`contains`) ; la section `contains_manual_cases` verrouille la règle « une correction à la main n'est jamais réécrite par le modèle » (`containsPatch` ↔ `mealContainsAfterSuggestion`) ; la section `unsafe_keys` (clés héritées du prototype) est serveur seul | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
 | `shopping_products.json` | regroupement des lignes de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
+| `utensils.json` | liste fermée des ustensiles et consommables, et reconnaissance d'un nom ou d'une ligne du livre ; sections `retag_cases` (réécriture `@` → `#`) et `line_cases` (lecture stricte d'une ligne du livre, `isUtensilLine`) : serveur seul | `core/utils/utensils.dart`, `core/services/cooklang_parser.dart` | `nutrition/utensils.ts`, `cooklang/parser.ts` |
 | `allergens.json` | les quatorze allergènes majeurs (annexe II INCO) : clés dans l'ordre du règlement et libellés — valeurs seules ; le calcul du champ `allergens` d'une recette est serveur seul | `features/recipes/domain/allergens.dart` | `nutrition/allergens.ts` |
 
 ### Nouveautés — l'asset `changelog_recent.json`
@@ -7463,7 +7509,7 @@ Il reste une fenêtre de quelques secondes entre la seconde vérification et la 
 `deploy.ps1` qui publierait un nouvel APK à ce moment le verrait remplacé par l'ancien. En cas de
 doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
 
-**Le commit de `deploy.ps1` se confirme (v0.24.57, Issue #164).** Avant son `git add -A`,
+**Le commit de `deploy.ps1` se confirme (v0.24.58, Issue #164).** Avant son `git add -A`,
 le script affiche `git status --short --untracked-files=all` (chaque fichier non suivi, pas
 seulement son dossier) et demande « Commiter et pousser ces fichiers ? (O/N) ». Toute autre
 réponse que `O` ou `o`, ou une console non interactive, l'arrête en erreur

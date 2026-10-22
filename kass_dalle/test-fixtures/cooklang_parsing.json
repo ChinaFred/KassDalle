@@ -202,6 +202,44 @@
         "huile"
       ],
       "why": "titre de repli et absence de portions/page"
+    },
+    {
+      "label": "ustensile balisé comme un ingrédient",
+      "cooklang": ">> titre: Sablés\nTapisser une plaque de @papier sulfurisé{1%feuille}, filmer la pâte au @film alimentaire{}.\nMélanger @farine{200%g} et @beurre{100%g}.\n",
+      "title": "Sablés",
+      "portions": null,
+      "pageNumber": null,
+      "pageType": "recipe",
+      "tags": {
+        "difficulty": null,
+        "prepTime": null,
+        "cookTime": null,
+        "dishTypes": [],
+        "restTime": null
+      },
+      "ingredients": [
+        {
+          "name": "farine",
+          "qty": "200",
+          "unit": "g",
+          "category": null
+        },
+        {
+          "name": "beurre",
+          "qty": "100",
+          "unit": "g",
+          "category": null
+        }
+      ],
+      "names": [
+        "farine",
+        "beurre"
+      ],
+      "index": [
+        "farine",
+        "beurre"
+      ],
+      "why": "un ustensile de la liste fermée (utensils.json) n'entre ni dans la liste, ni dans les noms, ni dans l'index, même écrit avec @"
     }
   ],
   "_pageTypeLabels_comment": [

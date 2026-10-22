@@ -21,6 +21,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { logInfo } from "../logging";
 import { normalizeIngredientCanonicalId, normalizeIngredientStrictId } from "./ingredientName";
+import { isUtensil } from "./utensils";
 import { isIngredientDependentUnit } from "./quantityConversion";
 import { resolveIngredientUnitFields } from "./ingredientUnitResolution";
 import { upsertNutritionUnitReference } from "./unitReference";
@@ -321,6 +322,11 @@ async function resolveOneIngredient(args: {
     rawName,
     rawUnit,
   });
+  // Un ustensile (« papier sulfurisé », « piques à brochette ») n'est pas un
+  // ingrédient : aucune fiche du référentiel ne se crée ni ne se met à jour
+  // pour lui, et il sort de la liste normalisée. Liste fermée partagée avec le
+  // client (`utensils.ts`, `utensils.json`).
+  if (isUtensil(rawName) || isUtensil(inferred.ingredientName)) return null;
   // Singularise via Gemini (batch pré-calculé) ou fallback algorithmique
   const singularUnit = args.singularizeUnit
     ? args.singularizeUnit(inferred.unit)

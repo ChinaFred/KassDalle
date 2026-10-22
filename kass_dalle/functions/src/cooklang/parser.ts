@@ -6,6 +6,7 @@
  */
 
 import { depluralizeToken } from "../nutrition/ingredientName";
+import { isUtensil } from "../nutrition/utensils";
 
 export interface CookLangIngredient {
   name: string;
@@ -114,6 +115,10 @@ export function extractIngredientsStructured(cooklang: string): CookLangIngredie
     while ((m = re.exec(t)) !== null) {
       const name = m[1].trim();
       if (isTemperatureLike(name)) continue;
+      // Un ustensile écrit avec @ (« @papier sulfurisé{} ») n'est pas un
+      // ingrédient : il n'entre ni dans la liste, ni dans l'index, ni dans le
+      // référentiel. Liste fermée partagée avec le client (`utensils.json`).
+      if (isUtensil(name)) continue;
       const nameKey = ingredientKey(name);
       // Clé de déduplication sensible à la section : le même ingrédient dans
       // deux sections différentes (ex : sauce soja pour la garniture ET pour
@@ -172,6 +177,7 @@ export function extractIngredientNames(cooklang: string): string[] {
   while ((m = re.exec(cooklang)) !== null) {
     const name = m[1].trim().toLowerCase();
     if (isTemperatureLike(name)) continue;
+    if (isUtensil(name)) continue;
     if (!seen.has(name)) {
       seen.add(name);
       result.push(name);

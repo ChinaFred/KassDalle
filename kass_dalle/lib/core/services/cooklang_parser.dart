@@ -5,6 +5,7 @@ library;
 
 import '../../features/recipes/domain/recipe.dart';
 import '../utils/ingredient_name.dart';
+import '../utils/utensils.dart';
 
 // ── Helpers CookLang ──────────────────────────────────────────────────────────
 
@@ -42,7 +43,8 @@ bool _isTemperatureLike(String name) {
 }
 
 /// Extrait la liste des ingrédients (@nom) d'un bloc CookLang.
-/// Résultat trié par ordre d'apparition, sans doublons de nom, sans températures.
+/// Résultat trié par ordre d'apparition, sans doublons de nom, sans températures
+/// ni ustensiles de la liste fermée (`utensils.dart`).
 List<String> extractIngredients(String cooklang) {
   final re = RegExp(kReIngredientAny);
   final seen = <String>{};
@@ -50,6 +52,7 @@ List<String> extractIngredients(String cooklang) {
   for (final m in re.allMatches(cooklang)) {
     final name = m.group(1)!.trim().toLowerCase();
     if (_isTemperatureLike(name)) continue;
+    if (isUtensil(name)) continue;
     if (seen.add(name)) result.add(name);
   }
   return result;
@@ -117,6 +120,10 @@ List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
     for (final m in re.allMatches(trimmed)) {
       final name = m.group(1)!.trim();
       if (_isTemperatureLike(name)) continue;
+      // Un ustensile écrit avec @ (« @papier sulfurisé{} ») n'est pas un
+      // ingrédient : l'éditeur ne le remet pas dans la liste. Liste fermée
+      // partagée avec le serveur (`utensils.json`).
+      if (isUtensil(name)) continue;
       final nameKey = ingredientKey(name);
       // Clé de déduplication sensible à la section : le même ingrédient dans
       // deux sections différentes (ex : sauce soja pour la garniture ET pour

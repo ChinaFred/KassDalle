@@ -37,6 +37,7 @@ le fichier TypeScript. Les suites qui la rejouent :
 | `meal_storage_rules.json` | `meal_storage_rules_test.dart` | `mealStorageRules.test.ts` |
 | `shopping_products.json` | `shopping_products_test.dart` | `shoppingProducts.test.ts` |
 | `allergens.json` | `allergens_test.dart` | `allergens.test.ts` |
+| `utensils.json` | `utensils_test.dart` | `utensils.test.ts` (sections `retag_cases` et `line_cases` : serveur seul) |
 | `email_invitation_status.json` | `email_invitation_test.dart` | `invitations.test.ts` |
 | `ticket_decisions.json` | `ticket_decisions_test.dart` | `ticketDecisions.test.ts` |
 | `ticket_answer_text.json` | `ticket_decisions_test.dart` | `ticketDecisions.test.ts` |

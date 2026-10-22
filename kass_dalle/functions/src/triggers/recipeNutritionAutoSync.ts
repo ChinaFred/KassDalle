@@ -16,6 +16,7 @@ import { recipeBudgetUserId } from "../ai/budget";
 import { COLL_NUTRITION_INGREDIENTS } from "../config";
 import { logAiText, logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
+import { isUtensil } from "../nutrition/utensils";
 import {
   getKnownUnitMetadata,
   isBareIngredientLine,
@@ -103,8 +104,11 @@ export async function syncRecipeNutrition(args: {
 
   const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
 
+  // Un ustensile resté dans la liste (recette ancienne, saisie à la main) ne
+  // crée aucune fiche `nutrition_ingredients` et ne compte pas comme entrée à
+  // valider. Liste fermée partagée avec le client (`nutrition/utensils.ts`).
   const inputs: NormalizedIngredientInput[] = ingredients
-    .filter((i) => (i.name ?? "").trim().length > 0)
+    .filter((i) => (i.name ?? "").trim().length > 0 && !isUtensil(i.name ?? ""))
     .map((i) => resolveIngredientUnitFields(i));
 
   const db = getFirestore();
