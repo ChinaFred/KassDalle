@@ -11,6 +11,16 @@ BackfillSchedule _s(List<int> days, int hour, {bool enabled = true}) =>
 // Dimanche 11 octobre 2026, 14 h à Paris (heure d'été, UTC+2).
 final _now = DateTime.utc(2026, 10, 11, 12);
 
+/// Ponctuel d'essai, absent du registre : le registre n'en a plus qu'un.
+const _testPonctuel = BackfillDefinition(
+  key: 'test_ponctuel',
+  kind: BackfillKind.ponctuel,
+  title: 'Ponctuel d\'essai',
+  description: 'Sert aux tests de rangement et de liste.',
+  usesAi: false,
+  passLimit: '',
+);
+
 void main() {
   group('libellé de programmation', () {
     test('un seul jour', () {
@@ -379,38 +389,25 @@ void main() {
         }),
         '38 classées, 0 restante',
       );
-      expect(
-        backfillReportSummary(BackfillKeys.defaultUnits, {
-          'creees': 3,
-          'completees': 1,
-          'dejaAJour': 36,
-          'echouees': 0,
-        }),
-        '3 unités créées, 1 complétée, 36 déjà à jour, 0 échec',
-      );
-      expect(
-        backfillReportSummary(BackfillKeys.usersSchemaCheck, {
-          'examines': 12,
-          'conformes': 10,
-          'nonConformes': 2,
-          'echoues': 0,
-        }),
-        '12 comptes lus, 2 à revoir, 0 échec',
-      );
     });
   });
 
   group('rangement', () {
     test('trois sections, ordre fixe du registre', () {
-      final sections = backfillSections(kBackfillRegistry, {
-        'refresh_sodium': BackfillRunState.fromMap('refresh_sodium', {
-          'termine_le': DateTime.utc(2026, 10, 10),
-        }),
-        // Un état de récurrent marqué terminé ne le déplace pas.
-        'nutrition': BackfillRunState.fromMap('nutrition', {
-          'termine_le': DateTime.utc(2026, 10, 10),
-        }),
-      });
+      // Le registre n'a plus qu'un ponctuel : un second, d'essai, remplit la
+      // section « à lancer ».
+      final sections = backfillSections(
+        [...kBackfillRegistry, _testPonctuel],
+        {
+          'refresh_sodium': BackfillRunState.fromMap('refresh_sodium', {
+            'termine_le': DateTime.utc(2026, 10, 10),
+          }),
+          // Un état de récurrent marqué terminé ne le déplace pas.
+          'nutrition': BackfillRunState.fromMap('nutrition', {
+            'termine_le': DateTime.utc(2026, 10, 10),
+          }),
+        },
+      );
       expect(sections.recurrents.map((d) => d.key), [
         'nutrition',
         'enrich_referentials',
@@ -418,16 +415,13 @@ void main() {
         'recipe_roles',
         'shopping_products',
       ]);
-      expect(sections.ponctuelsALancer.map((d) => d.key), [
-        'default_units',
-        'users_schema_check',
-      ]);
+      expect(sections.ponctuelsALancer.map((d) => d.key), ['test_ponctuel']);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['refresh_sodium']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer, hasLength(3));
+      expect(sections.ponctuelsALancer.map((d) => d.key), ['refresh_sodium']);
       expect(sections.ponctuelsTermines, isEmpty);
     });
 
@@ -447,7 +441,7 @@ void main() {
 
     test('clé retirée du registre : son état resté en base est ignoré', () {
       // `app_config/backfill_run_<clé>` des ponctuels retirés en v0.23.52,
-      // v0.24.33, v0.24.37 et v0.24.44.
+      // v0.24.33, v0.24.37, v0.24.44 et v0.24.52.
       final sections = backfillSections(kBackfillRegistry, {
         for (final key in [
           'recipe_protein',
@@ -462,6 +456,8 @@ void main() {
           'illustration_folders',
           'illustration_folders_move',
           'move_meals_to_group',
+          'default_units',
+          'users_schema_check',
         ])
           key: BackfillRunState.fromMap(key, {
             'termine_le': DateTime.utc(2026, 10, 10),
@@ -502,6 +498,18 @@ void main() {
         '',
         reason: 'résumé retiré avec le backfill',
       );
+      expect(backfillDefinition('default_units'), isNull);
+      expect(
+        backfillReportSummary('default_units', {'creees': 2, 'completees': 38}),
+        '',
+        reason: 'résumé retiré avec le backfill',
+      );
+      expect(backfillDefinition('users_schema_check'), isNull);
+      expect(
+        backfillReportSummary('users_schema_check', {'examines': 7}),
+        '',
+        reason: 'résumé retiré avec le backfill',
+      );
     });
   });
 
@@ -509,7 +517,7 @@ void main() {
     test('une ligne par backfill : clé, titre, fin, origine, compte rendu', () {
       final done = [
         backfillDefinition(BackfillKeys.refreshSodium)!,
-        backfillDefinition(BackfillKeys.defaultUnits)!,
+        _testPonctuel,
       ];
       final text = backfillDoneListText(done, {
         'refresh_sodium': BackfillRunState.fromMap('refresh_sodium', {
@@ -522,7 +530,7 @@ void main() {
             'aRevoir': {'items': <Object>[], 'total': 0},
           },
         }),
-        'default_units': BackfillRunState.fromMap('default_units', {
+        'test_ponctuel': BackfillRunState.fromMap('test_ponctuel', {
           'termine_le': DateTime.utc(2026, 10, 12, 8),
           'termine_par': 'manuel',
         }),
@@ -532,7 +540,7 @@ void main() {
         'refresh_sodium — Reprendre le sel des ingrédients — terminé le '
         '20/10/2026 en v0.24.32 — automatique — dernier compte rendu : '
         '412 ingrédients repris, 0 échec — à revoir : 0\n'
-        'default_units — Semer les unités standard — terminé le '
+        'test_ponctuel — Ponctuel d\'essai — terminé le '
         '12/10/2026 (version inconnue) — marqué à la main — dernier compte '
         'rendu : absent — à revoir : 0',
       );

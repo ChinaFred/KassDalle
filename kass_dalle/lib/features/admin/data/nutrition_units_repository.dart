@@ -123,7 +123,7 @@ class NutritionUnitsRepository {
 
   // Le semis des unités standard (`seedDefaultUnits`) a quitté le client le
   // 21/10/2026, en v0.24.40 : il écrivait en masse dans `nutrition_units`
-  // depuis l'application. Il vit dans Admin › Backfills, « Semer les unités
-  // standard » (`backfillDefaultUnitsFn`), et sa liste dans
-  // `functions/src/nutrition/defaultUnits.ts`.
+  // depuis l'application. Il est passé dans Admin › Backfills (« Semer les
+  // unités standard », `backfillDefaultUnitsFn`), retiré le 22/10/2026 en
+  // v0.24.52 une fois les unités semées en production.
 }

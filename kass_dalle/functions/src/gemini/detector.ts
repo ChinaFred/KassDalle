@@ -9,6 +9,7 @@
 import sharp from "sharp";
 import { extractJsonArray } from "./client";
 import { callModel } from "../ai/router";
+import { codeEffortFor } from "../ai/featureEfforts";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import { logAiText, logError } from "../logging";
 import { assessCrop, type CropRejection } from "./illustrationQuality";
@@ -169,7 +170,7 @@ async function callDetectAndParse(
       // Situer des rectangles dans une image demande du soin, pas de la
       // vitesse. Le réglage par défaut vient de la chaîne nutrition, où deviner
       // des calories ne réclame aucun raisonnement.
-      ctx: { ...ctx, feature, timeoutMs: 90_000, effort: "high" },
+      ctx: { ...ctx, feature, timeoutMs: 90_000, effort: codeEffortFor(feature) },
     });
   } catch (err) {
     // Le `catch` était VIDE, et rendait un tableau de boîtes.

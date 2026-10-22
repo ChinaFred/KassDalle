@@ -18,6 +18,7 @@
 import { extractJsonObject } from "./client";
 import { logAiText, logError } from "../logging";
 import { callModel } from "../ai/router";
+import { codeEffortFor } from "../ai/featureEfforts";
 import { textPart, type ModelCallContext } from "../ai/types";
 import {
   normalizeLanguageCode,
@@ -282,7 +283,12 @@ export async function translateRecipe(
         `Langue d'origine : ${langue}\n\n${JSON.stringify(translationInput(recette), null, 2)}`,
       ),
     ],
-    ctx: { ...ctx, feature: "recipe_translation", timeoutMs: 3 * 60 * 1000, effort: "medium" },
+    ctx: {
+      ...ctx,
+      feature: "recipe_translation",
+      timeoutMs: 3 * 60 * 1000,
+      effort: codeEffortFor("recipe_translation"),
+    },
     maxTokens: TRANSLATION_MAX_TOKENS,
   });
 

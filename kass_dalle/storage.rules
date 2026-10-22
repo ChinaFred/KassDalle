@@ -23,7 +23,7 @@ service firebase.storage {
     //
     // Coût : une lecture Firestore par requête qui atteint le contrôle de
     // rôle — dépôts dans `quarantine/` et `tickets/`, listages et lectures
-    // d'administrateur, et depuis la v0.24.51 chaque `get` d'un dossier
+    // d'administrateur, et depuis la v0.24.55 chaque `get` d'un dossier
     // publié (`isApprovedReader()`). Les images affichées passent par une URL
     // de téléchargement, que les règles n'évaluent pas : seuls les
     // téléchargements d'octets du client (`getData`, retouche d'une image,

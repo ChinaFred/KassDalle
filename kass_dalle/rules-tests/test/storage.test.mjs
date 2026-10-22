@@ -4,7 +4,7 @@
 // listage d'administrateur) lit le jeton PUIS le document `users/{uid}` par
 // une règle inter-services : l'émulateur Storage interroge l'émulateur
 // Firestore, lancé avec lui (`emulators:exec --only firestore,storage`). Les
-// `get` des dossiers publiés lisent le document seul (v0.24.51,
+// `get` des dossiers publiés lisent le document seul (v0.24.55,
 // `isApprovedReader()`). Même convention que firestore.test.mjs pour les
 // failles ouvertes (`OPEN_FLAW`).
 

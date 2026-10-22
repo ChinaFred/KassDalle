@@ -42,6 +42,10 @@ Fichier : `kass_dalle/functions/src/callable/aiRoutingCallable.ts`.
   `setAiRoutingPolicyFn` refuse toute la politique si elle prête au poste un
   fournisseur hors de `providers`.
 - Un poste de génération d'image ne va pas ici : il va dans `IMAGE_GENERATION_FEATURES`.
+- Si le poste demande à Claude un effort autre que `low`, l'inscrire dans `CODE_EFFORTS`
+  (`kass_dalle/functions/src/ai/featureEfforts.ts`) et le lire dans l'appel par
+  `effort: codeEffortFor("<cle>")`. Jamais d'`effort: "high"` écrit en dur :
+  `tests/effortLiterals.test.ts` le refuse, et l'écran Moteur d'IA afficherait un effort faux.
 
 ## 3. La lecture comptable — `feature_catalog.dart`
 

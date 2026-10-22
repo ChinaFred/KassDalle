@@ -607,7 +607,9 @@ sur un ticket** et la
 **géométrie du redressement** : le client redresse à la main dans l'atelier de
 retouche, le serveur redresse tout seul à l'import d'une page. Enfin, le
 **registre des backfills** et la lecture d'une programmation : l'écran les
-affiche, la tâche planifiée les applique.
+affiche, la tâche planifiée les applique. Et l'**ordre de résolution de l'effort
+de réflexion Claude** d'un poste : l'écran Moteur d'IA l'affiche et fige les
+postes sur un brouillon, le serveur l'applique à l'appel.
 `kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suites
 (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
 
@@ -618,6 +620,7 @@ affiche, la tâche planifiée les applique.
 | `unit_to_grams.json` | conversion en grammes, et quantité absente (pincée, assaisonnements) | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | résolution d'un modèle et coût d'un appel — jetons, images, recherche Google ancrée ; **plus aucun prix en double** | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
+| `ai_effort_resolution.json` | effort de réflexion Claude reçu par un poste : effort du poste dans la politique, puis effort par défaut (`null` = « Selon le poste »), puis effort du code (`CODE_EFFORTS`, `low` hors table) — le serveur décide de l'appel, le client rejoue l'ordre pour l'affichage et pour figer les postes quand un défaut change, avec l'effort du code reçu du serveur ; section `model_cases` (Haiku 4.5 sans effort) : serveur seul | `features/admin/data/ai_routing_repository.dart` (`AiRoutingPolicy.effectiveEffortFor`) | `ai/router.ts` (`resolveAnthropicEffort`), `ai/featureEfforts.ts` (`codeEffortFor`), `ai/anthropic.ts` (`requestShapeFor`, `modelSupportsEffort`) |
 | `planning_slot_rules.json` | format du repas (entrée, dessert, léger), rôle d'une recette, dessert en repli, nature du créneau, jour de préparation, fenêtre de variété, présélection (exclusions jamais relâchées, préférences relâchées, `max_duration` relâchée en dernier) — **serveur seul**, sauf les constantes et le prédicat d'activité de la mémoire des refus (21 jours, 300 entrées, un jour de tolérance dans le futur), que le client rejoue | `features/planning/domain/planning_refusals.dart` (constantes et prédicat d'activité) | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 | `planning_criteria.json` | critères vérifiés du planning : vocabulaire et régimes (exclusion jamais relâchée, préférence relâchée), lecture d'un objet de critères en liste blanche, réunion des critères d'un créneau (union, durée la plus courte), prédicat d'exclusion (allergènes sur `allergens.present`/`complete`, protéine et féculent principaux ; donnée absente = non vérifiée) — le serveur l'applique au plat, à l'entrée et au dessert, le client aux accompagnements et aux choix à la main ; section `preference_cases` : serveur seul | `features/planning/domain/planning_criteria.dart` | `gemini/planningCriteria.ts` |

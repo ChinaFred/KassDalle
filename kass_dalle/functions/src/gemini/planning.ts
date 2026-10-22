@@ -547,10 +547,22 @@ export const REFUSAL_FUTURE_TOLERANCE_DAYS = 1;
 export const PLANNING_RUN_ID_PATTERN = /^pr_[0-9a-f]{32}$/;
 /** Durée de vie d'une génération pour les conceptions qui s'y rattachent. */
 export const CONCEPT_RUN_TTL_MS = 6 * 60 * 60 * 1000;
-/** Plafond de jetons de sortie du poste `planning` : sept lignes de JSON. */
-export const PLANNING_MAX_TOKENS = 4_000;
-/** Plafond de jetons de sortie du poste `planning_concept` : une recette. */
-export const PLANNING_CONCEPT_MAX_TOKENS = 6_000;
+/**
+ * Plafond de jetons de sortie du poste `planning` : sept lignes de JSON, plus
+ * la réflexion de Claude, qui compte dans `max_tokens`. Le 22 oct. 2026, avec
+ * 4 000, Sonnet 5 (effort `low`) a consommé les 4 000 jetons en réflexion et
+ * n'a rendu aucun texte. Gemini ne reçoit pas ce plafond ; il ne sert qu'à
+ * l'estimation du coût plafond.
+ */
+export const PLANNING_MAX_TOKENS = 16_000;
+/**
+ * Plafond de jetons de sortie du poste `planning_concept` : une recette, plus
+ * la réflexion de Claude, qui compte dans `max_tokens`. Mesuré sur Sonnet 5 :
+ * 752 et 865 jetons de sortie (7 oct. 2026). Le plafond suit celui du
+ * planning, pour qu'une réflexion longue ne coupe pas la recette. Gemini ne
+ * reçoit pas ce plafond ; il ne sert qu'à l'estimation du coût plafond.
+ */
+export const PLANNING_CONCEPT_MAX_TOKENS = 16_000;
 
 /** Réglages de la présélection, lus dans `app_config/planning_policy`. */
 export interface PlanningPolicy {
