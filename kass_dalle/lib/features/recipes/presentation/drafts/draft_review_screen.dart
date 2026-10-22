@@ -278,11 +278,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
 
   /// Ouvre la visionneuse plein écran sur l'image cliquée.
   void _showIllustrationGallery(List<String> urls, int startIndex) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) =>
-          IllustrationGallery(urls: urls, initialIndex: startIndex),
-    );
+    showIllustrationGallery(context, urls, initialIndex: startIndex);
   }
 
   /// Supprime une illustration sans demander confirmation

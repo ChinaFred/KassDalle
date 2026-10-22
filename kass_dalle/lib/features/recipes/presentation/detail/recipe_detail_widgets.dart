@@ -153,11 +153,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
   }
 
   void _showGallery(List<String> urls, int startIndex) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) =>
-          IllustrationGallery(urls: urls, initialIndex: startIndex),
-    );
+    showIllustrationGallery(context, urls, initialIndex: startIndex);
   }
 
   Future<void> _deleteIllustration(String url) async {

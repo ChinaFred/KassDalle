@@ -14,7 +14,7 @@ import '../../../../core/services/book_pdf_export.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/services/error_reporting.dart';
-import '../../../../core/theme/app_icon_size.dart';
+import '../../../../core/presentation/app_image_viewer.dart';
 import '../../../../core/widgets/app_network_image.dart';
 
 enum _BookMenuAction { edit, exportPdf, delete }
@@ -473,42 +473,12 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   }
 
   void _showCoverZoom(BuildContext context, String coverUrl) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => Dialog.fullscreen(
-        backgroundColor: Colors.black,
-        child: Stack(
-          children: [
-            Center(
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 6,
-                child: AppNetworkImage(
-                  imageUrl: coverUrl,
-                  fit: BoxFit.contain,
-                  placeholder: (_, _) => const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                  errorWidget: (_, _, _) => const Icon(
-                    Icons.broken_image_outlined,
-                    size: AppIconSize.hero,
-                    color: Colors.white54,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 16,
-              right: 16,
-              child: IconButton.filled(
-                tooltip: 'Fermer',
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.of(ctx).pop(),
-              ),
-            ),
-          ],
-        ),
-      ),
+    showAppImageViewer(
+      context,
+      images: [
+        AppViewerImage.network(coverUrl, semanticLabel: 'Couverture du livre'),
+      ],
+      title: 'Couverture du livre',
     );
   }
 

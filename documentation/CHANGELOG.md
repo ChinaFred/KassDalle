@@ -20,6 +20,29 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.64 — fonctionnel
+
+Les images agrandies s'ouvrent toutes dans la même visionneuse plein écran, sur fond sombre :
+couverture d'une recette ou d'un livre, illustrations (fiche, édition, brouillon, liste), page
+d'un livre, visuel de montage du coach de dressage, document original, capture d'un ticket.
+« Fermer » est à gauche dans la barre, avec le titre et, dans une galerie, « 2 / 5 ». Un double
+appui zoome sur le point touché, jusqu'à 6×. Les flèches du clavier tournent les images, une
+image zoomée ne change plus de page par erreur, et le zoom repart à 1 sur l'image suivante. Un
+chargement et une erreur « Image indisponible. » s'affichent là où il n'y avait rien. Sur une
+page de livre, une illustration touchée ouvre la galerie de toutes celles de la page. Le visuel
+de montage, qui s'ouvrait dans une fenêtre sans bouton « Fermer » (l'entrée v0.24.56 disait à
+tort que toutes les visionneuses en avaient un), s'ouvre désormais en plein écran avec ce
+bouton.
+
+### v0.24.64 — technique
+
+Nouveau composant `core/presentation/app_image_viewer.dart` (`showAppImageViewer`,
+`AppViewerImage.network` et `.memory`). Il remplace huit implémentations recopiées
+(`IllustrationGallery`, deux `_showCoverZoom`, les deux dialogues de `book_page_detail_screen`,
+le `Dialog` de `PlatingImage`, et les visionneuses de `source_viewer` et `ticket_widgets`). Les
+déclencheurs de la page de livre passent de `GestureDetector` à `InkWell` avec un libellé
+« Agrandir l'illustration ». Test : `test/widgets/app_image_viewer_test.dart`.
+
 ### v0.24.63 — fonctionnel
 
 *Admin › Backfills* : nouveau récurrent « Purger les rapports d'erreur anciens ». Il supprime
