@@ -601,7 +601,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 320,
+          width: PlatformUtils.sidePanelWidth,
           child: SingleChildScrollView(
             child: RecipeMetaPanel(
               titleCtrl: titleCtrl,
