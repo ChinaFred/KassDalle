@@ -7619,6 +7619,11 @@ Il reste une fenêtre de quelques secondes entre la seconde vérification et la 
 `deploy.ps1` qui publierait un nouvel APK à ce moment le verrait remplacé par l'ancien. En cas de
 doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
 
+**Le démarrage de `deploy.ps1` se confirme (v0.24.65).** Avant tout build, `Confirm-Deploy`
+affiche la branche, le dernier commit et `git status --short --untracked-files=all`, refuse une
+branche autre que `master` (son code n'a pas eu de CI), puis attend un « oui » tapé. Toute
+autre réponse, ou une entrée fermée, l'arrête sans rien construire ni mettre en ligne.
+
 **Le commit de `deploy.ps1` se confirme (v0.24.58, Issue #164).** Avant son `git add -A`,
 le script affiche `git status --short --untracked-files=all` (chaque fichier non suivi, pas
 seulement son dossier) et demande « Commiter et pousser ces fichiers ? (O/N) ». Toute autre
