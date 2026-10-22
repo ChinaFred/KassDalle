@@ -2642,6 +2642,30 @@ describe("données personnelles — pending et révoqué", () => {
     );
   });
 
+  it("un rapport d'erreur sans date est refusé (conservation de 90 jours)", async () => {
+    const { timestamp: _omis, ...sansDate } = errorReport(READER);
+    await assertFails(db("reader").doc("error_reports/new").set(sansDate));
+  });
+
+  it("un rapport d'erreur daté de plus d'un jour dans le futur est refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("error_reports/new")
+        .set({
+          ...errorReport(READER),
+          timestamp: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        }),
+    );
+  });
+
+  it("un rapport d'erreur daté de l'instant passe", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("error_reports/new")
+        .set({ ...errorReport(READER), timestamp: new Date() }),
+    );
+  });
+
   it("un rapport d'erreur au nom d'un autre compte est refusé", async () => {
     await assertFails(
       db("reader").doc("error_reports/new").set(errorReport(OTHER)),

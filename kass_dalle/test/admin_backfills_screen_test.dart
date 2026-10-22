@@ -51,7 +51,7 @@ void main() {
     tester,
   ) async {
     await _pump(tester, size: const Size(400, 4800), runs: runs);
-    expect(find.text('Récurrents (5)'), findsOneWidget);
+    expect(find.text('Récurrents (6)'), findsOneWidget);
     expect(find.text('Ponctuels à lancer (2)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(
@@ -119,7 +119,7 @@ void main() {
         }),
       },
     );
-    expect(find.text('Récurrents (5)'), findsOneWidget);
+    expect(find.text('Récurrents (6)'), findsOneWidget);
     expect(find.text('Ponctuels à lancer (2)'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(find.text('Durées estimées'), findsNothing);
@@ -168,7 +168,7 @@ void main() {
 
   testWidgets('large : deux colonnes sans débordement', (tester) async {
     await _pump(tester, size: const Size(1200, 2400), runs: runs);
-    expect(find.text('Programmer'), findsNWidgets(5));
+    expect(find.text('Programmer'), findsNWidgets(6));
     expect(tester.takeException(), isNull);
   });
 
@@ -196,7 +196,7 @@ void main() {
         find.text('Programmation : Tous les jours à 5 h (par défaut)'),
         findsOneWidget,
       );
-      expect(find.text('Programmation : Non programmé'), findsNWidgets(4));
+      expect(find.text('Programmation : Non programmé'), findsNWidgets(5));
       expect(tester.takeException(), isNull);
     },
   );
@@ -224,7 +224,7 @@ void main() {
     expect(find.text('Ponctuels'), findsOneWidget);
     expect(find.textContaining('Ponctuels à lancer'), findsNothing);
     expect(find.text('État inconnu'), findsNothing);
-    expect(find.text('Programmation : …'), findsNWidgets(5));
+    expect(find.text('Programmation : …'), findsNWidgets(6));
     expect(tester.takeException(), isNull);
   });
 

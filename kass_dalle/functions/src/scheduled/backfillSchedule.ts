@@ -79,6 +79,7 @@ import {
 import { runAllergensPass, summarizeAllergens } from "../callable/allergensBackfillCallable";
 import { runRecipeRolesPass, summarizeRecipeRoles } from "../callable/recipeRolesBackfillCallable";
 import { runShoppingPass, summarizeShopping } from "../callable/shoppingBackfillCallable";
+import { runRetentionPass, summarizeRetention } from "../callable/retentionBackfillCallable";
 
 const FUNCTION_TIMEOUT_SECONDS = 540;
 /** Marge gardée sur le délai de la fonction pour écrire les états. */
@@ -96,6 +97,7 @@ const ROLES_PER_PASS = 40;
 const ALLERGEN_INGREDIENTS_PER_PASS = 400;
 const ALLERGEN_RECIPES_PER_PASS = 500;
 const SHOPPING_RECIPES_PER_PASS = 500;
+const RETENTION_REPORTS_PER_PASS = 5000;
 
 /** Poste sous lequel le plafond est consulté avant un passage programmé. */
 const BUDGET_FEATURES: Partial<Record<BackfillKey, string>> = {
@@ -213,6 +215,11 @@ function scheduledPassFor(
             resetCheckpoint: false,
           }),
         summarize: (r) => summarizeShopping(r as Parameters<typeof summarizeShopping>[0]),
+      };
+    case "retention":
+      return {
+        run: () => runRetentionPass(ctx, { deadlineMs, maxDocs: RETENTION_REPORTS_PER_PASS }),
+        summarize: (r) => summarizeRetention(r as Parameters<typeof summarizeRetention>[0]),
       };
     default:
       return null;
