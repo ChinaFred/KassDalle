@@ -19,6 +19,7 @@ import type { TranscribedRecipe } from "./transcription";
 import type { TaggedRecipe } from "./tagging";
 import { ingredientLinesOf, stepCountOf } from "./tagging";
 import { tailAfterIngredient } from "../nutrition/ingredientNote";
+import { isUtensil, isUtensilLine } from "../nutrition/utensils";
 
 export type FidelityLevel = "ok" | "avertissement" | "rupture";
 
@@ -358,7 +359,13 @@ export function checkFidelity(
   // On vérifie donc une COUVERTURE, pas une égalité : aucune ligne ne peut
   // rester orpheline. Deux entrées pour une ligne sont légitimes ; zéro ne
   // l'est jamais.
-  const lignes = ingredientLinesOf(transcribed);
+  //
+  // Une ligne de matériel (« 1 feuille de papier sulfurisé ») n'a pas d'entrée :
+  // l'ustensile sort de la liste (`withoutUtensils`) et se balise `#nom{}` dans
+  // l'étape. Seule la LIGNE DU LIVRE décide de cette exemption (`isUtensilLine`),
+  // jamais ce que le modèle a rendu : une entrée « papier sulfurisé » rattachée
+  // à la ligne « 50 g de cacahuètes » n'exempte pas cette ligne.
+  const lignes = ingredientLinesOf(transcribed).filter((l) => !isUtensilLine(l));
   if (lignes.length > 0) {
     // On COMPTE les occurrences, on ne se contente pas de la présence.
     //
@@ -376,7 +383,10 @@ export function checkFidelity(
     };
 
     const attendues = compter(lignes);
-    const rendues = compter(tagged.ingredients.map((i) => i.brut));
+    // Une entrée qui nomme un ustensile ne couvre pas sa ligne : si le modèle
+    // a rattaché « papier sulfurisé » à « 50 g de cacahuètes », l'arachide n'a
+    // pas d'entrée, et le contrôle doit le dire.
+    const rendues = compter(tagged.ingredients.filter((i) => !isUtensil(i.nom)).map((i) => i.brut));
 
     // Où se trouve chaque ligne, et comment le livre l'écrit : le message doit
     // permettre de poser le doigt sur la page.

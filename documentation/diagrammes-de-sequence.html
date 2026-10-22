@@ -373,9 +373,11 @@ sequenceDiagram
       P->>G: PASSE 2 — tagAndNormalize (texte seul, pas d'image)
       G-->>P: CookLang balisé + liste normalisée (nom, qté, unité, NOTE)<br/>+ cuisines, types de plat, rôle dans un repas
       P->>LOG: stage « balisage » — la sortie du modèle
+      P->>P: withoutUtensils — AUCUN appel
+      Note over P: un ustensile de la liste fermée (utensils.json), nom ET ligne du livre,<br/>sort de la liste ; @papier sulfurisé{} devient #papier sulfurisé{}
 
       P->>P: contrôle de fidélité — AUCUN appel
-      Note over P: autant d'ingrédients que de lignes du livre ?<br/>autant d'étapes qu'à la transcription ?<br/>titres de section entiers ?
+      Note over P: une entrée par ligne du livre ? (exemptée : une ligne<br/>de matériel lue par isUtensilLine, sans parenthèse ;<br/>ustensilesEcartes n'est pas lu)<br/>autant d'étapes qu'à la transcription ?<br/>titres de section entiers ?
 
       alt rupture constatée
         P->>LOG: erreur — la recette balisée est écartée
@@ -2681,6 +2683,7 @@ sequenceDiagram
   FN->>T2: passe 2 — poste recipe_tagging, le même qu'un scan
   T2->>M: transforme la transcription en CookLang
   M-->>T2: cooklang, ingrédients normalisés, cuisines, types de plat,<br/>rôle dans un repas (meal_role, contains, suggested_sides,<br/>main_protein, main_starch)
+  T2->>T2: withoutUtensils — ustensiles hors de la liste, @ → #
 
   FN->>CF: compare passe 2 à passe 1 — aucun appel
   alt rupture
@@ -3497,6 +3500,7 @@ sequenceDiagram
   end
   RP->>M: tagAndNormalize — poste url_import
   M-->>RP: CookLang, ingrédients, tags
+  RP->>RP: withoutUtensils — ustensiles hors de la liste, @ → #
   RP->>FS: books/web_{uid} (créé par ensureWebBookFn ou ici s'il manque, privé, tag __web ;<br/>un document web_{uid} étranger au compte n'est jamais réutilisé)
   RP->>FS: texte de la page → scans/{uid}/…txt (document original)
   RP->>FS: saveDraft — origin web, source_url, source_site, review_status draft<br/>(JSON-LD : source_author, source_nutrition par portion + empreinte des ingrédients)<br/>(au plus 200 ingrédients, nom ≤ 120 car., unité ≤ 40 car.)
