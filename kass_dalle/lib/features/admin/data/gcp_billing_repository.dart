@@ -501,6 +501,24 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Conservation : supprime les rapports d'erreur de plus de 90 jours et les
+  /// captures de ticket orphelines. Aucun appel de modèle. Rend les
+  /// compteurs tels quels ; les drapeaux valent 1 ou 0.
+  Future<BackfillCounts> backfillRetention({double maxMinutes = 8}) async {
+    final payload = <String, dynamic>{
+      'maxMinutes': maxMinutes,
+      'appVersion': kAppVersion,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillRetentionFn',
+      payload,
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Ustensiles : retire des recettes les ustensiles écrits comme
   /// ingrédients (`@papier sulfurisé{}` devient `#papier sulfurisé{}`), puis
   /// supprime leurs fiches du référentiel nutrition. Aucun appel de modèle.
