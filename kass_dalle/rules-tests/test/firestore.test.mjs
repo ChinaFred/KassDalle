@@ -2762,6 +2762,58 @@ describe("données personnelles — pending et révoqué", () => {
 // des éditeurs de ses groupes partagent avec lui. `planning_reach/{uid}` porte
 // la liste des propriétaires lisibles, écrite par le serveur seul.
 
+describe("planned_meals — composants bornés", () => {
+  const comps = (n) => Array.from({ length: n }, (_, i) => ({ role: "accompagnement", label: `c${i}` }));
+
+  it("un repas de 70 composants (10 services de 6 accompagnements) se crée", async () => {
+    await assertSucceeds(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR, components: comps(70) }),
+    );
+  });
+
+  it("un repas de 100 composants se crée, pas de 101", async () => {
+    await assertSucceeds(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR, components: comps(100) }),
+    );
+    await assertFails(
+      db("editor").doc("planned_meals/new2").set({ uid: EDITOR, components: comps(101) }),
+    );
+  });
+
+  it("components n'est pas autre chose qu'une liste", async () => {
+    await assertFails(
+      db("editor").doc("planned_meals/new").set({ uid: EDITOR, components: "x" }),
+    );
+    await assertFails(
+      db("editor").doc("planned_meals/m-editor").update({ components: { a: 1 } }),
+    );
+  });
+
+  it("une mise à jour des composants est bornée, leur retrait passe", async () => {
+    await assertSucceeds(
+      db("editor").doc("planned_meals/m-editor").update({ components: comps(7) }),
+    );
+    await assertFails(
+      db("editor").doc("planned_meals/m-editor").update({ components: comps(101) }),
+    );
+    await assertSucceeds(
+      db("editor").doc("planned_meals/m-editor").update({ components: deleteField() }),
+    );
+  });
+
+  it("un repas antérieur de plus de 100 composants reste modifiable hors composants", async () => {
+    await seedDocs(env, {
+      "planned_meals/m-long": { uid: EDITOR, group_id: null, components: comps(120) },
+    });
+    await assertSucceeds(
+      db("editor").doc("planned_meals/m-long").update({ target_portions: 6 }),
+    );
+    await assertFails(
+      db("editor").doc("planned_meals/m-long").update({ components: comps(121) }),
+    );
+  });
+});
+
 describe("plannings partagés — le lecteur ne planifie plus", () => {
   it("un lecteur ne crée pas de repas", async () => {
     await assertFails(
@@ -3221,7 +3273,7 @@ describe("app_config", () => {
     await assertSucceeds(
       db("reader")
         .doc("app_config/usage")
-        .update({ storage_bytes: 20, updated_at: 2, [currentScansKey()]: 3 }),
+        .update({ storage_bytes: 20, updated_at: 2, [currentScansKey()]: 1 }),
     );
   });
 
@@ -3385,6 +3437,54 @@ describe("app_config", () => {
           },
           { merge: true },
         ),
+    );
+  });
+
+  // Pas maximal d'une écriture (ticket #162, point 4) : `recordScan` ajoute
+  // 1 scan et les octets d'un envoi, 21 pages de moins de 50 Mo au plus.
+  it("usage : le compteur de scans ne monte que d'un par écriture", async () => {
+    await assertFails(
+      db("reader")
+        .doc("app_config/usage")
+        .set({ [currentScansKey()]: increment(2) }, { merge: true }),
+    );
+    await assertFails(
+      db("reader").doc("app_config/usage").update({ [currentScansKey()]: 1e6 }),
+    );
+  });
+
+  it("usage : storage_bytes monte au plus de 21 pages de 50 Mo par écriture", async () => {
+    const max = 21 * 50 * 1024 * 1024;
+    await assertSucceeds(
+      db("reader")
+        .doc("app_config/usage")
+        .set({ storage_bytes: increment(max) }, { merge: true }),
+    );
+    await assertFails(
+      db("reader")
+        .doc("app_config/usage")
+        .set({ storage_bytes: increment(max + 1) }, { merge: true }),
+    );
+  });
+
+  it("usage : un livre de 300 Mo se compte", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("app_config/usage")
+        .set(
+          {
+            [currentScansKey()]: increment(1),
+            storage_bytes: increment(300 * 1024 * 1024 - 1),
+            updated_at: serverTimestamp(),
+          },
+          { merge: true },
+        ),
+    );
+  });
+
+  it("usage : un administrateur porte un compteur au-delà du pas", async () => {
+    await assertSucceeds(
+      db("admin").doc("app_config/usage").update({ storage_bytes: 1e12 }),
     );
   });
 

@@ -4,8 +4,9 @@
 // listage d'administrateur) lit le jeton PUIS le document `users/{uid}` par
 // une règle inter-services : l'émulateur Storage interroge l'émulateur
 // Firestore, lancé avec lui (`emulators:exec --only firestore,storage`). Les
-// `get` des dossiers publiés restent sur le jeton seul. Même convention que
-// firestore.test.mjs pour les failles ouvertes (`OPEN_FLAW`).
+// `get` des dossiers publiés lisent le document seul (v0.24.51,
+// `isApprovedReader()`). Même convention que firestore.test.mjs pour les
+// failles ouvertes (`OPEN_FLAW`).
 
 import { after, before, beforeEach, describe, it } from "node:test";
 import { assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
@@ -119,19 +120,50 @@ describe("dossiers publiés", () => {
     await assertFails(storage("pending").ref("covers").listAll());
   });
 
-  // La lecture reste sur isActive() (storage.rules, « isApproved ») :
-  // l'aligner sur le rôle a coupé l'accès au fondateur le 2026-10-05, le temps
-  // que son jeton porte le claim. Ce test garde ce retour arrière, sur un
-  // jeton sans AUCUN claim : isActive() teste la présence de `revoked` avant
-  // de le comparer, une clé absente vaut « actif ».
+  // La lecture suit le rôle du DOCUMENT, pas celui du jeton (ticket #162,
+  // point 1) : l'aligner sur le jeton a coupé l'accès au fondateur le
+  // 2026-10-05, le temps que son jeton porte le claim. Ce test garde ce
+  // retour arrière, sur un jeton sans AUCUN claim : isActive() teste la
+  // présence de `revoked` avant de le comparer, une clé absente vaut « actif ».
   it("un compte sans claim de rôle lit une image publiée", async () => {
     await assertSucceeds(storage("readerNoClaim").ref(`covers/${OTHER}/image.jpg`).getMetadata());
   });
 
-  // Comportement retenu : un compte en attente lit une image publiée, il ne
-  // liste pas le dossier. Aligner la lecture sur le rôle ferait échouer ce test.
-  it("un compte en attente lit une image publiée", async () => {
-    await assertSucceeds(storage("pending").ref(`covers/${OTHER}/image.jpg`).getMetadata());
+  for (const dir of PUBLISHED) {
+    it(`${dir}/ : un compte en attente ne lit pas une image publiée`, async () => {
+      await assertFails(storage("pending").ref(`${dir}/${OTHER}/image.jpg`).getMetadata());
+    });
+
+    it(`${dir}/ : un compte nommé à l'instant (jeton pending, document reader) lit`, async () => {
+      await assertSucceeds(
+        storage("promotedReader").ref(`${dir}/${OTHER}/image.jpg`).getMetadata(),
+      );
+    });
+
+    it(`${dir}/ : un compte révoqué à l'instant (jeton non révoqué) ne lit plus`, async () => {
+      await assertFails(
+        storage("revokedStaleToken").ref(`${dir}/${OTHER}/image.jpg`).getMetadata(),
+      );
+    });
+  }
+
+  it("un compte sans document users/{uid} ne lit pas une image publiée", async () => {
+    const ctx = env.authenticatedContext("no-doc", { role: "reader", revoked: false });
+    await assertFails(ctx.storage().ref(`covers/${OTHER}/image.jpg`).getMetadata());
+  });
+
+  it("un document sans rôle se replie sur le claim pour lire", async () => {
+    await seedDocs(env, {
+      "users/doc-no-role": { is_revoked: false, email: "nr@example.com" },
+    });
+    const ctx = env.authenticatedContext("doc-no-role", { role: "reader", revoked: false });
+    await assertSucceeds(ctx.storage().ref(`covers/${OTHER}/image.jpg`).getMetadata());
+  });
+
+  it("un lecteur, un éditeur et le fondateur obtiennent l'adresse d'une image publiée", async () => {
+    for (const name of ["reader", "editor", "founder"]) {
+      await assertSucceeds(storage(name).ref(`recipes/${OTHER}/image.jpg`).getDownloadURL());
+    }
   });
 });
 

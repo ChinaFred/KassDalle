@@ -1042,9 +1042,9 @@ service cloud.firestore {
         isApproved() && docId == 'usage' &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['storage_bytes', 'updated_at', currentScansKey(), previousScansKey()])
-        && countsUp('storage_bytes')
-        && countsUp(currentScansKey())
-        && countsUp(previousScansKey())
+        && countsUp('storage_bytes', 21 * 50 * 1024 * 1024)
+        && countsUp(currentScansKey(), 1)
+        && countsUp(previousScansKey(), 1)
       );
     }
 
@@ -1055,11 +1055,21 @@ service cloud.firestore {
     /// valeurs : un compte nommé remettait les compteurs à zéro ou les
     /// rendait négatifs (audit sécurité, « Faible »). Un champ absent de
     /// l'écriture n'est pas contrôlé.
-    function countsUp(field) {
+    ///
+    /// Une écriture fait monter le compteur de [maxStep] au plus (ticket
+    /// #162, point 4) : sans borne haute, un compte nommé portait les
+    /// compteurs à une valeur quelconque et faussait les alertes de la page
+    /// d'usage. `UsageTracker.recordScan` ajoute 1 au compteur du mois, et à
+    /// `storage_bytes` les octets d'un envoi : 21 pages de moins de 50 Mo
+    /// (`kMaxImportPages`, plafond de la quarantaine), ou un livre de moins
+    /// de 300 Mo. L'administrateur passe par la première branche, sans
+    /// borne.
+    function countsUp(field, maxStep) {
       return !(field in request.resource.data)
         || (request.resource.data[field] is int
             && request.resource.data[field] >= 0
-            && request.resource.data[field] >= resource.data.get(field, 0));
+            && request.resource.data[field] >= resource.data.get(field, 0)
+            && request.resource.data[field] - resource.data.get(field, 0) <= maxStep);
     }
 
     // Configurations de routage enregistrées.
@@ -1373,7 +1383,26 @@ service cloud.firestore {
     // apparaîtrait dans son planning. `group_id` est figé aussi : un repas ne
     // change pas de planning. Les repas d'un planning partagé ou d'un groupe
     // se lisent ; seul leur propriétaire les écrit.
+    //
+    // `components` est une liste de 100 entrées au plus (ticket #162,
+    // point 6). L'éditeur de repas en écrit 70 au plus : 10 services
+    // (`kMaxCoursesPerMenu`), chacun avec 6 accompagnements au plus
+    // (`kMaxSidesPerDish`). La marge couvre les accompagnements détachés
+    // qu'un repas antérieur réécrit tels quels. À la mise à jour, la borne
+    // ne se teste que si `components` change : un repas antérieur plus long
+    // reste modifiable (date, parts) sans qu'on touche à ses composants.
+    // Les autres champs ne sont pas listés : `PlannedMeal.extra` réécrit
+    // tels quels les champs qu'une version plus récente a posés.
     match /planned_meals/{mealId} {
+      function componentsBounded(data) {
+        return !('components' in data)
+          || (data.components is list && data.components.size() <= 100);
+      }
+      function touchedComponentsBounded() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['components'])
+          || componentsBounded(request.resource.data);
+      }
+
       // Le partage d'un planning personnel n'ouvre que ses repas personnels
       // (`group_id` nul) : les repas des groupes du propriétaire ne se lisent
       // que par les membres de ces groupes. La requête d'un planning partagé
@@ -1392,10 +1421,12 @@ service cloud.firestore {
                 && resource.data.uid == get(/databases/$(database)/documents/groups/$(resource.data.group_id)).data.owner_id));
       allow delete: if isEditor() && resource.data.uid == request.auth.uid;
       allow create: if isEditor() && request.resource.data.uid == request.auth.uid
+        && componentsBounded(request.resource.data)
         && ownsMealGroup(request.resource.data);
       allow update: if isEditor() && resource.data.uid == request.auth.uid
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.get('group_id', null) == resource.data.get('group_id', null)
+        && touchedComponentsBounded()
         && ownsMealGroup(request.resource.data);
     }
 
