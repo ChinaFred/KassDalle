@@ -15,7 +15,12 @@ import {
   resolvePageType,
   type TranscribedRecipe,
 } from "../gemini/transcription";
-import { parseTagged, renderTranscriptionForTagging, ingredientLinesOf } from "../gemini/tagging";
+import {
+  parseTagged,
+  renderTranscriptionForTagging,
+  ingredientLinesOf,
+  withoutUtensils,
+} from "../gemini/tagging";
 import {
   checkFidelity,
   checkTranscriptionInventory,
@@ -31,6 +36,7 @@ import {
   TEXT_TRANSCRIPTION_PREAMBLE,
   TRANSCRIPTION_PROMPT,
 } from "../gemini/promptsExtraction";
+import { COOKLANG_RULES } from "../gemini/prompts";
 
 /** Une recette de livre à deux sections, telle que la passe 1 la rend. */
 function gravlax(): TranscribedRecipe {
@@ -1061,5 +1067,119 @@ describe("texte collé — un préambule, pas un second prompt", () => {
     // avec un nombre trouvé au hasard, ou recopiera les avis des lecteurs.
     assert.match(TEXT_TRANSCRIPTION_PREAMBLE, /"page".*vaut null/s);
     assert.match(TEXT_TRANSCRIPTION_PREAMBLE, /CE QU'ON NE RECOPIE PAS/);
+  });
+});
+
+describe("ustensiles écrits comme ingrédients", () => {
+  // Régression du 20 août 2026 (v0.21.31) : la règle « papier sulfurisé,
+  // aluminium… TOUJOURS des équipements (#), JAMAIS des ingrédients (@) » a
+  // quitté le prompt, et le travail 2 exigeait une entrée par ligne. Une ligne
+  // de matériel devenait un ingrédient, puis une fiche nutrition.
+  const ligneMateriel = "1 feuille de papier sulfurisé";
+
+  function gravlaxAvecMateriel(): TranscribedRecipe {
+    const recette = gravlax();
+    recette.sectionsIngredients = [
+      {
+        ...recette.sectionsIngredients[0],
+        lignes: [...recette.sectionsIngredients[0].lignes, ligneMateriel],
+      },
+      ...recette.sectionsIngredients.slice(1),
+    ];
+    return recette;
+  }
+
+  test("le prompt de balisage remet les emballages et autorise une ligne sans entrée", () => {
+    assert.ok(TAGGING_PROMPT.includes("papier sulfurisé"));
+    assert.match(TAGGING_PROMPT, /TOUJOURS des ustensiles \(#\), JAMAIS\s+des ingrédients \(@\)/);
+    assert.match(TAGGING_PROMPT, /ligne de MATÉRIEL/);
+    assert.match(TAGGING_PROMPT, /n'a AUCUNE entrée/);
+  });
+
+  test("les règles CookLang du refine et de la génération interdisent @ pour un ustensile", () => {
+    assert.match(COOKLANG_RULES, /papier sulfurisé.*JAMAIS des ingrédients \(@\)/s);
+  });
+
+  test("withoutUtensils retire l'entrée et réécrit @ en #", () => {
+    const tagged = taggedGravlax({
+      cooklang: gravlaxCooklang.replace(
+        "sur un #plat{}.",
+        "sur un #plat{} couvert de @papier sulfurisé{1%feuille}.",
+      ),
+    });
+    tagged.ingredients = [
+      ...tagged.ingredients,
+      {
+        brut: ligneMateriel,
+        section: "Pour le saumon",
+        nom: "papier sulfurisé",
+        qte: "1",
+        unite: "feuille",
+        note: "",
+      },
+    ];
+    const out = withoutUtensils(tagged);
+    assert.equal(out.ingredients.length, 5);
+    assert.ok(out.ingredients.every((i) => i.nom !== "papier sulfurisé"));
+    assert.deepEqual(
+      (out.ustensilesEcartes ?? []).map((i) => i.nom),
+      ["papier sulfurisé"],
+    );
+    assert.ok(out.cooklang.includes("#papier sulfurisé{1%feuille}"));
+    assert.ok(!out.cooklang.includes("@papier sulfurisé"));
+  });
+
+  test("une ligne de matériel sans entrée ne déclenche pas « ligne sans ingrédient »", () => {
+    const report = checkFidelity(gravlaxAvecMateriel(), taggedGravlax());
+    assert.ok(
+      !report.findings.some((f) => f.code === "ingredients_compte"),
+      JSON.stringify(report.findings),
+    );
+  });
+
+  test("une entrée ustensile rattachée à une ligne d'aliment ne fait pas disparaître l'aliment", () => {
+    // Relecture sécurité : { nom: "papier sulfurisé", brut: "50 g de cacahuètes" }
+    // exemptait la ligne d'arachide du contrôle. L'allergène sortait de la
+    // recette sans avertissement.
+    const recette = gravlax();
+    const ligne = "50 g de cacahuètes";
+    recette.sectionsIngredients[0].lignes.push(ligne);
+    const entree = {
+      brut: ligne,
+      section: "Pour le saumon",
+      nom: "papier sulfurisé",
+      qte: "50",
+      unite: "g",
+      note: "",
+    };
+
+    // Par withoutUtensils : l'entrée n'est pas écartée, et ne couvre pas sa ligne.
+    const tagged = taggedGravlax();
+    tagged.ingredients = [...tagged.ingredients, entree];
+    const out = withoutUtensils(tagged);
+    assert.equal(out.ustensilesEcartes, undefined);
+    assert.equal(out.ingredients.length, 6);
+    const report = checkFidelity(recette, out);
+    assert.ok(report.findings.some((f) => f.code === "ingredients_compte"));
+
+    // Même entrée posée d'office parmi les écartées : la ligne reste attendue.
+    const report2 = checkFidelity(recette, taggedGravlax({ ustensilesEcartes: [entree] }));
+    assert.ok(report2.findings.some((f) => f.code === "ingredients_compte"));
+  });
+
+  test("une ligne de matériel qui cite un aliment entre parenthèses reste attendue", () => {
+    const recette = gravlax();
+    recette.sectionsIngredients[0].lignes.push(
+      "12 caissettes en papier (ou 30 g de beurre pour le moule)",
+    );
+    const report = checkFidelity(recette, taggedGravlax());
+    assert.ok(report.findings.some((f) => f.code === "ingredients_compte"));
+  });
+
+  test("une ligne d'aliment sans entrée reste signalée", () => {
+    const tagged = taggedGravlax();
+    tagged.ingredients = tagged.ingredients.slice(1);
+    const report = checkFidelity(gravlaxAvecMateriel(), tagged);
+    assert.ok(report.findings.some((f) => f.code === "ingredients_compte"));
   });
 });

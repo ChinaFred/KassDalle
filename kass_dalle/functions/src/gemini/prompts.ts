@@ -96,6 +96,7 @@ Règles CookLang (OBLIGATOIRES) :
 - INTERDIT : Ne mets PAS de timer pour les températures.
 - INTERDIT : Les mesures d'épaisseur ou de taille dans le texte (ex: 0.5 cm) ne sont PAS des ingrédients.
 - INTERDIT : Ne jamais baliser avec @ le plat ou produit FINAL que la recette crée.
+- INTERDIT : Les emballages, supports de cuisson et consommables — papier sulfurisé, papier cuisson, papier aluminium, aluminium, film alimentaire, film étirable, papier absorbant, tapis de cuisson, cure-dents, piques à brochette, ficelle de cuisine, poche à douille, caissettes, cercle à pâtisserie, emporte-pièce, moule à … — sont TOUJOURS des équipements (#), JAMAIS des ingrédients (@), et n'entrent jamais dans "ingredients" ni "ingredients_index" : #papier sulfurisé{}, jamais @papier sulfurisé{}.
 - 1 aliment acheté = 1 seul @balisage chiffré dans toute la recette. Une pièce qui revient découpée ou sous un terme générique (« 4 tranches de viande » après @côte de veau{1.5%kg}, « les légumes » après @carottes{3}) s'écrit en texte plain : ce n'est pas un second achat, et le compter deux fois double les apports de la recette.
 - Les timers servent UNIQUEMENT pour des durées réelles de cuisson ou d'attente.
 `;

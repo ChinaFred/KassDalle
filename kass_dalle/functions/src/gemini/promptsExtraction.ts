@@ -447,13 +447,22 @@ Autant d'étapes en sortie qu'en entrée, dans le même ordre. C'est vérifié.
     « la sauce », « la marinade ») ;
   • l'eau sous toutes ses formes, les glaçons, la glace pilée — SAUF si la
     liste d'ingrédients la mentionne avec une quantité ;
-  • les températures (« 180 °C », « thermostat 6 ») — texte plain.
+  • les températures (« 180 °C », « thermostat 6 ») — texte plain ;
+  • les emballages, supports de cuisson et consommables : papier sulfurisé,
+    papier cuisson, papier aluminium, aluminium, film alimentaire, film
+    étirable, papier absorbant, tapis de cuisson, cure-dents, piques à
+    brochette, ficelle de cuisine, poche à douille, caissettes, cercle à
+    pâtisserie, emporte-pièce. Ils sont TOUJOURS des ustensiles (#), JAMAIS
+    des ingrédients (@) — même quand la liste du livre les donne avec une
+    quantité : #papier sulfurisé{1%feuille}, jamais @papier sulfurisé{}.
 
 - Ustensiles : #nom{quantité}. Un contenant ou accessoire est TOUJOURS un
   ustensile, même quand la recette lui donne une quantité ou des dimensions.
   Toujours ustensiles : moule à, plaque, casserole, poêle, saladier, bol,
   mixeur, fouet, spatule, rouleau, tamis, passoire, cocotte, wok, sauteuse,
-  ramequin, terrine, papier aluminium, film alimentaire, papier cuisson.
+  ramequin, terrine, papier aluminium, aluminium, film alimentaire, film
+  étirable, papier cuisson, papier sulfurisé, piques à brochette, ficelle de
+  cuisine, poche à douille, caissettes, cercle à pâtisserie, emporte-pièce.
   Exceptions : « moule » seul est le mollusque en contexte fruits de mer ;
   « baguette » seule est le pain.
   Ne crée jamais de section == Matériel == : les ustensiles se balisent dans
@@ -485,8 +494,13 @@ Autant d'étapes en sortie qu'en entrée, dans le même ordre. C'est vérifié.
 ════ TRAVAIL 2 — NORMALISER LA LISTE D'INGRÉDIENTS ════
 
 AU MOINS une entrée par ligne d'ingrédient de la transcription, dans l'ordre.
-Une ligne qui nomme deux aliments en donne deux — voir plus bas. Aucune ligne
-ne peut rester sans entrée : c'est vérifié.
+Une ligne qui nomme deux aliments en donne deux — voir plus bas.
+
+Seule exception : une ligne de MATÉRIEL (« 1 feuille de papier sulfurisé »,
+« 8 piques à brochette », « film alimentaire » — les ustensiles du travail 1)
+n'a AUCUNE entrée. L'ustensile se balise #nom{} dans l'étape où il sert ; il
+n'entre jamais dans la liste d'ingrédients, qui ne contient que ce qui se
+mange. Toute autre ligne doit avoir son entrée : c'est vérifié.
 
 ▸ SI LA TRANSCRIPTION NE PORTE AUCUNE LIGNE D'INGRÉDIENT
   Certains livres écrivent la recette en prose : « faites revenir un oignon

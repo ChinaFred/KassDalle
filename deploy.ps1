@@ -446,6 +446,20 @@ if (-not $SkipGit) {
     Write-Host "`n[5/5] git commit + push..." -ForegroundColor Cyan
     Push-Location $root
     try {
+        # « git add -A » prend tout le répertoire de travail, y compris un fichier
+        # modifié par erreur ou un secret posé à la main (Issue #164). La liste
+        # s'affiche, fichiers non suivis compris, et attend un « O » ou un « o » ; toute autre réponse, ou une console
+        # non interactive, arrête le script sans rien commiter. La production est
+        # déjà à jour à ce stade : seul le commit et le push restent à faire.
+        $pending = @(git status --short --untracked-files=all)
+        if ($pending.Count -gt 0) {
+            Write-Host "Fichiers qui partiront dans le commit de deploiement :" -ForegroundColor Yellow
+            $pending | ForEach-Object { Write-Host "  $_" }
+            $answer = Read-Host "Commiter et pousser ces fichiers ? (O/N)"
+            if ($answer -notmatch '^\s*[oO]\s*$') {
+                throw "Commit refuse : rien n'a ete commite ni pousse. La production porte deja ces changements. Verifier les fichiers, puis commiter et pousser a la main (git pull --no-rebase avant), avec la ligne Deploy-Source: deploy.ps1."
+            }
+        }
         git add -A
         # Release/ est ignoré (artefacts de build) : un déploiement sans changement de source
         # ne doit pas créer de commit vide ni faire échouer le script.

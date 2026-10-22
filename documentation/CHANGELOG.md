@@ -20,6 +20,100 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.58 — technique
+
+Hébergement (tickets #160 et #164). `firebase.json` pose deux nouveaux en-têtes sur tout le
+site : `Strict-Transport-Security: max-age=31536000; includeSubDomains`, sans `preload`, et
+une `Permissions-Policy` qui laisse à la page la caméra, le presse-papiers (lecture et
+écriture) et le maintien de l'écran allumé, seules fonctions du navigateur que le web
+appelle, et ferme les treize autres (micro, géolocalisation, paiement, plein écran…). Aucun
+en-tête `Cache-Control` ne change. La CSP reste en `Report-Only` : rejouée en mode bloquant
+sur le build de cette version, jusqu'à l'écran de connexion, elle ne lève aucune violation.
+Le passage en bloquant attend la lecture des rapports de production et un essai connecté.
+`deploy.ps1` affiche chaque fichier modifié ou non suivi avant son `git add -A` et demande
+une confirmation (O/N) : sans « O » ou « o », il s'arrête sans commit ni push.
+
+### v0.24.57 — fonctionnel
+
+Le papier sulfurisé, le film alimentaire, les piques à brochette et les autres ustensiles ou
+consommables ne sont plus ajoutés aux ingrédients d'une recette importée, retouchée par l'IA ou
+imaginée. Ils restent cités dans les étapes comme ustensiles. L'éditeur ne les remet pas dans la
+liste quand on les écrit avec `@`, et ils ne créent plus de fiche dans le référentiel nutrition.
+Les recettes et les fiches déjà concernées (`papier_sulfurise`…) ne sont pas reprises dans cette
+version : leur nettoyage viendra par un backfill.
+
+### v0.24.57 — technique
+
+Régression du 20 août 2026 (v0.21.31) : `TAGGING_PROMPT` ne nommait plus le papier sulfurisé ni
+l'aluminium, et son travail 2 exigeait une entrée par ligne de la liste du livre. Le prompt
+remet la règle « emballages et consommables : toujours `#`, jamais `@` », avec la liste, et le
+travail 2 laisse une ligne de matériel sans entrée. `COOKLANG_RULES` (refine, génération)
+porte la même règle.
+
+Nouvelle liste fermée `test-fixtures/utensils.json`, rejouée par `nutrition/utensils.ts` et
+`lib/core/utils/utensils.dart` (ligne ajoutée au tableau « Logique dupliquée » de `CLAUDE.md`).
+Elle s'applique après le modèle : `withoutUtensils` en sortie de `tagAndNormalize` (import,
+texte collé, lien : entrée retirée, `@` réécrit en `#`), `withoutUtensilsInGenerated` en sortie
+de `refineRecipe` et `generateRecipe`, le parseur CookLang des deux côtés
+(`extractIngredients`, `extractIngredientsStructured`, cas ajouté à `cooklang_parsing.json`),
+`resolveOneIngredient` avant `ensureIngredientReference`, et les entrées de
+`syncRecipeNutrition`. `checkFidelity` n'attend plus d'entrée pour une ligne de matériel,
+reconnue sur la seule ligne du livre par `isUtensilLine` (une parenthèse la rend toujours
+attendue) ; une entrée n'est écartée que si son nom et sa ligne sont des ustensiles, pour
+qu'un aliment mal rattaché (« papier sulfurisé » sur « 50 g de cacahuètes ») reste signalé.
+« Ramequin » reste hors liste : c'est aussi un fromage. Aucun schéma ne change ; aucun backfill
+dans cette version.
+
+### v0.24.56 — fonctionnel
+
+Admin › Tickets : le libellé du bouton « Valider et lancer le développement », qui passait
+à la ligne sur un téléphone de 360 px (ticket #181), se réduit pour tenir sur une ligne au
+texte par défaut, sans être tronqué, de 10 % au plus. Quand il faudrait le réduire davantage,
+par exemple dans le volet de détail étroit entre 800 et 910 px de large, il passe à la
+ligne. Avec un texte agrandi, il garde sa taille et passe à la ligne. Les autres constats de l'audit étaient déjà corrigés dans le code (seuils 480 px par
+`PlatformUtils.narrowContentBreakpoint`, tailles d'icônes par `AppIconSize.small`,
+« Fermer » sur les visionneuses, erreur des titres privés et des invitations par e-mail
+affichée) ou relèvent de choix assumés : barre du bas sans libellés, confirmations de
+succès retirées au ticket #143.
+
+### v0.24.55 — technique
+
+Durcissements des règles Firestore et Storage, ticket #162 (audit #151), limités aux points
+qui ne retirent aucun droit utilisé par le client. Storage : le `get` d'un fichier de
+`covers/`, `scans/`, `illustrations/`, `recipes/` et `users/` exige un compte nommé selon son
+document `users/{uid}` (`isApprovedReader()`). Un compte en attente, révoqué à l'instant ou
+sans document ne lit plus ces fichiers par le SDK ; un compte nommé à l'instant les lit sans
+attendre son jeton, comme le routeur l'ouvre sur le rôle du document. Coût : une lecture
+Firestore par téléchargement d'octets (`getData`) ; l'affichage par URL n'en coûte aucune.
+
+Firestore : un compteur de `app_config/usage` écrit par un compte non administrateur monte
+au plus d'un pas par écriture, 1 pour `scans_AAAA_MM` et 21 × 50 Mio pour `storage_bytes`
+(`countsUp(champ, pas)`), ce qu'écrit `UsageTracker.recordScan`. `planned_meals.components`
+est une liste de 100 entrées au plus, à la création et à toute mise à jour qui le modifie ;
+l'éditeur en écrit 70 au plus. Points du ticket non codés : la quarantaine réservée aux
+éditeurs (retire un droit du lecteur), le volume d'`error_reports` (les règles ne comptent
+pas), la liste fermée des champs de `planned_meals` (`PlannedMeal.extra`) et
+`revokeRefreshTokens` (change la connexion). Les points 4 (politiques d'IA) et 5 (`users`,
+`groups`) étaient déjà livrés en v0.24.30 et v0.24.31. Tests ajoutés dans
+`rules-tests/test/storage.test.mjs` et `firestore.test.mjs`.
+
+### v0.24.54 — technique
+
+Durcissements des Cloud Functions, fin du ticket #163 (lot 9 de l'audit #151). Les points 3,
+4, 6 et 7 du ticket étaient déjà livrés (v0.24.31 et v0.24.32) ; cette version ferme les
+trois restes. `sandboxFn` ne renvoie plus le texte brut d'une erreur d'expérience
+(`err.message`, qui pouvait contenir un message du fournisseur ou du SDK) : `sandboxFailure`
+la journalise avec le compte, le poste et le `correlationId`, puis `toHttpsError` renvoie le
+texte fixe des callables d'IA. `recordUsage` revérifie la forme du `scanId`
+(`isValidScanId`) avant d'écrire `scan_spend/{scanId}` : un chemin d'appel qui oublierait le
+contrôle d'entrée ne peut plus y poser un identifiant arbitraire ; le coût reste dans
+`ai_usage` et la dépense du jour. Les refus d'accès d'`ensureAdminWithAudit` sont
+échantillonnés par opération et par compte : une ligne `WARNING` par minute et par instance
+au plus, avec le nombre de refus. La classe d'échantillonnage du webhook des tickets
+(`SignatureRejectionLog`) devient `LogSampler` dans `utils/logSampler.ts`, partagée, avec
+une variante par clé (`KeyedLogSampler`). Aucun droit retiré, aucun poste d'IA nouveau.
+Tests : `logSampler.test.ts`, `sandboxGuard.test.ts`.
+
 ### v0.24.53 — technique
 
 - Planning : les plafonds de sortie de la conception de recette (`PLANNING_CONCEPT_MAX_TOKENS`,

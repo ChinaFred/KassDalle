@@ -7,6 +7,7 @@ import { extractJsonObject } from "./client";
 import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext } from "../ai/types";
 import { GEMINI_POLISH_PROMPT, COOKLANG_RULES } from "./prompts";
+import { isUtensil, retagUtensils } from "../nutrition/utensils";
 
 /** Plafond de sortie : une recette complète en CookLang tient largement dedans. */
 const RECIPE_MAX_TOKENS = 16_000;
@@ -274,5 +275,32 @@ function parseMetadataCooklang(text: string): Record<string, unknown> {
     }
   }
   data.cooklang = cooklang;
-  return data;
+  return withoutUtensilsInGenerated(data);
+}
+
+/**
+ * Retire les ustensiles d'une recette retouchée ou imaginée par le modèle.
+ *
+ * Même règle qu'à l'import (`withoutUtensils`) : un `@papier sulfurisé{}`
+ * devient `#papier sulfurisé{}` dans le texte, et le nom sort de
+ * `ingredients` et de `ingredients_index`. Le client enregistre ensuite ces
+ * champs tels quels ; sans ce retrait, l'ustensile entrait dans la recette et
+ * le déclencheur nutrition lui cherchait une fiche.
+ */
+export function withoutUtensilsInGenerated(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...data };
+  if (typeof out.cooklang === "string") out.cooklang = retagUtensils(out.cooklang);
+  if (Array.isArray(out.ingredients)) {
+    out.ingredients = out.ingredients.filter((item: unknown) => {
+      const name =
+        item && typeof item === "object" ? (item as Record<string, unknown>).name : undefined;
+      return !(typeof name === "string" && isUtensil(name));
+    });
+  }
+  if (Array.isArray(out.ingredients_index)) {
+    out.ingredients_index = out.ingredients_index.filter(
+      (name: unknown) => !(typeof name === "string" && isUtensil(name)),
+    );
+  }
+  return out;
 }

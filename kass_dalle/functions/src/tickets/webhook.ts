@@ -8,7 +8,7 @@
  * Avant tout calcul de HMAC : un corps de plus de 25 Mo (le plafond des
  * livraisons GitHub) rend 413, une requête sans en-tête `X-GitHub-Event` rend
  * 400. Les refus de signature sont journalisés une fois par minute et par
- * instance au plus, avec leur nombre (`SignatureRejectionLog`).
+ * instance au plus, avec leur nombre (`LogSampler`).
  *
  * Événements traités : `issues` (étiquettes, fermeture, réouverture ; un
  * `labeled validé` du mainteneur écrit aussi `validated_at` dans
@@ -50,6 +50,7 @@ import {
   REGION,
 } from "../config";
 import { logError, logInfo, logWarn, newCorrelationId } from "../logging";
+import { LogSampler } from "../utils/logSampler";
 import { recordDeliveredPr, refreshTicketDelivery, type OpenPullRequests } from "./delivery";
 import {
   GITHUB_REPO_FULL_NAME,
@@ -101,32 +102,10 @@ type Payload = Record<string, unknown>;
 /** Plafond d'une livraison GitHub : au-delà, le corps est refusé avant le HMAC. */
 export const WEBHOOK_MAX_BODY_BYTES = 25 * 1024 * 1024;
 
-/**
- * Échantillonnage des journaux de signature refusée : un relevé par
- * intervalle au plus, qui porte le nombre de refus depuis le précédent. Un
- * envoi massif de requêtes non signées n'écrit qu'une ligne par minute et par
- * instance.
- */
-export class SignatureRejectionLog {
-  private pending = 0;
-  private lastLoggedAt: number | null = null;
-
-  constructor(private readonly intervalMs = 60_000) {}
-
-  /** Compte un refus ; rend le nombre à journaliser, ou `null` s'il faut se taire. */
-  record(now: number): number | null {
-    this.pending++;
-    if (this.lastLoggedAt !== null && now - this.lastLoggedAt < this.intervalMs) return null;
-    const count = this.pending;
-    this.pending = 0;
-    this.lastLoggedAt = now;
-    return count;
-  }
-}
-
-const signatureRejections = new SignatureRejectionLog();
+/** Refus de signature, échantillonnés : un relevé par minute et par instance au plus. */
+const signatureRejections = new LogSampler();
 /** Même échantillonnage pour les livraisons refusées faute de secret. */
-const missingSecretRejections = new SignatureRejectionLog();
+const missingSecretRejections = new LogSampler();
 
 /**
  * Le numéro de l'Issue d'un événement `issues` `closed` de ce dépôt (hors

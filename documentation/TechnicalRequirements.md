@@ -2003,6 +2003,13 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
 | `first_seen_at` · `last_seen_at` · `updated_at` | `Timestamp` | Traçabilité |
 
+**Aucune fiche pour un ustensile** (v0.24.57). Un nom de la liste fermée `utensils.json`
+(`nutrition/utensils.ts`, `isUtensil`) ne crée ni ne met à jour aucun document : la
+normalisation (`resolveOneIngredient`, avant `ensureIngredientReference`) le retire de la liste
+qu'elle rend, et le déclencheur `syncRecipeNutrition` l'écarte de ses entrées avant le
+`create`. Les fiches déjà créées (`papier_sulfurise`…) restent en base : leur nettoyage est un
+backfill à venir.
+
 **Recettes qui citent un ingrédient** (v0.24.46). Au dépliage d'une fiche,
 *Admin › Référentiels › Ingrédients nutrition* lit les recettes par une requête
 `recipes` `where('ingredients_index', arrayContainsAny: valeurs)` `limit(21)`
@@ -2119,7 +2126,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls`, `total_analyzed_image_units` et `total_grounded_searches`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` (la seule quantité dont dépend une franchise mensuelle) et `grounded_searches` (appels ancrés dans Google, à rapprocher de la ligne « grounding » de la facture). `getMonthlyCostsFn` rend ce dernier total en `ai.groundedSearches` |
 | `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel — d'un appel, ou du nombre d'images analysées pour la relance de modération, `dailyCalls`, depuis v0.23.48), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
-| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. Un `scanId` venu du client n'atteint ce document qu'après deux contrôles : `scanAndPromoteUploadFn` l'écarte (`undefined`, `logWarn`) s'il n'a pas la forme `isValidScanId` ou si `scanOwnerConflict` désigne un autre compte — le contrôle du fichier a lieu, son coût reste dans `ai_usage` et la dépense du jour, sans compteur de scan ; `jobDispatcher` (`dispatchScanId`) le remplace par un identifiant serveur dans les mêmes cas. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`, avec le message « Plafond de cet import atteint : X dépensés pour Y autorisés. Pour continuer, appuyez sur « Relancer » : un nouveau budget de Z sera accordé. » (Z = `step_usd`, phrase omise sans palier ; `importBudgetDenial`). Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
+| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. Un `scanId` venu du client n'atteint ce document qu'après deux contrôles : `scanAndPromoteUploadFn` l'écarte (`undefined`, `logWarn`) s'il n'a pas la forme `isValidScanId` ou si `scanOwnerConflict` désigne un autre compte — le contrôle du fichier a lieu, son coût reste dans `ai_usage` et la dépense du jour, sans compteur de scan ; `jobDispatcher` (`dispatchScanId`) le remplace par un identifiant serveur dans les mêmes cas. `recordUsage`, seul point qui écrit ce document, revérifie la forme (`isValidScanId`, v0.24.54) : un `scanId` mal formé n'y ajoute rien, avec un `logWarn` ; le coût reste dans `ai_usage` et la dépense du jour. Le propriétaire n'y est pas relu, pour ne pas ajouter une lecture transactionnelle par appel de modèle sur un document que les tranches d'un livre incrémentent en parallèle. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`, avec le message « Plafond de cet import atteint : X dépensés pour Y autorisés. Pour continuer, appuyez sur « Relancer » : un nouveau budget de Z sera accordé. » (Z = `step_usd`, phrase omise sans palier ; `importBudgetDenial`). Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
 ---
@@ -3149,12 +3156,12 @@ service cloud.firestore {
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création par un editor ou un admin (`isEditor()`, v0.23.54 : plus le reader), à son nom, soi seul membre, sans invité, avec les seuls champs que `createGroup` écrit (`keys().hasOnly` : `name`, `owner_id`, `member_ids`, `invited_ids`, `created_at` — v0.24.30, ticket #162) ; `owner_id` figé ; cinq mises à jour et elles seules : **gestion** (`isManagement`) par le propriétaire s'il est editor (`isEditor()`, v0.23.54), ou par un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **réduction** (`isShrinking`, v0.23.54) par le propriétaire quel que soit son rôle — `invited_ids` et `member_ids` ne font que perdre des comptes, le propriétaire reste membre, rien d'autre ne change (ni nom, ni invitation nouvelle) ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Acceptation, refus et sortie restent ouverts à tout rôle approuvé. Suppression par le propriétaire quel que soit son rôle, ou par un admin : un reader propriétaire d'un groupe créé avant la v0.23.54 ne peut pas le quitter, la suppression est sa seule sortie. Testé dans `rules-tests` (« groupes — rôle éditeur requis ») |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide ; « Ce n'est pas un doublon » (`isDuplicateResume`) : le propriétaire **éditeur ou administrateur** fait passer un job de `duplicate` à `queued` avec `duplicate_override: true`, en ne touchant que `status`, `duplicate_override`, `error_message`, `current_step` et `updated_at` — `created_recipe_ids` reste en place, `duplicate_override` ne se pose sur aucun autre statut, un lecteur propriétaire ne reprend pas, un import par lien non plus ; à la création, le job naît en `queued` (statut absent admis) et sans aucun des champs que seul le pipeline écrit pour les doublons (`titre_keys`, `titre_key_pages`, `titre_key_titres`, `duplicate_checked`, `duplicates`, `pending_items`, `duplicate_override`) — posés par le client sur un job jamais mis en file, ils arrêteraient les imports suivants du même livre ; une relance par le propriétaire éditeur n'écrit que `queued` ou `error`, jamais `duplicate`, et ne part pas d'un job `duplicate` (seules la reprise et l'annulation en sortent) ; suppression par un admin, par le propriétaire **éditeur ou administrateur** d'un job au statut `duplicate` (rien n'y tourne, et la ligne n'a pas d'autre sortie que la reprise), ou par le propriétaire **actif** (`isApproved()` : approuvé, non révoqué), quel que soit son rôle, d'un job au statut `error` (v0.24.31) — un job `owner_not_editor` n'a pas d'autre sortie ; aucun déclencheur ne suit cette suppression : le fichier `scans/`, `scan_spend/{scan_id}` (trace comptable) et la dead letter restent, et `relaunchDeadLetterFn` refuse ensuite la relance (« Job original supprimé ») ; `additional_file_urls`, quand il est présent, est une liste de **20 entrées au plus**, en création comme en mise à jour, administrateur compris (`additionalFileUrlsBounded`, v0.24.17) : le pipeline télécharge chaque page et l'envoie au modèle |
-| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur resté sans le champ, que le backfill `group_planning_reach` (retiré en v0.24.33) n'a pas atteint, ne se lit pas) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
+| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur resté sans le champ, que le backfill `group_planning_reach` (retiré en v0.24.33) n'a pas atteint, ne se lit pas) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; `components` est une liste de 100 entrées au plus, testée à la création et à toute mise à jour qui le modifie (v0.24.55, ticket #162 : l'éditeur en écrit 70 au plus, 10 services de 6 accompagnements ; un repas antérieur plus long reste modifiable hors composants) — les autres champs ne sont pas listés, `PlannedMeal.extra` réécrivant ceux d'une version plus récente ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
 | `meal_suggestions` | l'auteur (`author_uid`) ou le propriétaire du groupe (`group_owner_id`), compte nommé (`isApproved()`) ; un autre membre ne lit pas les suggestions des autres ; une requête sans l'un de ces deux filtres est refusée | création par un compte nommé, à son nom, sous l'identifiant imposé `{group_id}_{uid}_{day}_{0..4}` (`suggestionIds` : cinq au plus par auteur, groupe et jour), membre d'un groupe **actif** (`canReadGroupPlanning`, `planning_reach.group_ids`) et présent dans `member_ids` du groupe, **pas** son propriétaire ; `group_owner_id` égal à `owner_id` du groupe (une lecture de `groups/{group_id}`) ; forme `isMealSuggestion` : liste de champs fermée, `day` date réelle de la veille à J+60 (`isSuggestionDay`), recette (`recipe_id` + `recipe_titre` ≤ 200) **ou** nom libre (`free_title` ≤ 60), `note` ≤ 200, `created_at == request.time`. Aucune mise à jour. Suppression par l'auteur ou le propriétaire du groupe. Le serveur supprime celles d'un groupe supprimé et d'un membre sorti (`syncGroupReach`) |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
-| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** les documents de `isServerOnlyConfig`, écrits par le serveur seul : `backfill_schedules`, `backfill_run_*`, `tickets_status` et `apk_notification` — un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; depuis v0.24.31 (ticket #162), les politiques `ai_pricing` (`setAiPricingFn`), `ai_routing_policy` (`setAiRoutingPolicyFn`), `ai_budget_policy` (`setAiBudgetFn`), `app_check_policy` (`setAppCheckPolicyFn`) et `nutrition_source_policy` (`setNutritionSourcePolicyFn`), les documents serveur `image_moderation`, `currency_rate`, `anthropic_costs`, `planning_policy` (réglages de la présélection, lus par `gemini/planningStore.ts`) et `ai_budget_alert` (dernière alerte de budget, `scheduled/aiBudgetAlertSchedule.ts`), et les points de reprise `*_checkpoint` et `backfill_cursor_*` — une écriture directe contournait la validation de la callable (`readPolicyOrThrow`, garde-fou `enforce` d'App Check), sa trace d'audit et App Check. L'administrateur écrit encore `tickets` (plafonds, sans callable), `usage` et les autres réglages ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
+| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** les documents de `isServerOnlyConfig`, écrits par le serveur seul : `backfill_schedules`, `backfill_run_*`, `tickets_status` et `apk_notification` — un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; depuis v0.24.31 (ticket #162), les politiques `ai_pricing` (`setAiPricingFn`), `ai_routing_policy` (`setAiRoutingPolicyFn`), `ai_budget_policy` (`setAiBudgetFn`), `app_check_policy` (`setAppCheckPolicyFn`) et `nutrition_source_policy` (`setNutritionSourcePolicyFn`), les documents serveur `image_moderation`, `currency_rate`, `anthropic_costs`, `planning_policy` (réglages de la présélection, lus par `gemini/planningStore.ts`) et `ai_budget_alert` (dernière alerte de budget, `scheduled/aiBudgetAlertSchedule.ts`), et les points de reprise `*_checkpoint` et `backfill_cursor_*` — une écriture directe contournait la validation de la callable (`readPolicyOrThrow`, garde-fou `enforce` d'App Check), sa trace d'audit et App Check. L'administrateur écrit encore `tickets` (plafonds, sans callable), `usage` et les autres réglages ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas et qui monte au plus d'un pas par écriture (`countsUp(champ, pas)`, v0.24.55, ticket #162) : 1 pour un compteur de scans, 21 × 50 Mio pour `storage_bytes` (21 pages d'un import, chacune sous le plafond de 50 Mo de la quarantaine ; un livre pèse moins de 300 Mo) — `UsageTracker.recordScan` n'écrit que ces incréments ; la borne vaut par écriture et non par durée, une suite d'écritures au pas maximal reste permise (la fermer demanderait un compteur tenu par le serveur) ; l'administrateur n'a pas de pas maximal |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
@@ -3322,6 +3329,10 @@ lister un dossier — passe deux contrôles, dans cet ordre :
    OU le document le dit). Un rôle inconnu (`"admin "`) ne vaut rien ; sans document, la
    lecture de `.data` échoue et la règle refuse.
 
+Le `get` d'un fichier des dossiers publiés ne passe que le second contrôle
+(`isApprovedReader()`, v0.24.55, ticket #162) : un compte en attente ne lit plus ces
+fichiers par le SDK, et un compte nommé à l'instant les lit sans attendre son jeton.
+
 Avant la v0.24.48, ces règles ne lisaient que le jeton. Un administrateur rétrogradé gardait la
 lecture de `rejected/` et de la quarantaine des autres jusqu'au renouvellement de son jeton
 (une heure au plus) — `syncUserClaims` ne révoque pas les jetons pour un passage d'`admin` à
@@ -3330,13 +3341,16 @@ déjà ces droits (`roleOf()`, v0.24.30).
 
 **Coût.** Une lecture Firestore par requête Storage qui atteint le second contrôle : un dépôt
 dans la quarantaine (photo, scan, livre), une capture de ticket, une lecture ou un listage
-d'administrateur. Les deux branches du dépôt en quarantaine sont ordonnées pour qu'un lecteur
+d'administrateur, et depuis la v0.24.55 le `get` d'un fichier publié (`isApprovedReader()`).
+Les deux branches du dépôt en quarantaine sont ordonnées pour qu'un lecteur
 comme un éditeur ne lisent le document qu'une fois, et le type et la taille se testent avant
 le rôle. Ne coûtent **aucune** lecture : les images affichées, servies par URL de
-téléchargement (les règles ne s'évaluent pas), le `get` d'un fichier publié (jeton seul,
-`isActive()`), la lecture par un compte de ses propres fichiers (`isOwner`), et toute requête
-d'un compte dont le jeton n'annonce aucun rôle — un inconnu qui multiplie les requêtes ne
-déclenche pas de lecture facturée. À l'échelle de la famille (quelques dizaines de dépôts par
+téléchargement (les règles ne s'évaluent pas), la lecture par un compte de ses propres
+fichiers (`isOwner`), et tout dépôt ou listage d'un compte dont le jeton n'annonce aucun
+rôle. Le `get` d'un fichier publié lit le document même pour un compte en attente : seuls
+les téléchargements d'octets du client l'atteignent (`getData` de la retouche d'une image,
+de l'extraction d'illustrations et de la relecture d'un brouillon), quelques-uns par
+recette retouchée. À l'échelle de la famille (quelques dizaines de dépôts par
 jour), le surcoût se compte en centimes par an au tarif Firestore.
 
 **Écarts qui restent avec Firestore.**
@@ -3344,9 +3358,15 @@ jour), le surcoût se compte en centimes par an au tarif Firestore.
 - Un rôle **accordé** attend le jeton : un compte nommé à l'instant (claim `pending`,
   document `reader`) ne dépose rien avant le renouvellement de son jeton, comme avant. Le
   claim reste la première porte, pour la raison de coût ci-dessus.
-- Le `get` d'un fichier des dossiers publiés ne lit que le jeton : ces fichiers restent
-  joignables par leur URL de téléchargement, que la révocation n'invalide pas, et la lecture
-  du document n'y ajouterait qu'un coût.
+- Le `get` d'un fichier des dossiers publiés (`isApprovedReader()`, v0.24.55, ticket #162)
+  lit le rôle sur le **document** ; le claim ne sert plus que de repli pour un document sans
+  rôle, et le jeton porte encore la révocation (`isActive()`) : un compte en attente, révoqué
+  ou sans document ne lit plus ces fichiers par le SDK, et un compte nommé à l'instant les lit tout
+  de suite, comme le routeur du client l'ouvre sur le rôle du document
+  (`resolveRedirect`). Un essai d'aligner cette lecture sur le claim (2026-10-05) avait coupé
+  l'accès au fondateur, le temps que son jeton porte le rôle. Les fichiers restent joignables
+  par leur URL de téléchargement, que les règles n'évaluent pas et que la révocation
+  n'invalide pas.
 - Un compte révoqué dont le jeton est encore valide relit ses **propres** fichiers de
   `quarantine/` (`isOwner(uid) || isAdmin()`) pendant une heure au plus : ce sont ses
   données, et la révocation coupe déjà tout dépôt.
@@ -3406,10 +3426,15 @@ service firebase.storage {
       return !isRevoked(d) && roleOf(d) in roles;
     }
 
-    // Le sas d'entrée, côté fichiers. Ne concerne que l'écriture : fermer aussi
-    // la lecture ferait clignoter les images de qui n'a pas renouvelé son jeton,
-    // pour un gain nul (les URL ne se devinent pas).
+    // Le sas d'entrée, côté fichiers, pour l'écriture : jeton ET document.
     function isApproved() { return hasRoleIn(['reader', 'editor', 'admin']); }
+
+    // Le `get` des dossiers publiés (v0.24.55, ticket #162) : le rôle du
+    // document, le claim en repli pour un document sans rôle. Un compte en attente n'y lit plus rien ; un compte nommé à
+    // l'instant lit tout de suite, comme le routeur du client l'y autorise.
+    function isApprovedReader() {
+      return isActive() && hasDocRoleIn(userDoc(), ['reader', 'editor', 'admin']);
+    }
 
     function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
 
@@ -3457,7 +3482,7 @@ service firebase.storage {
     // rendrait la modération contournable en une ligne de code.
 
     match /covers/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
@@ -3501,12 +3526,12 @@ service firebase.storage {
         && isEditor();
     }
 
-    // Lire un fichier dont on a l'adresse : tout compte actif. LISTER le
+    // Lire un fichier dont on a l'adresse : tout compte nommé. LISTER le
     // dossier : son propriétaire ou un admin (v0.23.8). Le client ne liste
     // aucun dossier publié ; `covers/`, `illustrations/{uid}` et `users/{uid}`
     // ne se listent que par un admin.
     match /scans/{uid}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isActive() && (isOwner(uid) || isAdmin());
       allow write: if false;              // Admin SDK uniquement
     }
@@ -3521,20 +3546,20 @@ service firebase.storage {
     }
 
     match /illustrations/{uid}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
 
     // Lister le dossier d'une recette, qui peut être privée : admin seul.
     match /recipes/{recipeId}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isAdmin();
       allow write: if false;
     }
 
     match /users/{uid}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
@@ -3617,7 +3642,11 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`,
   `tickets/`, et le rôle et la révocation relus sur le document (administrateur rétrogradé,
   compte révoqué à l'instant, éditeur rétrogradé lecteur, rôle inconnu, jeton sans document,
-  document sans rôle, compte nommé à l'instant, chemins courants de chaque rôle).
+  document sans rôle, compte nommé à l'instant, chemins courants de chaque rôle) ; le `get`
+  d'un dossier publié refusé au compte en attente, au compte révoqué à l'instant et au jeton
+  sans document, permis au compte nommé à l'instant et au document sans rôle (v0.24.55) ;
+  côté Firestore, le pas maximal des compteurs de `app_config/usage` et la borne de
+  `planned_meals.components` (v0.24.55).
 - Le bloc « requêtes du client » rejoue la forme des requêtes de `recipe_repository.dart`,
   `book_repository.dart`, `planning_providers.dart`, `annotation_repository.dart` et
   `recipe_rating_repository.dart`. L'émulateur évalue une requête sur ses filtres, comme la
@@ -4198,7 +4227,7 @@ premier jeton refusé.
 (`WEBHOOK_MAX_BODY_BYTES`, plafond des livraisons GitHub) rend 413, et une requête sans en-tête
 `X-GitHub-Event` rend 400. Secret vide : 503, journalisé au plus une fois par minute et par instance ; signature absente ou fausse : 401, journalisé
 par un `logWarn` au plus une fois par minute et par instance, qui porte le nombre de refus
-depuis le relevé précédent (`SignatureRejectionLog`) ; corps illisible : 400. Événements
+depuis le relevé précédent (`LogSampler`, `utils/logSampler.ts`) ; corps illisible : 400. Événements
 traités (`updatesFromEvent`) :
 
 - `issues` (`opened`, `edited`, `labeled`, `unlabeled`, `closed`, `reopened`) : statut dérivé
@@ -4870,6 +4899,41 @@ fait construire la liste depuis les étapes, sans inventer de quantité ; et `sa
 la liste du CookLang par `pipeline/ingredientsFromCooklang.ts` quand elle arrive vide malgré
 tout. La dérivation a lieu **avant** la normalisation référentiel, et ne rend ni la note ni le
 `source` — il n'y a pas de ligne de livre à citer.
+
+**Un ustensile n'est pas un ingrédient** (v0.24.57). Entre v0.21.31 et v0.24.52,
+`TAGGING_PROMPT` ne nommait plus le papier sulfurisé ni l'aluminium, et son travail 2 exigeait
+une entrée par ligne de la liste du livre : une ligne « 1 feuille de papier sulfurisé » devenait
+`@papier sulfurisé{1%feuille}`, une entrée de `ingredients`, puis une fiche
+`nutrition_ingredients`. Trois dispositions :
+
+- **le prompt** : le travail 1 range les emballages, supports de cuisson et consommables
+  (papier sulfurisé, papier cuisson, papier aluminium, aluminium, film alimentaire, film
+  étirable, papier absorbant, tapis de cuisson, cure-dents, piques à brochette, ficelle de
+  cuisine, poche à douille, caissettes, cercle à pâtisserie, emporte-pièce) en `#`, jamais en
+  `@` ; le travail 2 laisse une ligne de matériel sans entrée. `COOKLANG_RULES` (refine,
+  génération) porte la même interdiction ;
+- **la liste fermée** `utensils.json` (`nutrition/utensils.ts` ↔ `core/utils/utensils.dart`),
+  appliquée après le modèle. `tagAndNormalize` passe sa sortie par `withoutUtensils` : l'entrée
+  sort de la liste si son nom ET sa ligne du livre (`brut`, quand elle existe) sont reconnus,
+  `@nom{…}` devient `#nom{…}` (`retagUtensils`), et l'entrée écartée est gardée dans
+  `ustensilesEcartes`, pour le journal INFO seulement. Une entrée « papier sulfurisé »
+  rattachée à « 50 g de cacahuètes » reste dans la liste. Cela couvre l'import d'une page, le texte
+  collé et l'import par lien. `refineRecipe` et `generateRecipe` passent leur réponse par
+  `withoutUtensilsInGenerated` (texte, `ingredients`, `ingredients_index`). Le parseur CookLang
+  l'applique des deux côtés, la normalisation et le déclencheur nutrition aussi (§3.10) ;
+- **le contrôle de fidélité** : seule la ligne du livre décide. `checkFidelity` n'attend aucune
+  entrée pour une ligne que `isUtensilLine` reconnaît — `isUtensil` en plus strict : une ligne
+  qui contient une parenthèse est toujours attendue, la parenthèse pouvant citer un aliment
+  (« 12 caissettes en papier (ou 30 g de beurre pour le moule) »). `ustensilesEcartes` n'est
+  pas lu, et une entrée dont le nom est un ustensile ne couvre pas sa ligne. Une ligne d'aliment
+  sans entrée reste donc signalée (`ingredients_compte`), même si le modèle lui a rattaché un
+  ustensile.
+
+La liste est fermée et ne contient aucun aliment : « moule » seul est le mollusque, « ficelle »
+seule le pain, « brochette » seule le plat, et « ramequin » reste hors liste (ramequin du Bugey,
+ramequin vaudois) ; seuls les noms composés « moule à … » de la liste
+sont des ustensiles. Un ustensile hors liste écrit en `@` reste un ingrédient : l'ajouter se fait
+dans les deux fichiers et dans la fixture.
 
 `gemini/extractor.ts` ne porte plus que l'entrée « texte collé ». Les trois anciens appels
 qui vivaient là — classification, extraction depuis une image, extraction d'un document — ont
@@ -6781,6 +6845,7 @@ code, et une réimplémentation doit la reproduire :
 | Image à relire hors des dossiers publiés (amélioration d'illustration, visuel de dressage précédent) | `downloadStorageBytes` n'admet que `illustrations/` et `recipes/` : `permission-denied` avant tout téléchargement |
 | Trop d'appels d'IA simultanés pour un compte, depuis une callable | Attente jusqu'à 20 s, puis `BudgetExceededError` de motif `concurrency`, rendu en `resource-exhausted`. Le pipeline, les déclencheurs et les tâches planifiées ne sont pas limités en simultanéité |
 | Chemin Storage refusé par une callable | `logWarn` avec le compte et le chemin, puis `permission-denied` : une tentative de lecture de `rejected/…` laisse une trace |
+| Accès refusé à une callable de facturation ou de qualité des données (`ensureAdminWithAudit`) | `logWarn` avec l'uid et l'opération, échantillonné par opération et par compte (`KeyedLogSampler`, `utils/logSampler.ts`, v0.24.54) : une ligne par minute et par instance au plus, qui porte le nombre de refus depuis le relevé précédent (`extra.refused`) ; une autre erreur de la garde reste un `logError` à chaque fois |
 | Clé du fournisseur absente | Repli sur Gemini, avec un `WARNING` nommant le poste et le moteur attendu |
 | Grille tarifaire illisible | L'appel a lieu, l'usage est enregistré **sans montant**, compté dans `total_unpriced_calls`. Jamais de prix de repli |
 | Appel abouti puis échoué côté client | L'usage est enregistré **sans jetons** : le fournisseur facture, l'appel ne doit pas devenir invisible |
@@ -6830,8 +6895,11 @@ elle avait été enregistrée, et la recherche par ingrédient répondait en con
 typographiques ramenées à l'apostrophe droite, accents retirés, `s` final de chaque mot supprimé.
 Sans le dernier point, « oeufs » et « oeuf » comptaient pour deux ingrédients.
 
-**Une température n'est pas un ingrédient.** Un jeton dont le nom ressemble à `180°c` ou commence
-par un chiffre est écarté. Sans cette garde, l'index de recherche se remplissait de degrés.
+**Une température n'est pas un ingrédient, un ustensile non plus.** Un jeton dont le nom ressemble à `180°c` ou commence
+par un chiffre est écarté. Sans cette garde, l'index de recherche se remplissait de degrés. Un
+jeton qui nomme un ustensile de la liste fermée (`utensils.json` : `@papier sulfurisé{}`,
+`@film alimentaire{}`…) est écarté de la même façon par `extractIngredients` et
+`extractIngredientsStructured`, des deux côtés : l'éditeur ne le remet pas dans la liste.
 
 Un même ingrédient qui apparaît avec deux quantités différentes voit ses quantités **combinées** —
 « 45 g + une poignée » — plutôt que dédoublé.
@@ -6946,7 +7014,8 @@ Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne
 
 ### En-têtes de sécurité et CSP
 
-`firebase.json` pose `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` et une
+`firebase.json` pose `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+`Strict-Transport-Security`, `Permissions-Policy` et une
 `Content-Security-Policy-Report-Only`. La CSP est **en rapport seul** : elle ne bloque rien,
 et chaque violation part en rapport vers `/csp-report` (directive `report-uri`, chemin
 relatif, même origine que la page). Hosting réécrit ce chemin vers `cspReportFn`, qui
@@ -6955,12 +7024,44 @@ présent, Chromium ignore `report-uri` et passe par la Reporting API, dont l'env
 être vérifié en local (aucun rapport reçu en 75 s sous Chromium sans interface, alors que
 `report-uri` arrive aussitôt).
 
+**`Strict-Transport-Security` (v0.24.58, Issue #164)** : `max-age=31536000; includeSubDomains`,
+sans `preload`. Firebase Hosting sert déjà HTTPS seul ; l'en-tête rend la règle explicite
+pour un an. `preload` n'est pas posé : l'inscription dans la liste des navigateurs ne se
+retire pas en quelques jours.
+
+**`Permissions-Policy` (v0.24.58, Issue #164).** Les fonctions du navigateur que le web
+appelle restent ouvertes à la page (`(self)`), les autres sont fermées (`()`), iframes
+comprises. Relevé fait dans `lib/`, `web/` et le `main.dart.js` construit :
+
+| Fonction | Valeur | Raison |
+|---|---|---|
+| `camera` | `(self)` | photo d'un livre ou d'une page (`image_picker`, `ImageSource.camera`) ; sur le web c'est un `<input capture>`, laissé ouvert pour ne rien couper |
+| `clipboard-read` | `(self)` | collage d'une URL dans l'import par lien (`Clipboard.getData`) |
+| `clipboard-write` | `(self)` | boutons « Copier » (journaux, rapports d'erreur, liste de courses, invitations…) |
+| `screen-wake-lock` | `(self)` | écran allumé sur la fiche recette (`wakelock_plus`, `navigator.wakeLock`) |
+| `microphone`, `geolocation`, `payment`, `usb`, `serial`, `hid`, `midi`, `accelerometer`, `gyroscope`, `magnetometer`, `display-capture`, `fullscreen`, `browsing-topics` | `()` | aucun appel dans le code ni dans le build (`getUserMedia`, `geolocation`, `PaymentRequest`, `requestFullscreen`… absents de `main.dart.js`) ; `Dialog.fullscreen` est un widget Flutter, pas l'API du navigateur |
+
+`identity-credentials-get` et `publickey-credentials-get` ne sont pas cités : Google Identity
+Services, chargé par `google_sign_in_web`, peut passer par FedCM, et la valeur par défaut
+(`self`) reste en place. `bluetooth` n'est pas cité : Chromium ne le reconnaît pas et
+affiche un avertissement en console.
+
 **Directives (validées sur le build réel, Issue #160).** Le build `flutter build web
 --release` servi avec les en-têtes de `firebase.json`, la CSP passée en mode bloquant,
 ouvert dans Chromium jusqu'à l'écran de connexion, avec et sans Trusted Types : aucune
 violation. L'ancienne politique en levait trois, qui auraient empêché le démarrage en mode
 bloquant : les deux scripts en ligne de `index.html`, et le téléchargement de
 `canvaskit.wasm` depuis `www.gstatic.com` (`connect-src`).
+
+Rejouée en v0.24.58 sur le build de cette version, avec `Permissions-Policy` et
+`Strict-Transport-Security` : CSP bloquante, Chromium 1194 sans interface, écran de
+connexion rendu, aucune violation et aucun rapport reçu par `/csp-report`. Le proxy de
+l'environnement refuse `www.gstatic.com` et `www.google.com` : CanvasKit et le SDK Firebase JS
+12.19.0 ont été servis sous leur URL d'origine depuis des copies locales (la CSP juge
+l'URL), et `recaptcha/enterprise.js` est resté en échec réseau, sans violation. Un second
+passage avec `require-trusted-types-for 'script'` ajouté lève deux violations : le
+`<script src>` de `wakelock_plus` (`no_sleep.js`) et celui de reCAPTCHA Enterprise injecté
+par App Check. Cette directive n'est donc pas posée.
 
 | Directive | Valeurs | Pour quoi |
 |---|---|---|
@@ -7306,6 +7407,7 @@ Functions.
 | `page_homography.json` | redressement d'une page : taille de sortie, homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
 | `meal_roles.json` | vocabulaire des rôles dans un repas, des protéines et des féculents principaux, des rôles qui portent ces deux derniers, et de ce que la recette apporte (`contains`) ; la section `contains_manual_cases` verrouille la règle « une correction à la main n'est jamais réécrite par le modèle » (`containsPatch` ↔ `mealContainsAfterSuggestion`) ; depuis v0.24.54, le vocabulaire des dix-huit styles, leurs libellés et le plafond de trois (`styles`, `style_labels`, `max_styles`), et la même règle pour le style (`styles_manual_cases` : `stylesPatch` ↔ `mealStylesAfterSuggestion`) ; les sections `unsafe_keys` (clés héritées du prototype) et `styles_parse_cases` (lecture de la réponse du modèle) sont serveur seul | `features/recipes/domain/meal_role.dart` | `gemini/mealRole.ts` |
 | `shopping_products.json` | regroupement des lignes de courses | `core/utils/shopping_products.dart` | `nutrition/shoppingDerivation.ts` |
+| `utensils.json` | liste fermée des ustensiles et consommables, et reconnaissance d'un nom ou d'une ligne du livre ; sections `retag_cases` (réécriture `@` → `#`) et `line_cases` (lecture stricte d'une ligne du livre, `isUtensilLine`) : serveur seul | `core/utils/utensils.dart`, `core/services/cooklang_parser.dart` | `nutrition/utensils.ts`, `cooklang/parser.ts` |
 | `allergens.json` | les quatorze allergènes majeurs (annexe II INCO) : clés dans l'ordre du règlement et libellés — valeurs seules ; le calcul du champ `allergens` d'une recette est serveur seul | `features/recipes/domain/allergens.dart` | `nutrition/allergens.ts` |
 
 ### Nouveautés — l'asset `changelog_recent.json`
@@ -7439,6 +7541,15 @@ Il reste une fenêtre de quelques secondes entre la seconde vérification et la 
 `firebase deploy`. Le workflow recopie aussi l'APK en ligne juste avant son hosting : un
 `deploy.ps1` qui publierait un nouvel APK à ce moment le verrait remplacé par l'ancien. En cas de
 doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
+
+**Le commit de `deploy.ps1` se confirme (v0.24.58, Issue #164).** Avant son `git add -A`,
+le script affiche `git status --short --untracked-files=all` (chaque fichier non suivi, pas
+seulement son dossier) et demande « Commiter et pousser ces fichiers ? (O/N) ». Toute autre
+réponse que `O` ou `o`, ou une console non interactive, l'arrête en erreur
+sans commit ni push. La production porte déjà ces changements à ce stade : vérifier les
+fichiers, puis les commiter et les pousser à la main après `git pull --no-rebase`, avec la
+ligne `Deploy-Source: deploy.ps1` pour que le workflow ne les redéploie pas. Sans fichier
+modifié, rien n'est demandé.
 
 **L'APK en ligne est vérifié deux fois.** Avant les Functions, `.github/scripts/keep-online-apk.sh`
 télécharge la paire APK + manifeste, pour qu'une paire incohérente arrête tout avant le premier
@@ -8196,8 +8307,13 @@ pourtant, et une réimplémentation doit connaître leur contrat :
   ou inconnu compris (v0.24.17). Chaque expérience reçoit le contexte de cette garde et
   pose elle-même son poste de coût (`ctx.feature`) ;
 - l'image d'une expérience est bornée à 20 Mo décodés (`readSandboxImage`, plafond
-  `PAGE_IMAGE_MAX_BYTES` importé de `callable/_inputBounds.ts`) ; l'erreur d'une expérience rend `err.message`,
-  lisible par le seul administrateur ;
+  `PAGE_IMAGE_MAX_BYTES` importé de `callable/_inputBounds.ts`) ; l'erreur d'une expérience
+  ne rend plus son texte brut (v0.24.54, ticket #163) : `sandboxFailure` la journalise
+  (`logError`, compte, poste, `correlationId`), sauf erreur du fournisseur déjà journalisée,
+  puis `toHttpsError` renvoie le texte fixe des callables d'IA ; une `HttpsError` déjà rédigée
+  (image trop lourde) passe telle quelle, et un plafond d'IA (`BudgetExceededError`) ou un
+  chemin refusé (`StoragePathRefusedError`) sort par `toHttpsError` avec son message, sans
+  ligne ERROR ;
 - rien n'y est enregistré — ni Firestore, ni Storage sur les chemins de production ;
 - le bac à sable **lit** le code de l'application, ne l'édite jamais : une expérience qui
   doit modifier un comportement existant en copie le code.
