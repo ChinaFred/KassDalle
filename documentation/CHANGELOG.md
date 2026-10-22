@@ -20,6 +20,18 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.53 — technique
+
+- Planning : les plafonds de sortie de la conception de recette (`PLANNING_CONCEPT_MAX_TOKENS`,
+  6 000 → 16 000 jetons) et de la traduction des consignes (`PLANNING_CONSTRAINTS_MAX_TOKENS`,
+  3 000 → 12 000) suivent celui du planning (v0.24.51) : la réflexion de Claude compte dans
+  `max_tokens` et pouvait consommer toute la sortie sans rendre de texte. Mesures sur Sonnet 5 :
+  752 et 865 jetons pour une conception, 662 pour une traduction. Seuls les jetons produits sont
+  facturés ; ce qui monte, c'est le coût plafond estimé avant l'appel (0,06 $ → 0,16 $ par
+  conception, 0,03-0,05 $ → 0,12-0,14 $ par traduction sur Sonnet 5), qui reste sous le plafond
+  de 0,50 € par génération. Une conception dont l'appel échoue garde sa réservation : la
+  génération en permet alors moins, jamais plus.
+
 ### v0.24.52 — technique
 
 Retrait de deux backfills ponctuels terminés en production, d'après la liste « Copier la

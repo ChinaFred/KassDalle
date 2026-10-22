@@ -5280,7 +5280,9 @@ principaux voyagent avec le résumé, et dire « vérifié » sur cette base ser
 
 - **Traduction** (`understandPlanningTexts`, poste `planning_constraints`) : avant la
   présélection, `suggestMealPlanFn` relit le cache (§3.8 sexies) ; les textes absents sont
-  traduits en **un** appel (`translateConstraintTexts`, `askJson`, 45 s, `maxTokens` 3 000),
+  traduits en **un** appel (`translateConstraintTexts`, `askJson`, 45 s, `maxTokens` 12 000,
+  `PLANNING_CONSTRAINTS_MAX_TOKENS` : la réflexion de Claude compte dans ce plafond ; mesuré à
+  662 jetons de sortie sur Sonnet 5 le 22 oct. 2026 ; Gemini ne le reçoit pas),
   seize textes de 2 000 caractères au plus — au-delà, le texte part tel quel. Jamais en mode
   `code` (« Autre suggestion » lit le cache seul), jamais à la frappe. Échec du modèle ou
   plafond du jour (`BudgetExceededError`) : `logError` ou `logWarn`, les textes partent au
@@ -5371,15 +5373,18 @@ plafond sur la grille en vigueur (`estimateCallCeilingUsd` : caractères / 3 en 
 illisible ou taux absent : pas d'estimation inventée, `logWarn`, le plafond en euros ne
 s'applique pas — le plafond de nombre de conceptions et le plafond du jour restent actifs.
 
-**Conceptions** (`generateRecipeConceptFn`, poste `planning_concept`, `maxTokens` 6 000).
-Avec `runId`, la conception est rattachée à sa génération : `reservePlanningConcept`
+**Conceptions** (`generateRecipeConceptFn`, poste `planning_concept`, `maxTokens` 16 000,
+`PLANNING_CONCEPT_MAX_TOKENS`). Sur Claude, la réflexion compte dans ce plafond ; une
+conception a rendu 752 et 865 jetons de sortie sur Sonnet 5 (7 oct. 2026). Gemini ne le
+reçoit pas. Avec `runId`, la conception est rattachée à sa génération : `reservePlanningConcept`
 (transaction sur `users/{uid}/planning_runs/{runId}`) refuse une génération inconnue sous
 l'appelant (`not-found`), de plus de 6 heures, au compteur atteint, ou dont le coût cumulé
 plus les réservations en cours plus l'estimation dépasserait le plafond
 (`resource-exhausted`, `details.reason`). Le compteur est incrémenté et l'estimation réservée
 (`reserved_usd`) **avant** l'appel, dans la même transaction : des conceptions lancées en
 parallèle se voient l'une l'autre. Après, `addPlanningRunCost` ajoute le coût enregistré et
-libère la réservation. La réponse porte `conceptsRemaining`. Sans `runId`, la conception est un geste
+libère la réservation. Une conception dont l'appel lève garde sa réservation : le plafond
+reste plus strict, jamais plus large. La réponse porte `conceptsRemaining`. Sans `runId`, la conception est un geste
 unitaire (« Concevoir avec l'IA » sur un créneau, idée retenue dans le sélecteur) : hors
 plafond de génération, borné par le plafond du jour. Le plafond de génération ne borne donc
 que les conceptions automatiques ; le total des conceptions, automatiques et manuelles, n'est
