@@ -555,8 +555,14 @@ export const CONCEPT_RUN_TTL_MS = 6 * 60 * 60 * 1000;
  * l'estimation du coût plafond.
  */
 export const PLANNING_MAX_TOKENS = 16_000;
-/** Plafond de jetons de sortie du poste `planning_concept` : une recette. */
-export const PLANNING_CONCEPT_MAX_TOKENS = 6_000;
+/**
+ * Plafond de jetons de sortie du poste `planning_concept` : une recette, plus
+ * la réflexion de Claude, qui compte dans `max_tokens`. Mesuré sur Sonnet 5 :
+ * 752 et 865 jetons de sortie (7 oct. 2026). Le plafond suit celui du
+ * planning, pour qu'une réflexion longue ne coupe pas la recette. Gemini ne
+ * reçoit pas ce plafond ; il ne sert qu'à l'estimation du coût plafond.
+ */
+export const PLANNING_CONCEPT_MAX_TOKENS = 16_000;
 
 /** Réglages de la présélection, lus dans `app_config/planning_policy`. */
 export interface PlanningPolicy {
