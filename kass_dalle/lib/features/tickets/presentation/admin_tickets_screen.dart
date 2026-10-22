@@ -1466,7 +1466,9 @@ class _AdminTicketDetailState extends ConsumerState<_AdminTicketDetail> {
                       validateFirst: true,
                     ),
               icon: const Icon(AppIcons.ticketLaunchDevelopment),
-              label: const Text('Valider et lancer le développement'),
+              label: const _OneLineAtDefaultScale(
+                'Valider et lancer le développement',
+              ),
             ),
           ),
         ],
@@ -3185,5 +3187,25 @@ class _AnalysisCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Libellé de bouton sur une ligne, à la taille de texte par défaut.
+///
+/// « Valider et lancer le développement » passait à la ligne sur un
+/// téléphone de 360 px, et le bouton doublait de hauteur. Au texte par
+/// défaut, le libellé se réduit pour tenir sur une ligne, sans être tronqué.
+/// Texte agrandi par l'utilisateur : le libellé garde sa taille et passe à
+/// la ligne, pour que l'agrandissement reste effectif.
+class _OneLineAtDefaultScale extends StatelessWidget {
+  final String text;
+
+  const _OneLineAtDefaultScale(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final label = Text(text);
+    if (MediaQuery.textScalerOf(context).scale(1) > 1) return label;
+    return FittedBox(fit: BoxFit.scaleDown, child: label);
   }
 }

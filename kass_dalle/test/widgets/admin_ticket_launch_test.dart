@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -86,6 +87,7 @@ void main() {
     Future<TicketLaunchResult> Function()? onLaunch,
     List<Ticket>? tickets,
     ValueNotifier<String?>? selection,
+    double textScale = 2.0,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -131,7 +133,7 @@ void main() {
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(
               context,
-            ).copyWith(textScaler: const TextScaler.linear(2.0)),
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
             child: child!,
           ),
           // Une sélection qui change sans routeur : l'écran large garde le
@@ -561,6 +563,40 @@ void main() {
       await pump(tester, status: 'analyzed');
       expect(find.text(combined), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Valider'), findsOneWidget);
+    });
+
+    testWidgets('une ligne au texte par défaut, à 360 px', (tester) async {
+      await pump(
+        tester,
+        status: 'analyzed',
+        size: const Size(360, 800),
+        textScale: 1.0,
+      );
+      expect(tester.takeException(), isNull);
+      final label = find.text(combined);
+      expect(
+        find.ancestor(of: label, matching: find.byType(FittedBox)),
+        findsOneWidget,
+      );
+      // Une ligne : sans réduction, la police de test en faisait deux
+      // (40 px pour une ligne de 20 px).
+      final paragraph = tester.renderObject<RenderParagraph>(label);
+      final line = paragraph.getFullHeightForCaret(
+        const TextPosition(offset: 0),
+      );
+      expect(paragraph.size.height, lessThan(line * 1.5));
+    });
+
+    testWidgets('texte agrandi : le libellé garde sa taille', (tester) async {
+      await pump(tester, status: 'analyzed');
+      expect(tester.takeException(), isNull);
+      expect(
+        find.ancestor(
+          of: find.text(combined),
+          matching: find.byType(FittedBox),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('absent hors « analysé »', (tester) async {
