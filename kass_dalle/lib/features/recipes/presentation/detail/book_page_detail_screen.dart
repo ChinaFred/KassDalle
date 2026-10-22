@@ -655,13 +655,24 @@ class _GalleryTrigger extends StatelessWidget {
   Widget build(BuildContext context) {
     // Une image hors de Kass'Dalle n'ouvre pas de visionneuse.
     if (!isAppImageUrl(images[index])) return child;
+    // L'effet d'encre se pose AU-DESSUS de l'image : posé derrière, l'image
+    // opaque cacherait le focus clavier et le survol.
     return Semantics(
       button: true,
       label: 'Agrandir l\'illustration',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => _openPageGallery(context, images, index),
-        child: child,
+      child: Stack(
+        children: [
+          child,
+          Positioned.fill(
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _openPageGallery(context, images, index),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

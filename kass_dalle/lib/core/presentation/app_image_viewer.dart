@@ -295,6 +295,29 @@ class _ViewerPageState extends State<_ViewerPage> {
   /// Incrémenté par « Réessayer » : la clé change, l'image se recharge.
   int _attempt = 0;
 
+  /// L'état d'erreur, une fois l'image en échec. Il s'affiche hors du zoom :
+  /// un double appui n'agrandit pas le texte, « Réessayer » répond sans le
+  /// délai du double appui, et la colonne défile quand la hauteur manque
+  /// (texte agrandi, téléphone en paysage).
+  Widget? _failure;
+
+  /// Retient [view] comme état d'erreur, après la construction en cours.
+  void _fail(Widget view) {
+    if (_failure != null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _failure == null) setState(() => _failure = view);
+    });
+  }
+
+  Widget _errorLayout(Widget child) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+        child: Center(child: child),
+      ),
+    ),
+  );
+
   void _toggleZoom() {
     final ctrl = widget.controller;
     if (ctrl.value.getMaxScaleOnAxis() > 1.01) {
@@ -325,7 +348,10 @@ class _ViewerPageState extends State<_ViewerPage> {
       );
     }
     if (!mounted) return;
-    setState(() => _attempt++);
+    setState(() {
+      _failure = null;
+      _attempt++;
+    });
   }
 
   Widget _unavailable(Object error, String advice) => AppErrorState(
@@ -343,17 +369,17 @@ class _ViewerPageState extends State<_ViewerPage> {
         fit: BoxFit.contain,
         semanticLabel: image.semanticLabel,
         // Des octets illisibles ne se rechargent pas : aucun bouton.
-        errorBuilder: (_, error, _) =>
-            _unavailable(error, 'Le fichier de l\'image est illisible.'),
+        errorBuilder: (_, error, _) {
+          final view = _unavailable(
+            error,
+            'Le fichier de l\'image est illisible.',
+          );
+          _fail(view);
+          return view;
+        },
       );
     }
     final url = image.url ?? '';
-    if (!isAppImageUrl(url)) {
-      return _unavailable(
-        ForeignImageUrl(url),
-        'Cette image ne vient pas de Kass\'Dalle : elle n\'est pas affichée.',
-      );
-    }
     return Semantics(
       image: true,
       label: image.semanticLabel,
@@ -363,17 +389,32 @@ class _ViewerPageState extends State<_ViewerPage> {
         fit: BoxFit.contain,
         placeholder: (_, _) =>
             const AppLoadingState(label: kAppImageViewerLoadingLabel),
-        errorWidget: (_, _, error) => AppErrorState(
-          error: error,
-          title: kAppImageViewerErrorTitle,
-          onRetry: () => _retry(url),
-        ),
+        errorWidget: (_, _, error) {
+          final view = AppErrorState(
+            error: error,
+            title: kAppImageViewerErrorTitle,
+            onRetry: () => _retry(url),
+          );
+          _fail(view);
+          return view;
+        },
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final failure = _failure;
+    if (failure != null) return _errorLayout(failure);
+    final url = widget.image.url;
+    if (widget.image.bytes == null && !isAppImageUrl(url ?? '')) {
+      return _errorLayout(
+        _unavailable(
+          ForeignImageUrl(url ?? ''),
+          'Cette image ne vient pas de Kass\'Dalle : elle n\'est pas affichée.',
+        ),
+      );
+    }
     return GestureDetector(
       onDoubleTapDown: (details) => _doubleTapAt = details.localPosition,
       onDoubleTap: _toggleZoom,
