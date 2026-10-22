@@ -223,9 +223,12 @@ export function cleanupRecipe(data: Record<string, unknown>): RecipeCleanup {
  * comme un nom, et TOUS les alias. La normalisation est celle de l'index
  * lui-même (`buildIngredientsIndex`), jamais une copie.
  *
- * L'écran Ingrédients nutrition (`ingredientUsageSearchValues`) n'affiche que
- * les trente premières valeurs ; ici, une suppression ne se décide qu'après
- * avoir tout cherché.
+ * L'écran Ingrédients nutrition (`ingredientUsageSearchValues`,
+ * `lib/features/admin/domain/ingredient_recipe_usage.dart`) cherche les mêmes
+ * trois sources : une source ajoutée là-bas s'ajoute ici. Il n'affiche que les
+ * trente premières valeurs ; ici, une suppression ne se décide qu'après avoir
+ * tout cherché. Pas de fixture partagée : ce backfill est ponctuel et sera
+ * retiré du code une fois passé.
  */
 export function sheetUsageBatches(id: string, data: Record<string, unknown>): string[][] {
   const names: string[] = [];

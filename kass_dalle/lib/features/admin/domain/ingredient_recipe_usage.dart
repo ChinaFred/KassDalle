@@ -23,6 +23,12 @@ const int kIngredientUsageMaxValues = 30;
 /// une normalisation recopiée pourrait s'écarter de celle de l'index, et la
 /// recherche ne trouverait plus rien sans lever d'erreur.
 ///
+/// Le backfill « Retirer les ustensiles des ingrédients » cherche les mêmes
+/// trois sources avant de supprimer une fiche (`sheetUsageBatches`,
+/// `functions/src/callable/utensilsCleanupBackfillCallable.ts`) : une source
+/// ajoutée ici s'ajoute là-bas. Pas de fixture partagée, choix assumé : le
+/// backfill est ponctuel et sera retiré du code une fois passé.
+///
 /// Ordre : nom canonique, identifiant lu comme un nom, puis les alias. Au-delà
 /// de [kIngredientUsageMaxValues] valeurs distinctes, les derniers alias sont
 /// écartés — les deux premières valeurs, les plus fréquentes, restent.
