@@ -20,6 +20,33 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.53 — fonctionnel
+
+Le papier sulfurisé, le film alimentaire, les piques à brochette et les autres ustensiles ou
+consommables ne sont plus ajoutés aux ingrédients d'une recette importée, retouchée par l'IA ou
+imaginée. Ils restent cités dans les étapes comme ustensiles. L'éditeur ne les remet pas dans la
+liste quand on les écrit avec `@`, et ils ne créent plus de fiche dans le référentiel nutrition.
+Les recettes et les fiches déjà concernées (`papier_sulfurise`…) ne sont pas reprises dans cette
+version : leur nettoyage viendra par un backfill.
+
+### v0.24.53 — technique
+
+Régression du 20 août 2026 (v0.21.31) : `TAGGING_PROMPT` ne nommait plus le papier sulfurisé ni
+l'aluminium, et son travail 2 exigeait une entrée par ligne de la liste du livre. Le prompt
+remet la règle « emballages et consommables : toujours `#`, jamais `@` », avec la liste, et le
+travail 2 laisse une ligne de matériel sans entrée. `COOKLANG_RULES` (refine, génération)
+porte la même règle.
+
+Nouvelle liste fermée `test-fixtures/utensils.json`, rejouée par `nutrition/utensils.ts` et
+`lib/core/utils/utensils.dart` (ligne ajoutée au tableau « Logique dupliquée » de `CLAUDE.md`).
+Elle s'applique après le modèle : `withoutUtensils` en sortie de `tagAndNormalize` (import,
+texte collé, lien : entrée retirée, `@` réécrit en `#`), `withoutUtensilsInGenerated` en sortie
+de `refineRecipe` et `generateRecipe`, le parseur CookLang des deux côtés
+(`extractIngredients`, `extractIngredientsStructured`, cas ajouté à `cooklang_parsing.json`),
+`resolveOneIngredient` avant `ensureIngredientReference`, et les entrées de
+`syncRecipeNutrition`. `checkFidelity` n'attend plus d'entrée pour une ligne de matériel.
+Aucun schéma ne change ; aucun backfill dans cette version.
+
 ### v0.24.52 — technique
 
 Retrait de deux backfills ponctuels terminés en production, d'après la liste « Copier la

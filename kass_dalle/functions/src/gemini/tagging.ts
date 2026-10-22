@@ -13,7 +13,7 @@
  */
 
 import { extractJsonObject } from "./client";
-import { logAiText, logError, logWarn } from "../logging";
+import { logAiText, logError, logInfo, logWarn } from "../logging";
 import { requestShapeFor } from "../ai/anthropic";
 import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext, type ModelCallResult } from "../ai/types";
@@ -27,6 +27,7 @@ import {
 } from "./mealRole";
 import type { TranscribedRecipe } from "./transcription";
 import { noteDitQuelqueChose, noteFromRawLine } from "../nutrition/ingredientNote";
+import { isUtensil, retagUtensils } from "../nutrition/utensils";
 
 /**
  * Plafond de sortie du balisage, réflexion comprise.
@@ -209,6 +210,35 @@ export interface TaggedRecipe {
   mainStarch: MainStarch | null;
   /** Le modèle a répondu sur la protéine et le féculent (`parseMainProteinStarch`). */
   mainIngredientsChecked: boolean;
+  /**
+   * Entrées retirées de `ingredients` parce qu'elles nomment un ustensile de
+   * la liste fermée (`nutrition/utensils.ts`). Gardées pour le contrôle de
+   * fidélité : leur ligne du livre est couverte, pas perdue.
+   */
+  ustensilesEcartes?: NormalizedIngredientLine[];
+}
+
+/**
+ * Retire de la sortie du balisage les ustensiles écrits comme ingrédients.
+ *
+ * Un nom de la liste fermée (« papier sulfurisé », « piques à brochette »…)
+ * sort de la liste d'ingrédients, et son `@nom{…}` devient `#nom{…}` dans le
+ * texte. Sans ce retrait, l'import créait une fiche `nutrition_ingredients`
+ * pour le papier sulfurisé et lui cherchait des valeurs nutritionnelles.
+ * S'applique à l'import d'une page, au texte collé et à l'import par lien, qui
+ * passent tous par `tagAndNormalize`.
+ */
+export function withoutUtensils(tagged: TaggedRecipe): TaggedRecipe {
+  const ecartes = tagged.ingredients.filter((i) => isUtensil(i.nom));
+  return {
+    ...tagged,
+    cooklang: retagUtensils(tagged.cooklang),
+    ingredients:
+      ecartes.length > 0 ? tagged.ingredients.filter((i) => !isUtensil(i.nom)) : tagged.ingredients,
+    ...(ecartes.length > 0
+      ? { ustensilesEcartes: [...(tagged.ustensilesEcartes ?? []), ...ecartes] }
+      : {}),
+  };
 }
 
 /**
@@ -476,11 +506,25 @@ export async function tagAndNormalize(
   try {
     const tagged = parseTagged(JSON.parse(extractJsonObject(text)) as Record<string, unknown>);
     // La ligne du livre est rattachée ICI, depuis la transcription — pas
-    // demandée au modèle. Voir `attachSourceLines`.
-    return {
+    // demandée au modèle. Voir `attachSourceLines`. Les ustensiles sortent
+    // ensuite de la liste : leur ligne d'origine les accompagne, pour que le
+    // contrôle de fidélité la compte comme couverte.
+    const cleaned = withoutUtensils({
       ...tagged,
       ingredients: attachSourceLines(ingredientLinesOf(recipe), tagged.ingredients),
-    };
+    });
+    if (cleaned.ustensilesEcartes && cleaned.ustensilesEcartes.length > 0) {
+      await logInfo({
+        message: `Balisage : ${cleaned.ustensilesEcartes.length} ustensile(s) retiré(s) de la liste d'ingrédients`,
+        moduleType: "IMPORT",
+        correlationId: ctx.correlationId,
+        scanId: ctx.scanId,
+        jobId: ctx.jobId,
+        userId: ctx.userId,
+        extra: { titre: recipe.titre, ustensiles: cleaned.ustensilesEcartes.map((i) => i.nom) },
+      });
+    }
+    return cleaned;
   } catch (err) {
     await logError({
       message: "tagAndNormalize: réponse illisible",
