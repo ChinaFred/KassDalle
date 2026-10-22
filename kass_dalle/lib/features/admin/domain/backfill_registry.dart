@@ -153,7 +153,9 @@ const List<BackfillDefinition> kBackfillRegistry = [
     description:
         'Retire le papier sulfurisé et les autres ustensiles des ingrédients '
         'des recettes, puis supprime leurs fiches du référentiel.',
-    usesAi: false,
+    // Le passage n'appelle aucun modèle, mais chaque recette corrigée est
+    // recalculée par le déclencheur d'écriture, qui peut en appeler un.
+    usesAi: true,
     passLimit: 'Chaque passage examine au plus 2 000 recettes.',
   ),
 ];

@@ -116,7 +116,9 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     key: "utensils_cleanup",
     kind: "ponctuel",
     title: "Retirer les ustensiles des ingrédients",
-    usesAi: false,
+    // Le passage n'appelle aucun modèle, mais chaque recette corrigée est
+    // recalculée par `onRecipeWritten`, qui peut en appeler un.
+    usesAi: true,
     defaultSchedule: null,
   },
 ];

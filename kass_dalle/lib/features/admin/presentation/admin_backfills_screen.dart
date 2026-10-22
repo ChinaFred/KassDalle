@@ -150,11 +150,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'liste dans « À revoir » les recettes et les fiches du '
             'référentiel qu\'il corrigerait. Décochez « Essai à blanc » '
             'ci-dessous pour corriger.\n\n'
-            'Corrigé, ce passage retire des recettes les ustensiles écrits '
+            'Sans essai à blanc, ce passage retire des recettes les ustensiles écrits '
             'comme ingrédients (papier sulfurisé, film alimentaire, '
             'piques…) : ils restent cités dans les étapes, comme ustensiles. '
             'Une fois toutes les recettes parcourues, il supprime les fiches '
-            'du référentiel d\'ustensiles qu\'aucune recette ne cite plus. '
+            'd\'ustensiles du référentiel qu\'aucune recette ne cite plus. '
             'Un ustensile suivi d\'une parenthèse n\'est pas touché : la '
             'recette passe dans « À revoir ».\n\n'
             'Aucun appel d\'IA par le passage. Chaque recette corrigée voit '
@@ -292,7 +292,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         } else if (trouve > 0) {
           fin = ' — essai terminé : décochez « Essai à blanc » pour corriger';
         } else {
-          fin = ' — essai terminé : rien à corriger';
+          fin = ' — essai terminé : rien à corriger automatiquement';
         }
         return _fromCounts(
           r,

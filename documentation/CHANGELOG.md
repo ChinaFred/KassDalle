@@ -29,7 +29,8 @@ référentiel nutrition (`papier_sulfurise`…). La confirmation porte une case 
 ne rien modifier », cochée par défaut à chaque lancement : le passage liste alors dans « À
 revoir » les recettes et les fiches qui seraient corrigées, sans rien écrire. Un ustensile suivi
 d'une parenthèse (« caissettes (ou beurre) ») n'est pas touché : la recette passe dans « À
-revoir », à corriger à la main.
+revoir », à corriger à la main. La tuile est marquée « IA » : le passage n'appelle aucun modèle,
+mais chaque recette corrigée est recalculée, et ce recalcul peut en appeler un.
 
 ### v0.24.59 — technique
 
