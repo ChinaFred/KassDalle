@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/services/error_report_service.dart';
+import '../../../core/services/google_access_token_cache.dart';
 import '../../moderation/data/image_moderation_service.dart';
 import '../domain/app_user.dart';
 import '../domain/user_profile.dart';
@@ -318,7 +319,11 @@ class AuthRepository {
     return signInWithGoogle(forceAccountChooser: true);
   }
 
+  /// Déconnexion. Les jetons Google gardés en mémoire (Agenda, Tasks) sont
+  /// oubliés d'abord, même si la suite échoue : un autre compte connecté
+  /// ensuite sur l'appareil ne doit pas s'en servir.
   Future<void> signOut() async {
+    GoogleAccessTokenCache.clearAll();
     await Future.wait([
       _auth.signOut(),
       if (!kIsWeb) GoogleSignIn.instance.signOut(),

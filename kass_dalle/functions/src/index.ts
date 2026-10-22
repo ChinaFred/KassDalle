@@ -170,7 +170,6 @@ export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdm
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
-export { backfillMoveMealsToGroupFn } from "./callable/moveMealsToGroupBackfillCallable";
 export { backfillDefaultUnitsFn } from "./callable/defaultUnitsBackfillCallable";
 export { backfillUsersSchemaCheckFn } from "./callable/usersSchemaCheckBackfillCallable";
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en

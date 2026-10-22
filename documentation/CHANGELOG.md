@@ -46,7 +46,124 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
   de l'effort, verrouillé par `ai_effort_resolution.json` et déclaré dans `CLAUDE.md` et le
   skill `logique-dupliquee` ; le skill `nouveau-poste-ia` cite `CODE_EFFORTS`.
 
+### v0.24.49 — technique
+
+Fichier de vérification Google Search Console publié à la racine du site
+(`kass_dalle/web/google3fec43c7d803a62b.html`, déposé tel quel). Il prouve que
+`https://kassdale-6d948.web.app/` appartient au compte propriétaire du projet, condition de
+la validation de l'écran de consentement OAuth. Il reste dans le dépôt : le retirer fait
+perdre la vérification (handbook §11.7).
+
+### v0.24.48 — technique
+
+Règles Storage : le rôle et la révocation se relisent sur `users/{uid}`. Jusqu'ici
+`storage.rules` ne lisait que le jeton : un administrateur rétrogradé gardait la lecture de
+`rejected/` et de la quarantaine des autres, et un compte révoqué pouvait encore déposer,
+jusqu'au renouvellement du jeton (une heure au plus). Firestore leur retirait déjà ces droits
+depuis la v0.24.30. `isAdmin()`, `isApproved()` et `isEditor()` (ex-`isApprovedToken` et
+`isEditorToken`) testent d'abord le claim de rôle, puis lisent le document par
+`firestore.get`, avec `roleOf` et `isRevoked` recopiés de `firestore.rules`. Sans claim de
+rôle, la règle refuse sans lire Firestore : un compte en attente ou inconnu ne déclenche
+aucune lecture facturée. Coût : une lecture Firestore par dépôt dans `quarantine/` ou
+`tickets/` et par lecture ou listage d'administrateur ; les images affichées par URL et le
+`get` des dossiers publiés n'en coûtent aucune. Un rôle accordé attend toujours le jeton.
+**Action manuelle avant le déploiement** : poser `roles/firebaserules.firestoreServiceAgent`
+sur l'agent de service Storage (`handbook-reseau-agents.md`, section 11.8). Le workflow
+lance la CLI en `--non-interactive` et ne pose pas ce rôle ; sans lui, tous les dépôts de
+fichiers sont refusés. Quinze cas ajoutés à `rules-tests/test/storage.test.mjs`.
+
+
+### v0.24.47 — fonctionnel
+
+Trois pages publiques, lisibles sans connexion : `/accueil.html` présente l'application et
+les accès Google qu'elle demande, `/confidentialite.html` décrit les données collectées, qui
+les voit et les droits de chacun, `/conditions.html` pose les règles d'usage. Google les
+exige pour valider l'écran de consentement OAuth et passer l'application en production.
+L'écran de connexion et la salle d'attente affichent « Confidentialité · Conditions
+d'utilisation » au-dessus du numéro de version.
+
+L'accès Google Agenda demandé est réduit : la lecture des agendas (`calendar.readonly`) est
+remplacée par la liste des agendas (`calendar.calendarlist.readonly`), seul usage du code.
+Chaque membre accepte le nouvel accès une fois, au prochain export vers l'agenda.
+
+Correction : après une déconnexion, l'accès Google Agenda et Tasks restait en mémoire
+jusqu'à 55 minutes ; un autre compte connecté sur le même appareil exportait ses repas dans
+l'agenda du premier. L'accès est maintenant lié au compte et effacé à la déconnexion.
+
+### v0.24.47 — technique
+
+Les trois pages sont des fichiers statiques de `kass_dalle/web/`, servis par Hosting avant la
+réécriture vers `index.html`, sans script ni ressource externe : la CSP et `firebase.json`
+ne changent pas. `index.html` reçoit un `<noscript>` avec les trois liens.
+`GoogleAccessTokenCache` (`core/services/google_access_token_cache.dart`) remplace les
+jetons statiques de `calendar_service.dart` et `google_tasks_service.dart` : jeton rendu au
+seul uid Firebase qui l'a obtenu, effacé à échéance lue et par `AuthRepository.signOut`.
+Le handbook (§11.7) décrit le réglage manuel de l'écran de consentement et la preuve de
+propriété du site dans Search Console.
+
 ## 2026-10-21
+
+### v0.24.46 — fonctionnel
+
+Admin › Référentiels › Ingrédients nutrition : le dépliage d'une fiche affiche « Recettes qui
+l'utilisent (n) », sous les allergènes. La liste donne jusqu'à vingt recettes qui citent
+l'ingrédient sous son nom canonique, son identifiant ou l'un de ses alias, privées comprises,
+avec « Brouillon », « Privée » et le titre du livre quand ils s'appliquent. Un appui ouvre la
+fiche de la recette, ou la relecture d'un brouillon ; le crayon ouvre l'éditeur, sauf pour un
+brouillon, que l'éditeur n'ouvre pas. Au-delà de vingt, le compteur affiche « (20+) » et la
+ligne « 20 premières recettes affichées. ». La liste est lue à chaque dépliage et au retour de
+la recette ouverte, par une seule requête Firestore, sans appel d'IA ni index composite. Le modèle `NutritionIngredientDoc` lit désormais `canonical_name` et `aliases`.
+
+### v0.24.45 — fonctionnel
+
+- Retouche d'image (couverture d'un livre, import de page, illustrations) : les coins du cadre se posent plus facilement au doigt (#211). Le coin ne saute plus sous le doigt : l'écart entre le doigt et le coin est conservé. L'image garde une marge de 24 px autour d'elle, ce qui permet de poser un coin sur le bord sans toucher la zone du geste « retour » d'Android. Un toucher dans l'image saisit le coin le plus proche, sans plafond de 60 px, tant que la vue n'est pas zoomée. Les poignées sont plus grandes. Aucune dépendance ajoutée.
+
+### v0.24.44 — fonctionnel
+
+Admin › Backfills ne propose plus « Déplacer mes repas vers un groupe », retiré à la demande
+de l'administrateur. Son dernier passage, le 14/10/2026, a déplacé 7 repas du 2 au 29 octobre
+dans le planning d'un groupe, sans échec. Les repas déjà déplacés restent dans le planning de
+leur groupe. Aucun écran de l'application ne change désormais le planning d'un repas existant.
+Le menu ⋮ de chaque ponctuel propose de nouveau « Marquer comme terminé ».
+
+« Reprendre le sel des ingrédients » ne redemande plus un ingrédient déjà réparé, et retente un
+ingrédient en échec au passage suivant. Il ne se dit terminé qu'après un parcours entier de
+l'ancien référentiel sans échec ; un passage repris en cours de route se dit « incomplet » et
+invite à relancer. Les ingrédients réparés avant cette version n'ont pas la marque de
+réparation : le prochain passage les réestime une fois de plus, et cette dépense est imputée
+au poste `backfill_refresh_sodium_per100g`.
+
+### v0.24.44 — technique
+
+Retrait du ponctuel réutilisable `move_meals_to_group` (v0.23.61), sans « Copier la liste » :
+il n'était pas terminé, son retrait est une décision de l'utilisateur. Supprimés : le callable
+`backfillMoveMealsToGroupFn` (`moveMealsToGroupBackfillCallable.ts`) et son export, ses tests
+(`moveMealsToGroup.test.ts`, `move_meals_to_group_test.dart`), le dialogue
+`move_meals_to_group_dialog.dart`, le modèle `MoveMealsRequest` (`move_meals_request.dart`,
+avec `ownedActiveGroups` et `formatShortPeriod`, que lui seul utilisait), la méthode
+`backfillMoveMealsToGroup` du repository, les entrées des deux registres et de la fixture
+`backfill_schedule.json`, son `case` dans `_runPass` et `_confirmText`, son résumé de tuile et
+son icône. Le champ `reusable` du registre client, propre à ce backfill, part aussi :
+`backfillOffersDoneMenu` ne prend plus que la définition et répond « oui » pour tout ponctuel.
+La clé rejoint les listes de clés retirées des tests. Le document
+`app_config/backfill_run_move_meals_to_group` reste en base, plus lu. Aucune règle Firestore ne
+change : aucune n'existait pour ce backfill, qui écrivait par l'Admin SDK ; l'index `uid` +
+`planned_at` de `planned_meals` reste, `readServedHistory` s'en sert. Aucun poste de coût.
+
+Réparation du sel (`refresh_sodium`, mode `refreshSodium` de `runEnrichReferentialsPass`,
+`billingCallable.ts`). Avant : la sélection était `carriesSodium(per100g)`, vraie aussi pour
+un ingrédient déjà réparé ; le curseur avançait sans mémoire d'échec, donc un échec n'était
+retenté qu'au tour suivant ; un passage repris à mi-chemin qui atteignait la fin pouvait marquer
+le backfill terminé malgré les échecs des passages précédents ; une relance après la fin
+redemandait tout. Maintenant : nouveau champ `nutrition_ingredients.sodium_repaired_at`
+(horodatage serveur), posé dans le même `update` que le profil réparé
+(`enrichedIngredientPayload`) ; cible = sodium présent et marque absente
+(`isSodiumRepairTarget`) ; en mode sel, un échec compte dans `unresolvedFailures`, et le
+passage n'est complet que si son parcours a commencé au début de la collection
+(`enrichPassCompleted`). Le mode `enrich_referentials` ne change pas. Les règles Firestore ne
+changent pas : le client n'écrit sur `nutrition_ingredients` que le produit acheté et les
+allergènes. Nouveau test `refreshSodium.test.ts`. Le compte rendu de la bannière dit
+« terminé » seulement sans échec.
 
 ### v0.24.43 — fonctionnel
 

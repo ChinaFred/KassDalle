@@ -1,12 +1,15 @@
 // Règles Storage (kass_dalle/storage.rules), rôle par rôle.
 //
-// Les règles Storage ne lisent que le jeton : rôle et révocation viennent des
-// claims frappés par `syncUserClaims`. Même convention que firestore.test.mjs
-// pour les failles ouvertes (`OPEN_FLAW`).
+// Depuis la v0.24.48, une décision qui demande un rôle (dépôt, lecture ou
+// listage d'administrateur) lit le jeton PUIS le document `users/{uid}` par
+// une règle inter-services : l'émulateur Storage interroge l'émulateur
+// Firestore, lancé avec lui (`emulators:exec --only firestore,storage`). Les
+// `get` des dossiers publiés restent sur le jeton seul. Même convention que
+// firestore.test.mjs pour les failles ouvertes (`OPEN_FLAW`).
 
 import { after, before, beforeEach, describe, it } from "node:test";
 import { assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
-import { PERSONAS, as, createEnv } from "./helpers.mjs";
+import { PERSONAS, as, createEnv, seedDocs, seedUsers } from "./helpers.mjs";
 
 let env;
 
@@ -27,12 +30,16 @@ before(async () => {
   env = await createEnv();
 });
 
+// Les autres fichiers de la suite vident Firestore : les documents
+// `users/{uid}` que relisent les règles Storage se réécrivent avant chaque cas.
+
 after(async () => {
   await env.cleanup();
 });
 
 beforeEach(async () => {
   await env.clearStorage();
+  await seedUsers(env);
   await env.withSecurityRulesDisabled(async (ctx) => {
     const s = ctx.storage();
     const files = [
@@ -112,7 +119,7 @@ describe("dossiers publiés", () => {
     await assertFails(storage("pending").ref("covers").listAll());
   });
 
-  // La lecture reste sur isActive() (storage.rules, « isApprovedToken ») :
+  // La lecture reste sur isActive() (storage.rules, « isApproved ») :
   // l'aligner sur le rôle a coupé l'accès au fondateur le 2026-10-05, le temps
   // que son jeton porte le claim. Ce test garde ce retour arrière, sur un
   // jeton sans AUCUN claim : isActive() teste la présence de `revoked` avant
@@ -373,5 +380,126 @@ describe("tickets/ — capture d'un ticket", () => {
 
   it("l'auteur ne supprime pas sa capture", async () => {
     await assertFails(storage("reader").ref(mine("jpg")).delete());
+  });
+});
+
+// ── rôle et révocation relus sur le document (v0.24.48) ──────────────────
+//
+// Le jeton vit une heure. Avant la v0.24.48, un administrateur rétrogradé ou
+// un compte révoqué gardait ici les droits de son ancien jeton ; Firestore les
+// lui retirait déjà (`roleOf()`, `isRevoked()`).
+
+describe("rôle et révocation lus sur users/{uid}", () => {
+  const DEMOTED = PERSONAS.demotedAdmin.uid;
+  const STALE = PERSONAS.revokedStaleToken.uid;
+
+  it("un administrateur rétrogradé (jeton admin, document editor) ne lit plus rejected/", async () => {
+    await assertFails(storage("demotedAdmin").ref(`rejected/${READER}/refusee.jpg`).getMetadata());
+  });
+
+  it("un administrateur rétrogradé ne lit plus la quarantaine d'un autre", async () => {
+    await assertFails(storage("demotedAdmin").ref(`quarantine/${OTHER}/photo.jpg`).getMetadata());
+  });
+
+  it("un administrateur rétrogradé ne liste plus covers/", async () => {
+    await assertFails(storage("demotedAdmin").ref("covers").listAll());
+  });
+
+  it("un administrateur rétrogradé garde les droits de son nouveau rôle (éditeur)", async () => {
+    await assertSucceeds(put("demotedAdmin", `quarantine/${DEMOTED}/f.pdf`, "application/pdf"));
+  });
+
+  it("un administrateur dont le jeton et le document concordent lit rejected/ et liste covers/", async () => {
+    await assertSucceeds(storage("admin").ref(`rejected/${READER}/refusee.jpg`).getMetadata());
+    await assertSucceeds(storage("admin").ref("covers").listAll());
+  });
+
+  it("un administrateur révoqué à l'instant (jeton non révoqué) ne lit plus rejected/", async () => {
+    await seedDocs(env, {
+      "users/stale-admin": { role: "admin", is_revoked: true, email: "sa@example.com" },
+    });
+    const ctx = env.authenticatedContext("stale-admin", { role: "admin", revoked: false });
+    await assertFails(ctx.storage().ref(`rejected/${READER}/refusee.jpg`).getMetadata());
+  });
+
+  it("un compte révoqué à l'instant ne dépose plus rien dans sa quarantaine", async () => {
+    await assertFails(put("revokedStaleToken", `quarantine/${STALE}/f.jpg`, "image/jpeg"));
+    await assertFails(put("revokedStaleToken", `quarantine/${STALE}/f.pdf`, "application/pdf"));
+    await assertFails(
+      put("revokedStaleToken", `quarantine/${STALE}/livres/l.epub`, "application/epub+zip"),
+    );
+  });
+
+  it("un compte révoqué à l'instant ne dépose plus de capture de ticket", async () => {
+    await assertFails(put("revokedStaleToken", `tickets/${STALE}/t/screenshot.png`, "image/png"));
+  });
+
+  it("un éditeur rétrogradé lecteur ne dépose plus de PDF ni de livre, garde ses photos", async () => {
+    await seedDocs(env, {
+      "users/demoted-editor": { role: "reader", is_revoked: false, email: "de@example.com" },
+    });
+    const ctx = env.authenticatedContext("demoted-editor", { role: "editor", revoked: false });
+    const up = (path, type) => ctx.storage().ref(path).put(small(), { contentType: type });
+    await assertFails(up("quarantine/demoted-editor/f.pdf", "application/pdf"));
+    await assertFails(up("quarantine/demoted-editor/livres/l.epub", "application/epub+zip"));
+    await assertSucceeds(up("quarantine/demoted-editor/f.jpg", "image/jpeg"));
+  });
+
+  it("un rôle inconnu sur le document ferme l'accès, même avec un jeton admin", async () => {
+    await seedDocs(env, {
+      "users/odd-admin": { role: "admin ", is_revoked: false, email: "odd@example.com" },
+    });
+    const ctx = env.authenticatedContext("odd-admin", { role: "admin", revoked: false });
+    await assertFails(ctx.storage().ref(`rejected/${READER}/refusee.jpg`).getMetadata());
+    await assertFails(
+      ctx.storage().ref("quarantine/odd-admin/f.jpg").put(small(), { contentType: "image/jpeg" }),
+    );
+  });
+
+  it("un jeton éditeur sans document users/{uid} ne dépose rien", async () => {
+    const ctx = env.authenticatedContext("no-doc", { role: "editor", revoked: false });
+    await assertFails(
+      ctx.storage().ref("quarantine/no-doc/f.jpg").put(small(), { contentType: "image/jpeg" }),
+    );
+  });
+
+  it("un document sans rôle se replie sur le claim, comme roleOf() côté Firestore", async () => {
+    await seedDocs(env, {
+      "users/doc-no-role": { is_revoked: false, email: "nr@example.com" },
+    });
+    const ctx = env.authenticatedContext("doc-no-role", { role: "editor", revoked: false });
+    await assertSucceeds(
+      ctx
+        .storage()
+        .ref("quarantine/doc-no-role/f.pdf")
+        .put(small(), { contentType: "application/pdf" }),
+    );
+  });
+
+  // Écart assumé : le jeton reste la première porte. Un compte nommé à
+  // l'instant attend son jeton (une heure au plus), comme avant la v0.24.48 ;
+  // Firestore, lui, l'accepte tout de suite.
+  it("un compte nommé à l'instant (jeton pending) attend son jeton pour déposer", async () => {
+    await assertFails(
+      put("promotedReader", `quarantine/${PERSONAS.promotedReader.uid}/f.jpg`, "image/jpeg"),
+    );
+  });
+
+  // Non-régression des chemins courants, documents à jour.
+  it("lecteur, éditeur et administrateur cohérents déposent sur leurs chemins courants", async () => {
+    await assertSucceeds(put("reader", `quarantine/${READER}/n.jpg`, "image/jpeg"));
+    await assertSucceeds(put("reader", `tickets/${READER}/t9/screenshot.png`, "image/png"));
+    await assertSucceeds(put("editor", `quarantine/${EDITOR}/n.pdf`, "application/pdf"));
+    await assertSucceeds(
+      put("editor", `quarantine/${EDITOR}/livres/n.epub`, "application/epub+zip"),
+    );
+    await assertSucceeds(put("admin", `quarantine/${PERSONAS.admin.uid}/n.png`, "image/png"));
+  });
+
+  it("le fondateur lit rejected/ et dépose un livre", async () => {
+    await assertSucceeds(storage("founder").ref(`rejected/${READER}/refusee.jpg`).getMetadata());
+    await assertSucceeds(
+      put("founder", `quarantine/${PERSONAS.founder.uid}/livres/l.pdf`, "application/pdf"),
+    );
   });
 });

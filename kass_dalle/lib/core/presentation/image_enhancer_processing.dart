@@ -71,20 +71,20 @@ class QuadOverlayPainter extends CustomPainter {
       if (active) {
         canvas.drawCircle(
           pts[i],
-          22,
+          26,
           Paint()..color = Colors.orangeAccent.withValues(alpha: 0.3),
         );
       }
       canvas.drawCircle(
         pts[i],
-        active ? 13 : 10,
+        active ? 16 : 13,
         Paint()
           ..color = active ? Colors.orangeAccent : Colors.white
           ..style = PaintingStyle.fill,
       );
       canvas.drawCircle(
         pts[i],
-        active ? 13 : 10,
+        active ? 16 : 13,
         Paint()
           ..color = Colors.black.withValues(alpha: 0.4)
           ..strokeWidth = 1.5

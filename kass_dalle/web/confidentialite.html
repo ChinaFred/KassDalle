@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Règles de confidentialité de Kass'Dalle, livre de cuisine familial.">
+  <meta name="color-scheme" content="light dark">
+  <title>Règles de confidentialité — Kass'Dalle</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <!--
+    Page statique, servie telle quelle par Firebase Hosting : elle se lit sans
+    exécuter Flutter. Aucun script ni ressource externe (voir la CSP de
+    firebase.json). Les couleurs reprennent celles de l'écran d'attente
+    d'index.html.
+  -->
+  <style>
+    :root {
+      --bg: #FAFAF5;
+      --fg: #22261A;
+      --muted: #5C6450;
+      --accent: #4E5B27;
+      --rule: #DADDCB;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16180F;
+        --fg: #E6E8DC;
+        --muted: #A9AE9C;
+        --accent: #A7BC64;
+        --rule: #34392A;
+      }
+    }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+    main { max-width: 46rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    nav { font-size: .9rem; margin-bottom: 1.5rem; }
+    nav a + a::before { content: "·"; color: var(--muted); margin: 0 .5rem; }
+    nav a, footer a { display: inline-block; padding: .75rem 0; }
+    h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 .25rem; color: var(--accent); }
+    h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+    .updated { color: var(--muted); font-size: .9rem; margin-top: 0; }
+    a { color: var(--accent); overflow-wrap: anywhere; }
+    ul { padding-left: 1.25rem; }
+    li { margin: .25rem 0; }
+    footer { margin-top: 3rem; font-size: .9rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+<main>
+  <nav>
+    <a href="/accueil.html">Accueil</a>
+    <a href="/">Ouvrir Kass'Dalle</a>
+    <a href="/conditions.html">Conditions d'utilisation</a>
+  </nav>
+
+  <h1>Règles de confidentialité</h1>
+  <p class="updated">Dernière mise à jour : 22 octobre 2026</p>
+
+  <p>Kass'Dalle est un livre de cuisine numérique à usage familial. Cette page dit quelles
+  données l'application traite, pourquoi, qui peut les lire, avec quels prestataires, combien
+  de temps elles sont gardées, et comment exercer vos droits.</p>
+
+  <h2>1. Responsable du traitement</h2>
+  <p>Kass'Dalle est géré par un membre de la famille, son administrateur. C'est lui le
+  responsable du traitement. Pour toute question ou demande :
+  <a href="mailto:china.fred.75@gmail.com">china.fred.75@gmail.com</a>.</p>
+  <p>Kass'Dalle est une application privée. Un compte créé n'a accès à rien tant qu'un
+  administrateur ne lui a pas attribué un rôle.</p>
+
+  <h2>2. Données de votre compte Google</h2>
+  <p>La connexion se fait uniquement avec un compte Google. À la connexion, l'application
+  reçoit de Google votre identifiant de compte, votre adresse e-mail, votre nom et l'adresse
+  de votre photo de profil.</p>
+  <p>Elle enregistre dans votre fiche de compte : votre adresse e-mail, votre nom Google, l'adresse
+  de votre photo de profil, le nom préféré que vous choisissez, votre rôle, la date de création
+  du compte, la date de votre dernière connexion et l'état de votre accès (actif ou révoqué).
+  Le service d'authentification de Firebase garde aussi votre identifiant, votre adresse, votre
+  nom et votre photo.</p>
+  <ul>
+    <li>Votre fiche de compte n'est lisible que par vous et par l'administrateur.</li>
+    <li>Tout compte approuvé de l'application, même s'il ne partage aucun groupe avec vous,
+    peut lire votre profil public : votre nom Google complet, votre nom préféré et la
+    couverture de vos recettes libres. Les autres membres ne voient ni votre adresse e-mail, ni
+    votre photo de profil.</li>
+    <li>Votre nom Google apparaît comme auteur de votre livre « Mes recettes libres », créé par
+    l'application et lisible par les membres de vos groupes. Pour les autres livres, l'auteur
+    est celui que vous saisissez.</li>
+    <li>Un membre qui invite dans son groupe peut retrouver un compte en saisissant son adresse
+    e-mail complète et exacte. Le résultat affiche le nom, jamais l'adresse.</li>
+  </ul>
+
+  <h2>3. Google Agenda et Google Tasks</h2>
+  <p>Ces deux accès sont facultatifs. Google vous les demande seulement quand vous utilisez la
+  fonction concernée, et vous pouvez les refuser.</p>
+  <ul>
+    <li><strong>Google Agenda</strong> : deux autorisations. Google présente la première comme
+    « voir et modifier les événements de tous vos agendas ». L'application s'en sert seulement
+    pour créer des événements : elle ne lit, ne modifie ni ne supprime les événements qui
+    existent. La seconde permet de voir la liste de vos agendas (identifiant, nom, agenda
+    principal), pour vous laisser choisir celui qui recevra vos repas. L'application enregistre
+    l'identifiant et le nom de l'agenda choisi dans vos préférences de planning. Elle crée des
+    événements « Préparer : <em>nom du plat</em> » avec l'heure, la durée, un rappel, la
+    composition du repas, les temps de préparation et de cuisson, la liste des ingrédients avec
+    leurs quantités, et un lien vers la recette dans l'application.</li>
+    <li><strong>Google Tasks</strong> : l'application crée une liste de tâches qui contient votre
+    liste de courses, un rayon par tâche et un article par sous-tâche. Elle ne lit pas vos
+    listes ni vos tâches existantes.</li>
+    <li>Le jeton d'accès que Google remet pour ces deux services reste seulement dans la
+    mémoire de l'application. Il n'est jamais enregistré, ni sur l'appareil, ni dans la base de
+    données, ni sur nos serveurs. Il n'est utilisé qu'une cinquantaine de minutes au plus, et
+    disparaît à la déconnexion ou à la fermeture de l'application.</li>
+    <li>Une version antérieure de l'application demandait la lecture de vos agendas. Une
+    autorisation déjà accordée reste sur votre compte Google jusqu'à ce que vous la retiriez
+    sur <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+    L'application ne s'en sert plus.</li>
+    <li>Sauf l'identifiant et le nom de l'agenda choisi, enregistrés dans vos préférences de
+    planning, les données d'Agenda et de Tasks ne sont jamais envoyées à nos serveurs. Elles
+    ne sont jamais transmises aux modèles d'intelligence artificielle. Elles ne servent ni à
+    entraîner des modèles d'IA, ni à la publicité.</li>
+  </ul>
+  <p>L'utilisation et le transfert à toute autre application des informations reçues des API
+  Google par Kass'Dalle respecteront le
+  <a href="https://developers.google.com/terms/api-services-user-data-policy">Règlement sur les
+  données utilisateur des services API Google</a>, y compris les exigences d'utilisation
+  limitée.</p>
+
+  <h2>4. Les contenus que vous créez</h2>
+  <p>L'application enregistre ce que vous y créez ou importez : livres, recettes, photos de
+  recettes et de pages, couvertures, fichiers importés (PDF, EPUB), annotations, notes données
+  aux recettes, repas planifiés, suggestions de repas, préférences de planning (dont les
+  contraintes que vous saisissez, par exemple un régime ou une allergie), liste de courses et
+  préférences d'affichage. Vos préférences de planning (jours, horaires, contraintes) ne sont
+  lisibles que par vous. La mémoire des recettes que vous avez refusées dans le planning et vos
+  garnitures habituelles sont lisibles par vous et par l'administrateur. Un repas planifié que
+  vous partagez peut aussi refléter une partie de ces préférences (voir « Livres privés »
+  ci-dessous).</p>
+  <ul>
+    <li><strong>Groupes familiaux.</strong> Vos livres et recettes non privés sont lisibles par
+    les membres des groupes familiaux auxquels vous appartenez, et par eux seuls. Un compte qui
+    ne partage aucun groupe avec vous ne lit aucun de vos livres ni aucune de vos recettes ; il
+    peut lire votre profil public (section 2).</li>
+    <li><strong>Livres privés.</strong> Un livre marqué privé n'est lisible que par vous et par
+    l'administrateur. Deux exceptions. D'abord, le titre de vos recettes validées des livres privés, et
+    le nom de leur livre, restent visibles des membres de vos groupes. Ils les voient dans la
+    liste « Suggérer un plat » du planning, et un plat suggéré garde son titre. Ensuite, dans
+    un planning que vous partagez avec un groupe, ou dans le planning d'un groupe, chaque repas
+    enregistré est lisible par les membres concernés, même si la recette est privée : le titre
+    de la recette, la date et l'heure du repas, le jour de préparation, la composition du repas,
+    ses durées, le nombre de parts, les recettes écartées, une explication du choix (écrite par
+    le serveur, ou par l'IA pour un plat qu'elle conçoit), qui peut citer une recette refusée
+    récemment, votre limite de temps du jour, votre note de la recette (« notée 8/10 ») ou la
+    date où elle a été servie (« servie il y a 5 jours »), et les critères que le repas ne tient pas ou qui
+    ont été relâchés. Ces critères peuvent nommer un régime ou une
+    allergie du propriétaire du planning (par exemple « Allergènes non vérifiés :
+    gluten »).</li>
+    <li><strong>Images.</strong> Une image publiée (photo, couverture, illustration) a sa propre
+    adresse internet, longue et impossible à deviner. Toute personne qui a cette adresse peut
+    voir l'image, sans compte, que le livre soit privé ou non. L'application ne montre
+    l'adresse qu'à ceux qui peuvent lire le livre ou la recette ; une adresse déjà copiée ou
+    transmise continue pourtant de fonctionner.</li>
+    <li><strong>Planning.</strong> Votre planning n'est visible que des groupes avec lesquels
+    vous choisissez de le partager. Le planning d'un groupe est lu par ses membres.</li>
+    <li><strong>Liste de courses.</strong> Elle n'est lisible que par vous, depuis
+    l'application. L'administrateur ne la voit pas dans l'application.</li>
+    <li><strong>Administrateur.</strong> Depuis l'application, l'administrateur lit les livres
+    et recettes de tous les membres, privés compris. Il gère le projet Google Cloud qui héberge
+    l'application : il a donc techniquement accès, par la console de Google, à l'ensemble des
+    données enregistrées.</li>
+    <li>Certaines préférences d'affichage (thème, zoom du texte, options d'export PDF) sont
+    gardées sur l'appareil seulement.</li>
+  </ul>
+
+  <h2>5. Traitements par intelligence artificielle</h2>
+  <p>Les modèles d'IA ne sont jamais appelés depuis votre appareil. Les appels partent des
+  serveurs de l'application, vers l'un de ces prestataires, selon le réglage choisi par
+  l'administrateur pour chaque fonction :</p>
+  <ul>
+    <li><strong>Google Gemini</strong> (Google) ;</li>
+    <li><strong>Claude</strong> (Anthropic, société établie aux États-Unis) ;</li>
+    <li><strong>Google Cloud Vision</strong> (Google), pour la modération des images.</li>
+  </ul>
+  <p>Le modèle reçoit seulement le contenu nécessaire à la fonction utilisée : photo ou texte
+  d'une page de recette, texte d'une recette (lecture, traduction, étiquettes, nutrition,
+  allergènes, temps, conseils), liste d'ingrédients, termes d'une recherche, contraintes de
+  planning, ou image à vérifier. Votre nom, votre adresse e-mail et votre identifiant de compte
+  ne sont pas joints à ces requêtes. Les données reçues des API Google (profil, Agenda, Tasks)
+  ne sont pas transmises aux modèles.</p>
+  <ul>
+    <li><strong>Modération des images.</strong> Une image que vous envoyez (couverture,
+    illustration, photo) est analysée avant d'être montrée à la famille. Une image refusée
+    n'est pas publiée : elle n'est montrée à aucun autre membre, et seul l'administrateur la
+    consulte dans l'application. Elle est conservée.</li>
+    <li><strong>Recherche sur le web.</strong> Les termes de votre recherche sont envoyés à
+    Google Gemini avec la recherche Google. Les résultats sont gardés environ sept jours, sans
+    lien avec votre compte.</li>
+    <li><strong>Import depuis un lien.</strong> Le serveur télécharge la page web dont vous
+    donnez l'adresse, pour en extraire la recette.</li>
+    <li><strong>Suivi des coûts.</strong> Chaque appel est enregistré avec votre identifiant de
+    compte, la fonction utilisée, le modèle et son coût estimé. Ce relevé sert à suivre la
+    dépense et à appliquer un plafond quotidien par compte.</li>
+  </ul>
+  <p>Ces prestataires traitent les données pour le compte de l'application. Certains peuvent les
+  traiter hors de l'Union européenne.</p>
+
+  <h2>6. Tickets : signaler un problème ou proposer une idée</h2>
+  <p>Un ticket envoyé depuis l'application est publié sous forme d'« Issue » sur un dépôt
+  GitHub <strong>public</strong> : toute personne sur Internet peut le lire.</p>
+  <ul>
+    <li>Sont publiés : le titre, la description, le type de ticket, l'écran concerné, la version
+    de l'application, la plateforme et la référence du ticket (un code sans lien avec votre
+    identité).</li>
+    <li>Ne sont jamais publiés : votre nom, votre adresse e-mail, votre identifiant de compte,
+    la capture d'écran jointe, le contenu de vos recettes.</li>
+    <li>L'application refuse un titre ou une description qui contient une adresse e-mail.
+    N'écrivez dans un ticket aucune information personnelle.</li>
+    <li>La capture d'écran jointe reste dans l'application, lisible par vous et par
+    l'administrateur.</li>
+    <li>Les tickets peuvent être analysés par des sessions de Claude Code (Anthropic), lancées
+    par l'administrateur.</li>
+  </ul>
+
+  <h2>7. Invitations par e-mail</h2>
+  <p>Un administrateur peut inviter un proche par son adresse e-mail. L'application enregistre
+  l'adresse, le rôle proposé, le groupe et le message, et envoie l'e-mail depuis le compte
+  Gmail de l'application, au nom de l'administrateur qui invite. Une réponse à cet e-mail
+  parvient à cet administrateur. L'invitation expire trente jours après son dernier envoi ;
+  elle reste ensuite dans l'historique des invitations.</p>
+
+  <h2>8. Notifications</h2>
+  <p>Seuls les administrateurs qui utilisent l'application Android reçoivent une notification
+  quand une nouvelle version est disponible. L'identifiant de notification de leur appareil
+  (Firebase Cloud Messaging) est enregistré à cette fin.</p>
+
+  <h2>9. Sécurité, journaux et rapports d'erreurs</h2>
+  <ul>
+    <li><strong>Vérification de l'application (App Check).</strong> Sur le web, Google
+    reCAPTCHA Enterprise analyse des signaux techniques du navigateur pour vérifier que les
+    requêtes viennent de l'application. Sur Android, Google Play Integrity joue le même
+    rôle.</li>
+    <li><strong>Rapports d'erreurs.</strong> Quand une erreur survient, l'application enregistre
+    un rapport : votre identifiant de compte, la version de l'application, la fonction
+    concernée, le message technique et le contexte de l'erreur. Ces rapports sont lisibles par
+    vous et par l'administrateur.</li>
+    <li><strong>Journaux des serveurs.</strong> Les serveurs journalisent leurs traitements
+    (identifiant de compte, action, durée, résultat) et, pour le diagnostic, le texte de
+    certaines requêtes envoyées aux modèles d'IA et de leurs réponses. Les images envoyées n'y
+    figurent pas.</li>
+    <li>L'application ne contient ni outil de mesure d'audience, ni publicité.</li>
+  </ul>
+
+  <h2>10. Hébergement et prestataires</h2>
+  <p>L'application est hébergée par Google, sur Firebase et Google Cloud : authentification,
+  base de données Firestore (région Europe, « eur3 »), stockage des fichiers, hébergement web
+  et fonctions serveur (région europe-west1, en Belgique).</p>
+  <p>Les prestataires qui reçoivent des données sont ceux cités sur cette page : Google
+  (Firebase, Google Cloud, Gemini, Cloud Vision, reCAPTCHA, Play Integrity, Gmail, Agenda,
+  Tasks), Anthropic (Claude, Claude Code) et GitHub (tickets).</p>
+  <p>Vos données ne sont ni vendues, ni louées, ni utilisées pour de la publicité. Elles ne
+  sont partagées avec personne d'autre que ces prestataires, en dehors d'une obligation
+  légale.</p>
+
+  <h2>11. Durée de conservation</h2>
+  <ul>
+    <li>Vos données sont gardées tant que votre compte existe. Un accès révoqué ne supprime
+    rien : le compte et ses contenus restent en place.</li>
+    <li>Une copie complète de la base de données est faite chaque jour (gardée 7 jours) et
+    chaque semaine (gardée 14 semaines).</li>
+    <li>Un fichier remplacé ou supprimé reste récupérable 30 jours, puis il est effacé.</li>
+    <li>Les résultats de recherche sur le web sont gardés environ 7 jours.</li>
+  </ul>
+
+  <h2>12. Supprimer votre compte</h2>
+  <p>L'application ne propose pas de bouton pour supprimer son compte. Pour le faire, écrivez à
+  <a href="mailto:china.fred.75@gmail.com">china.fred.75@gmail.com</a> depuis l'adresse de votre
+  compte. L'administrateur fait la suppression à la main : votre compte, votre profil et vos
+  contenus.</p>
+  <p>Certaines données peuvent rester après cette suppression :</p>
+  <ul>
+    <li>les relevés de coût d'IA et les rapports d'erreurs qui portent l'identifiant de votre
+    compte. Aucune suppression automatique n'est programmée : ils restent jusqu'à ce que
+    l'administrateur les efface ;</li>
+    <li>les journaux techniques des serveurs, jusqu'à leur expiration dans Google Cloud ;</li>
+    <li>les copies de sauvegarde de la base, jusqu'à leur remplacement (7 jours pour la copie
+    quotidienne, 14 semaines pour la copie hebdomadaire), et les fichiers supprimés pendant 30
+    jours ;</li>
+    <li>les tickets déjà publiés sur GitHub. L'administrateur peut les fermer ou les modifier,
+    mais des copies peuvent exister ailleurs sur Internet (archives, moteurs de
+    recherche).</li>
+  </ul>
+
+  <h2>13. Vos droits</h2>
+  <p>Selon le Règlement général sur la protection des données (RGPD), vous pouvez demander
+  l'accès à vos données, leur rectification, leur effacement, la limitation de leur
+  traitement, leur portabilité, et vous opposer à leur traitement. Écrivez à
+  <a href="mailto:china.fred.75@gmail.com">china.fred.75@gmail.com</a>. Une réponse vous est
+  donnée dans un délai d'un mois.</p>
+  <p>Vous pouvez aussi adresser une réclamation à la Commission nationale de l'informatique et
+  des libertés (<a href="https://www.cnil.fr/">CNIL</a>).</p>
+
+  <h2>14. Retirer l'accès à votre compte Google</h2>
+  <p>Vous pouvez retirer à tout moment l'accès de Kass'Dalle à votre compte Google, Agenda et
+  Tasks compris, depuis la page
+  <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</p>
+
+  <h2>15. Modifications</h2>
+  <p>Ces règles peuvent évoluer avec l'application. La date de dernière mise à jour figure en
+  haut de cette page.</p>
+
+  <footer>
+    <a href="/accueil.html">Accueil</a> ·
+    <a href="/">Ouvrir Kass'Dalle</a> ·
+    <a href="/conditions.html">Conditions d'utilisation</a>
+  </footer>
+</main>
+</body>
+</html>

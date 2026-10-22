@@ -78,8 +78,28 @@
       #boot { transition: none; }
     }
 
+    /*
+      Sans JavaScript, l'application ne démarre pas : l'écran d'attente reste
+      affiché, et le bloc <noscript> passe devant lui avec les liens vers les
+      pages publiques (confidentialité, conditions d'utilisation).
+    */
+    .noscript {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 10000;
+      padding: 16px;
+      text-align: center;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      color: #4E5B27;
+    }
+    .noscript a { color: inherit; }
+
     @media (prefers-color-scheme: dark) {
       body, #boot { background: #16180F; }
+      .noscript { color: #A7BC64; }
       #boot { color: #A7BC64; }
       #boot .spinner {
         border-color: rgba(167, 188, 100, .22);
@@ -94,6 +114,16 @@
     <div class="spinner"></div>
     <p class="label">Ouverture du livre de cuisine…</p>
   </div>
+  <noscript>
+    <div class="noscript">
+      <p>Kass'Dalle a besoin de JavaScript pour s'ouvrir.</p>
+      <p>
+        <a href="accueil.html">Accueil</a> ·
+        <a href="confidentialite.html">Règles de confidentialité</a> ·
+        <a href="conditions.html">Conditions d'utilisation</a>
+      </p>
+    </div>
+  </noscript>
 
   <!--
     You can customize the "flutter_bootstrap.js" script.

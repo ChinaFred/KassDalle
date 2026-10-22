@@ -1922,10 +1922,11 @@ sequenceDiagram
           les règles lui refuseraient tout sans jamais lui dire pourquoi.
         </span>
         <span class="expect warn">
-          <b>Les règles Storage lisent le jeton, pas Firestore.</b> Un rôle modifié prend effet
-          immédiatement côté Firestore et côté callable, mais seulement au renouvellement du jeton
-          côté Storage. Une version antérieure interrogeait Firestore depuis les règles Storage :
-          cette lecture inter-services faisait échouer les règles et cassait l'import.
+          <b>Les règles Storage lisent le jeton, puis le document.</b> Depuis la v0.24.48, un
+          dépôt ou une lecture d'administrateur relit <code>users/{uid}</code>
+          (<code>firestore.get</code>) quand le jeton annonce le rôle demandé : un rôle retiré ou
+          une révocation prend effet immédiatement partout. Un rôle accordé attend le
+          renouvellement du jeton côté Storage.
         </span>
       </figcaption>
     </figure>

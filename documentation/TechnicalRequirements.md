@@ -1556,10 +1556,9 @@ d'un groupe familial (`group_id` =
 identifiant du groupe). `uid` reste le cuisinier : pour un repas de groupe, c'est le
 propriétaire du groupe, seul à y écrire (règles : `get(groups/{group_id}).owner_id ==
 request.auth.uid` à la création et à la modification). `group_id` est figé à la modification
-côté client. Seul le backfill paramétré « Déplacer mes repas vers un groupe »
-(`backfillMoveMealsToGroupFn`, §7.10) le change, par l'Admin SDK : il fait passer les repas
-personnels d'un administrateur, sur une période, dans un groupe dont il est propriétaire, sans
-toucher `uid` ni les parts.
+côté client, et aucun code serveur ne le change : un repas reste dans le planning où il a été
+créé. Le backfill « Déplacer mes repas vers un groupe » (`move_meals_to_group`), qui le
+posait par l'Admin SDK, est retiré en v0.24.44.
 Les membres du groupe le lisent par `planning_reach/{lecteur}.group_ids` (§3.8 quater) ; le
 client ouvre **un flux par groupe affiché** (`group_id == groupe` et `uid == propriétaire du
 groupe`, `planned_at` sur 90 jours, `PlanningRepository.watchGroupMeals`, index composite
@@ -1610,7 +1609,7 @@ attendant une décision.
 | Champ | Type | Description |
 |---|---|---|
 | `uid` | `String` | Le cuisinier : propriétaire du planning personnel, ou propriétaire du groupe pour un repas de groupe. Figé |
-| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Le backfill `group_planning_reach` (retiré en v0.24.33) l'a posé à `null` sur les repas antérieurs. Figé côté client ; seul le backfill `move_meals_to_group` le change, de `null` (ou absent) vers un groupe de l'appelant |
+| `group_id` | `String?` | Groupe dont ce repas fait partie du planning ; `null` = planning personnel. Toujours écrit par le client, `null` compris : le flux d'un planning partagé filtre `group_id == null`. Le backfill `group_planning_reach` (retiré en v0.24.33) l'a posé à `null` sur les repas antérieurs. Figé côté client ; plus rien ne le change depuis le retrait du backfill `move_meals_to_group` (v0.24.44), qui le faisait passer de `null` (ou absent) à un groupe de l'appelant |
 | `recipe_id` | `String?` | Recette servie ; `null` pour un créneau resté vide |
 | `recipe_titre` | `String` | Titre dénormalisé, pour afficher sans lire la recette |
 | `planned_at` | `Timestamp` | Date et heure du repas |
@@ -1983,11 +1982,31 @@ main) ; de 4 à 6, poids ÷ 2 ; ≥ 8, poids × 1,5 ; 7 ou sans note, inchangé.
 | `allergens_source` · `allergens_at` | `String?` · `Timestamp?` | `ai_estimated` \| `admin` ; date de l'examen ou de la correction. Enregistrer sans changement depuis l'écran passe la source à `admin` |
 | `last_enrichment_attempt_at` | `Timestamp?` | Dernier essai sans valeurs pour 100 g exploitables. Écrit par l'enrichissement à l'écriture d'une recette (`enrichUnknownIngredientsWithAI`, qui ne redemande pas avant vingt heures, `ENRICHMENT_RETRY_AFTER_MS`) et, depuis la v0.23.59, par le backfill « Enrichir unités et ingrédients » sur un échec |
 | `enrichment_failure_count` | `int?` | Échecs du backfill « Enrichir unités et ingrédients » sur cet ingrédient (valeurs introuvables, lot en échec). À 3, l'ingrédient n'est plus soumis au modèle par ce backfill, programmé ou manuel, sauf case « Réessayer aussi les éléments exclus après 3 échecs » ; il est listé « Plus redemandé à l'IA après 3 échecs ». Remis à 0 par une estimation réussie du backfill. Pas compté quand l'échéance du passage est dépassée : l'ingrédient n'a peut-être pas été demandé. L'enrichissement à l'écriture d'une recette et celui du rattrapage de la nutrition ne redemandent plus un ingrédient qui en porte 3 (`ingredientEnrichmentAllowed`). Serveur seul |
+| `sodium_repaired_at` | `Timestamp?` | Réparation du sel faite par le backfill « Reprendre le sel des ingrédients » (`refresh_sodium`, v0.24.44), écrite avec le nouveau profil dans la même écriture. **Absent** : pas encore réparé ; un profil qui porte du sodium (`sodium_mg` ou `salt_g` > 0) sans cette marque est cible du backfill, un échec le laisse cible pour le parcours suivant. Écrit par le serveur seul (les règles n'ouvrent au client que le produit acheté et les allergènes). Les ingrédients réparés avant v0.24.44 n'ont pas la marque |
 | `allergens_failure_count` · `allergens_attempt_at` | `int?` · `Timestamp?` | Échecs du backfill « Allergènes des ingrédients et des recettes » (pas de réponse du modèle, lot en échec), et date du dernier. Même règle des trois échecs et même case ; remis à 0 quand le backfill pose les allergènes. L'examen à l'écriture d'une recette (`allergens_auto`) l'applique aussi, sans exception (`allergenAutoExaminationAllowed`). Serveur seul |
 | `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
 | `status` · `quality_status` | `String` | `proposed` \| `known` ; qualité `pending` tant que rien n'a été vérifié |
 | `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
 | `first_seen_at` · `last_seen_at` · `updated_at` | `Timestamp` | Traçabilité |
+
+**Recettes qui citent un ingrédient** (v0.24.46). Au dépliage d'une fiche,
+*Admin › Référentiels › Ingrédients nutrition* lit les recettes par une requête
+`recipes` `where('ingredients_index', arrayContainsAny: valeurs)` `limit(21)`
+(`IngredientUsageRepository.fetchRecipesUsing`, provider
+`ingredientRecipeUsageProvider`, `autoDispose` : replier libère, déplier relit). Les
+valeurs (`ingredientUsageSearchValues`, `features/admin/domain/ingredient_recipe_usage.dart`) :
+`canonical_name`, l'identifiant dont les `_` deviennent des espaces, puis chaque alias,
+normalisés par `buildIngredientsIndex` lui-même (trim, minuscules, sans doublon), 30 au
+plus (plafond d'`array-contains-any`). Ni tri ni autre filtre : l'index automatique du
+champ suffit, **aucun index composite** ; un `orderBy` en exigerait un. Pas de filtre
+`is_private` : la requête est celle d'un administrateur, que `canRead` laisse tout lire.
+Le livre s'affiche depuis `book_titre`, recopié sur la recette : aucune lecture de plus
+par recette. Vingt lignes affichées, sans ordre défini ; la vingt-et-unième signale seulement
+la suite. Le retour de la recette ou de l'éditeur (`await context.push`) invalide le provider
+et relit la liste. Un brouillon s'ouvre sur `/drafts/{id}`. Un
+échec est remonté par `ErrorReportService` (`ingredientUsage.fetchRecipesUsing`). Le
+crayon vers `/recipes/{id}/edit` est masqué pour une recette non validée : l'éditeur
+charge `raw_cooklang` et efface `draft_cooklang` à l'enregistrement.
 
 Les quarante unités standard (gramme, cuillère à soupe, verre, pincée…) se sèment par le
 backfill ponctuel « Semer les unités standard » (`backfillDefaultUnitsFn`, §7.10), qui lit
@@ -2341,9 +2360,11 @@ Firestore refusent l'écriture client, administrateur compris (`*_checkpoint`,
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `refresh_sodium`, `default_units`, `move_meals_to_group`, `users_schema_check` — ponctuels). `default_units` parcourt en un passage sa liste fixe de quarante unités, sans point de reprise. `users_schema_check` lit toute la collection `users` en un passage, sans point de reprise, et n'écrit que son état `app_config/backfill_run_users_schema_check`. `move_meals_to_group` est paramétré (groupe, période) et réutilisable : sa passe
-rend un reste inconnu (`remaining: null`), il n'est donc jamais marqué terminé tout seul, et
-il n'a pas de point de reprise — chaque passage relit les repas de sa période.
+récurrents ; `refresh_sodium`, `default_units`, `users_schema_check` — ponctuels). `default_units` parcourt en un passage sa liste fixe de quarante unités, sans point de reprise. `users_schema_check` lit toute la collection `users` en un passage, sans point de reprise, et n'écrit que son état `app_config/backfill_run_users_schema_check`.
+Le ponctuel réutilisable `move_meals_to_group` (« Déplacer mes repas vers un groupe ») est
+retiré en v0.24.44 sur demande, sans avoir été marqué terminé ; avec lui disparaît la notion de
+ponctuel réutilisable (`reusable`) du registre client : le menu ⋮ propose « Marquer comme
+terminé » sur tout ponctuel (`backfillOffersDoneMenu`).
 Les ponctuels `recipe_protein`,
 `estimated_times` et `planning_defaults` sont retirés en v0.23.52, et `system_books`,
 `group_planning_reach`, `ticket_analyses`, `ticket_delivered_pr`, `recipe_title_keys` et
@@ -2587,9 +2608,10 @@ Le rôle et la révocation vivent à **deux endroits** : le document `users/{uid
 et les custom claims du jeton, tenus à jour par le déclencheur `syncUserClaims`
 (un amorçage en masse a rattrapé les comptes antérieurs au déclencheur, puis a
 été retiré une fois son travail fait). Ce n'est pas une duplication
-accidentelle : les règles **Storage** ne peuvent lire que le jeton — une lecture
-Firestore depuis Storage est facturée et, surtout, peut échouer et faire refuser
-la règle entière, ce qui a déjà cassé l'import de recettes.
+accidentelle : les règles **Storage** lisent le jeton d'abord, et ne relisent le
+document (`firestore.get`, règle inter-services, v0.24.48) que quand le jeton
+annonce déjà le rôle demandé. Le claim leur sert de première porte et évite une
+lecture Firestore facturée aux comptes qui n'ont aucun rôle.
 
 Les règles **Firestore**, elles, ont accès aux deux sources, et lisent d'abord
 le document :
@@ -2605,11 +2627,11 @@ créer son propre document et écrire un rapport d'erreur (`isKnownRevoked`).
 Un claim `admin` sans document n'ouvre rien. Le fondateur a un document
 `role: "admin"`, posé par `enforceFounderRole` : il n'est pas touché.
 
-**Écart assumé et connu :** les règles **Storage** restent liées au jeton. Un
-rôle retiré ou une révocation n'y prend effet qu'au renouvellement du jeton
-(une heure au plus) ; sur Firestore l'effet est immédiat.
-Storage ne peut pas faire mieux sans réintroduire la lecture inter-services qui
-avait cassé l'import. Depuis la v0.23.12, `syncUserClaims` appelle en plus
+**Storage relit le document depuis la v0.24.48.** Un rôle retiré ou une
+révocation y prend effet tout de suite pour les dépôts et les lectures
+d'administrateur, comme sur Firestore. Deux écarts restent, décrits sous
+« Firebase Storage Rules » : un rôle **accordé** attend le jeton (le claim reste
+la première porte), et le `get` d'un fichier publié ne lit que le jeton. Depuis la v0.23.12, `syncUserClaims` appelle en plus
 `revokeRefreshTokens` quand un compte perd l'accès — passage à révoqué, rôle qui sort de
 reader/editor/admin, document supprimé d'un compte nommé ou révoqué : la session ne se
 renouvelle plus, et le jeton en cours n'est pas prolongé au-delà de son heure.
@@ -3269,18 +3291,59 @@ multiplicateur du fondateur (voir §6, « Principe »).
 
 ### Firebase Storage Rules
 
-Ces règles ne voient **que le jeton** : aucune lecture Firestore, sous peine de rendre la règle
-faillible et facturée. L'écriture exige donc un claim de rôle **explicite**. Elle acceptait
-auparavant tout jeton n'affirmant pas être `reader` — précaution du temps où aucun jeton ne portait
-encore de claim, et qui aurait suffi à un compte `pending` pour déposer des images dans les dossiers
-partagés.
+**Le jeton d'abord, le document ensuite (v0.24.48).** Une décision qui demande un rôle —
+déposer dans `quarantine/` ou `tickets/`, lire `rejected/` ou la quarantaine d'un autre,
+lister un dossier — passe deux contrôles, dans cet ordre :
 
-Écart documenté avec Firestore (v0.24.30, ticket #162) : Firestore lit le rôle sur le
-document, Storage ne lit que le claim. Un administrateur rétrogradé garde donc sur Storage,
-jusqu'au renouvellement de son jeton (une heure au plus), la lecture de `rejected/` ; un
-compte nommé n'y dépose rien avant que son jeton porte le rôle. `syncUserClaims` appelle
-`revokeRefreshTokens` quand un compte perd l'accès (révoqué, rôle hors reader/editor/admin) ;
-il ne le fait pas pour un passage d'`admin` à `editor`, qui garde donc cette heure sur Storage.
+1. le **jeton** : claim `role` parmi les rôles demandés, et pas de claim `revoked: true`.
+   Sans ce claim, la règle refuse sans lire Firestore ;
+2. le **document** `users/{uid}`, lu par `firestore.get` (règle inter-services), avec la
+   logique de `firestore.rules` recopiée à l'identique : `roleOf(d)` (rôle du document, claim
+   seulement si le document n'a pas de champ `role`) et `isRevoked(d)` (révoqué si le jeton
+   OU le document le dit). Un rôle inconnu (`"admin "`) ne vaut rien ; sans document, la
+   lecture de `.data` échoue et la règle refuse.
+
+Avant la v0.24.48, ces règles ne lisaient que le jeton. Un administrateur rétrogradé gardait la
+lecture de `rejected/` et de la quarantaine des autres jusqu'au renouvellement de son jeton
+(une heure au plus) — `syncUserClaims` ne révoque pas les jetons pour un passage d'`admin` à
+`editor` — et un compte révoqué à l'instant pouvait encore déposer. Firestore leur retirait
+déjà ces droits (`roleOf()`, v0.24.30).
+
+**Coût.** Une lecture Firestore par requête Storage qui atteint le second contrôle : un dépôt
+dans la quarantaine (photo, scan, livre), une capture de ticket, une lecture ou un listage
+d'administrateur. Les deux branches du dépôt en quarantaine sont ordonnées pour qu'un lecteur
+comme un éditeur ne lisent le document qu'une fois, et le type et la taille se testent avant
+le rôle. Ne coûtent **aucune** lecture : les images affichées, servies par URL de
+téléchargement (les règles ne s'évaluent pas), le `get` d'un fichier publié (jeton seul,
+`isActive()`), la lecture par un compte de ses propres fichiers (`isOwner`), et toute requête
+d'un compte dont le jeton n'annonce aucun rôle — un inconnu qui multiplie les requêtes ne
+déclenche pas de lecture facturée. À l'échelle de la famille (quelques dizaines de dépôts par
+jour), le surcoût se compte en centimes par an au tarif Firestore.
+
+**Écarts qui restent avec Firestore.**
+
+- Un rôle **accordé** attend le jeton : un compte nommé à l'instant (claim `pending`,
+  document `reader`) ne dépose rien avant le renouvellement de son jeton, comme avant. Le
+  claim reste la première porte, pour la raison de coût ci-dessus.
+- Le `get` d'un fichier des dossiers publiés ne lit que le jeton : ces fichiers restent
+  joignables par leur URL de téléchargement, que la révocation n'invalide pas, et la lecture
+  du document n'y ajouterait qu'un coût.
+- Un compte révoqué dont le jeton est encore valide relit ses **propres** fichiers de
+  `quarantine/` (`isOwner(uid) || isAdmin()`) pendant une heure au plus : ce sont ses
+  données, et la révocation coupe déjà tout dépôt.
+
+**Prérequis IAM, hors dépôt.** Une règle Storage qui appelle `firestore.get` exige que l'agent
+de service Storage, `service-<numéro du projet>@gcp-sa-firebasestorage.iam.gserviceaccount.com`,
+porte le rôle `roles/firebaserules.firestoreServiceAgent` (« Firebase Rules Firestore Service
+Agent »). Sans lui, chaque `firestore.get` échoue, une erreur vaut refus, et **tous les dépôts
+sont refusés** : l'import est cassé. `firebase deploy --only storage` propose d'accorder ce rôle
+en mode interactif, mais le workflow « Déploiement » lance la CLI en `--non-interactive`
+(`.github/scripts/firebase-deploy.sh`), et la CLI saute alors la vérification sans rien
+accorder. Le rôle se pose donc à la main, une fois, avant le premier déploiement de ces
+règles : voir `handbook-reseau-agents.md`, « Firebase Storage : rôle IAM des règles
+inter-services ». Une version antérieure de ces règles lisait déjà Firestore et avait cassé
+l'import ; l'historique ne garde pas la cause, et l'absence de ce rôle est l'explication la
+plus probable.
 
 ```javascript
 rules_version = '2';
@@ -3298,21 +3361,43 @@ service firebase.storage {
         && (!('revoked' in request.auth.token) || request.auth.token.revoked != true);
     }
 
+    // Le document `users/{uid}` de l'appelant (règle inter-services). Sans
+    // document, `.data` échoue et la règle refuse.
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // À l'identique de `roleOf()` et `isRevoked()` de firestore.rules.
+    function roleOf(d) {
+      return d.get('role', null) != null ? d.role : request.auth.token.get('role', null);
+    }
+    function isRevoked(d) {
+      return ('revoked' in request.auth.token && request.auth.token.revoked == true)
+        || d.is_revoked == true;
+    }
+
+    // Le jeton d'abord : sans claim parmi `roles`, refus sans lecture Firestore.
+    // Puis le document, lu une fois (v0.24.48).
+    function hasRoleIn(roles) {
+      return isActive()
+        && request.auth.token.get('role', null) in roles
+        && hasDocRoleIn(userDoc(), roles);
+    }
+    function hasDocRoleIn(d, roles) {
+      return !isRevoked(d) && roleOf(d) in roles;
+    }
+
     // Le sas d'entrée, côté fichiers. Ne concerne que l'écriture : fermer aussi
     // la lecture ferait clignoter les images de qui n'a pas renouvelé son jeton,
     // pour un gain nul (les URL ne se devinent pas).
-    function isApprovedToken() {
-      return isActive() && request.auth.token.role in ['reader', 'editor', 'admin'];
-    }
+    function isApproved() { return hasRoleIn(['reader', 'editor', 'admin']); }
 
     function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
 
-    // Éditeur ou administrateur, sur la foi du claim (v0.24.32, ticket #162).
-    // Seuls ces rôles importent : `analyzeBookImport`, l'extraction de texte
-    // et la création d'un job exigent l'éditeur.
-    function isEditorToken() {
-      return isApprovedToken() && request.auth.token.role in ['editor', 'admin'];
-    }
+    // Éditeur ou administrateur (v0.24.32, ticket #162). Seuls ces rôles
+    // importent : `analyzeBookImport`, l'extraction de texte et la création
+    // d'un job exigent l'éditeur.
+    function isEditor() { return hasRoleIn(['editor', 'admin']); }
 
     // Le type MIME sans ses paramètres : le texte collé s'envoie en
     // `text/plain; charset=utf-8`, qu'une comparaison exacte refuserait.
@@ -3341,12 +3426,10 @@ service firebase.storage {
         && !request.resource.name.matches('quarantine/[^/]+/livres/.*');
     }
 
-    // Administrateur, sur la foi du claim. Sert la seule lecture qui ne soit
-    // pas ouverte à la famille : les images refusées par la modération. Ici,
-    // l'absence de preuve vaut refus.
-    function isAdmin() {
-      return isActive() && request.auth.token.role == 'admin';
-    }
+    // Administrateur, selon le jeton ET le document. Sert les lectures qui ne
+    // sont pas ouvertes à la famille : images refusées par la modération,
+    // quarantaine des autres, listages. Ici, l'absence de preuve vaut refus.
+    function isAdmin() { return hasRoleIn(['admin']); }
 
     // ── Les dossiers PUBLIÉS sont fermés en écriture ────────────────────────
     //
@@ -3372,12 +3455,13 @@ service firebase.storage {
     // ne peut pas voir.
     //
     // Un lecteur n'y dépose que des photos ; un éditeur ou un administrateur,
-    // tous les types d'un import (v0.24.32, ticket #162).
+    // tous les types d'un import (v0.24.32, ticket #162). Type et taille avant
+    // le rôle : un dépôt refusé pour son contenu ne lit pas Firestore.
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid) && isApprovedToken()
-        && ((isEditorToken() && isImportableUnder(50 * 1024 * 1024))
-            || isReaderImageUnder(50 * 1024 * 1024));
+      allow write: if isOwner(uid)
+        && ((isImportableUnder(50 * 1024 * 1024) && isEditor())
+            || (isReaderImageUnder(50 * 1024 * 1024) && isApproved()));
     }
 
     // Un livre entier — PDF, EPUB ou Word — à découper en recettes. Plafond de
@@ -3388,13 +3472,14 @@ service firebase.storage {
     // Éditeurs et administrateurs seulement (v0.24.32, ticket #162).
     match /quarantine/{uid}/livres/{fileName} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid) && isEditorToken()
+      allow write: if isOwner(uid)
         && request.resource.size < 300 * 1024 * 1024
         && baseContentType() in [
              'application/pdf',
              'application/epub+zip',
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-           ];
+           ]
+        && isEditor();
     }
 
     // Lire un fichier dont on a l'adresse : tout compte actif. LISTER le
@@ -3435,14 +3520,15 @@ service firebase.storage {
       allow write: if false;
     }
 
-    // Capture d'un ticket — privée, jamais publiée. Pas de lecture Firestore :
-    // `attachTicketScreenshot` vérifie ensuite que le ticket est à l'appelant.
+    // Capture d'un ticket — privée, jamais publiée. Le ticket n'est pas relu :
+    // `attachTicketScreenshot` vérifie ensuite qu'il est à l'appelant.
     match /tickets/{uid}/{ticketId}/{fileName} {
       allow read: if (isActive() && isOwner(uid)) || isAdmin();
-      allow create, update: if isOwner(uid) && isApprovedToken()
+      allow create, update: if isOwner(uid)
         && fileName.matches('screenshot[.](png|jpg)')
         && request.resource.size <= 5 * 1024 * 1024
-        && baseContentType() in ['image/png', 'image/jpeg'];
+        && baseContentType() in ['image/png', 'image/jpeg']
+        && isApproved();
     }
   }
 }
@@ -3466,12 +3552,14 @@ service firebase.storage {
 > à l'éditeur. Testé dans `rules-tests` (« quarantaine — ce que dépose un lecteur »).
 
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
-`[firebase_storage/unauthorized]` peut vouloir dire cinq choses : le chemin n'appartient
+`[firebase_storage/unauthorized]` peut vouloir dire six choses : le chemin n'appartient
 pas à l'appelant, son jeton ne porte pas encore de rôle (compte `pending`, ou jeton émis
-avant la propagation — une heure au plus), le fichier dépasse 50 Mo (300 Mo sous
-`quarantine/{uid}/livres/`), son type MIME n'est pas dans la liste, ou l'appelant est un
-lecteur et le fichier n'est pas une photo JPEG ou PNG hors de `livres/`. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
-`storagePath` et `mimeType` : sans eux, ces cinq causes sont indiscernables.
+avant la propagation — une heure au plus), son document `users/{uid}` lui a retiré ce rôle
+ou l'a révoqué (ou la lecture inter-services échoue, faute du rôle IAM décrit plus haut), le
+fichier dépasse 50 Mo (300 Mo sous `quarantine/{uid}/livres/`), son type MIME n'est pas dans
+la liste, ou l'appelant est un lecteur et le fichier n'est pas une photo JPEG ou PNG hors de
+`livres/`. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`, `storagePath` et
+`mimeType` : sans eux, ces causes sont indiscernables.
 
 ### Tests des règles
 
@@ -3494,7 +3582,10 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   révoqué (jeton à jour, ou jeton périmé avec `is_revoked` posé sur le document), compte sans
   claim de rôle, administrateur rétrogradé (`demotedAdmin` : claim `admin`, document `editor`),
   compte nommé dont le jeton dit encore `pending` (`promotedReader`), fondateur, et anonyme. Chaque compte a un jeton (`role`, `revoked`, `email`,
-  comme les frappe `syncUserClaims`) et un document `users/{uid}`, relu par les règles Firestore.
+  comme les frappe `syncUserClaims`) et un document `users/{uid}`, relu par les règles Firestore
+  et, depuis la v0.24.48, par les règles Storage (`firestore.get`) : l'émulateur Storage
+  interroge l'émulateur Firestore lancé avec lui, et `storage.test.mjs` réécrit ces documents
+  avant chaque cas (`seedUsers`).
 - `test/firestore.test.mjs` et `test/storage.test.mjs` couvrent le comportement actuel, rôle par
   rôle : création de compte, rôle et fondateur, livres, recettes, annotations, notes, champs
   propriétaire, `app_config`, collections de coût, `processing_jobs` (dont la borne de 20 pages
@@ -3504,7 +3595,10 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   l'étranger, au groupe en pause, à un `group_owner_id` faux ; lecture par l'auteur et le
   propriétaire seuls ; aucune mise à jour ; identifiant imposé `_0` à `_4` et sixième
   refusée ; jour mal formé, impossible ou hors de la veille à J+60 refusé ; bornes) ; côté
-  Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`.
+  Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`,
+  `tickets/`, et le rôle et la révocation relus sur le document (administrateur rétrogradé,
+  compte révoqué à l'instant, éditeur rétrogradé lecteur, rôle inconnu, jeton sans document,
+  document sans rôle, compte nommé à l'instant, chemins courants de chaque rôle).
 - Le bloc « requêtes du client » rejoue la forme des requêtes de `recipe_repository.dart`,
   `book_repository.dart`, `planning_providers.dart`, `annotation_repository.dart` et
   `recipe_rating_repository.dart`. L'émulateur évalue une requête sur ses filtres, comme la
@@ -6403,7 +6497,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Cinq tâches planifiées (Cloud Scheduler), huit reprises manuelles (neuf backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
+Cinq tâches planifiées (Cloud Scheduler), sept reprises manuelles (huit backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -6418,13 +6512,22 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | Reprise manuelle | Réservée à | Ce qu'elle traite |
 |---|---|---|
 | `backfillNutritionFn` | `admin` | recalcule la nutrition, 40 recettes par appel par défaut, avec un point de reprise dans `app_config` — un backfill qui repart de zéro à chaque appel ne finit jamais. Lève les bornes de patience (vingt heures entre deux tentatives, cinq tentatives par liste d'ingrédients, exclusion du non-reprenable) ; le passage programmé les garde. Ne lève pas l'exclusion des ingrédients et unités que l'IA a manqués trois fois : l'enrichissement de la reprise ne les redemande jamais. Compte rendu : examinées, reprises, complétées, encore incomplètes (`echouees`), laissées faute de temps ou de plafond (`laissees`), non reprenables (`nonReprenables`), abandonnées (`abandonnees`) |
-| `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients (backfill récurrent `enrich_referentials`) ; avec `refreshSodium`, la réparation du sel compté deux fois (backfill ponctuel `refresh_sodium`). Mémoire des échecs hors `refreshSodium` : une unité (`ai_weight_failure_count`) ou un ingrédient (`enrichment_failure_count`) qui échoue trois fois n'est plus soumis au modèle, sauf `retryExcluded`. Une unité demandée il y a moins de vingt heures n'est pas soumise (elle ne compte pas comme un échec). Compte rendu : `excludedUnits`, `excludedIngredients`, `unresolvedFailures` en plus des compteurs |
+| `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients (backfill récurrent `enrich_referentials`) ; avec `refreshSodium`, la réparation du sel compté deux fois (backfill ponctuel `refresh_sodium`) : cibles = profils qui portent du sodium sans `sodium_repaired_at` (`isSodiumRepairTarget`), marque posée avec le profil réparé (`enrichedIngredientPayload`), un échec reste cible et compte dans `unresolvedFailures` ; le passage n'est complet que si son parcours a commencé au début de la collection et n'a pas buté sur l'échéance (`enrichPassCompleted`) — un passage repris à mi-chemin remet le curseur au début et se dit incomplet —, et il n'est marqué terminé qu'après un parcours entier sans échec ni élément à revoir. Mémoire des échecs (compteurs) hors `refreshSodium` : une unité (`ai_weight_failure_count`) ou un ingrédient (`enrichment_failure_count`) qui échoue trois fois n'est plus soumis au modèle, sauf `retryExcluded`. Une unité demandée il y a moins de vingt heures n'est pas soumise (elle ne compte pas comme un échec). Compte rendu : `excludedUnits`, `excludedIngredients`, `unresolvedFailures` en plus des compteurs |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. Le type de page se lit par `resolvePageType` : une page typée dans son seul CookLang (`>> page_type:`) est « hors recette », pas « sans ingrédient ». 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Un ingrédient qui échoue trois fois (`allergens_failure_count`) n'est plus soumis au modèle, sauf `retryExcluded`. Une page dont `resolvePageType` (le champ, sinon `>> page_type:` dans le CookLang) ne dit pas `recipe` est comptée « hors recette ». Compte rendu : ingrédients examinés, ignorés, en erreur, exclus (`ingredientsExclus`), échecs non exclus (`echecsNonExclus`) ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
-| `backfillMoveMealsToGroupFn` | `admin` | ponctuel paramétré `move_meals_to_group`, « Déplacer mes repas vers un groupe ». Entrée `{ groupId, fromDay, toDay, startAt, endAt, appVersion? }` : identifiant de groupe au format sûr (`[A-Za-z0-9_-]{1,128}`), jours `AAAA-MM-JJ` inclusifs, `fromDay <= toDay`, 62 jours au plus ; `startAt` et `endAt` sont les instants (ms) du minuit local du premier jour et du lendemain du dernier, calculés par l'appareil (`MoveMealsRequest`), et doivent tomber à moins de quatorze heures des jours annoncés. Le fuseau de l'appareil fait foi : le serveur ne le devine pas. Entrée invalide : `invalid-argument`, avant le verrou. Le passage lit `groups/{groupId}` : absent, `not-found` ; `owner_id` différent de l'appelant, `permission-denied`. L'appelant est administrateur non révoqué (`requireAdmin`), donc planificateur, et ses groupes sont actifs. Sélection : `uid == appelant` et `startAt <= planned_at < endAt` (index `uid` + `planned_at`, 2 000 repas lus au plus), puis les repas dont `group_id` est nul ou absent ; un repas déjà dans un groupe est compté « ignoré ». Chaque repas s'écrit dans une **transaction** qui relit `groups/{groupId}` (présent, `owner_id` = appelant) et le repas (présent, `uid` = appelant, `group_id` nul ou absent), puis pose `group_id: groupId`. Un groupe supprimé ou cédé pendant le passage l'arrête (`groupeIndisponible: true`) : aucun repas n'est rattaché à un groupe que `deleteGroupMeals` a déjà vidé. Un repas qui a changé entre la lecture et la transaction est compté « ignoré ». Rien d'autre n'est écrit : ni `uid`, ni `base_portions`, ni `target_portions`, ni la recette. 500 repas déplacés par passage, arrêt sur trois échecs de suite. Compte rendu : `groupId`, période (`du`, `au`), examinés, déplacés, ignorés, en erreur, restants, `lectureTronquee`, `groupeIndisponible` — **ni nom de groupe ni titre de recette** : il est recopié dans `app_config/backfill_run_move_meals_to_group`, que tout administrateur lit. Réentrant sans curseur : un repas déplacé n'est plus sélectionné. Jamais marqué terminé tout seul (`summarizeMoveMealsToGroup`, `remaining: null`), et le menu ⋮ de sa tuile ne propose pas de le marquer (`reusable` au registre client, `backfillOffersDoneMenu`). Sans appel de modèle |
 | `backfillDefaultUnitsFn` | `admin` | ponctuel `default_units`, « Semer les unités standard ». Pour chacune des quarante unités de `DEFAULT_NUTRITION_UNITS` (`nutrition/defaultUnits.ts`), une transaction lit `nutrition_units/{id}` : absent, il est créé complet (`status: known`, `source: builtin`, `seen_count: 0`) ; présent, seuls les champs manquants sont complétés — `grams_per_unit` ou `volume_ml_per_unit` absent ou nul, `display_label` absent ou vide, `measurement_type` égal à `unknown` —, le statut passe alors à `known` et une source `fallback_auto` devient `builtin` (`defaultUnitPlan`). Une valeur présente n'est jamais écrasée ; une unité complète n'est pas réécrite. Un libellé ou un type mal formé compte comme présent. Sans curseur : la liste entière tient dans un passage. Arrêt sur trois échecs de suite. Compte rendu : `total`, `examinees`, `creees`, `completees`, `dejaAJour`, `echouees`, `restantes`. Terminé tout seul quand les quarante unités sont examinées sans échec. Partage son verrou avec `enrich_referentials`, qui écrit aussi `grams_per_unit` des unités. Sans appel de modèle. `defaultUnits.test.ts` vérifie que chaque unité a le type et le facteur de la table de repli de `quantityConversion.ts` |
 | `backfillUsersSchemaCheckFn` | `admin` | ponctuel `users_schema_check`, « Contrôler les comptes ». **Lecture seule** : parcourt `users` (pages de 200, 5 000 comptes au plus par passage) et n'écrit rien dans la collection. Chaque document est contrôlé contre ce qui casse réellement (`userDocumentIssues`, `functions/src/security/userDocument.ts`), et chaque raison nomme le champ entre parenthèses et dit son effet. **La fiche n'apparaît pas dans Comptes** (`AppUser.fromFirestore` lève) : `email` ou `display_name` absent, nul ou non texte ; `created_at` ou `last_seen_at` absent ou autre chose qu'un `Timestamp` ; `preferred_name`, `photo_url` ou `free_recipe_cover_url` présent et non texte ; `is_revoked` présent, non nul et non booléen ; `role` présent et non texte. **Compte sans droit**, affiché « en attente » dans Comptes : `role` absent, nul ou texte inconnu (`readRole`, valeurs comparées à l'identique). **Toute règle qui lit la révocation échoue pour ce compte** : `is_revoked` absent (`isRevoked()` lit le champ sans valeur par défaut). `is_revoked: null` est conforme. Une valeur citée qui contient « @ » est remplacée par « (valeur masquée) ». Non contrôlés, parce qu'ils ne bloquent rien : un champ hors de la liste des règles et un `uid` différent de l'identifiant (la mise à jour ne teste que les champs qu'elle change, `_upsertUser` ne touche que `last_seen_at`, `photo_url` et `display_name`, le client lit l'uid sur l'identifiant, aucune Function ne lit `users.uid`) ; la longueur des noms (`nameOk`) et de `photo_url` (`photoUrlOk`), la forme de la couverture (`coverUrlOk`), que les règles ne vérifient que quand le champ change. Sans point de reprise : un contrôle ne conclut « rien à revoir » que sur un parcours entier fait en un passage. Arrêt sur le délai et sur trois échecs de suite. Compte rendu : `examines`, `conformes`, `nonConformes`, `echoues`, `collectionParcourue`. Terminé tout seul quand un passage lit toute la collection sans rien à revoir. Sans appel de modèle. À lancer après le déploiement de la v0.24.42 ; un compte listé se corrige à la main dans la console Firebase, puis on relance |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains` (jamais sur une recette corrigée à la main, `contains_manual`, même avec `force` : `containsPatch`), `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
+
+Une reprise ponctuelle réutilisable est retirée en v0.24.44 sur demande de l'administrateur,
+sans avoir été marquée terminée : `backfillMoveMealsToGroupFn` (« Déplacer mes repas vers un
+groupe », v0.23.61), qui faisait passer les repas de « Mon planning » de l'appelant, sur une
+période de 62 jours au plus, dans le planning d'un groupe dont il est propriétaire, en posant
+`group_id` par l'Admin SDK. Dernier passage le 14/10/2026, lancé à la main : 7 repas déplacés
+du 2 au 29 octobre, 0 échec. Partent avec lui le dialogue de paramètres
+(`move_meals_to_group_dialog.dart`), le modèle `MoveMealsRequest` et le champ `reusable` du
+registre client. Le document `app_config/backfill_run_move_meals_to_group` reste en base, plus
+lu. Aucun poste de coût, aucun libellé de journal propre.
 
 Deux reprises ponctuelles, menées au bout et marquées terminées en production le 21/10/2026 en
 v0.24.36, sont retirées en v0.24.37 avec leur callable : `backfillIllustrationFoldersFn`
@@ -6605,7 +6708,6 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillRecipeRolesFn` | recettes que le modèle n'a pas su classer, recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième, « Plus redemandé à l'IA après 3 échecs » pour une recette sautée |
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième échec d'un ingrédient, « Plus redemandé à l'IA après 3 échecs » pour un ingrédient sauté. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
-| `backfillMoveMealsToGroupFn` | repas dont l'écriture a échoué (« Repas non déplacé : <message> », nature `meal`), nommés par leur identifiant et leur jour (« Repas <id> — AAAA-MM-JJ »), sans titre de recette |
 | `backfillDefaultUnitsFn` | unités dont l'écriture a échoué (« Échec d'écriture : <message> », nature `unit`), nommées par leur libellé |
 | `backfillUsersSchemaCheckFn` | comptes dont le document casse une lecture ou une règle, nature `account`, toutes les raisons réunies par « ; », chacune avec le champ entre parenthèses et son effet (« rôle inconnu (role) « superadmin » : compte sans droit, affiché « en attente » dans Comptes », « date de création absente (created_at) : la fiche n'apparaît pas dans Comptes », « indicateur de révocation absent (is_revoked) : toute règle qui lit la révocation échoue pour ce compte »), ou « Contrôle impossible : <message> ». Nommés par leur prénom (nom préféré, sinon premier mot du nom Google, 20 caractères au plus, écarté s'il contient « @ ») et les six premiers caractères de l'uid — « Marie (abcdef…) », « Compte abcdef… » sans nom —, **jamais par l'adresse**. La feuille « À revoir » affiche en plus, sous chaque compte, l'identifiant complet du document, à chercher dans la console Firebase, et la consigne « Ces fiches ne se corrigent pas depuis l'application… » ; « Copier la liste » (`copyLine`) n'en recopie pas l'identifiant complet |
 
@@ -6953,6 +7055,72 @@ Exception, décidée par l'utilisateur : la photo de profil (`photo_url`, `googl
 Google) reste affichée sans filtre, dans le menu du compte (`app_shell.dart`), l'écran Compte
 (`account_screen.dart`) et la liste des utilisateurs (`admin_screen.dart`).
 
+### Pages publiques : accueil, confidentialité et conditions d'utilisation
+
+Trois pages HTML statiques, en français, vivent dans `kass_dalle/web/` :
+
+| Fichier | Adresse publique |
+|---|---|
+| `web/accueil.html` | `https://kassdale-6d948.web.app/accueil.html` |
+| `web/confidentialite.html` | `https://kassdale-6d948.web.app/confidentialite.html` |
+| `web/conditions.html` | `https://kassdale-6d948.web.app/conditions.html` |
+
+**La page d'accueil publique.** `accueil.html` est la page d'accueil déclarée sur l'écran de
+consentement OAuth. Google a refusé une première validation : la page déclarée,
+`https://kassdale-6d948.web.app/`, ouvre l'écran de connexion Flutter, et Google exige que la
+page d'accueil présente l'application sans connexion. `accueil.html` dit ce qu'est
+Kass'Dalle, ses fonctions, ses plateformes, pourquoi la connexion passe par Google, et les
+deux accès Google demandés (Agenda, Tasks) avec leur usage. Elle renvoie vers les deux autres
+pages et vers l'application (`/`). `/` reste l'application : la changer en vitrine ajouterait
+un écran à chaque ouverture.
+
+`flutter build web` les copie telles quelles dans `build/web`. Firebase Hosting sert un fichier
+qui existe avant d'appliquer la réécriture `** → /index.html` : les trois adresses rendent la
+page, pas l'application. Elles n'ont aucun en-tête de cache propre dans `firebase.json`.
+
+**Pourquoi pas une route `go_router`.** L'écran de consentement OAuth de Google exige trois
+adresses publiques (page d'accueil, règles de confidentialité, conditions d'utilisation). La
+validation vérifie que la page d'accueil se lit sans connexion et renvoie vers les règles de
+confidentialité. Une route
+Flutter ne s'affiche qu'après le téléchargement et l'exécution de `main.dart.js`, sur un
+canevas : un robot qui lit le HTML sans exécuter le script, ou un lecteur sans JavaScript, ne
+verrait rien. Une page statique se lit partout.
+
+**Contraintes des pages.** Cibles de lien de 44 px au moins, longues adresses coupées
+(`overflow-wrap: anywhere`). Aucun script : la CSP du site (`Content-Security-Policy-Report-Only`,
+ci-dessus) n'admet que les scripts d'`index.html` listés par leur empreinte. Un seul `<style>`
+en ligne (`style-src 'unsafe-inline'`), aucune ressource externe, polices du système. Mode
+sombre par `prefers-color-scheme`, mise en page lisible sur téléphone. Chaque page renvoie vers
+les deux autres et vers l'application (`/`), dans sa navigation et son pied de page. Responsable : « un membre de la famille, son administrateur » ;
+contact : l'adresse du compte fondateur. La date de dernière mise à jour s'écrit en tête de
+chaque page, sous le titre, et change à chaque modification du texte.
+
+**Les liens qui y mènent.**
+
+- Dans l'application, l'écran de connexion (`/login`) et la salle d'attente (`/pending`)
+  portent en pied de page « Confidentialité » et « Conditions d'utilisation », au-dessus du
+  numéro de version (`AuthScreenFooter`, `features/auth/presentation/auth_screen_footer.dart`).
+  Les adresses sont `kPrivacyPolicyUrl` et `kTermsOfUseUrl` (`core/app_links.dart`). Sur le
+  web, le widget `Link` d'`url_launcher` pose un vrai `<a href>` qui ouvre un nouvel onglet ;
+  ailleurs, `launchUrl` ouvre le navigateur du système, et un échec est rapporté
+  (`auth.legalLink`) puis annoncé : « Page non ouverte. Ouvrez <adresse> dans votre
+  navigateur. ». Le pied de page est sous le contenu, plus en surimpression : le contenu qui
+  défile ne passe pas dessous.
+- Dans `web/index.html`, un bloc `<noscript>` affiche les liens vers les trois pages
+  (accueil, confidentialité, conditions) par-dessus l'écran d'attente quand JavaScript est coupé. Aucun script n'est ajouté : les empreintes de la CSP
+  ne changent pas.
+
+**Le contenu suit le code.** Les règles de confidentialité décrivent les données réellement
+traitées : compte Google, Google Agenda et Google Tasks (jeton en mémoire seulement,
+jamais enregistré ni envoyé au serveur, utilisé 50 min au plus, disparu à la déconnexion ou à
+la fermeture de l'application ; lié au compte Firebase qui l'a obtenu et vidé
+par `AuthRepository.signOut` — `GoogleAccessTokenCache`, `core/services/` — pour qu'un second
+compte connecté sur le même appareil ne s'en serve pas), contenus et leur visibilité, appels d'IA et leurs
+fournisseurs, tickets publiés sur un dépôt GitHub public, invitations par Gmail,
+notifications, rapports d'erreurs, journaux, hébergement, durées de conservation. Un
+changement qui ajoute une donnée, un fournisseur, une autorisation Google ou un destinataire
+met la page à jour dans le même commit, avec sa date.
+
 ### Build et déploiement
 
 Le chemin normal est un push sur `master`, depuis le PC comme depuis une session cloud :
@@ -7176,6 +7344,13 @@ le `firebase` du PC, installé à la main (voir `handbook-reseau-agents.md`).
 supprimer une fonction retirée du code : une fonction supprimée du dépôt disparaît donc de la
 production au déploiement suivant. Il n'est pas passé à `firestore` : il y supprimerait tout
 index absent de `firestore.indexes.json`.
+
+**Les règles Storage exigent un rôle IAM que le workflow ne pose pas** (v0.24.48).
+`storage.rules` lit `users/{uid}` par `firestore.get` : l'agent de service Storage doit porter
+`roles/firebaserules.firestoreServiceAgent`. En `--non-interactive`, la CLI ne vérifie ni
+n'accorde ce rôle et le déploiement réussit quand même ; c'est à l'usage que tous les dépôts
+de fichiers sont refusés. Le rôle se pose une fois, à la main, avant le premier déploiement
+de ces règles (`handbook-reseau-agents.md`, section 11.8).
 
 **L'APK en ligne est conservé.** Le déploiement du hosting remplace tout le contenu en ligne par
 `build/web`. Le workflow télécharge `app-release.apk` et `apk_release.json`
@@ -7799,6 +7974,9 @@ l'authentification.
 | `/login` | `LoginScreen` | tout le monde, y compris déconnecté ; `?revoked=true` affiche le motif, `?next=` porte l'adresse à rouvrir après la connexion (13.2) |
 | `/pending` | `PendingApprovalScreen` | compte authentifié mais pas encore nommé |
 
+`/accueil.html`, `/confidentialite.html` et `/conditions.html` ne sont pas des routes : ce sont des fichiers
+statiques servis par Hosting (§11, « Pages publiques »). Le routeur ne les voit jamais.
+
 **Dans la coquille `AppShell`.** La colonne « droit effectif » dit qui peut réellement
 faire quelque chose de l'écran — droit tenu par les règles Firestore, les règles Storage ou
 la garde de la callable, **jamais par le routeur** : hors `/admin` et les trois écrans de
@@ -7860,7 +8038,7 @@ recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
 | `/admin/app-check` | `AppCheckScreen` | le mode d'attestation |
 | `/admin/moderation` | `AdminModerationScreen` | trancher sur une image en attente |
 | `/admin/referentials` | `AdminReferentialsScreen` | l'état des référentiels |
-| `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient |
+| `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient ; au dépliage, ouvrir une recette qui le cite (`push` vers `/recipes/{id}`, `/recipes/{id}/edit` ou, pour un brouillon, `/drafts/{id}`) |
 | `/admin/nutrition-units` | `NutritionUnitsScreen` | corriger un poids d'unité |
 | `/admin/nutrition-policy` | `NutritionPolicyScreen` | priorité des sources, seuils |
 | `/admin/data-quality` | `AdminDataQualityScreen` | le diagnostic des référentiels nutrition, en lecture seule (`getDataQualityReportFn`, §3.10) |
