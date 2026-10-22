@@ -20,6 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.49 — technique
+
+Fichier de vérification Google Search Console publié à la racine du site
+(`kass_dalle/web/google3fec43c7d803a62b.html`, déposé tel quel). Il prouve que
+`https://kassdale-6d948.web.app/` appartient au compte propriétaire du projet, condition de
+la validation de l'écran de consentement OAuth. Il reste dans le dépôt : le retirer fait
+perdre la vérification (handbook §11.7).
+
 ### v0.24.48 — technique
 
 Règles Storage : le rôle et la révocation se relisent sur `users/{uid}`. Jusqu'ici

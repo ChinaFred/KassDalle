@@ -776,7 +776,8 @@ appartient, dans Google Search Console, avec le compte propriétaire du projet :
 3. Vérifier qu'il s'ouvre à `https://kassdale-6d948.web.app/google<code>.html`, puis cliquer
    « Valider » dans Search Console.
 4. Le fichier reste dans le dépôt : Google revérifie la propriété, et la retirer fait perdre la
-   vérification.
+   vérification. Fichier en place depuis la v0.24.49 :
+   `kass_dalle/web/google3fec43c7d803a62b.html`.
 5. Attendre 24 h avant de relancer la validation de l'écran de consentement.
 
 Autorisations (scopes) que l'application demande, à déclarer dans « Accès aux données » :
