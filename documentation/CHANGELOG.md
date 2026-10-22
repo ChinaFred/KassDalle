@@ -37,7 +37,7 @@ bouton.
 ### v0.24.64 — technique
 
 Nouveau composant `core/presentation/app_image_viewer.dart` (`showAppImageViewer`,
-`AppViewerImage.network` et `.memory`). Il remplace six implémentations recopiées
+`AppViewerImage.network` et `.memory`). Il remplace huit implémentations recopiées
 (`IllustrationGallery`, deux `_showCoverZoom`, les deux dialogues de `book_page_detail_screen`,
 le `Dialog` de `PlatingImage`, et les visionneuses de `source_viewer` et `ticket_widgets`). Les
 déclencheurs de la page de livre passent de `GestureDetector` à `InkWell` avec un libellé
