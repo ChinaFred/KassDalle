@@ -524,10 +524,11 @@ String backfillStatusLine({
             : 'Incomplet$when$withSummary · $echecs, nouvel essai '
                   '${formatNextRunShort(next, now)}';
       }
-      // Un essai à blanc qui a trouvé quoi corriger : relancer tel quel
-      // referait le même essai.
+      // Un essai à blanc arrivé au bout qui a trouvé quoi corriger : relancer
+      // tel quel referait le même essai. Arrêté avant la fin, il se relance.
       if (def.key == BackfillKeys.utensilsCleanup &&
-          state.lastReport?['essaiABlanc'] == true) {
+          state.lastReport?['essaiABlanc'] == true &&
+          state.lastReport?['recettesParcourues'] == true) {
         return 'Incomplet$when$withSummary. Décochez « Essai à blanc » au '
             'lancement pour corriger.';
       }
