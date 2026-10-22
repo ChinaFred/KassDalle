@@ -30,8 +30,8 @@ appelle, et ferme les treize autres (micro, géolocalisation, paiement, plein é
 en-tête `Cache-Control` ne change. La CSP reste en `Report-Only` : rejouée en mode bloquant
 sur le build de cette version, jusqu'à l'écran de connexion, elle ne lève aucune violation.
 Le passage en bloquant attend la lecture des rapports de production et un essai connecté.
-`deploy.ps1` affiche `git status --short` avant son `git add -A` et demande une
-confirmation (O/N) : sans « O », il s'arrête sans commit ni push.
+`deploy.ps1` affiche chaque fichier modifié ou non suivi avant son `git add -A` et demande
+une confirmation (O/N) : sans « O » ou « o », il s'arrête sans commit ni push.
 
 ### v0.24.49 — technique
 

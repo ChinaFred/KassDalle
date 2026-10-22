@@ -7390,8 +7390,9 @@ Il reste une fenêtre de quelques secondes entre la seconde vérification et la 
 doute, relancer `deploy.ps1 -ResumeHostingOnly` une fois le workflow terminé.
 
 **Le commit de `deploy.ps1` se confirme (v0.24.53, Issue #164).** Avant son `git add -A`,
-le script affiche `git status --short` et demande « Commiter et pousser ces fichiers ?
-(O/N) ». Toute autre réponse que `O`, ou une console non interactive, l'arrête en erreur
+le script affiche `git status --short --untracked-files=all` (chaque fichier non suivi, pas
+seulement son dossier) et demande « Commiter et pousser ces fichiers ? (O/N) ». Toute autre
+réponse que `O` ou `o`, ou une console non interactive, l'arrête en erreur
 sans commit ni push. La production porte déjà ces changements à ce stade : vérifier les
 fichiers, puis les commiter et les pousser à la main après `git pull --no-rebase`, avec la
 ligne `Deploy-Source: deploy.ps1` pour que le workflow ne les redéploie pas. Sans fichier

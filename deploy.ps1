@@ -448,10 +448,10 @@ if (-not $SkipGit) {
     try {
         # « git add -A » prend tout le répertoire de travail, y compris un fichier
         # modifié par erreur ou un secret posé à la main (Issue #164). La liste
-        # s'affiche et attend un « O » ; toute autre réponse, ou une console
+        # s'affiche, fichiers non suivis compris, et attend un « O » ou un « o » ; toute autre réponse, ou une console
         # non interactive, arrête le script sans rien commiter. La production est
         # déjà à jour à ce stade : seul le commit et le push restent à faire.
-        $pending = @(git status --short)
+        $pending = @(git status --short --untracked-files=all)
         if ($pending.Count -gt 0) {
             Write-Host "Fichiers qui partiront dans le commit de deploiement :" -ForegroundColor Yellow
             $pending | ForEach-Object { Write-Host "  $_" }
