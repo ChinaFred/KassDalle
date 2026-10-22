@@ -13,10 +13,13 @@ import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
 import '../ai/ai_processing_overlay.dart';
 import '../ai/ai_ui_copy.dart';
+import '../ai/text_extraction_progress.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
+import '../../../../core/services/gemini_service.dart' show TextExtractionStep;
+import '../../../../core/presentation/leave_guard.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../auth/presentation/auth_providers.dart';
@@ -56,6 +59,17 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
     with RecipeFormMixin<RecipeCreateScreen> {
   bool _aiProcessing = false;
 
+  /// Étapes annoncées par le serveur pendant la conversion en cours, dans
+  /// l'ordre. Vide tant qu'aucune n'est arrivée : l'overlay n'affiche alors
+  /// pas de liste (plateforme sans flux, ancienne version du serveur).
+  List<TextExtractionStep> _steps = const [];
+
+  // Garde de sortie pendant la conversion : la barre de navigation et le menu
+  // latéral appellent `context.go`, que `PopScope` ne voit pas (voir
+  // `leave_guard.dart`).
+  late final LeaveGuardNotifier _leaveGuardNotifier;
+  late final LeaveGuard _leaveGuard = _confirmLeave;
+
   /// Texte original collé par l'utilisateur avant la mise en forme IA.
   /// Sauvegardé dans Firebase Storage lors du premier enregistrement.
   String? _originalPastedText;
@@ -75,10 +89,48 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
   void initState() {
     super.initState();
     formInitialized = true;
+    _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
+    // Après le rendu : un provider ne se modifie pas pendant la construction.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _leaveGuardNotifier.set(_leaveGuard);
+    });
     // Pre-select book when navigating from a book's recipe list.
     if (widget.initialBookId != null) {
       setBook(widget.initialBookId, widget.initialBookTitre);
     }
+  }
+
+  @override
+  void dispose() {
+    // Différé : un provider ne se modifie pas pendant le démontage de l'arbre.
+    final notifier = _leaveGuardNotifier;
+    final guard = _leaveGuard;
+    Future.microtask(() => notifier.clearIf(guard));
+    super.dispose();
+  }
+
+  /// Vrai sans question hors conversion. Pendant une conversion, la quitter
+  /// perd son résultat : le serveur la termine, mais plus rien ne l'affiche.
+  Future<bool> _confirmLeave() async {
+    if (!_aiProcessing) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(RecipeAiUiCopy.conversionLeaveTitle),
+        content: const Text(RecipeAiUiCopy.conversionLeaveMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text(RecipeAiUiCopy.conversionLeaveStay),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(RecipeAiUiCopy.conversionLeaveConfirm),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
   }
 
   Future<void> _processWithAI() async {
@@ -87,14 +139,24 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       context.showSnackBar('Saisissez du texte avant de lancer l\'IA');
       return;
     }
-    setState(() => _aiProcessing = true);
+    // Le clavier se ferme : sur un téléphone, il cacherait la moitié du voile.
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _aiProcessing = true;
+      _steps = const [];
+    });
     try {
       // Sauvegarde le texte original avant transformation
       _originalPastedText ??= text;
 
       final extraction = await ref
           .read(geminiServiceProvider)
-          .extractRecipeFromText(text);
+          .extractRecipeFromText(
+            text,
+            onStep: (step) {
+              if (mounted) setState(() => _steps = [..._steps, step]);
+            },
+          );
       if (!mounted) return;
       if (extraction == null) {
         context.showSnackBar('L\'IA n\'a pas trouvé de recette dans ce texte');
@@ -396,15 +458,30 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       ),
     );
 
-    return Stack(
-      children: [
-        scaffold,
-        if (_aiProcessing)
-          const AiProcessingOverlay(
-            title: RecipeAiUiCopy.processingTitle,
-            message: RecipeAiUiCopy.processingMessage,
-          ),
-      ],
+    // Le voile couvre la barre d'application : restent le retour système
+    // (geste, bouton Android), vu par `PopScope`, et la navigation du shell,
+    // vue par le garde de sortie.
+    // Ctrl+S n'a pas d'action sur cet écran : le raccourci du shell ne fait
+    // rien sans `onSave`, et rien ne s'enregistre sous le voile.
+    return PopScope(
+      canPop: !_aiProcessing,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || !mounted) return;
+        final leave = await _confirmLeave();
+        if (leave && context.mounted) Navigator.of(context).pop();
+      },
+      child: Stack(
+        children: [
+          scaffold,
+          if (_aiProcessing)
+            AiProcessingOverlay(
+              title: RecipeAiUiCopy.conversionTitle,
+              estimate: RecipeAiUiCopy.conversionEstimate,
+              message: RecipeAiUiCopy.conversionStayHere,
+              steps: textExtractionProgressSteps(_steps),
+            ),
+        ],
+      ),
     );
   }
 

@@ -4927,6 +4927,64 @@ sans quoi les mois déjà comptabilisés cesseraient de les nommer, mais ils ont
 `ROUTABLE_FEATURES` : un sélecteur de moteur qui ne commande aucun appel fait croire à un
 réglage.
 
+**Les étapes annoncées en flux (v0.24.59).** Une conversion de texte collé dure une à deux
+minutes : 131 s mesurées pour 5 557 caractères, dont 66 s de transcription et 62 s de
+balisage. `extractRecipeFromTextFn` est une callable en flux de firebase-functions 7 : son
+gestionnaire reçoit `(request, response)`, et quand `request.acceptsStreaming` est vrai,
+`response.sendChunk` écrit un message au début de chaque étape réelle, dans l'ordre :
+
+| Message | Quand |
+|---|---|
+| `{etape: "lecture"}` | avant `transcribeText`, après `requireEditor` et les bornes de l'entrée |
+| `{etape: "traduction", langue: "<ISO 639-1>"}` | avant `translateRecipe`, seulement si `needsTranslation` |
+| `{etape: "balisage"}` | avant `tagAndNormalize` |
+| `{erreur: {code, message, details?}}` | en cas d'échec, juste avant l'`HttpsError` rendue par `toHttpsError` |
+
+`extractRecipeFromText` (`gemini/extractor.ts`) reçoit un suivi optionnel
+(`TextExtractionProgress` : `onStep`, `shouldStop`) et n'importe rien de Cloud Functions ; son quatrième paramètre, réservé aux tests, remplace les
+passes et le journal (`tests/textExtractionSteps.test.ts`). L'envoi passe par
+`progressSender` (`callable/_streaming.ts`) : sans flux accepté, il ne fait rien ; un envoi
+qui lève est journalisé (`logError` « message de progression non envoyé ») et la conversion
+continue.
+
+**Client parti : arrêt avant la passe suivante.** Après chaque annonce, avant l'appel de
+modèle de l'étape, `shouldStop` consulte `clientGone` : vrai si `response.signal` est
+interrompu, ou si le dernier `sendChunk` a rendu `false` (firebase-functions 7.2.5 rend
+`false` quand la connexion est fermée). La conversion lève alors
+`TextExtractionCancelledError`, journalisée (`logError` « conversion arrêtée, client
+parti »), et la callable rend `HttpsError("cancelled")`. Un appel classique
+(`acceptsStreaming` faux) ne s'arrête jamais : `clientGone` reste faux. Sans cet arrêt, un
+client coupé avant `lecture` relançait l'appel classique pendant que la première conversion
+continuait : deux conversions facturées. Une passe déjà partie se termine, et elle est
+facturée. Le résultat final garde la forme d'un appel classique, et un client sans flux reçoit
+ce seul résultat. Les messages ne changent ni les appels de modèle, ni leur poste de coût.
+
+Le message `erreur` existe parce que les plugins natifs de cloud_functions 6.5 perdent
+l'erreur d'un flux : Android termine le flux sans événement d'erreur, iOS rend le code
+`unknown`. Le client le préfère à l'erreur reçue de la plateforme.
+
+Côté client, `GeminiService.extractRecipeFromText(text, onStep:)` passe par `_callStreaming` :
+
+- web : POST direct comme `_callViaHttp`, avec `Accept: text/event-stream`, lu ligne par
+  ligne (`parseCallableStreamLine` ; le client `http` du web lit la réponse par `fetch`) ;
+- Android et iOS : `HttpsCallable.stream` (`Chunk`, `Result`) ;
+- Windows : cloud_functions n'y déclare pas d'implémentation native, le flux échoue avant tout
+  message.
+
+Sur Android, iOS et Windows, un échec **avant** le premier message relance l'appel classique
+(`_call`), sans étapes : les plugins natifs ne transmettent pas l'erreur d'un flux, et l'appel
+classique la rend avec son code. Le serveur n'annonce `lecture` qu'après ses contrôles d'accès,
+et il s'arrête avant la transcription si le client est déjà parti. Sur le web,
+firebase-functions répond 200 avec l'erreur en événement `error` : le client la lève telle
+quelle, sans relance. Seule une panne réseau avant le premier message y relance l'appel
+classique. Le flux web porte l'en-tête `X-Firebase-AppCheck` (`FirebaseAppCheck.getToken`) ;
+un jeton absent ou en échec est remonté (`gemini_http_app_check:<nom>`) et l'appel part sans
+lui. Un échec **après** le premier message ne se relance pas, il coûterait une seconde conversion : le client lève
+l'erreur annoncée, ou `unavailable` « Le traitement a été interrompu avant la fin. ». Chaque
+échec passe par `ErrorReportService` (`gemini_callable_stream:extractRecipeFromTextFn`).
+L'écran traduit les étapes reçues en liste (`textExtractionProgressSteps`) ; sans message,
+`AiProcessingOverlay` n'affiche pas de liste.
+
 **La traduction (v0.23.16).** La passe 1 rend `langue`, code ISO 639-1 lu sur les **étapes** :
 le titre et les noms d'ingrédients ne décident pas (« cheesecake », « wok » restent `fr`). Elle
 recopie dans la langue de la page, unités comprises, sans rien traduire.
