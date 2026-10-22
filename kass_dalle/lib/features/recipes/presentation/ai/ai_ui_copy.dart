@@ -42,6 +42,35 @@ class RecipeAiUiCopy {
       'Aucune illustration trouvée dans le scan.';
 
   static const processingTitle = 'Traitement IA en cours';
+
+  /// Un traitement d'IA sur une recette dure une à deux minutes : « quelques
+  /// secondes » faisait croire à un blocage au bout de trente.
   static const processingMessage =
-      'Patientez quelques secondes, nous appliquons vos consignes.';
+      'Cela peut prendre une à deux minutes. Restez sur cet écran.';
+
+  // ── Conversion d'un texte collé (Nouvelle recette) ─────────────────────────
+
+  static const conversionTitle = 'Conversion de la recette';
+  static const conversionEstimate = 'Comptez 1 à 2 minutes.';
+  static const conversionStayHere =
+      "Restez sur cet écran : la recette s'affichera ici.";
+  static const conversionStepReading = 'Lecture du texte';
+  static const conversionStepTagging = 'Repérage des ingrédients et des étapes';
+  static const conversionLeaveTitle = 'Quitter ?';
+  static const conversionLeaveMessage = 'La conversion en cours sera perdue.';
+  static const conversionLeaveStay = 'Rester';
+  static const conversionLeaveConfirm = 'Quitter';
+
+  /// Remplace l'estimation au-delà de trois minutes
+  /// (`AiProcessingOverlay.slowThreshold`).
+  static const processingSlow =
+      "C'est plus long que d'habitude. Le traitement continue : inutile de "
+      'relancer.';
+
+  /// « Temps écoulé : 1 min 05 ».
+  static String processingElapsed(Duration elapsed) {
+    final minutes = elapsed.inMinutes;
+    final seconds = (elapsed.inSeconds % 60).toString().padLeft(2, '0');
+    return 'Temps écoulé : $minutes min $seconds';
+  }
 }

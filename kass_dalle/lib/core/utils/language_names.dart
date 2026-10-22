@@ -67,3 +67,18 @@ String inLanguageLabel(String code) {
 
 /// Vrai pour une langue qui s'écrit de droite à gauche.
 bool isRightToLeft(String code) => _rightToLeft.contains(_normalize(code));
+
+/// « Traduction depuis l'anglais », « Traduction depuis le japonais », ou
+/// « Traduction » pour un code absent ou inconnu de la table.
+///
+/// L'article vient de la forme avec « de » écrite à la main : « de l'anglais »
+/// donne « l'anglais », « du japonais » donne « le japonais ».
+String translationStepLabel(String? code) {
+  final forms = code == null ? null : _languageNames[_normalize(code)];
+  if (forms == null) return 'Traduction';
+  final from = forms.$2;
+  final withArticle = from.startsWith("de l'")
+      ? from.substring(3)
+      : 'le ${from.substring(3)}';
+  return 'Traduction depuis $withArticle';
+}

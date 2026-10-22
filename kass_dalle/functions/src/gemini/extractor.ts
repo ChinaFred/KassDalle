@@ -29,7 +29,7 @@
 
 import { logInfo } from "../logging";
 import type { ModelCallContext } from "../ai/types";
-import { needsTranslation, transcribeText } from "./transcription";
+import { needsTranslation, normalizeLanguageCode, transcribeText } from "./transcription";
 import { translateRecipe } from "./translation";
 import { tagAndNormalize, type NormalizedIngredientLine } from "./tagging";
 import { checkFidelity, verbatimCooklang, type FidelityReport } from "./fidelity";
@@ -55,23 +55,97 @@ export interface TextExtraction {
 }
 
 /**
+ * Étape de la conversion qui commence, annoncée à l'écran qui attend.
+ *
+ * Une étape n'est annoncée qu'au moment où son appel de modèle part : la
+ * traduction n'existe que pour un texte écrit dans une autre langue, et la
+ * liste affichée au membre ne doit montrer que ce qui a lieu. `langue` est le
+ * code ISO 639-1 lu par la transcription.
+ */
+export type TextExtractionStep =
+  { etape: "lecture" } | { etape: "traduction"; langue: string } | { etape: "balisage" };
+
+/**
+ * Rappel appelé au début de chaque étape. Il ne doit pas lever : un échec
+ * d'envoi au client se journalise chez l'appelant, et la conversion continue.
+ */
+export type OnTextExtractionStep = (step: TextExtractionStep) => void | Promise<void>;
+
+/**
+ * Suivi d'une conversion par l'appelant.
+ *
+ * `onStep` annonce chaque étape. `shouldStop` est consulté juste après
+ * l'annonce, avant l'appel de modèle de l'étape : vrai, la conversion
+ * s'arrête par une `TextExtractionCancelledError`. La callable s'en sert
+ * quand le client est parti — il relance alors un appel classique, et
+ * continuer facturerait la même conversion deux fois.
+ */
+export interface TextExtractionProgress {
+  onStep?: OnTextExtractionStep;
+  shouldStop?: () => boolean;
+}
+
+/** Conversion arrêtée avant une étape, sur demande de l'appelant. */
+export class TextExtractionCancelledError extends Error {
+  constructor(readonly etape: TextExtractionStep["etape"]) {
+    super(`Conversion arrêtée avant l'étape ${etape}`);
+    this.name = "TextExtractionCancelledError";
+  }
+}
+
+/**
+ * Les trois passes appelées par la conversion, et son journal.
+ *
+ * Paramètre réservé aux tests : il permet de vérifier l'ordre des étapes
+ * annoncées sans appeler de modèle ni écrire dans Cloud Logging.
+ * L'application passe toujours les vraies.
+ */
+export interface TextExtractionPasses {
+  transcribe: typeof transcribeText;
+  translate: typeof translateRecipe;
+  tag: typeof tagAndNormalize;
+  log: typeof logInfo;
+}
+
+const DEFAULT_PASSES: TextExtractionPasses = {
+  transcribe: transcribeText,
+  translate: translateRecipe,
+  tag: tagAndNormalize,
+  log: logInfo,
+};
+
+/**
  * Convertit un texte libre en recette balisée et vérifiée.
  *
  * Retourne null quand le texte ne contient aucune recette — l'équivalent du
  * `NO_RECIPE` de l'ancien prompt, décidé cette fois par le même classement que
  * pour une page de livre.
+ *
+ * [progress] reçoit chaque étape réelle, dans l'ordre : `lecture`, puis
+ * `traduction` si le texte n'est pas en français, puis `balisage`, et peut
+ * arrêter la conversion avant chacune. Ce fichier n'importe rien de Cloud
+ * Functions : c'est la callable qui transforme ces étapes en messages vers le
+ * client.
  */
 export async function extractRecipeFromText(
   freeText: string,
   ctx: ModelCallContext,
+  progress: TextExtractionProgress = {},
+  passes: TextExtractionPasses = DEFAULT_PASSES,
 ): Promise<TextExtraction | null> {
+  const begin = async (step: TextExtractionStep): Promise<void> => {
+    await progress.onStep?.(step);
+    if (progress.shouldStop?.()) throw new TextExtractionCancelledError(step.etape);
+  };
+
   // ── PASSE 1 : transcription du texte ────────────────────────────────────
-  const transcription = await transcribeText(freeText, {
+  await begin({ etape: "lecture" });
+  const transcription = await passes.transcribe(freeText, {
     ...ctx,
     feature: "text_extraction",
   });
 
-  logInfo({
+  passes.log({
     message: `Texte transcrit: ${transcription.pageType} — "${transcription.titre}"`,
     moduleType: "IMPORT",
     correlationId: ctx.correlationId,
@@ -90,9 +164,15 @@ export async function extractRecipeFromText(
   // Un texte collé dans une autre langue est traduit avant le balisage, comme
   // une page scannée. Son original n'est pas conservé : la recette n'existe pas
   // encore, et l'utilisateur garde le texte qu'il vient de coller.
-  const recette = needsTranslation(lue)
-    ? await translateRecipe(lue, { ...ctx, feature: "recipe_translation", moduleType: "IMPORT" })
-    : lue;
+  let recette = lue;
+  if (needsTranslation(lue)) {
+    await begin({ etape: "traduction", langue: normalizeLanguageCode(lue.langue) });
+    recette = await passes.translate(lue, {
+      ...ctx,
+      feature: "recipe_translation",
+      moduleType: "IMPORT",
+    });
+  }
 
   // ── PASSE 2 : balisage et normalisation ─────────────────────────────────
   //
@@ -100,7 +180,8 @@ export async function extractRecipeFromText(
   // Le poste de coût est donc le même — c'est le même travail, et lui en
   // donner un second nom aurait coupé en deux une ligne comptable qui mesure
   // une seule chose.
-  const tagged = await tagAndNormalize(recette, {
+  await begin({ etape: "balisage" });
+  const tagged = await passes.tag(recette, {
     ...ctx,
     feature: "recipe_tagging",
     moduleType: "IMPORT",
@@ -108,7 +189,7 @@ export async function extractRecipeFromText(
 
   const fidelity = checkFidelity(recette, tagged);
   if (fidelity.findings.length > 0) {
-    logInfo({
+    passes.log({
       message: `Contrôle de fidélité (${fidelity.level}) : ${fidelity.findings
         .map((f) => f.message)
         .join(" ")}`,
