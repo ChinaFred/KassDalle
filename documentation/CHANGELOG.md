@@ -80,12 +80,6 @@ Ticket #163, point 11 : `assertJobTargetBook` refuse en `foreign_book` (`TargetB
 tout `book_id` présent qui n'est pas une chaîne non vide ; absent ou `null` passe sans livre.
 `ProcessingJob.toFirestore` écrit `null` au lieu d'une chaîne vide (`/scan?bookId=`).
 
-Ticket #162, point 3 : nouvelle tâche planifiée `scheduledErrorReportsPurge`, tous les jours
-à 4 h (Europe/Paris). Elle supprime les `error_reports` dont `timestamp` a plus de 90 jours,
-par lots de 400, 50 lots au plus par passage, et journalise le nombre supprimé
-(`error_reports_purge`). Un rapport sans `timestamp` reste. Export dans `index.ts` sans import
-lourd ; `COLL_ERROR_REPORTS` dans `config.ts`.
-
 Règle `recipes` de `firestore.rules` : la mise à jour exige `isEditor()`, sauf deux
 écritures d'un lecteur créateur. `readerValidatesDraft` : champs de `validateDraft` seuls
 (`affectedKeys().hasOnly`), statut `draft` ou `inReview` vers `validated`.
@@ -104,14 +98,10 @@ d'un lecteur n'y passe : la capture d'un ticket suit `attachTicketScreenshot`).
 éditeur ou un administrateur ; `referentialNormalizationDenial` ne prend plus que le rôle.
 `onRecipeWritten` ne change pas. `tests/editorCallables.test.ts` couvre les dix callables.
 
-`error_reports` : `isErrorReport` exige `timestamp == request.time`, et
-`ErrorReport.toFirestore` écrit `FieldValue.serverTimestamp()`. Un rapport daté par le client
-— dans le futur, il échappait à la purge des 90 jours — est refusé. Tests `rules-tests` :
-rapport daté dans le futur, dans le passé ou sans date refusé, rapport à l'heure du serveur
-accepté. Ajout aussi : validation d'un brouillon de lecteur rangée dans le livre d'un autre
-refusée, dans l'un de ses livres acceptée. À la lecture, un rapport dont l'heure serveur n'est pas encore
-résolue (`hasPendingWrites`) prend l'heure locale au lieu du 1er janvier 1970
-(`ErrorReport.fromFirestore`, `pendingTimestamp`).
+Tests `rules-tests` ajoutés : validation d'un brouillon de lecteur rangée dans le livre d'un
+autre refusée, dans l'un de ses livres acceptée. La purge des `error_reports` (ticket #162,
+point 3) et la règle de date d'un rapport sont celles de la v0.24.63 (backfill récurrent
+`retention`, `timestamp` au plus un jour dans le futur) : ce livrable n'en ajoute pas d'autre.
 
 Dressage : `kPlatingImagesEditorOnlyMessage` et sa ligne sont retirés. Un lecteur ne voit plus
 le conseil qu'en lecture, la ligne « Les visuels d'étape sont réservés aux éditeurs. » ne
@@ -127,6 +117,52 @@ n'est plus éditeur, préfixe gardé) et `isPermissionRefusal` dans
 `MobileUnifiedBody`, que plus rien ne lisait, est retiré.
 Code mort retiré : `RecipeDetailBody` (`recipe_detail_widgets.dart`), qu'aucun écran
 n'instanciait.
+
+### v0.24.64 — fonctionnel
+
+Les images agrandies s'ouvrent toutes dans la même visionneuse plein écran, sur fond sombre :
+couverture d'une recette ou d'un livre, illustrations (fiche, édition, brouillon, liste), page
+d'un livre, visuel de montage du coach de dressage, document original, capture d'un ticket.
+« Fermer » est à gauche dans la barre, avec le titre et, dans une galerie, « 2 / 5 ». Un double
+appui zoome sur le point touché, jusqu'à 6×. Les flèches du clavier tournent les images, une
+image zoomée ne change plus de page par erreur, et le zoom repart à 1 sur l'image suivante. Un
+chargement et une erreur « Image indisponible. » s'affichent là où il n'y avait rien. Sur une
+page de livre, une illustration touchée ouvre la galerie de toutes celles de la page. Le visuel
+de montage, qui s'ouvrait dans une fenêtre sans bouton « Fermer » (l'entrée v0.24.56 disait à
+tort que toutes les visionneuses en avaient un), s'ouvre désormais en plein écran avec ce
+bouton.
+
+### v0.24.64 — technique
+
+Nouveau composant `core/presentation/app_image_viewer.dart` (`showAppImageViewer`,
+`AppViewerImage.network` et `.memory`). Il remplace huit implémentations recopiées
+(`IllustrationGallery`, deux `_showCoverZoom`, les deux dialogues de `book_page_detail_screen`,
+le `Dialog` de `PlatingImage`, et les visionneuses de `source_viewer` et `ticket_widgets`). Les
+déclencheurs de la page de livre passent de `GestureDetector` à `InkWell` avec un libellé
+« Agrandir l'illustration ». Test : `test/widgets/app_image_viewer_test.dart`.
+
+### v0.24.63 — fonctionnel
+
+*Admin › Backfills* : nouveau récurrent « Purger les rapports d'erreur anciens ». Il supprime
+les rapports d'erreur de plus de 90 jours, puis les captures jointes à un ticket que plus
+aucun ticket ne cite (dépôt abandonné, capture remplacée). Une capture rattachée à son ticket
+reste. Il n'a pas de programmation par défaut : à programmer chaque jour depuis sa tuile.
+
+### v0.24.63 — technique
+
+Nouveau callable `backfillRetentionFn` (backfill récurrent `retention`, aux deux registres et
+dans `backfill_schedule.json`, branché dans `scheduledPassFor`), sans appel de modèle. Phase 1 :
+`error_reports` dont `timestamp` précède maintenant − 90 jours, supprimés par lots de 400,
+5 000 au plus par passage. Phase 2 : fichiers `tickets/{uid}/{ticketId}/…` de Storage créés il
+y a plus d'un jour, supprimés quand le ticket manque, appartient à un autre compte ou ne les
+désigne pas par `screenshot_path`. Pas de TTL Firestore : il demanderait une date d'expiration
+écrite par le client, qu'une application restée sur une ancienne version n'écrirait pas.
+Règles : `isErrorReport` exige `timestamp`, au plus un jour après `request.time` ; un rapport
+sans date ou daté de l'an 9999 échapperait à la purge. Tous les clients écrivent déjà ce
+champ. Les captures sont listées par pages de 500, 5 000 suppressions au plus par passage ; un identifiant
+de ticket illisible par Firestore (`__x__`) désigne une capture orpheline. Tests : `retention.test.ts`, `backfillSchedule.test.ts`,
+`backfill_status_test.dart`, `admin_backfills_screen_test.dart`, et trois cas de
+`rules-tests` (rapport sans date, daté du futur, daté de l'instant).
 
 ### v0.24.62 — fonctionnel
 

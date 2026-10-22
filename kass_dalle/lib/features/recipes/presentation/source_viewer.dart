@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/utils/web_download.dart';
 import '../../../core/utils/context_extensions.dart';
-import '../../../core/theme/app_icon_size.dart';
-import '../../../core/widgets/app_network_image.dart';
+import '../../../core/presentation/app_image_viewer.dart';
 
 /// Bouton + visionneuse pour le fichier source (image ou PDF) d'une recette.
 ///
@@ -133,41 +132,19 @@ class SourceViewerButton extends StatelessWidget {
   }
 
   void _showImageDialog(BuildContext context, String url) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => Dialog.fullscreen(
-        child: Scaffold(
-          appBar: AppBar(
-            title: Text(sourceFileName ?? 'Document original'),
-            leading: const CloseButton(),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.download_outlined),
-                tooltip: 'Télécharger',
-                onPressed: () => _download(context, url),
-              ),
-            ],
-          ),
-          body: InteractiveViewer(
-            minScale: 0.5,
-            maxScale: 5,
-            child: Center(
-              child: AppNetworkImage(
-                imageUrl: url,
-                fit: BoxFit.contain,
-                placeholder: (_, _) =>
-                    const Center(child: CircularProgressIndicator()),
-                errorWidget: (_, _, _) => const Center(
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    size: AppIconSize.hero,
-                  ),
-                ),
-              ),
-            ),
-          ),
+    showAppImageViewer(
+      context,
+      images: [
+        AppViewerImage.network(url, semanticLabel: 'Page du document original'),
+      ],
+      title: sourceFileName ?? 'Document original',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.download_outlined),
+          tooltip: 'Télécharger',
+          onPressed: () => _download(context, url),
         ),
-      ),
+      ],
     );
   }
 

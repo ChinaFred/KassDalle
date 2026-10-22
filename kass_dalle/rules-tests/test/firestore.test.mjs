@@ -2718,8 +2718,7 @@ function errorReport(uid) {
   return {
     user_id: uid,
     job_id: null,
-    // L'heure du serveur, comme `ErrorReport.toFirestore` (ticket #162).
-    timestamp: serverTimestamp(),
+    timestamp: new Date("2026-10-12T00:00:00Z"),
     app_version: "0.23.48+395",
     feature: "recipe_save",
     error_type: "FirebaseException",
@@ -2759,36 +2758,6 @@ describe("données personnelles — pending et révoqué", () => {
     }
   });
 
-  // Ticket #162 : `timestamp` est l'heure du serveur. Un rapport daté par
-  // le client — dans le futur, il échapperait à la purge des 90 jours — est
-  // refusé ; sans `timestamp`, aussi.
-  it("un rapport d'erreur daté dans le futur est refusé", async () => {
-    await assertFails(
-      db("reader")
-        .doc("error_reports/new")
-        .set({ ...errorReport(READER), timestamp: new Date("2099-01-01T00:00:00Z") }),
-    );
-  });
-
-  it("un rapport d'erreur daté par le client (passé) ou sans date est refusé", async () => {
-    await assertFails(
-      db("reader")
-        .doc("error_reports/new")
-        .set({ ...errorReport(READER), timestamp: new Date("2026-10-12T00:00:00Z") }),
-    );
-    const undated = { ...errorReport(READER) };
-    delete undated.timestamp;
-    await assertFails(db("reader").doc("error_reports/new").set(undated));
-  });
-
-  it("un rapport d'erreur à l'heure du serveur est accepté", async () => {
-    await assertSucceeds(
-      db("reader")
-        .doc("error_reports/new")
-        .set({ ...errorReport(READER), timestamp: serverTimestamp() }),
-    );
-  });
-
   it("un rapport d'erreur au champ inconnu est refusé", async () => {
     await assertFails(
       db("reader")
@@ -2802,6 +2771,30 @@ describe("données personnelles — pending et révoqué", () => {
       db("reader")
         .doc("error_reports/new")
         .set({ ...errorReport(READER), context: { a: "b" } }),
+    );
+  });
+
+  it("un rapport d'erreur sans date est refusé (conservation de 90 jours)", async () => {
+    const { timestamp: _omis, ...sansDate } = errorReport(READER);
+    await assertFails(db("reader").doc("error_reports/new").set(sansDate));
+  });
+
+  it("un rapport d'erreur daté de plus d'un jour dans le futur est refusé", async () => {
+    await assertFails(
+      db("reader")
+        .doc("error_reports/new")
+        .set({
+          ...errorReport(READER),
+          timestamp: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        }),
+    );
+  });
+
+  it("un rapport d'erreur daté de l'instant passe", async () => {
+    await assertSucceeds(
+      db("reader")
+        .doc("error_reports/new")
+        .set({ ...errorReport(READER), timestamp: new Date() }),
     );
   });
 

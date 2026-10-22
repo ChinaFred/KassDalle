@@ -41,6 +41,7 @@ export const BACKFILL_KEYS = [
   "shopping_products",
   "refresh_sodium",
   "utensils_cleanup",
+  "retention",
   "recipe_styles",
 ] as const;
 
@@ -103,6 +104,13 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     key: "shopping_products",
     kind: "recurrent",
     title: "Recalculer les produits d'achat",
+    usesAi: false,
+    defaultSchedule: null,
+  },
+  {
+    key: "retention",
+    kind: "recurrent",
+    title: "Purger les rapports d'erreur anciens",
     usesAi: false,
     defaultSchedule: null,
   },

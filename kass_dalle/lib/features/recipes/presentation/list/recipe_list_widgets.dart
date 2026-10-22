@@ -364,13 +364,8 @@ class RecipeCard extends ConsumerWidget {
                   Icons.photo_library_outlined,
                   size: AppIconSize.small,
                 ),
-                onPressed: () => showDialog<void>(
-                  context: context,
-                  builder: (ctx) => IllustrationGallery(
-                    urls: recipe.imageUrls,
-                    initialIndex: 0,
-                  ),
-                ),
+                onPressed: () =>
+                    showIllustrationGallery(context, recipe.imageUrls),
               ),
             if (recipe.pageNumber != null) ...[
               const SizedBox(width: 4),

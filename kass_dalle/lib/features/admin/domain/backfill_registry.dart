@@ -34,6 +34,7 @@ abstract final class BackfillKeys {
   static const shoppingProducts = 'shopping_products';
   static const refreshSodium = 'refresh_sodium';
   static const utensilsCleanup = 'utensils_cleanup';
+  static const retention = 'retention';
   static const recipeStyles = 'recipe_styles';
 }
 
@@ -137,6 +138,16 @@ const List<BackfillDefinition> kBackfillRegistry = [
         'jour.',
     usesAi: false,
     passLimit: 'Chaque passage recalcule au plus 500 recettes.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.retention,
+    kind: BackfillKind.recurrent,
+    title: 'Purger les rapports d\'erreur anciens',
+    description:
+        'Supprime les rapports d\'erreur de plus de 90 jours et les captures '
+        'de ticket que plus aucun ticket ne cite.',
+    usesAi: false,
+    passLimit: 'Chaque passage supprime au plus 5 000 rapports.',
   ),
 
   BackfillDefinition(

@@ -105,12 +105,7 @@ class ErrorReport {
   Map<String, dynamic> toFirestore() => {
     'user_id': userId,
     'job_id': jobId == null ? null : truncate(jobId!, maxShortText),
-    // L'heure du serveur, jamais celle de l'appareil : `firestore.rules`
-    // exige `timestamp == request.time` (ticket #162). Une horloge en avance
-    // aurait fait échapper un rapport à la purge des 90 jours, et un rapport
-    // daté à la main servait à ranger le journal à sa guise. [timestamp] ne
-    // sert plus qu'à la lecture.
-    'timestamp': FieldValue.serverTimestamp(),
+    'timestamp': Timestamp.fromDate(timestamp),
     'app_version': truncate(appVersion, maxAppVersion),
     'feature': truncate(feature, maxShortText),
     'error_type': truncate(errorType, maxShortText),
@@ -169,26 +164,13 @@ class ErrorReport {
     return raw.toString();
   }
 
-  /// [pendingTimestamp] remplace un `timestamp` encore absent : un rapport
-  /// qui vient d'être écrit porte `FieldValue.serverTimestamp()`, que le
-  /// cache local rend `null` tant que le serveur ne l'a pas résolu. Sans ce
-  /// repli, la liste l'affichait au 1er janvier 1970 pendant quelques
-  /// instants. Les flux de lecture le passent quand le document a une
-  /// écriture en attente (`hasPendingWrites`) ; un ancien rapport sans date
-  /// garde la date zéro.
-  factory ErrorReport.fromFirestore(
-    String id,
-    Map<String, dynamic> data, {
-    DateTime? pendingTimestamp,
-  }) {
+  factory ErrorReport.fromFirestore(String id, Map<String, dynamic> data) {
     final parsed = _parseContext(data['context']);
     return ErrorReport(
       id: id,
       userId: _asNullableString(data['user_id']) ?? '',
       jobId: _asNullableString(data['job_id']),
-      timestamp: data['timestamp'] == null && pendingTimestamp != null
-          ? pendingTimestamp
-          : _parseTimestamp(data['timestamp']),
+      timestamp: _parseTimestamp(data['timestamp']),
       appVersion: _asNullableString(data['app_version']) ?? '',
       feature: _asNullableString(data['feature']) ?? '',
       errorType: _asNullableString(data['error_type']) ?? '',
@@ -339,13 +321,7 @@ class ErrorReportService {
           final reports = <ErrorReport>[];
           for (final d in snap.docs) {
             try {
-              final report = ErrorReport.fromFirestore(
-                d.id,
-                d.data(),
-                pendingTimestamp: d.metadata.hasPendingWrites
-                    ? DateTime.now()
-                    : null,
-              );
+              final report = ErrorReport.fromFirestore(d.id, d.data());
               reports.add(report);
               _reportParseFailure(report);
             } catch (error, stackTrace) {
@@ -374,13 +350,7 @@ class ErrorReportService {
           final reports = <ErrorReport>[];
           for (final d in snap.docs) {
             try {
-              final report = ErrorReport.fromFirestore(
-                d.id,
-                d.data(),
-                pendingTimestamp: d.metadata.hasPendingWrites
-                    ? DateTime.now()
-                    : null,
-              );
+              final report = ErrorReport.fromFirestore(d.id, d.data());
               reports.add(report);
               _reportParseFailure(report);
             } catch (error, stackTrace) {

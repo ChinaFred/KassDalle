@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/plating_advice.dart';
+import '../../../../core/presentation/app_image_viewer.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../../core/widgets/app_network_image.dart';
 import '../../../../core/utils/app_image_url.dart';
@@ -221,14 +222,15 @@ class PlatingImage extends StatelessWidget {
       child: InkWell(
         onTap: !viewable
             ? null
-            : () => showDialog<void>(
-                context: context,
-                builder: (context) => Dialog(
-                  clipBehavior: Clip.antiAlias,
-                  child: InteractiveViewer(
-                    child: AppNetworkImage(imageUrl: url, fit: BoxFit.contain),
+            : () => showAppImageViewer(
+                context,
+                images: [
+                  AppViewerImage.network(
+                    url,
+                    semanticLabel: 'Visuel de montage',
                   ),
-                ),
+                ],
+                title: 'Visuel de montage',
               ),
         borderRadius: BorderRadius.circular(8),
         child: ClipRRect(

@@ -1626,11 +1626,12 @@ service cloud.firestore {
                                   'feature', 'error_type', 'error_message',
                                   'stack_trace', 'context'])
         && data.user_id == request.auth.uid
-        // Heure du serveur obligatoire (`FieldValue.serverTimestamp()`) : un
-        // rapport daté par le client dans le futur échappait à la purge des
-        // 90 jours (`scheduledErrorReportsPurge`), dans le passé il se
-        // rangeait où il voulait dans le journal (ticket #162).
-        && data.get('timestamp', null) == request.time
+        // Obligatoire et pas dans le futur (un jour de marge pour une horloge
+        // en avance) : la conservation de 90 jours se lit sur ce champ, et un
+        // rapport daté de l'an 9999 ou sans date ne serait jamais supprimé.
+        // Pas de borne basse : un rapport hors ligne garde sa date d'origine.
+        && data.timestamp is timestamp
+        && data.timestamp <= request.time + duration.value(1, 'd')
         && optText(data, 'job_id', 400)
         && optText(data, 'app_version', 100)
         && optText(data, 'feature', 400)

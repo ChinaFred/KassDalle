@@ -36,8 +36,7 @@ import 'recipe_detail_app_bar.dart';
 import 'recipe_text_zoom.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/widgets/app_states.dart';
-import '../../../../core/theme/app_icon_size.dart';
-import '../../../../core/widgets/app_network_image.dart';
+import '../../../../core/presentation/app_image_viewer.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -933,42 +932,15 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
   }
 
   void _showCoverZoom(BuildContext context, String coverUrl) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => Dialog.fullscreen(
-        backgroundColor: Colors.black,
-        child: Stack(
-          children: [
-            Center(
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 6,
-                child: AppNetworkImage(
-                  imageUrl: coverUrl,
-                  fit: BoxFit.contain,
-                  placeholder: (_, _) => const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                  errorWidget: (_, _, _) => const Icon(
-                    Icons.broken_image_outlined,
-                    size: AppIconSize.hero,
-                    color: Colors.white54,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 16,
-              right: 16,
-              child: IconButton.filled(
-                tooltip: 'Fermer',
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.of(ctx).pop(),
-              ),
-            ),
-          ],
+    showAppImageViewer(
+      context,
+      images: [
+        AppViewerImage.network(
+          coverUrl,
+          semanticLabel: 'Couverture de la recette',
         ),
-      ),
+      ],
+      title: 'Couverture',
     );
   }
 }

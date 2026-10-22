@@ -161,8 +161,6 @@ export { cspReportFn } from "./csp/cspReportFn";
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
 export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";
-// Purge quotidienne des rapports d'erreur de plus de 90 jours (ticket #162, point 3).
-export { scheduledErrorReportsPurge } from "./scheduled/errorReportsPurgeSchedule";
 export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 // `scheduledNutritionCatchUp` (tous les jours à 5 h) est retirée en v0.23.45 :
 // `scheduledBackfills` lance chaque heure les backfills récurrents programmés
@@ -174,6 +172,7 @@ export { backfillRecipeStylesFn } from "./callable/recipeStylesBackfillCallable"
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
 export { backfillUtensilsCleanupFn } from "./callable/utensilsCleanupBackfillCallable";
+export { backfillRetentionFn } from "./callable/retentionBackfillCallable";
 // `backfillDefaultUnitsFn` (v0.24.40) et `backfillUsersSchemaCheckFn` (v0.24.42) sont retirés en
 // v0.24.52 : lancés en production et marqués terminés, leur travail est fait.
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en

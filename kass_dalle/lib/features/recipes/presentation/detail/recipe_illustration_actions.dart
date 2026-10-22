@@ -140,11 +140,7 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
   }
 
   void showGallery(List<String> urls, int startIndex) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) =>
-          IllustrationGallery(urls: urls, initialIndex: startIndex),
-    );
+    showIllustrationGallery(context, urls, initialIndex: startIndex);
   }
 
   Future<void> deleteIllustration(String url) async {

@@ -3,6 +3,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/presentation/app_image_viewer.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
@@ -401,24 +402,10 @@ class TicketScreenshotView extends ConsumerWidget {
           label: 'Agrandir la capture',
           child: InkWell(
             borderRadius: BorderRadius.circular(6),
-            onTap: () => showDialog<void>(
-              context: context,
-              builder: (ctx) => Dialog.fullscreen(
-                child: Scaffold(
-                  appBar: AppBar(
-                    title: const Text('Capture'),
-                    leading: IconButton(
-                      icon: const Icon(Icons.close),
-                      tooltip: 'Fermer',
-                      onPressed: () => Navigator.of(ctx).pop(),
-                    ),
-                  ),
-                  body: InteractiveViewer(
-                    maxScale: 5,
-                    child: Center(child: Image.memory(data)),
-                  ),
-                ),
-              ),
+            onTap: () => showAppImageViewer(
+              context,
+              images: [AppViewerImage.memory(data, semanticLabel: 'Capture')],
+              title: 'Capture',
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(6),
