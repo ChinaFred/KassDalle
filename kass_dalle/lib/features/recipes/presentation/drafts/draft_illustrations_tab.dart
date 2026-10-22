@@ -14,6 +14,7 @@ import '../../data/draft_review_service.dart';
 import '../../data/recipe_repository.dart';
 import 'illustration_card.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/widgets/error_message.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../../core/presentation/stylus_pad_text_field.dart';
 
@@ -197,7 +198,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
           stackTrace: stackTrace,
         );
         if (!mounted) return;
-        context.showFailureSnackBar('Image non générée', e);
+        context.showErrorSnackBar(aiFailureMessage('Image non générée', e));
       } finally {
         if (mounted) setState(() => _generatingAi = false);
       }
@@ -285,7 +286,9 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      context.showFailureSnackBar('Photo non enregistrée', e);
+      context.showErrorSnackBar(
+        photoFailureMessage('Photo non enregistrée', e),
+      );
     } finally {
       if (mounted) setState(() => _uploadingManual = false);
     }
@@ -418,6 +421,10 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     // un lecteur, fût-il propriétaire de son brouillon, ne lui donnerait qu'un
     // refus de permission sans explication.
     final canGenerateAi = widget.isOwner && ref.watch(canEditProvider);
+
+    // Propriétaire lecteur : il voit ses photos, n'en ajoute pas (tickets
+    // #162 et #163). L'état vide le lui dit, sans bouton.
+    final editorOnly = widget.isOwner && !ref.watch(canEditProvider);
 
     final hasPhotos = widget.recipe.imageUrls.isNotEmpty;
 
@@ -665,7 +672,12 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                                 // existe, elle est optionnelle, et elle peut aussi
                                 // avoir échoué. Ce qui est vrai dans les trois cas,
                                 // c'est qu'aucune n'est attachée ici.
-                                reperees > 0
+                                editorOnly
+                                    ? 'Ajouter des photos est réservé aux '
+                                          'éditeurs. Demandez à un '
+                                          'administrateur de vous nommer '
+                                          'éditeur.'
+                                    : reperees > 0
                                     ? 'Le scan en contient, mais aucune n\'est '
                                           'attachée à ce brouillon :\ncadrez-les '
                                           'vous-même dans la page du livre.'
@@ -709,6 +721,11 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                                         ),
                                         label: const Text('Ajouter une photo'),
                                       ),
+                              ],
+                              // Produire une image est réservé aux éditeurs
+                              // (`canGenerateAi`), indépendamment de l'envoi
+                              // d'une photo.
+                              if (canGenerateAi) ...[
                                 const SizedBox(height: 8),
                                 FilledButton.tonalIcon(
                                   onPressed: busy ? null : _generateAiImage,

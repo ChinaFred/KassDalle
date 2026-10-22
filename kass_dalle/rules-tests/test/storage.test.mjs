@@ -170,8 +170,21 @@ describe("dossiers publiés", () => {
 // ── quarantaine ──────────────────────────────────────────────────────────
 
 describe("quarantaine — propriété et rôle", () => {
-  it("un lecteur dépose une photo dans sa quarantaine", async () => {
-    await assertSucceeds(put("reader", `quarantine/${READER}/new.jpg`, "image/jpeg"));
+  // Ticket #162, point 2 : ajouter des photos est réservé aux éditeurs.
+  it("un lecteur ne dépose plus de photo dans sa quarantaine", async () => {
+    await assertFails(put("reader", `quarantine/${READER}/new.jpg`, "image/jpeg"));
+  });
+
+  it("un éditeur dépose une photo dans sa quarantaine", async () => {
+    await assertSucceeds(put("editor", `quarantine/${EDITOR}/new.jpg`, "image/jpeg"));
+  });
+
+  it("un administrateur dépose une photo dans sa quarantaine", async () => {
+    await assertSucceeds(put("admin", `quarantine/${PERSONAS.admin.uid}/new.jpg`, "image/jpeg"));
+  });
+
+  it("un lecteur dépose toujours la capture de son ticket", async () => {
+    await assertSucceeds(put("reader", `tickets/${READER}/t8/screenshot.jpg`, "image/jpeg"));
   });
 
   it("un lecteur ne dépose rien dans la quarantaine d'un autre", async () => {
@@ -273,17 +286,13 @@ describe("quarantaine — types et tailles", () => {
   });
 });
 
-// Un lecteur n'importe pas (`requireEditor`, `isEditor()` sur les jobs) : il ne
-// dépose que les photos à modérer — couverture « Recette libre », illustration
-// d'une de ses recettes (audit #151, ticket #162).
-describe("quarantaine — ce que dépose un lecteur", () => {
-  for (const type of ["image/jpeg", "image/png"]) {
-    it(`un lecteur dépose ${type}`, async () => {
-      await assertSucceeds(put("reader", `quarantine/${READER}/f`, type));
-    });
-  }
-
+// Un lecteur n'importe pas (`requireEditor`, `isEditor()` sur les jobs), et
+// depuis le ticket #162, point 2, n'ajoute plus de photo : il ne dépose rien
+// dans sa quarantaine (audit #151).
+describe("quarantaine — un lecteur ne dépose rien", () => {
   for (const type of [
+    "image/jpeg",
+    "image/png",
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/plain; charset=utf-8",
@@ -303,8 +312,6 @@ describe("quarantaine — ce que dépose un lecteur", () => {
     await assertFails(put("reader", `quarantine/${READER}/livres/livre.pdf`, "application/pdf"));
   });
 
-  // Les deux blocs se recouvrent : sans l'exclusion de livres/ dans le bloc
-  // général, cette photo passerait.
   it("un lecteur ne dépose pas de photo sous livres/", async () => {
     await assertFails(put("reader", `quarantine/${READER}/livres/photo.jpg`, "image/jpeg"));
   });
@@ -466,7 +473,7 @@ describe("rôle et révocation lus sur users/{uid}", () => {
     await assertFails(put("revokedStaleToken", `tickets/${STALE}/t/screenshot.png`, "image/png"));
   });
 
-  it("un éditeur rétrogradé lecteur ne dépose plus de PDF ni de livre, garde ses photos", async () => {
+  it("un éditeur rétrogradé lecteur ne dépose plus rien dans sa quarantaine", async () => {
     await seedDocs(env, {
       "users/demoted-editor": { role: "reader", is_revoked: false, email: "de@example.com" },
     });
@@ -474,7 +481,7 @@ describe("rôle et révocation lus sur users/{uid}", () => {
     const up = (path, type) => ctx.storage().ref(path).put(small(), { contentType: type });
     await assertFails(up("quarantine/demoted-editor/f.pdf", "application/pdf"));
     await assertFails(up("quarantine/demoted-editor/livres/l.epub", "application/epub+zip"));
-    await assertSucceeds(up("quarantine/demoted-editor/f.jpg", "image/jpeg"));
+    await assertFails(up("quarantine/demoted-editor/f.jpg", "image/jpeg"));
   });
 
   it("un rôle inconnu sur le document ferme l'accès, même avec un jeton admin", async () => {
@@ -519,7 +526,6 @@ describe("rôle et révocation lus sur users/{uid}", () => {
 
   // Non-régression des chemins courants, documents à jour.
   it("lecteur, éditeur et administrateur cohérents déposent sur leurs chemins courants", async () => {
-    await assertSucceeds(put("reader", `quarantine/${READER}/n.jpg`, "image/jpeg"));
     await assertSucceeds(put("reader", `tickets/${READER}/t9/screenshot.png`, "image/png"));
     await assertSucceeds(put("editor", `quarantine/${EDITOR}/n.pdf`, "application/pdf"));
     await assertSucceeds(

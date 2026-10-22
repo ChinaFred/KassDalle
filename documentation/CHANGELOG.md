@@ -20,6 +20,67 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.62 — fonctionnel
+
+Tickets #162 et #163 : enrichir une recette demande d'en être propriétaire et éditeur. Un
+lecteur ne voit plus, même sur ses propres recettes, « Modifier la recette » ou « Modifier la
+page », « Changer la couverture » de la recette libre, l'ajout d'une photo ou d'une
+illustration, ni les actions d'IA de la relecture d'un brouillon (icône de la barre, bouton
+« IA » de l'éditeur, `?ai=true`, cadrage depuis le scan, retouche). Il garde la relecture et la
+validation de ses brouillons, le détachement d'un livre et la suppression. Les boutons sont
+masqués, jamais grisés. Sur grand écran, sa vignette « Recette libre » n'a plus de badge, et
+l'appui agrandit la couverture quand elle existe.
+
+L'onglet Photos d'une de ses recettes ou de ses brouillons dit, sans bouton : « Ajouter des
+photos est réservé aux éditeurs. Demandez à un administrateur de vous nommer éditeur. ».
+Ouvertes par un lien, `/recipes/{id}/edit` affiche « Modification réservée aux éditeurs » et
+`/books/new` « Création réservée aux éditeurs ». La feuille d'insertion d'image de l'éditeur
+disparaît quand il n'y a ni photo à insérer ni droit d'en envoyer une. Un refus reçu en cours
+de session s'affiche sans « Réessayer » : « Photo non envoyée. Ajouter des photos est réservé
+aux éditeurs. », ou « Recette non corrigée. L'IA est réservée aux éditeurs. » (le préfixe de
+l'action est gardé).
+
+Pour tous les rôles : « Créer une image IA » de l'état vide des photos d'un brouillon suit le
+droit de produire une image, et non plus celui d'envoyer une photo. Le bouton « Suggérer les
+tags » revient dans le panneau de métadonnées (bloc Catégorisation), pour un éditeur ou un
+administrateur, avec l'infobulle « Proposer cuisine, type, rôle, protéine et féculent avec
+l'IA ».
+
+La décision « un lecteur ne modifie plus ses recettes » côté règles Firestore n'est pas
+appliquée dans cette version : elle empêcherait le lecteur de valider ses brouillons et de
+détacher une recette d'un livre, deux gestes que l'administrateur doit d'abord trancher.
+
+### v0.24.62 — technique
+
+Ticket #163, point 1 : `polishCooklangFn`, `polishMarkdownFn`, `refineRecipeFn`,
+`extractBookCoverFn` (`book_cover`, non déployée), `suggestRecipeTagsFn`,
+`detectAndCropIllustrationsFn` et `scanAndPromoteUploadFn` (`upload_security_scan`) passent
+de `requireAuth` à `requireEditor`. Aucun appelant légitime d'un lecteur n'y passait après le
+masquage des écrans ; la capture d'un ticket passe par `tickets/{uid}/…` et
+`attachTicketScreenshot`. Test sur le source : `tests/editorCallables.test.ts`.
+
+Ticket #162, point 2 : `storage.rules`, le dépôt dans `quarantine/{uid}/` exige `isEditor()`
+(jeton, puis document `users/{uid}`). `isReaderImageUnder` est retirée. Le propriétaire garde
+la lecture de sa quarantaine ; `tickets/{uid}/…` ne change pas. Tests `rules-tests` : dépôt
+refusé au lecteur, permis à l'éditeur et à l'administrateur, capture de ticket permise au
+lecteur.
+
+Ticket #163, point 11 : `assertJobTargetBook` refuse en `foreign_book` (`TargetBookNotOwned`)
+tout `book_id` présent qui n'est pas une chaîne non vide ; absent ou `null` passe sans livre.
+`ProcessingJob.toFirestore` écrit `null` au lieu d'une chaîne vide (`/scan?bookId=`).
+
+Ticket #162, point 3 : nouvelle tâche planifiée `scheduledErrorReportsPurge`, tous les jours
+à 4 h (Europe/Paris). Elle supprime les `error_reports` dont `timestamp` a plus de 90 jours,
+par lots de 400, 50 lots au plus par passage, et journalise le nombre supprimé
+(`error_reports_purge`). Un rapport sans `timestamp` reste. Export dans `index.ts` sans import
+lourd ; `COLL_ERROR_REPORTS` dans `config.ts`.
+
+Client : `AppUser.canEnrichRecipe(createdBy)` (`canEdit && canModifyRecipe`) est le seul
+prédicat lu par les écrans ; `photoFailureMessage`, `aiFailureMessage` et
+`isPermissionRefusal` dans `core/widgets/error_message.dart`. `canModifyRecipe` ne change pas.
+Code mort retiré : `RecipeDetailBody` (`recipe_detail_widgets.dart`), qu'aucun écran
+n'instanciait.
+
 ### v0.24.59 — fonctionnel
 
 *Admin › Backfills* : nouveau ponctuel « Retirer les ustensiles des ingrédients ». Il retire

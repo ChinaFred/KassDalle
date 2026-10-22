@@ -55,7 +55,11 @@ class DraftReviewFormData {
   final VoidCallback? onExtractFromOriginal;
   final void Function(int, EnhancerMode)? onEnhanceIllustration;
   final void Function(int)? onEnhanceAi;
-  final VoidCallback onShowRefineDialog;
+
+  /// Ouvre la retouche par l'IA ; `null` masque le bouton « IA » de
+  /// l'éditeur (`AppUser.canEnrichRecipe` faux : lecteur, ou recette d'un
+  /// autre).
+  final VoidCallback? onShowRefineDialog;
   final void Function(List<String>, int) onShowGallery;
   final void Function(String)? onDeleteIllustration;
   final PageType pageType;
@@ -96,7 +100,7 @@ class DraftReviewFormData {
     required this.onExtractFromOriginal,
     required this.onEnhanceIllustration,
     required this.onEnhanceAi,
-    required this.onShowRefineDialog,
+    this.onShowRefineDialog,
     required this.onShowGallery,
     required this.onDeleteIllustration,
     required this.pageType,
@@ -305,8 +309,8 @@ class DraftReviewWideBody extends StatelessWidget {
       onShowGallery: data.onShowGallery,
       onExtract: data.onExtractIllustrations,
       onExtractFromOriginal: isOwner ? data.onExtractFromOriginal : null,
-      onEdit: isOwner
-          ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.studio)
+      onEdit: isOwner && data.onEnhanceIllustration != null
+          ? (i) => data.onEnhanceIllustration!(i, EnhancerMode.studio)
           : null,
       onEnhance: (isOwner && isAdmin) ? data.onEnhanceAi : null,
       enhancingIndex: data.enhancingAiIndex,
@@ -475,8 +479,8 @@ class DraftReviewNarrowBody extends StatelessWidget {
       onShowGallery: data.onShowGallery,
       onExtract: data.onExtractIllustrations,
       onExtractFromOriginal: isOwner ? data.onExtractFromOriginal : null,
-      onEdit: isOwner
-          ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.studio)
+      onEdit: isOwner && data.onEnhanceIllustration != null
+          ? (i) => data.onEnhanceIllustration!(i, EnhancerMode.studio)
           : null,
       onEnhance: (isOwner && isAdmin) ? data.onEnhanceAi : null,
       enhancingIndex: data.enhancingAiIndex,

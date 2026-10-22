@@ -7,6 +7,11 @@ import '../../../domain/recipe.dart';
 import '../recipe_illustration_actions.dart';
 import '../../../../../core/widgets/app_network_image.dart';
 
+/// Ce que lit un propriétaire lecteur à la place du bouton d'ajout.
+const kPhotosEditorOnlyMessage =
+    'Ajouter des photos est réservé aux éditeurs. Demandez à un '
+    'administrateur de vous nommer éditeur.';
+
 /// Onglet « Photos » : les illustrations de la recette, en grand.
 ///
 /// Elles étaient déjà affichées, en vignettes de 48 pixels posées entre la
@@ -17,13 +22,19 @@ import '../../../../../core/widgets/app_network_image.dart';
 class PhotosTab extends ConsumerStatefulWidget {
   final String recipeId;
   final Recipe recipe;
+
+  /// Propriétaire ou administrateur : supprimer une photo.
   final bool canEdit;
+
+  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : ajouter une photo.
+  final bool canEnrich;
 
   const PhotosTab({
     super.key,
     required this.recipeId,
     required this.recipe,
     required this.canEdit,
+    required this.canEnrich,
   });
 
   @override
@@ -48,10 +59,14 @@ class PhotosTabState extends ConsumerState<PhotosTab>
       body = AppEmptyState(
         icon: Icons.photo_library_outlined,
         title: 'Aucune photo',
-        message: widget.canEdit
+        // Propriétaire lecteur : l'ajout est réservé aux éditeurs (tickets
+        // #162 et #163), et l'état vide le lui dit, sans bouton.
+        message: widget.canEnrich
             ? 'Photographiez le plat, ou choisissez une image dans la galerie.'
+            : widget.canEdit
+            ? kPhotosEditorOnlyMessage
             : 'Personne n\'a encore ajouté de photo à cette recette.',
-        action: widget.canEdit
+        action: widget.canEnrich
             ? FilledButton.icon(
                 onPressed: uploadingIllustration ? null : addIllustration,
                 icon: const Icon(Icons.add_a_photo_outlined),
@@ -73,7 +88,7 @@ class PhotosTabState extends ConsumerState<PhotosTab>
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
-                  if (widget.canEdit)
+                  if (widget.canEnrich)
                     FilledButton.tonalIcon(
                       onPressed: uploadingIllustration ? null : addIllustration,
                       icon: const Icon(

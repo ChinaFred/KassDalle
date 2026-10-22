@@ -260,7 +260,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           stackTrace: stackTrace,
         );
         if (mounted) {
-          context.showFailureSnackBar('Couverture non enregistrée', e);
+          context.showErrorSnackBar(
+            photoFailureMessage('Couverture non enregistrée', e),
+          );
         }
       } finally {
         if (mounted) setState(() => _uploadingCover = false);
@@ -314,7 +316,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showFailureSnackBar('Couverture non enregistrée', e);
+        context.showErrorSnackBar(
+          photoFailureMessage('Couverture non enregistrée', e),
+        );
       }
     } finally {
       if (mounted) setState(() => _uploadingCover = false);
@@ -484,7 +488,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
             );
             coverFailure =
                 'Livre ajouté. '
-                '${failureMessage('Couverture non enregistrée', error)}';
+                '${photoFailureMessage('Couverture non enregistrée', error)}';
           }
         }
       } else {

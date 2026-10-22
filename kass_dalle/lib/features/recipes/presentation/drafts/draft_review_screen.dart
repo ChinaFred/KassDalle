@@ -14,6 +14,7 @@ import '../source_viewer.dart';
 import '../detail/recipe_detail_illustrations.dart';
 import '../edit/recipe_form_mixin.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/widgets/error_message.dart';
 import '../../data/draft_review_service.dart';
 import '../../data/recipe_repository.dart';
 import 'draft_review_body.dart';
@@ -370,7 +371,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showFailureSnackBar('Photo non enregistrée', e);
+        context.showErrorSnackBar(
+          photoFailureMessage('Photo non enregistrée', e),
+        );
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -466,7 +469,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showFailureSnackBar('Illustrations non extraites', e);
+        context.showErrorSnackBar(
+          aiFailureMessage('Illustrations non extraites', e),
+        );
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -544,7 +549,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showFailureSnackBar('Recette non améliorée', e);
+        context.showErrorSnackBar(aiFailureMessage('Recette non améliorée', e));
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -592,12 +597,17 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         // Les gestes de modification suivent la même règle que la file des
         // brouillons et que `firestore.rules` : créateur ou administrateur.
         final isOwner = me?.canModifyRecipe(recipe.createdBy) ?? false;
+        // Photos, illustrations et IA : propriétaire ET éditeur (tickets #162
+        // et #163). Un propriétaire lecteur relit et valide son brouillon,
+        // sans ces gestes : les boutons sont masqués, `?ai=true` est sans
+        // effet.
+        final canEnrich = me?.canEnrichRecipe(recipe.createdBy) ?? false;
         final isAdmin = ref.watch(isAdminProvider);
         final ownerName = !isMine
             ? ref.watch(memberNameProvider(recipe.createdBy))
             : null;
 
-        if (widget.autoOpenAiRefine && !_aiDialogAutoOpened && isOwner) {
+        if (widget.autoOpenAiRefine && !_aiDialogAutoOpened && canEnrich) {
           _aiDialogAutoOpened = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
@@ -730,19 +740,20 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               else
                 OriginalTextButton(recipe: recipe),
               if (isOwner) ...[
-                IconButton(
-                  icon: _aiRefining
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.auto_awesome_outlined),
-                  tooltip: RecipeAiUiCopy.appBarActionTooltip,
-                  onPressed: (saving || _aiRefining)
-                      ? null
-                      : () => _showRefineDialog(recipe),
-                ),
+                if (canEnrich)
+                  IconButton(
+                    icon: _aiRefining
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_awesome_outlined),
+                    tooltip: RecipeAiUiCopy.appBarActionTooltip,
+                    onPressed: (saving || _aiRefining)
+                        ? null
+                        : () => _showRefineDialog(recipe),
+                  ),
                 FilledButton.icon(
                   onPressed: (saving || _aiRefining)
                       ? null
@@ -839,7 +850,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                                 recipe: recipe,
                                 isOwner: isOwner,
                                 isAdmin: isAdmin,
-                                data: _formData(recipe),
+                                data: _formData(recipe, canEnrich: canEnrich),
                               ),
                             ),
                             if (recipe.isTranslated &&
@@ -865,7 +876,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                           recipe: recipe,
                           isOwner: isOwner,
                           isAdmin: isAdmin,
-                          data: _formData(recipe),
+                          data: _formData(recipe, canEnrich: canEnrich),
                         ),
                 ),
               ],
@@ -920,47 +931,61 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     }
   }
 
-  DraftReviewFormData _formData(Recipe recipe) => DraftReviewFormData(
-    titleCtrl: titleCtrl,
-    portionsCtrl: portionsCtrl,
-    difficultyCtrl: difficultyCtrl,
-    prepTimeCtrl: prepTimeCtrl,
-    cookTimeCtrl: cookTimeCtrl,
-    restTimeCtrl: restTimeCtrl,
-    pageNumberCtrl: pageNumberCtrl,
-    cooklangCtrl: cooklangCtrl,
-    saving: saving,
-    aiRefining: _aiRefining,
-    enhancingAiIndex: _enhancingAiIndex,
-    selectedBookId: selectedBookId,
-    selectedCuisines: selectedCuisines,
-    selectedDishTypes: selectedDishTypes,
-    selectedMealRole: selectedMealRole,
-    selectedMainProtein: selectedMainProtein,
-    selectedMainStarch: selectedMainStarch,
-    suggestingTags: suggestingTags,
-    formIngredients: formIngredients,
-    onBookChanged: setBook,
-    onCuisinesChanged: setCuisines,
-    onDishTypesChanged: setDishTypes,
-    onMealRoleChanged: setMealRole,
-    onMainProteinChanged: setMainProtein,
-    onMainStarchChanged: setMainStarch,
-    selectedContains: selectedContains,
-    onContainsChanged: setContains,
-    onIngredientsChanged: setIngredients,
-    onUploadImage: _uploadImageFromGallery,
-    onExtractIllustrations: () => _doExtractIllustrations(recipe),
-    onExtractFromOriginal: () => _startExtractFromOriginal(recipe),
-    onEnhanceIllustration: (i, mode) =>
-        _startEnhanceIllustration(recipe, i, mode),
-    onEnhanceAi: (i) => _enhanceIllustrationAi(recipe, i),
-    onShowRefineDialog: () => _showRefineDialog(recipe),
-    onShowGallery: _showIllustrationGallery,
-    onDeleteIllustration: (url) => _deleteIllustrationDirect(recipe, url),
-    pageType: recipe.pageType,
-    onPageTypeChanged: (newType) => _changePageType(recipe, newType),
-  );
+  /// Les rappels du formulaire. [canEnrich] faux (lecteur, ou recette d'un
+  /// autre) : envoi de photo, cadrage depuis le scan, retouche, IA et
+  /// suggestion de tags à `null`, donc masqués.
+  DraftReviewFormData _formData(Recipe recipe, {required bool canEnrich}) =>
+      DraftReviewFormData(
+        titleCtrl: titleCtrl,
+        portionsCtrl: portionsCtrl,
+        difficultyCtrl: difficultyCtrl,
+        prepTimeCtrl: prepTimeCtrl,
+        cookTimeCtrl: cookTimeCtrl,
+        restTimeCtrl: restTimeCtrl,
+        pageNumberCtrl: pageNumberCtrl,
+        cooklangCtrl: cooklangCtrl,
+        saving: saving,
+        aiRefining: _aiRefining,
+        enhancingAiIndex: _enhancingAiIndex,
+        selectedBookId: selectedBookId,
+        selectedCuisines: selectedCuisines,
+        selectedDishTypes: selectedDishTypes,
+        selectedMealRole: selectedMealRole,
+        selectedMainProtein: selectedMainProtein,
+        selectedMainStarch: selectedMainStarch,
+        suggestingTags: suggestingTags,
+        formIngredients: formIngredients,
+        onBookChanged: setBook,
+        onCuisinesChanged: setCuisines,
+        onDishTypesChanged: setDishTypes,
+        onMealRoleChanged: setMealRole,
+        onMainProteinChanged: setMainProtein,
+        onMainStarchChanged: setMainStarch,
+        selectedContains: selectedContains,
+        onContainsChanged: setContains,
+        onIngredientsChanged: setIngredients,
+        onSuggestTags: canEnrich
+            ? () => suggestTagsWithAI(
+                titleCtrl.text.trim().isEmpty
+                    ? recipe.titre
+                    : titleCtrl.text.trim(),
+              )
+            : null,
+        onUploadImage: canEnrich ? _uploadImageFromGallery : null,
+        onExtractIllustrations: () => _doExtractIllustrations(recipe),
+        onExtractFromOriginal: canEnrich
+            ? () => _startExtractFromOriginal(recipe)
+            : null,
+        onEnhanceIllustration: canEnrich
+            ? (i, mode) => _startEnhanceIllustration(recipe, i, mode)
+            : null,
+        onEnhanceAi: (i) => _enhanceIllustrationAi(recipe, i),
+        onShowRefineDialog: canEnrich ? () => _showRefineDialog(recipe) : null,
+        onShowGallery: _showIllustrationGallery,
+        onDeleteIllustration: (url) => _deleteIllustrationDirect(recipe, url),
+        pageType: recipe.pageType,
+        onPageTypeChanged: (newType) => _changePageType(recipe, newType),
+      );
 
   Future<void> _validate(Recipe recipe) async {
     if (cooklangCtrl.text.trim().isEmpty) {

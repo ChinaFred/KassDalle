@@ -123,6 +123,12 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
     _focusNode.requestFocus();
   }
 
+  /// L'entrée « Insérer une image » n'apparaît que s'il y a quoi insérer :
+  /// une illustration de la recette, ou le droit d'en envoyer une. Sans les
+  /// deux (lecteur, tickets #162 et #163), la feuille n'offrirait rien.
+  bool get _canInsertImage =>
+      widget.illustrationUrls.isNotEmpty || widget.onUploadImage != null;
+
   /// Ouvre le sélecteur d'images Markdown.
   void _showImageSheet() {
     // En mode visuel, committer l'édition inline en cours avant d'insérer :
@@ -298,13 +304,15 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
               tooltip: 'Code en ligne  (`texte`)',
               onTap: () => _wrapSelection('`', after: '`'),
             ),
-            _MdToolbarDivider(),
-            _MdIconButton(
-              icon: Icons.image_outlined,
-              tooltip: 'Insérer une image',
-              onTap: _showImageSheet,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            if (_canInsertImage) ...[
+              _MdToolbarDivider(),
+              _MdIconButton(
+                icon: Icons.image_outlined,
+                tooltip: 'Insérer une image',
+                onTap: _showImageSheet,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ],
           ],
         ),
       ),
@@ -460,13 +468,15 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                     onTap: () =>
                         _visualWrap('`', after: '`', placeholder: 'code'),
                   ),
-                  _MdToolbarDivider(),
-                  _MdIconButton(
-                    icon: Icons.image_outlined,
-                    tooltip: 'Insérer une image',
-                    onTap: _showImageSheet,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                  if (_canInsertImage) ...[
+                    _MdToolbarDivider(),
+                    _MdIconButton(
+                      icon: Icons.image_outlined,
+                      tooltip: 'Insérer une image',
+                      onTap: _showImageSheet,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ],
                 ],
               ),
             ),

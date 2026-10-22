@@ -333,7 +333,10 @@ class ProcessingJob {
       'file_name': fileName,
       'file_url': fileUrl,
       'mime_type': mimeType,
-      'book_id': bookId,
+      // `null` plutôt qu'une chaîne vide : le serveur refuse tout `book_id`
+      // présent qui n'est pas un identifiant (`assertJobTargetBook`, ticket
+      // #163, point 11), et `/scan?bookId=` en laissait passer un vide.
+      'book_id': (bookId ?? '').isEmpty ? null : bookId,
       'book_titre': bookTitre,
       'created_recipe_ids': createdRecipeIds,
       'created_book_id': createdBookId,

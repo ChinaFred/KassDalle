@@ -290,7 +290,18 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
               GoRoute(
                 path: 'new',
-                builder: (context, state) => const BookFormScreen(),
+                // Créer un livre exige le rôle éditeur (règle `books` create
+                // de `firestore.rules`) : le lecteur arrivé par un lien voit
+                // un état qui le lui dit.
+                builder: (context, state) => EditorOnlyGate(
+                  appBarTitle: 'Nouveau livre',
+                  lockedTitle: 'Création réservée aux éditeurs',
+                  lockedMessage:
+                      'Créer un livre est réservé aux éditeurs et aux '
+                      'administrateurs. Demandez à un administrateur de vous '
+                      'nommer éditeur.',
+                  builder: (_) => const BookFormScreen(),
+                ),
               ),
               GoRoute(
                 path: ':bookId/edit',
@@ -370,8 +381,20 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'edit',
-                    builder: (context, state) => RecipeEditScreen(
-                      recipeId: state.pathParameters['recipeId']!,
+                    // Modifier une recette ou une page est réservé aux
+                    // éditeurs et aux administrateurs (tickets #162 et
+                    // #163) ; `RecipeEditScreen` vérifie ensuite la
+                    // propriété.
+                    builder: (context, state) => EditorOnlyGate(
+                      appBarTitle: 'Modifier la recette',
+                      lockedTitle: 'Modification réservée aux éditeurs',
+                      lockedMessage:
+                          'Modifier une recette est réservé aux éditeurs et '
+                          'aux administrateurs. Demandez à un administrateur '
+                          'de vous nommer éditeur.',
+                      builder: (_) => RecipeEditScreen(
+                        recipeId: state.pathParameters['recipeId']!,
+                      ),
                     ),
                   ),
                 ],

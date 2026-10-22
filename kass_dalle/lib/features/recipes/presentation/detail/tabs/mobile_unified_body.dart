@@ -30,6 +30,10 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
   final TextEditingController ctrl;
   final Recipe recipe;
   final bool canEdit;
+
+  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : ajouter une
+  /// illustration. Un propriétaire lecteur garde la suppression ([canEdit]).
+  final bool canEnrich;
   final int? basePortions;
   final int? selectedPortions;
   final ValueChanged<int>? onSelectedPortionsChanged;
@@ -44,6 +48,7 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
     required this.ctrl,
     required this.recipe,
     required this.canEdit,
+    required this.canEnrich,
     this.basePortions,
     this.selectedPortions,
     this.onSelectedPortionsChanged,
@@ -141,7 +146,7 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
       selectedPortions: selectedPortions,
       onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
       illustrationUrls: recipe.imageUrls.isNotEmpty ? recipe.imageUrls : null,
-      onAddIllustration: widget.canEdit ? addIllustration : null,
+      onAddIllustration: widget.canEnrich ? addIllustration : null,
       onTapIllustration: recipe.imageUrls.isNotEmpty
           ? (i) => showGallery(recipe.imageUrls, i)
           : null,

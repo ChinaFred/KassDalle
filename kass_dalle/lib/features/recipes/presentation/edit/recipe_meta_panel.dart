@@ -20,6 +20,11 @@ const _kNotFilled = '';
 const kMainIngredientHelper =
     'Laissé à Non renseigné, « Suggérer les tags » peut le proposer.';
 
+/// Libellé et infobulle du bouton « Suggérer les tags ».
+const kSuggestTagsLabel = 'Suggérer les tags';
+const kSuggestTagsTooltip =
+    'Proposer cuisine, type, rôle, protéine et féculent avec l\'IA';
+
 /// Aide sous les pastilles « Ce que la recette apporte ».
 const kMealContainsHelper =
     'Le planning propose un accompagnement pour ce qui manque.';
@@ -350,6 +355,37 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
           const SizedBox(height: 20),
           Text('Catégorisation', style: theme.textTheme.labelMedium),
           const SizedBox(height: 8),
+
+          // « Suggérer les tags » : éditeur ou administrateur seulement
+          // (`suggestRecipeTagsFn` exige `requireEditor`). Le paramètre
+          // existait sans être lu : le bouton avait disparu de l'écran.
+          // Pendant l'appel, le bouton se désactive et tourne ; un échec
+          // s'affiche en SnackBar, comme les autres actions d'IA.
+          if (widget.onSuggestTags != null && ref.watch(canEditProvider)) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Tooltip(
+                message: kSuggestTagsTooltip,
+                child: OutlinedButton.icon(
+                  onPressed: (widget.saving || widget.suggestingTags)
+                      ? null
+                      : widget.onSuggestTags,
+                  icon: widget.suggestingTags
+                      ? const SizedBox(
+                          width: AppIconSize.inline,
+                          height: AppIconSize.inline,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(
+                          Icons.auto_awesome_outlined,
+                          size: AppIconSize.inline,
+                        ),
+                  label: const Text(kSuggestTagsLabel),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
 
           if (widget.onMealRoleChanged != null) ...[
             DropdownButtonFormField<String>(

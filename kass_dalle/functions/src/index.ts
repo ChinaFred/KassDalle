@@ -161,6 +161,8 @@ export { cspReportFn } from "./csp/cspReportFn";
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
 export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";
+// Purge quotidienne des rapports d'erreur de plus de 90 jours (ticket #162, point 3).
+export { scheduledErrorReportsPurge } from "./scheduled/errorReportsPurgeSchedule";
 export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 // `scheduledNutritionCatchUp` (tous les jours à 5 h) est retirée en v0.23.45 :
 // `scheduledBackfills` lance chaque heure les backfills récurrents programmés

@@ -164,8 +164,7 @@ service firebase.storage {
     /// possédait un compte, et rien dans le suivi de stockage n'aurait
     /// distingué ces octets-là des recettes de la famille.
     ///
-    /// Réservé aux éditeurs et aux administrateurs : voir [isReaderImageUnder]
-    /// pour le lecteur.
+    /// Réservé aux éditeurs et aux administrateurs (bloc de la quarantaine).
     function isImportableUnder(maxBytes) {
       return request.resource.size < maxBytes
         && baseContentType() in [
@@ -175,22 +174,6 @@ service firebase.storage {
              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
              'text/plain'
            ];
-    }
-
-    /// Ce qu'un lecteur dépose : une photo, JPEG ou PNG, hors de `livres/`.
-    ///
-    /// Il ne dépose que des images à modérer — couverture « Recette libre »,
-    /// illustration d'une de ses recettes — et `ImageModerationService`
-    /// n'envoie que ces deux types canoniques. Le reste de la liste
-    /// d'[isImportableUnder] sert l'import, qui lui est refusé.
-    ///
-    /// `livres/` est exclu par le nom complet de l'objet : les deux blocs
-    /// `match` de la quarantaine se recouvrent, et sans ce test une photo d'un
-    /// lecteur passerait sous `livres/` par le bloc général.
-    function isReaderImageUnder(maxBytes) {
-      return request.resource.size < maxBytes
-        && baseContentType() in ['image/jpeg', 'image/png']
-        && !request.resource.name.matches('quarantine/[^/]+/livres/.*');
     }
 
     // Couvertures de livres — écrites par le serveur pour le créateur du livre
@@ -220,18 +203,23 @@ service firebase.storage {
     // lui-même — et devait donc décider à l'aveugle, sur des scores. Le seul
     // écran qui compte devenait inutilisable.
     //
-    // Un lecteur n'y dépose que des photos (JPEG, PNG) ; un éditeur ou un
-    // administrateur, tous les types d'un import.
+    // Dépôt réservé aux éditeurs et aux administrateurs (ticket #162,
+    // point 2). Un lecteur y déposait jusqu'à la v0.24.61 les photos à
+    // modérer — couverture « Recette libre », illustration d'une de ses
+    // recettes — et ne le fait plus : ajouter des photos est réservé aux
+    // éditeurs, l'écran masque ces gestes et `scanAndPromoteUploadFn` exige
+    // `requireEditor`. Le propriétaire garde la lecture de sa quarantaine,
+    // pour les fichiers déposés avant. La capture d'un ticket ne passe pas
+    // par ici (`tickets/{uid}/…`, ouvert au lecteur).
     //
     // Le type et la taille se testent avant le rôle : un dépôt refusé pour
-    // son contenu ne lit pas Firestore. Un éditeur lit son document une fois
-    // (première branche) ; un lecteur aussi, sa première branche s'arrêtant
-    // au claim de rôle (`hasRoleIn`).
+    // son contenu ne lit pas Firestore. Le rôle se lit sur le jeton puis sur
+    // le document `users/{uid}` (`hasRoleIn`), comme les autres dépôts.
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
       allow write: if isOwner(uid)
-        && ((isImportableUnder(50 * 1024 * 1024) && isEditor())
-            || (isReaderImageUnder(50 * 1024 * 1024) && isApproved()));
+        && isImportableUnder(50 * 1024 * 1024)
+        && isEditor();
     }
 
     /// Un livre entier — PDF, EPUB ou Word — à découper en recettes.

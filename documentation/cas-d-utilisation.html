@@ -175,8 +175,9 @@
           <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Imaginer 3 recettes dans Explorer, générer une recette depuis le planning — enregistrées en brouillon dans « Mes créations Kass'Dalle ✨ »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Créer une recette — saisie manuelle, copie de la recette d'un proche, recette conçue par l'IA, import — rangée dans ses propres livres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Modifier, valider et supprimer ses propres recettes existantes</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Créer des livres, modifier et supprimer les siens (couverture comprise)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Relire et valider ses brouillons, détacher ses recettes d'un livre, les supprimer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Enrichir <b>sa</b> recette — la modifier dans l'éditeur, y ajouter une photo, une illustration ou une couverture « Recette libre », y lancer une action d'IA (corriger, améliorer, « Suggérer les tags », cadrer depuis le scan) ; masqué au lecteur, même propriétaire ; <span class="path">/recipes/{id}/edit</span> ouvert par un lien lui dit « Modification réservée aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer des livres, modifier et supprimer les siens (couverture comprise) ; un lecteur qui ouvre <span class="path">/books/new</span> lit « Création réservée aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Modifier ou supprimer le livre ou la recette d'autrui, changer sa couverture ou ses illustrations — l'écran de modification ouvert par un lien le dit avant toute saisie</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Ranger une recette dans le livre d'un autre membre (création, déplacement, import)</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
           <tr><td>Relire en lecture seule les brouillons partagés des membres de ses groupes — tous pour l'admin</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -185,7 +186,7 @@
           <tr><td>Importer une page ou un livre entier (<span class="path">/scan</span>) — réservé à l'éditeur et à l'admin, imposé par les règles Firestore ; un lecteur qui ouvre <span class="path">/scan</span> voit que l'import lui est fermé</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Importer une recette depuis un lien vers une page web — 10 imports par lien et par jour, plafond multiplié pour le fondateur ; le lecteur ne voit pas les boutons</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Importer une page trouvée par « Chercher sur le web », depuis le bandeau d'Explorer au retour du navigateur, ou par « Partager vers Kass'Dalle » sur Android — un lecteur qui partage un lien voit « Import réservé aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Déposer un fichier ou une image en quarantaine (<span class="path">quarantine/{uid}/</span>), pour illustrer ses recettes ou importer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Déposer un fichier ou une image en quarantaine (<span class="path">quarantine/{uid}/</span>), pour illustrer ses recettes ou importer — le propriétaire garde la lecture de sa quarantaine ; la capture d'un ticket passe par <span class="path">tickets/{uid}/</span>, ouvert au lecteur</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Publier une image dans un dossier partagé — le serveur seul, après contrôle du fichier et modération</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
           <tr><td>Demander un conseil de dressage, ou relancer le calcul nutritionnel, sur <b>sa</b> recette — le résultat s'enregistre sur la recette ; sur celle d'autrui, on lit ce qui est enregistré, et l'écran dit qui peut le demander</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Demander un conseil de conservation sur <b>sa</b> recette — il fait partie du planning ; le lecteur lit le conseil déjà enregistré</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -700,7 +701,8 @@ flowchart LR
       saisie manuelle, la génération par l'IA, la copie d'une recette d'un proche. L'import d'un livre entier répète
       le scan d'une page, tranche par tranche. Toutes convergent vers le même brouillon, puis vers
       la même validation. Les cinq sont réservées à l'éditeur et à l'administrateur : le
-      lecteur ne crée plus de recette, il reprend et modifie les siennes.
+      lecteur ne crée plus de recette ; il relit et valide ses brouillons, détache et supprime
+      ses recettes, sans les modifier ni les illustrer.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -803,7 +805,6 @@ flowchart LR
   EDI --- b4
   EDI --- b5
   LEC --- b5
-  LEC --- b9
   b1 -.->|"inclut"| c1
   b11 -.->|"inclut"| c1
   b1 -.->|"inclut"| c2
@@ -829,8 +830,10 @@ flowchart LR
         manuelle, copie de la recette d'un proche, recette conçue par l'IA (Explorer « Imaginer 3
         recettes », planning « Générer avec l'IA »), import d'une page, d'un livre entier ou d'un
         lien. Une recette conçue par l'IA arrive en brouillon dans « Mes créations Kass'Dalle ✨ ».
-        Le <code>reader</code> garde ses recettes existantes : il reprend ses brouillons, les
-        raffine, les valide, et modifie ses recettes validées. L'<code>editor</code> ouvre aussi
+        Le <code>reader</code> garde ses recettes existantes : il reprend ses brouillons et les
+        valide, sans IA ni photo ; il ne modifie plus ses recettes validées, n'y ajoute ni photo
+        ni couverture, et n'y lance aucune action d'IA (tickets #162 et #163). Ces gestes
+        demandent d'être propriétaire <b>et</b> éditeur. L'<code>editor</code> ouvre aussi
         les livres et tout ce qui <b>produit</b> une image. La retouche d'une illustration par l'IA est réservée à l'<code>admin</code>
         (<code>enhanceIllustrationFn</code> exige ce rôle), sur ses propres brouillons.
         <b>Un livre entier part avec un plafond de dépense</b>, fixé avant le départ : le fichier

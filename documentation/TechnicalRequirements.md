@@ -2127,7 +2127,9 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 - `error_reports/{id}` : erreurs remontées par le client via `ErrorReportService` —
   `feature`, message, pile, `userId` et un `context` (chaîne JSON depuis v0.23.48, carte
   avant), champs et longueurs bornés par les règles (§7.7). C'est le seul endroit où un
-  échec côté client laisse une trace : `debugPrint` est invisible en production.
+  échec côté client laisse une trace : `debugPrint` est invisible en production. Conservés
+  90 jours : `scheduledErrorReportsPurge` supprime chaque jour ceux dont `timestamp` est plus
+  ancien (§7.10, v0.24.62).
 
 ---
 
@@ -3330,9 +3332,9 @@ déjà ces droits (`roleOf()`, v0.24.30).
 **Coût.** Une lecture Firestore par requête Storage qui atteint le second contrôle : un dépôt
 dans la quarantaine (photo, scan, livre), une capture de ticket, une lecture ou un listage
 d'administrateur, et depuis la v0.24.55 le `get` d'un fichier publié (`isApprovedReader()`).
-Les deux branches du dépôt en quarantaine sont ordonnées pour qu'un lecteur
-comme un éditeur ne lisent le document qu'une fois, et le type et la taille se testent avant
-le rôle. Ne coûtent **aucune** lecture : les images affichées, servies par URL de
+Le dépôt en quarantaine ne lit le document qu'une fois, et le type et la taille se testent
+avant le rôle. Un lecteur, dont le jeton n'annonce ni `editor` ni `admin`, est refusé sans
+lecture. Ne coûtent **aucune** lecture : les images affichées, servies par URL de
 téléchargement (les règles ne s'évaluent pas), la lecture par un compte de ses propres
 fichiers (`isOwner`), et tout dépôt ou listage d'un compte dont le jeton n'annonce aucun
 rôle. Le `get` d'un fichier publié lit le document même pour un compte en attente : seuls
@@ -3449,15 +3451,6 @@ service firebase.storage {
            ];
     }
 
-    // Ce qu'un lecteur dépose : une photo JPEG ou PNG, hors de `livres/`
-    // (couverture « Recette libre », illustration d'une de ses recettes).
-    // `livres/` s'exclut par le nom complet : les deux blocs se recouvrent.
-    function isReaderImageUnder(maxBytes) {
-      return request.resource.size < maxBytes
-        && baseContentType() in ['image/jpeg', 'image/png']
-        && !request.resource.name.matches('quarantine/[^/]+/livres/.*');
-    }
-
     // Administrateur, selon le jeton ET le document. Sert les lectures qui ne
     // sont pas ouvertes à la famille : images refusées par la modération,
     // quarantaine des autres, listages. Ici, l'absence de preuve vaut refus.
@@ -3486,14 +3479,17 @@ service firebase.storage {
     // image « à revoir » attend ici, et personne ne tranche sur une photo qu'il
     // ne peut pas voir.
     //
-    // Un lecteur n'y dépose que des photos ; un éditeur ou un administrateur,
-    // tous les types d'un import (v0.24.32, ticket #162). Type et taille avant
-    // le rôle : un dépôt refusé pour son contenu ne lit pas Firestore.
+    // Dépôt réservé aux éditeurs et aux administrateurs (v0.24.62, ticket
+    // #162, point 2) : un lecteur n'ajoute plus de photo, et
+    // `scanAndPromoteUploadFn` exige `requireEditor`. Le propriétaire garde la
+    // lecture de sa quarantaine. La capture d'un ticket passe par
+    // `tickets/{uid}/`, ouvert au lecteur. Type et taille avant le rôle : un
+    // dépôt refusé pour son contenu ne lit pas Firestore.
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
       allow write: if isOwner(uid)
-        && ((isImportableUnder(50 * 1024 * 1024) && isEditor())
-            || (isReaderImageUnder(50 * 1024 * 1024) && isApproved()));
+        && isImportableUnder(50 * 1024 * 1024)
+        && isEditor();
     }
 
     // Un livre entier — PDF, EPUB ou Word — à découper en recettes. Plafond de
@@ -3572,16 +3568,17 @@ service firebase.storage {
 > lui-même, sous son uid, un fichier nommé `screenshot.png` ou `screenshot.jpg`. La
 > suppression est refusée à tous (aucune purge en V1).
 >
-> **Ce que dépose un lecteur** (v0.24.32, ticket #162). Un lecteur n'importe pas : la
-> création d'un job (`processing_jobs`, `isEditor()`), `analyzeBookImport` et l'extraction
-> de texte (`requireEditor`) lui sont refusées. Il déposait pourtant des PDF, des documents
-> Word et du texte jusqu'à 50 Mo, et des livres jusqu'à 300 Mo sous `livres/`, que rien ne
-> traitait ensuite. Il ne dépose plus que des photos JPEG ou PNG, hors de `livres/` : la
-> couverture « Recette libre » et l'illustration d'une de ses recettes, que
-> `ImageModerationService` envoie toujours sous l'un de ces deux types canoniques. Les autres
-> envois vers la quarantaine (`ScanUploadService`, `RecipeRepository.uploadScanFile` pour le
-> texte collé de la création à la main) servent l'import et la création de recette, réservés
-> à l'éditeur. Testé dans `rules-tests` (« quarantaine — ce que dépose un lecteur »).
+> **Un lecteur ne dépose rien en quarantaine** (v0.24.62, ticket #162, point 2). Un
+> lecteur n'importe pas : la création d'un job (`processing_jobs`, `isEditor()`),
+> `analyzeBookImport` et l'extraction de texte (`requireEditor`) lui sont refusées. Depuis la
+> v0.24.32, il ne déposait plus que des photos JPEG ou PNG — couverture « Recette libre »,
+> illustration d'une de ses recettes. Ajouter une photo est désormais réservé à l'éditeur :
+> l'écran masque ces gestes (`AppUser.canEnrichRecipe`), `scanAndPromoteUploadFn` exige
+> `requireEditor`, et le dépôt exige `isEditor()`, jeton puis document `users/{uid}`, comme
+> les autres dépôts. Le propriétaire garde la lecture de sa quarantaine. La capture d'un
+> ticket ne passe pas par la quarantaine (`tickets/{uid}/…`, ouvert au lecteur). Testé dans
+> `rules-tests` (« quarantaine — propriété et rôle », « quarantaine — un lecteur ne dépose
+> rien »).
 
 **Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
 `[firebase_storage/unauthorized]` peut vouloir dire six choses : le chemin n'appartient
@@ -5851,8 +5848,17 @@ ainsi que `searchRecipesFn` (classement facturé). L'interface masque les points
 « Générer avec l'IA » et « Concevoir avec l'IA » du planning, source « Conception IA » de Nouveau
 planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien »,
 « Importer » des pages « Sur le web », et le bandeau d'import au
-retour du navigateur de l'Explorer. Il garde la modification et la suppression de ses recettes existantes, et
-« Raffiner le brouillon par IA » sur ses brouillons (`refineRecipeFn`, `requireAuth`).
+retour du navigateur de l'Explorer. Il garde la relecture et la validation de ses brouillons,
+le détachement d'un livre et la suppression de ses recettes existantes. Il ne les **enrichit**
+plus (v0.24.62, tickets #162 et #163) : `polishCooklangFn`, `polishMarkdownFn`,
+`refineRecipeFn`, `extractBookCoverFn` (`book_cover`), `suggestRecipeTagsFn`,
+`detectAndCropIllustrationsFn` et `scanAndPromoteUploadFn` (`upload_security_scan`) exigent
+`requireEditor`. L'interface teste `AppUser.canEnrichRecipe(createdBy)` — `canEdit` et
+`canModifyRecipe` — et masque « Modifier la recette », la couverture « Recette libre »,
+l'ajout de photo ou d'illustration, l'IA de la relecture d'un brouillon et « Suggérer les
+tags » ; `/recipes/:recipeId/edit` passe par `EditorOnlyGate`. Un refus reçu en cours de
+session s'affiche par `photoFailureMessage` ou `aiFailureMessage`
+(`core/widgets/error_message.dart`), sans « Réessayer ».
 
 ### Les réponses JSON
 
@@ -6201,6 +6207,13 @@ diagnostique pas, l'application se déployant plusieurs fois par jour.
 
 `save(...)` **retourne l'identifiant du document**. C'est ce numéro que l'écran peut montrer
 à l'utilisateur et qu'il communique à l'administrateur.
+
+**Conservation : 90 jours** (v0.24.62, ticket #162, point 3). `scheduledErrorReportsPurge`
+supprime chaque jour à 4 h les rapports dont `timestamp` précède l'instant de la passe moins
+90 jours. Un rapport sans `timestamp`, ou dont le champ n'est pas un `Timestamp`, n'entre
+pas dans la requête et reste : les règles n'en admettent pas d'autre type, et l'écran
+d'administration les affiche toujours. Un identifiant montré à un utilisateur ne se
+retrouve donc plus au-delà de 90 jours.
 
 Le champ `feature` est un identifiant libre, mais sa forme est une convention :
 `domaine.action` pour le code récent, `domaine_action` pour l'ancien. Il n'est pas contrôlé
@@ -6575,7 +6588,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Cinq tâches planifiées (Cloud Scheduler), cinq reprises manuelles (six backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
+Six tâches planifiées (Cloud Scheduler), cinq reprises manuelles (six backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -6584,6 +6597,7 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `scheduledBackfills` | `0 * * * *` — toutes les heures, heure de Paris | lance les backfills **récurrents** échus (`backfills/schedule.ts`, `dueReason`) : jour et heure de la programmation (`app_config/backfill_schedules`), ou reprise d'un passage programmé resté incomplet. Défaut sans réglage : « Reprendre la nutrition » tous les jours à 5 h — elle remplace `scheduledNutritionCatchUp`, retirée en v0.23.45, avec ses bornes (voir ci-dessous). Détail plus bas, « Backfills ponctuels et récurrents » |
 | `releaseNotificationSchedule` | `every 10 minutes`, heure de Paris | notifie les administrateurs d'un nouvel APK (v0.23.81). Lit `https://kassdale-6d948.web.app/apk_release.json?t=<horodatage>` (contourne le cache), réserve le couple `version+build` dans `app_config/apk_notification` par une transaction (deux passes qui se chevauchent n'envoient qu'une fois), lit les jetons `users/{uid}/devices/*` des comptes `role == "admin"` non révoqués, envoie par `sendEachForMulticast` (`firebase-admin/messaging`, chargé par `await import()`), supprime les jetons `registration-token-not-registered` et libère la réservation si aucun envoi n'a abouti. Manifeste illisible ou absent : `logError`, rien d'envoyé, nouvel essai 10 minutes plus tard. Code : `release_notifications/` et `scheduled/releaseNotificationSchedule.ts`. Aucun appel d'IA |
 | `scheduledAiBudgetAlert` | `0 7 * * *` — chaque matin à 7 h | compare le cumul du mois au seuil réglé. Se tait dans quatre cas : pas de seuil, pas de taux de change, seuil non franchi, alerte déjà émise |
+| `scheduledErrorReportsPurge` | `0 4 * * *` — chaque jour à 4 h, heure de Paris | supprime les rapports d'erreur (`error_reports`) dont `timestamp` a plus de 90 jours (v0.24.62, ticket #162, point 3) : requête `timestamp < échéance`, lots de 400 suppressions par écriture groupée, 50 lots au plus par passage (20 000 rapports) ; un arriéré plus gros se termine les jours suivants. Un lot en échec arrête la passe. Journalise le nombre supprimé, le nombre de lots, l'échéance et `complete` (`logInfo`, ou `logError` si la passe s'arrête), sous un `correlationId` `error_reports_purge_…`. Un rapport sans `timestamp` n'est pas touché. Code : `scheduled/errorReportsPurgeSchedule.ts` (`purgeInBatches`, testée sans émulateur). Aucun appel d'IA |
 | `scheduledAiReconciliation` | `0 6 4 * *` — le 4 de chaque mois à 6 h | réconcilie le mois précédent avec la facturation BigQuery |
 | `ticketsSyncSchedule` | `every 60 minutes` | renvoie les tickets « Envoi en cours » de moins de dix essais, puis relit sur GitHub les Issues des tickets non finaux (webhook perdu) ; s'arrête au premier jeton refusé (§5, « Tickets ») |
 
@@ -8110,20 +8124,20 @@ l'impose : la création d'un `processing_job`, seul point qui lance le pipeline 
 (`analyzeBookFileFn`) exige `requireEditor`. Un `reader` qui ouvre `/scan` par un lien voit un
 état « Import réservé aux éditeurs » au lieu du formulaire, et aucune entrée vers `/scan` ne
 lui est montrée. `quarantine/{uid}/` (`storage.rules`) et `scanAndPromoteUploadFn`
-(`requireAuth`) restent ouverts au `reader` : il y dépose le fichier source de ses propres
-recettes depuis `/recipes/new`, et ce contrôle n'appelle aucun modèle.
+(`requireEditor`) sont fermés au `reader` depuis la v0.24.62 (ticket #162, point 2 ; ticket
+#163, point 1).
 
 | Route | Écran | Droit effectif |
 |---|---|---|
 | `/` | `BookListScreen` | `reader` — l'accueil *est* la bibliothèque |
 | `/books` | `BookListScreen` | `reader` |
 | `/books/validation` | `BookValidationScreen` | `editor` |
-| `/books/new` | `BookFormScreen` | `editor` |
+| `/books/new` | `BookFormScreen` | `editor` — gardée par `EditorOnlyGate` (v0.24.62) : un `reader` arrivé par un lien voit « Création réservée aux éditeurs » sous la barre « Nouveau livre » |
 | `/books/:bookId/edit` | `BookFormScreen` | `editor` |
 | `/recipes` | `RecipeListScreen` | `reader` |
 | `/recipes/new` | `RecipeCreateScreen` | `editor` — gardée par `EditorOnlyGate` : un `reader` arrivé par un lien voit « Création réservée aux éditeurs », comme sur `/scan`. Paramètre `?sourceUrl=` : l'adresse d'un import par lien qui a échoué, rappelée en haut de l'écran (« Page à recopier : »), jamais enregistrée sur la recette |
 | `/recipes/:recipeId` | `RecipeDetailScreen` | `reader` |
-| `/recipes/:recipeId/edit` | `RecipeEditScreen` | `reader` sur les siennes, `editor` sur celles d'autrui |
+| `/recipes/:recipeId/edit` | `RecipeEditScreen` | `editor` sur les siennes, `admin` sur toutes — gardée par `EditorOnlyGate` (v0.24.62, tickets #162 et #163) : un `reader` voit « Modification réservée aux éditeurs », même sur sa recette ; un éditeur sur la recette d'un autre voit `NotOwnerScaffold` |
 | `/book-pages/:pageId` | `BookPageDetailScreen` | `reader` — page de livre sans transition |
 | `/scan` | `ScanScreen` | `editor` |
 | `/drafts` | `WorkQueueScreen` | `reader` |

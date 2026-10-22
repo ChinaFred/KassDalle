@@ -246,7 +246,7 @@ export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req
 });
 
 export const polishCooklangFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "polish_cooklang");
+  const ctx = await requireEditor(req, "polish_cooklang");
   const data = (req.data ?? {}) as Record<string, unknown>;
   const cooklang = await readAiInputs({ ...ctx, feature: "polish_cooklang" }, (inputs) =>
     inputs.text(data.cooklang, { field: "cooklang", max: RECIPE_TEXT_MAX_CHARS, required: true }),
@@ -284,7 +284,7 @@ export const polishCooklangFn = onCall(callableOpts, async (req) => {
 });
 
 export const polishMarkdownFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "polish_markdown");
+  const ctx = await requireEditor(req, "polish_markdown");
   const data = (req.data ?? {}) as Record<string, unknown>;
   const { markdown, instruction } = await readAiInputs(
     { ...ctx, feature: "polish_markdown" },
@@ -313,7 +313,7 @@ export const polishMarkdownFn = onCall(callableOpts, async (req) => {
 });
 
 export const refineRecipeFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "refine");
+  const ctx = await requireEditor(req, "refine");
   const data = (req.data ?? {}) as Record<string, unknown>;
   // Liste blanche : seuls les champs validés atteignent le générateur.
   const input = await readAiInputs({ ...ctx, feature: "refine" }, (inputs) =>
@@ -440,7 +440,7 @@ export const searchRecipesFn = onCall(callableOpts, async (req) => {
 });
 
 export const extractBookCoverFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "book_cover");
+  const ctx = await requireEditor(req, "book_cover");
   const raw = (req.data ?? {}) as Record<string, unknown>;
   const { bytes, mimeType } = await readAiInputs({ ...ctx, feature: "book_cover" }, (inputs) => ({
     bytes: inputs.base64(raw.bytesBase64, {
@@ -758,7 +758,7 @@ export const suggestMealIdeasFn = onCall(callableOpts, async (req) => {
 });
 
 export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "suggest_tags");
+  const ctx = await requireEditor(req, "suggest_tags");
   const data = (req.data ?? {}) as Record<string, unknown>;
   const { titre, cooklang }: Partial<SuggestTagsInput> = await readAiInputs(
     { ...ctx, feature: "suggest_tags" },
@@ -912,7 +912,7 @@ async function uploadScanId(raw: unknown, ctx: AuthContext): Promise<string | un
  * l'autre relit son résultat.
  */
 export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "upload_security_scan");
+  const ctx = await requireEditor(req, "upload_security_scan");
   // `scanId` vient du client, et lui seul peut le fournir : le contrôle du
   // fichier a lieu AVANT que le job d'import existe, et une même photo peut
   // arriver avec ses pages supplémentaires en plusieurs appels. Sans lui, le
@@ -1149,7 +1149,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
 export const detectAndCropIllustrationsFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
-    const ctx = await requireAuth(req, "detect_illustrations");
+    const ctx = await requireEditor(req, "detect_illustrations");
     const raw = (req.data ?? {}) as Record<string, unknown>;
     const { pageBytes, mimeType } = await readAiInputs(
       { ...ctx, feature: "detect_illustrations" },

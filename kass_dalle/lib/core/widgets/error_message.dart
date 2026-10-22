@@ -238,6 +238,39 @@ String failureMessage(String what, Object? error) =>
     '${_sentence(what.trimRight())} '
     '${_sentence(aiBudgetRefusalMessage(error) ?? describeError(error).title)}';
 
+/// Un refus de droits : règle Firestore ou Storage, ou callable
+/// `permission-denied`.
+bool isPermissionRefusal(Object? error) {
+  if (error == null) return false;
+  final code = _codeOf(error);
+  return code.contains('permission-denied') || code.contains('unauthorized');
+}
+
+/// Refus d'un envoi de photo ou de couverture reçu en cours de session : le
+/// compte n'est plus éditeur (tickets #162 et #163). Pas de « Réessayer » : le
+/// rôle ne changera pas d'un appui à l'autre.
+const kPhotoEditorOnlyRefusal =
+    'Photo non envoyée. Ajouter des photos est réservé aux éditeurs.';
+
+/// Refus d'une action d'IA reçu en cours de session : [what] garde le
+/// préfixe de l'écran (« Recette non corrigée », « Recette non améliorée »).
+String aiEditorOnlyRefusal(String what) =>
+    '${_sentence(what.trimRight())} L\'IA est réservée aux éditeurs.';
+
+/// Le message d'un échec d'envoi de photo : [kPhotoEditorOnlyRefusal] pour un
+/// refus de droits, [failureMessage] sinon.
+String photoFailureMessage(String what, Object? error) =>
+    isPermissionRefusal(error)
+    ? kPhotoEditorOnlyRefusal
+    : failureMessage(what, error);
+
+/// Le message d'un échec d'action d'IA : [aiEditorOnlyRefusal] pour un refus
+/// de droits, [failureMessage] sinon.
+String aiFailureMessage(String what, Object? error) =>
+    isPermissionRefusal(error)
+    ? aiEditorOnlyRefusal(what)
+    : failureMessage(what, error);
+
 /// Termine [text] par un point, sauf s'il finit déjà par une ponctuation.
 String _sentence(String text) {
   const endings = ['.', '!', '?', '…'];

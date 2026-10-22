@@ -12,6 +12,7 @@ import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/services/screen_wakelock.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/widgets/error_message.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
@@ -275,7 +276,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showFailureSnackBar('Couverture non mise à jour', e);
+        context.showErrorSnackBar(
+          photoFailureMessage('Couverture non mise à jour', e),
+        );
       }
     } finally {
       if (mounted) setState(() => _uploadingFreeCover = false);
@@ -405,6 +408,10 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         // Créateur ou administrateur seulement, éditeur compris : miroir de la
         // règle `recipes` de `firestore.rules`.
         final canEdit = user?.canModifyRecipe(recipe.createdBy) ?? false;
+        // Photo, illustration, couverture « Recette libre », « Modifier » :
+        // propriétaire ET éditeur (tickets #162 et #163). Un propriétaire
+        // lecteur garde le détachement et la suppression ([canEdit]).
+        final canEnrich = user?.canEnrichRecipe(recipe.createdBy) ?? false;
         _stripLegacyStorageSection(recipe, canEdit: canEdit);
 
         Future<void> onSelectedPortionsChanged(int value) async {
@@ -445,6 +452,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
             recipe: recipe,
             user: user,
             canEdit: canEdit,
+            canEnrich: canEnrich,
             uploadingFreeCover: _uploadingFreeCover,
             readingContext: widget.readingContext,
             onScrollToAnnotations: _scrollToAnnotations,
@@ -469,6 +477,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                     ctrl: ctrl,
                     recipe: recipe,
                     canEdit: canEdit,
+                    canEnrich: canEnrich,
                     basePortions: _basePortions,
                     selectedPortions: _selectedPortions,
                     onSelectedPortionsChanged: (value) {
@@ -520,6 +529,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                                 ctrl: ctrl,
                                 recipe: recipe,
                                 canEdit: canEdit,
+                                canEnrich: canEnrich,
                                 basePortions: _basePortions,
                                 selectedPortions: _selectedPortions,
                                 onSelectedPortionsChanged: (value) {
@@ -544,6 +554,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                               recipeId: recipeId,
                               recipe: recipe,
                               canEdit: canEdit,
+                              canEnrich: canEnrich,
                             ),
                           ],
                         ),

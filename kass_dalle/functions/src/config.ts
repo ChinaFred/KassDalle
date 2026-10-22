@@ -204,6 +204,11 @@ export const COLL_RECIPES = "recipes";
 export const COLL_BOOKS = "books";
 export const COLL_NUTRITION_INGREDIENTS = "nutrition_ingredients";
 export const COLL_DEAD_LETTERS = "dead_letters";
+/**
+ * Rapports d'erreur du client — `error_reports/{id}`, écrits par
+ * `ErrorReportService`. Purgés après 90 jours par `scheduledErrorReportsPurge`.
+ */
+export const COLL_ERROR_REPORTS = "error_reports";
 export const COLL_TOKEN_USAGE = "token_usage";
 export const COLL_AI_USAGE = "ai_usage";
 export const COLL_USERS = "users";

@@ -148,6 +148,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'tickets_sync': 'Synchronisation horaire des tickets',
   'release_notification':
       'Notification de nouvelle version aux administrateurs',
+  'error_reports_purge': 'Purge des rapports d\'erreur de plus de 90 jours',
 
   // ── Ce qui n'a jamais eu de nom ────────────────────────────────────────
   // Le défaut historique de toutes les fonctions appelables. Il ne devrait

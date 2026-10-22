@@ -22,7 +22,14 @@ import '../../../../core/widgets/app_network_image.dart';
 class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final Recipe recipe;
   final AppUser? user;
+
+  /// Propriétaire ou administrateur : détacher du livre, supprimer.
   final bool canEdit;
+
+  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : « Modifier la
+  /// recette » et changer la couverture « Recette libre ». Masqués sinon,
+  /// jamais grisés (tickets #162 et #163).
+  final bool canEnrich;
   final bool uploadingFreeCover;
   final VoidCallback onScrollToAnnotations;
   final VoidCallback onChangeCover;
@@ -39,6 +46,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required this.recipe,
     required this.user,
     required this.canEdit,
+    required this.canEnrich,
     required this.uploadingFreeCover,
     required this.onScrollToAnnotations,
     required this.onChangeCover,
@@ -166,7 +174,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
           ),
         // Une recette libre n'a pas de couverture de livre : la sienne se
         // change depuis la vignette en large, et depuis cette icône ici.
-        if (isOwnRecipe && canEdit && recipe.bookId == null)
+        if (isOwnRecipe && canEnrich && recipe.bookId == null)
           _ActionCompacte(
             tooltip: uploadingFreeCover
                 ? 'Envoi de la couverture…'
@@ -180,7 +188,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
             icon: Icons.link_off_outlined,
             onPressed: onDetachFromBook,
           ),
-        if (canEdit)
+        if (canEnrich)
           _ActionCompacte(
             tooltip: 'Modifier la recette',
             icon: Icons.edit_outlined,
@@ -271,7 +279,9 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
             const SizedBox(width: 10),
           ] else if (recipe.bookId == null) ...[
             GestureDetector(
-              onTap: isOwnRecipe && canEdit
+              // Sans le droit de la changer, l'appui agrandit la couverture
+              // quand elle existe.
+              onTap: isOwnRecipe && canEnrich
                   ? onChangeCover
                   : freeRecipeCoverUrl.isNotEmpty
                   ? () => onCoverZoom(freeRecipeCoverUrl)
@@ -288,11 +298,11 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                             fit: BoxFit.cover,
                             errorWidget: (_, _, _) =>
                                 RecipeDetailFreeRecipeCover(
-                                  isOwner: isOwnRecipe && canEdit,
+                                  isOwner: isOwnRecipe && canEnrich,
                                 ),
                           )
                         : RecipeDetailFreeRecipeCover(
-                            isOwner: isOwnRecipe && canEdit,
+                            isOwner: isOwnRecipe && canEnrich,
                           ),
                   ),
                   if (uploadingFreeCover)
@@ -416,7 +426,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
             tooltip: 'Détacher du livre',
             onPressed: onDetachFromBook,
           ),
-        if (canEdit)
+        if (canEnrich)
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: 'Modifier la recette',

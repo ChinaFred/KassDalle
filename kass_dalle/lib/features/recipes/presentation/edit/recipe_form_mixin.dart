@@ -9,6 +9,7 @@ import '../../domain/meal_role.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/widgets/error_message.dart';
 
 /// Mixin providing shared form state and logic for all recipe editing screens
 /// (draft review, edit validated recipe, manual create).
@@ -355,7 +356,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showFailureSnackBar('Tags non suggérés', e);
+        context.showErrorSnackBar(aiFailureMessage('Tags non suggérés', e));
       }
     } finally {
       if (mounted) setState(() => suggestingTags = false);
