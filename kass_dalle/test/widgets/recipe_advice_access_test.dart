@@ -107,7 +107,7 @@ void main() {
       expect(find.text('Régénérer'), findsOneWidget);
     });
 
-    // L'IA qui modifie une recette est réservée aux éditeurs (v0.24.65) : la
+    // L'IA qui modifie une recette est réservée aux éditeurs (v0.24.66) : la
     // fiche passe
     // `canEnrichRecipe`, faux pour un lecteur même créateur. Il lit le conseil
     // enregistré, sans « Régénérer » ni visuels.

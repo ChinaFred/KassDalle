@@ -146,7 +146,7 @@ export function moderationRefusal(err: unknown): HttpsError | null {
  * office.
  */
 export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
-  // Éditeur ou administrateur (v0.24.65, tickets #162 et #163) : un lecteur
+  // Éditeur ou administrateur (v0.24.66, tickets #162 et #163) : un lecteur
   // n'ajoute plus de photo, et la quarantaine lui est fermée. La capture
   // d'un ticket ne passe pas par ici (`attachTicketScreenshot`).
   const ctx = await requireEditor(req, MODERATION_FEATURE);

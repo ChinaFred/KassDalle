@@ -67,7 +67,7 @@ describe("privacyWithoutBook", () => {
 
 // Audit sécurité : la normalisation écrit dans le référentiel partagé
 // `nutrition_ingredients` et appelle des modèles. Éditeur et administrateur
-// seulement (v0.24.65, tickets #162 et #163) : le lecteur n'y passe plus, même
+// seulement (v0.24.66, tickets #162 et #163) : le lecteur n'y passe plus, même
 // pour sa propre recette.
 describe("referentialNormalizationDenial", () => {
   test("éditeur et administrateur normalisent", () => {

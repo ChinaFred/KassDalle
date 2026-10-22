@@ -1457,7 +1457,7 @@ function readStoredAdvice(data: Record<string, unknown> | undefined): StoredPlat
  * tiers.
  */
 export const suggestPlatingFn = onCall(callableOpts, async (req) => {
-  // Éditeur ou administrateur (v0.24.65) : l'IA qui modifie une recette ou
+  // Éditeur ou administrateur (v0.24.66) : l'IA qui modifie une recette ou
   // publie une image leur est réservée ; la recherche web reste ouverte au
   // lecteur.
   const ctx = await requireEditor(req, "plating_coach");

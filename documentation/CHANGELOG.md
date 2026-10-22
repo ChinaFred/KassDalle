@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.65 — fonctionnel
+### v0.24.66 — fonctionnel
 
 Tickets #162 et #163 : enrichir une recette demande d'en être propriétaire et éditeur. Un
 lecteur ne voit plus, même sur ses propres recettes, « Modifier la recette » ou « Modifier la
@@ -61,7 +61,7 @@ régénère plus de conseil de dressage et ne relance plus le calcul de la nutri
 recette ; il lit le conseil et la nutrition déjà enregistrés. Le calcul automatique de la
 nutrition à l'enregistrement continue pour toutes les recettes.
 
-### v0.24.65 — technique
+### v0.24.66 — technique
 
 Ticket #163, point 1 : `polishCooklangFn`, `polishMarkdownFn`, `refineRecipeFn`,
 `extractBookCoverFn` (`book_cover`, non déployée), `suggestRecipeTagsFn`,
@@ -117,6 +117,14 @@ n'est plus éditeur, préfixe gardé) et `isPermissionRefusal` dans
 `MobileUnifiedBody`, que plus rien ne lisait, est retiré.
 Code mort retiré : `RecipeDetailBody` (`recipe_detail_widgets.dart`), qu'aucun écran
 n'instanciait.
+
+### v0.24.65 — technique
+
+`deploy.ps1`, l'outil de secours, affiche au démarrage la branche, le dernier commit et les
+fichiers modifiés (`git status --short --untracked-files=all`), refuse une branche autre que
+`master`, dont le code n'a pas eu de CI, puis attend un « oui » tapé (`Confirm-Deploy`). Toute autre réponse l'arrête avant le moindre build. Lancé
+depuis la mauvaise branche ou avec des fichiers modifiés par mégarde, il publiait ce que
+personne n'avait voulu publier.
 
 ### v0.24.64 — fonctionnel
 
