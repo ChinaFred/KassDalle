@@ -22,9 +22,9 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ### v0.24.52 — fonctionnel
 
-Admin › Tickets : le bouton « Valider et lancer le développement » reste sur une ligne sur un
-téléphone de 360 px (ticket #181). Au texte par défaut, son libellé se réduit pour tenir
-sur une ligne, sans être tronqué, de 10 % au plus. Quand il faudrait le réduire davantage,
+Admin › Tickets : le libellé du bouton « Valider et lancer le développement », qui passait
+à la ligne sur un téléphone de 360 px (ticket #181), se réduit pour tenir sur une ligne au
+texte par défaut, sans être tronqué, de 10 % au plus. Quand il faudrait le réduire davantage,
 par exemple dans le volet de détail étroit entre 800 et 910 px de large, il passe à la
 ligne. Avec un texte agrandi, il garde sa taille et passe à la ligne. Les autres constats de l'audit étaient déjà corrigés dans le code (seuils 480 px par
 `PlatformUtils.narrowContentBreakpoint`, tailles d'icônes par `AppIconSize.small`,

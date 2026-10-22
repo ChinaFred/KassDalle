@@ -3213,7 +3213,11 @@ class _OneLineAtDefaultScale extends StatelessWidget {
     final label = Text(text);
     final scaler = MediaQuery.textScalerOf(context);
     if (scaler.scale(1) > 1) return label;
-    final style = DefaultTextStyle.of(context).style;
+    final baseStyle = DefaultTextStyle.of(context).style;
+    // « Texte en gras » du système : `Text` l'applique, la mesure aussi.
+    final style = MediaQuery.boldTextOf(context)
+        ? baseStyle.merge(const TextStyle(fontWeight: FontWeight.bold))
+        : baseStyle;
     final direction = Directionality.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {

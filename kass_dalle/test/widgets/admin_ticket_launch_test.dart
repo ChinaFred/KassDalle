@@ -599,20 +599,21 @@ void main() {
       expect(layout.scale, greaterThanOrEqualTo(0.9));
     });
 
-    testWidgets('réduction forte (360 px) : le libellé passe à la ligne', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        status: 'analyzed',
-        size: const Size(360, 800),
-        textScale: 1.0,
-      );
-      expect(tester.takeException(), isNull);
-      final layout = combinedLayout(tester);
-      expect(layout.scale, 1.0);
-      expect(layout.lines, greaterThan(1));
-    });
+    testWidgets(
+      'police de test à 360 px (réduction sous 0,9) : le libellé passe à la ligne',
+      (tester) async {
+        await pump(
+          tester,
+          status: 'analyzed',
+          size: const Size(360, 800),
+          textScale: 1.0,
+        );
+        expect(tester.takeException(), isNull);
+        final layout = combinedLayout(tester);
+        expect(layout.scale, 1.0);
+        expect(layout.lines, greaterThan(1));
+      },
+    );
 
     testWidgets('écran large à 800 px : jamais réduit sous 0,9', (
       tester,
