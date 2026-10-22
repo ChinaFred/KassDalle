@@ -1375,13 +1375,15 @@ flowchart LR
       </table>
     </div>
     <span class="expect">
-      Les règles Storage lisent le <b>jeton</b>, pas Firestore. Une version précédente interrogeait
-      Firestore depuis les règles Storage : cette lecture inter-services faisait échouer les règles
-      et cassait l'import, alors que la seule condition réelle était une égalité d'identifiant.
+      Les règles Storage lisent le <b>jeton</b> d'abord, puis le document <code>users/{uid}</code>
+      (v0.24.48) quand le jeton annonce le rôle demandé : un dépôt, une lecture ou un listage
+      d'administrateur. Un rôle retiré ou une révocation y prend effet tout de suite, comme côté
+      Firestore. Cette lecture inter-services exige un rôle IAM posé à la main sur l'agent de
+      service Storage ; sans lui, tous les dépôts sont refusés.
     </span>
     <span class="expect warn">
-      Corollaire à connaître : un rôle modifié prend effet <b>immédiatement</b> côté Firestore et
-      côté callable, mais seulement <b>au renouvellement du jeton</b> côté Storage. L'écriture y
+      Corollaire à connaître : un rôle <b>accordé</b> prend effet <b>immédiatement</b> côté
+      Firestore et côté callable, mais seulement <b>au renouvellement du jeton</b> côté Storage. L'écriture y
       exige désormais un claim de rôle <b>explicite</b> : en son absence — jeton émis avant
       l'amorçage — elle est refusée jusqu'au renouvellement. L'inverse était vrai du temps de la
       migration, quand aucun jeton ne portait de claim ; cette porte ouverte par défaut aurait suffi

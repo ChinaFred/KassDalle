@@ -554,10 +554,11 @@ stateDiagram-v2
       <code>syncUserClaims</code> révoque aussi ses jetons de rafraîchissement. Les
       <b>Security Rules</b> Firestore suivent le même ordre depuis la v0.24.30 : le rôle et la
       révocation se lisent sur <code>users/{uid}</code>, et le claim <code>role</code> du jeton
-      ne sert que si le document n'a pas de rôle. Les règles Storage ne lisent que les
-      <i>custom claims</i>, alimentés par <code>syncUserClaims</code>. Changer un rôle prend donc
-      effet immédiatement côté callable et côté Firestore, mais seulement au rafraîchissement du
-      jeton côté Storage. Le rôle se lit à l'identique partout depuis la v0.24.32
+      ne sert que si le document n'a pas de rôle. Les règles Storage lisent d'abord les
+      <i>custom claims</i>, alimentés par <code>syncUserClaims</code>, puis relisent
+      <code>users/{uid}</code> par <code>firestore.get</code> (v0.24.48) quand le jeton annonce
+      le rôle demandé. Un rôle retiré ou une révocation prend donc effet immédiatement partout ;
+      un rôle accordé attend le rafraîchissement du jeton côté Storage. Le rôle se lit à l'identique partout depuis la v0.24.32
       (<code>readRole</code>, <code>security/roles.ts</code>) : seuls <code>pending</code>,
       <code>reader</code>, <code>editor</code> et <code>admin</code> comptent, et les règles
       n'acceptent pas d'autre valeur à l'écriture. Côté Storage, un lecteur ne dépose dans
