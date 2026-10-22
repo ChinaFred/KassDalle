@@ -15,8 +15,8 @@ import {
   mealRoleCallAllowed,
   mealRoleContentChanged,
   mealRoleFailureResetNeeded,
-  onlyStyleTagsChanged,
 } from "../triggers/recipeMealRoleAutoSync";
+import { onlyStyleTagsChanged } from "../triggers/styleTagsEcho";
 
 const base = { titre: "Quiche", raw_cooklang: "@oeufs{3}", tags: { dish_types: ["entrée"] } };
 

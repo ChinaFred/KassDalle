@@ -10,7 +10,10 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { styleBackfillSkip } from "../callable/recipeStylesBackfillCallable";
+import {
+  styleBackfillMarksPage,
+  styleBackfillSkip,
+} from "../callable/recipeStylesBackfillCallable";
 
 describe("style des recettes — recettes sautées", () => {
   test("jamais examinée : soumise au modèle", () => {
@@ -43,5 +46,27 @@ describe("style des recettes — recettes sautées", () => {
       styleBackfillSkip({ raw_cooklang: ">> page_type: intro\n" }, false),
       "hors_recette",
     );
+  });
+
+  test("page hors recette par l'en-tête seul : marquée, pour sortir des restantes", () => {
+    // Le champ `page_type` manque : l'agrégat « hors recette » ne la voit pas.
+    assert.equal(styleBackfillMarksPage({ raw_cooklang: ">> page_type: intro\n" }), true);
+    assert.equal(
+      styleBackfillMarksPage({ page_type: null, raw_cooklang: ">> page_type: intro\n" }),
+      true,
+    );
+    // Déjà marquée : rien à écrire.
+    assert.equal(
+      styleBackfillMarksPage({
+        raw_cooklang: ">> page_type: intro\n",
+        tags: { styles_checked_at: { seconds: 1 } },
+      }),
+      false,
+    );
+    // Champ `page_type` posé : l'agrégat la décompte déjà.
+    assert.equal(styleBackfillMarksPage({ page_type: "index" }), false);
+    // Une recette n'est jamais marquée sans appel.
+    assert.equal(styleBackfillMarksPage({ titre: "Burger" }), false);
+    assert.equal(styleBackfillMarksPage({ raw_cooklang: ">> page_type: recipe\n" }), false);
   });
 });

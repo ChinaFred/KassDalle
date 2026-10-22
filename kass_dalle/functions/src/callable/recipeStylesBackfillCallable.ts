@@ -1,7 +1,7 @@
 /**
  * Style des recettes — rattrapage de l'existant (ponctuel).
  *
- * `tags.styles` est apparu en v0.24.54 : la passe du rôle (import, suggestion
+ * `tags.styles` est apparu en v0.24.60 : la passe du rôle (import, suggestion
  * de tags, déclencheur, backfill « Rôle des recettes ») le pose sur ce qui
  * arrive ou change. Les recettes déjà classées ne l'ont pas, et une consigne
  * de planning « street food le vendredi » ne peut se vérifier que sur une
@@ -118,6 +118,12 @@ function asString(value: unknown): string {
  * Recettes encore sans `tags.styles_checked_at`, comptées sur toute la
  * collection par trois agrégats, aucun document lu. `null` quand le décompte
  * échoue : l'erreur est journalisée, l'écran affiche « décompte impossible ».
+ *
+ * L'agrégat « hors recette » ne voit que le champ `page_type`. Une page dont
+ * le type n'est écrit que dans l'en-tête CookLang (`>> page_type:`) lui
+ * échappe : le passage lui pose le marqueur d'examen
+ * (`styleBackfillMarksPage`), sans quoi elle resterait comptée parmi les
+ * restantes et le backfill ne se terminerait jamais.
  */
 async function countRecipesWithoutStyle(
   db: FirebaseFirestore.Firestore,
@@ -221,6 +227,23 @@ export function styleBackfillSkip(
   return null;
 }
 
+/**
+ * Une page hors recette reçoit-elle le marqueur d'examen ? Oui quand son type
+ * ne vient que de l'en-tête CookLang (champ `page_type` absent ou `null`,
+ * donc invisible pour l'agrégat `page_type != "recipe"`) et qu'elle n'a pas
+ * encore de marqueur. Aucun appel de modèle : le style ne vaut que pour une
+ * recette. Pure, testée par `recipeStylesBackfill.test.ts`.
+ */
+export function styleBackfillMarksPage(data: Record<string, unknown>): boolean {
+  if (resolvePageType(data) === "recipe") return false;
+  if (data.page_type != null) return false;
+  const tags = (data.tags && typeof data.tags === "object" ? data.tags : {}) as Record<
+    string,
+    unknown
+  >;
+  return tags.styles_checked_at == null;
+}
+
 /** Un passage : le callable seul l'appelle, un ponctuel ne se programme pas. */
 export async function runRecipeStylesPass(
   ctx: AuthContext,
@@ -285,6 +308,20 @@ export async function runRecipeStylesPass(
       const skip = styleBackfillSkip(data, force);
       if (skip === "hors_recette") {
         counters.horsRecette += 1;
+        if (styleBackfillMarksPage(data)) {
+          try {
+            await doc.ref.update({ "tags.styles_checked_at": FieldValue.serverTimestamp() });
+          } catch (e) {
+            await logError("Style des recettes — marqueur d'une page hors recette non écrit", {
+              correlationId: ctx.correlationId,
+              userId: ctx.userId,
+              moduleType: "DESIGN",
+              feature: FEATURE,
+              errorDescription: e instanceof Error ? e.message : String(e),
+              extra: { recipeId: doc.id },
+            });
+          }
+        }
         cursor = doc.id;
         continue;
       }

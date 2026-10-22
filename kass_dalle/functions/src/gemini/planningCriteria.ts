@@ -90,8 +90,11 @@ export const EMPTY_CRITERIA: PlanningCriteria = {
   wantedStyles: [],
 };
 
-/** Les valeurs de [raw] qui sont dans [vocabulary], une fois, dans son ordre. */
-function vocabularyList<T extends string>(raw: unknown, vocabulary: readonly T[]): T[] {
+/**
+ * Les valeurs de [raw] qui sont dans [vocabulary], une fois, dans son ordre :
+ * lecture en liste blanche, une valeur inconnue est écartée.
+ */
+export function vocabularyList<T extends string>(raw: unknown, vocabulary: readonly T[]): T[] {
   if (!Array.isArray(raw)) return [];
   const wanted = new Set(raw.filter((v): v is string => typeof v === "string"));
   return vocabulary.filter((v) => wanted.has(v));

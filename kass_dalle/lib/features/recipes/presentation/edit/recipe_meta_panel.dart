@@ -30,7 +30,7 @@ const kStylesMaxHelper =
 
 /// Aide sous les pastilles « Style ».
 const kStylesHelper =
-    'Le planning s\'en sert, par exemple pour "street food le vendredi".';
+    'Le planning s\'en sert, par exemple pour « street food le vendredi ».';
 
 /// Shared metadata form panel used by draft review, recipe edit, and recipe
 /// create screens.
@@ -410,12 +410,6 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             const SizedBox(height: 12),
           ],
 
-          // Le style vaut pour tout rôle : un dessert peut être festif.
-          if (widget.onStylesChanged != null) ...[
-            _buildStyles(theme),
-            const SizedBox(height: 12),
-          ],
-
           if (showMainIngredients && widget.onMainProteinChanged != null) ...[
             _mainIngredientDropdown(
               key: const ValueKey('mainProteinDropdown'),
@@ -442,6 +436,13 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
           ],
           if (showMainIngredients && widget.onMealContainsChanged != null) ...[
             _buildMealContains(theme),
+            const SizedBox(height: 12),
+          ],
+
+          // Le style vaut pour tout rôle : un dessert peut être festif. Il suit
+          // les champs qui dépendent du rôle, juste avant la cuisine.
+          if (widget.onStylesChanged != null) ...[
+            _buildStyles(theme),
             const SizedBox(height: 12),
           ],
 
@@ -676,11 +677,12 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
 
   /// « Style » : dix-huit pastilles, trois cochées au plus. Au plafond, les
   /// autres se désactivent et l'aide le dit. Une valeur hors vocabulaire lue
-  /// en base reste en place sans pastille.
+  /// en base s'affiche en pastille cochée, à son nom, que l'on peut retirer ;
+  /// elle compte dans le plafond.
   Widget _buildStyles(ThemeData theme) {
-    final current = widget.styles;
-    final known = current.where(kRecipeStyles.contains).length;
-    final full = known >= kMaxRecipeStyles;
+    final current = widget.styles.toSet().toList();
+    final unknown = current.where((s) => !kRecipeStyles.contains(s)).toList();
+    final full = current.length >= kMaxRecipeStyles;
     void toggle(String value, bool selected) {
       final next = [...current];
       if (selected) {
@@ -713,6 +715,13 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
                 onSelected: widget.saving || (full && !current.contains(value))
                     ? null
                     : (v) => toggle(value, v),
+              ),
+            for (final value in unknown)
+              FilterChip(
+                key: ValueKey('unknownStyle:$value'),
+                label: Text(value),
+                selected: true,
+                onSelected: widget.saving ? null : (v) => toggle(value, v),
               ),
           ],
         ),

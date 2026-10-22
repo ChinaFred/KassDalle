@@ -26,11 +26,16 @@ class _PanelHost extends StatefulWidget {
   final bool saving;
   final void Function(List<String>)? onStyles;
 
+  /// Affiche aussi les champs qui dépendent du rôle (protéine, féculent,
+  /// « Ce que la recette apporte »).
+  final bool withRoleFields;
+
   const _PanelHost({
     this.role = 'plat',
     this.initialStyles = const [],
     this.saving = false,
     this.onStyles,
+    this.withRoleFields = false,
   });
 
   @override
@@ -70,6 +75,9 @@ class _PanelHostState extends State<_PanelHost> {
         onDishTypesChanged: (_) {},
         mealRole: widget.role,
         onMealRoleChanged: (_) {},
+        onMainProteinChanged: widget.withRoleFields ? (_) {} : null,
+        onMainStarchChanged: widget.withRoleFields ? (_) {} : null,
+        onMealContainsChanged: widget.withRoleFields ? (_) {} : null,
         styles: styles,
         onStylesChanged: (v) {
           setState(() => styles = v);
@@ -80,15 +88,28 @@ class _PanelHostState extends State<_PanelHost> {
   }
 }
 
-Future<void> _pumpPanel(WidgetTester tester, _PanelHost host) async {
-  await tester.binding.setSurfaceSize(const Size(500, 3000));
+Future<void> _pumpPanel(
+  WidgetTester tester,
+  _PanelHost host, {
+  Size size = const Size(500, 3000),
+  double textScale = 1.0,
+}) async {
+  await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         targetBooksProvider.overrideWithValue(const AsyncValue.data(<Book>[])),
       ],
-      child: MaterialApp(home: Scaffold(body: host)),
+      child: MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: size,
+            textScaler: TextScaler.linear(textScale),
+          ),
+          child: Scaffold(body: host),
+        ),
+      ),
     ),
   );
   await tester.pump();
@@ -212,7 +233,30 @@ void main() {
       expect(_chip(tester, 'brunch').onSelected, isNotNull);
     });
 
-    testWidgets('une valeur hors vocabulaire reste, sans pastille', (
+    testWidgets('après les champs du rôle, juste avant « Cuisine »', (
+      tester,
+    ) async {
+      await _pumpPanel(tester, const _PanelHost(withRoleFields: true));
+      double top(String text) => tester.getTopLeft(find.text(text).first).dy;
+      final style = top('Style');
+      expect(top('Rôle dans un repas') < style, isTrue);
+      expect(top('Protéine principale') < style, isTrue);
+      expect(top('Féculent principal') < style, isTrue);
+      expect(top('Ce que la recette apporte') < style, isTrue);
+      expect(style < top('Cuisine'), isTrue);
+    });
+
+    testWidgets('aide entre guillemets français', (tester) async {
+      await _pumpPanel(tester, const _PanelHost());
+      expect(
+        find.text(
+          'Le planning s\'en sert, par exemple pour « street food le vendredi ».',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('une valeur hors vocabulaire : pastille cochée, retirable', (
       tester,
     ) async {
       final calls = <List<String>>[];
@@ -220,10 +264,53 @@ void main() {
         tester,
         _PanelHost(initialStyles: const ['ancien_style'], onStyles: calls.add),
       );
-      expect(_styleChips(), findsNWidgets(kRecipeStyles.length));
+      expect(_styleChips(), findsNWidgets(kRecipeStyles.length + 1));
+      final unknown = tester.widget<FilterChip>(
+        find.widgetWithText(FilterChip, 'ancien_style'),
+      );
+      expect(unknown.selected, isTrue);
       await tester.tap(find.widgetWithText(FilterChip, 'Brunch'));
       await tester.pump();
-      expect(calls.single, ['brunch', 'ancien_style']);
+      expect(calls.last, ['brunch', 'ancien_style']);
+      await tester.tap(find.widgetWithText(FilterChip, 'ancien_style'));
+      await tester.pump();
+      expect(calls.last, ['brunch']);
+      expect(find.widgetWithText(FilterChip, 'ancien_style'), findsNothing);
+    });
+
+    testWidgets('une valeur hors vocabulaire compte dans le plafond', (
+      tester,
+    ) async {
+      await _pumpPanel(
+        tester,
+        const _PanelHost(initialStyles: ['brunch', 'festif', 'ancien_style']),
+      );
+      expect(find.text(kStylesMaxHelper), findsOneWidget);
+      expect(_chip(tester, 'street_food').onSelected, isNull);
+      expect(
+        tester
+            .widget<FilterChip>(find.widgetWithText(FilterChip, 'ancien_style'))
+            .onSelected,
+        isNotNull,
+      );
+    });
+
+    testWidgets('320 px, texte à 200 % : aucun débordement', (tester) async {
+      await _pumpPanel(
+        tester,
+        const _PanelHost(
+          withRoleFields: true,
+          initialStyles: ['street_food', 'ancien_style_au_nom_tres_long'],
+        ),
+        size: const Size(320, 8000),
+        textScale: 2.0,
+      );
+      expect(tester.takeException(), isNull);
+      expect(_styleChips(), findsNWidgets(kRecipeStyles.length + 1));
+      final panel = tester.getRect(
+        find.byKey(const ValueKey('recipeStylesChips')),
+      );
+      expect(panel.right <= 320, isTrue);
     });
 
     testWidgets('désactivées pendant l\'enregistrement', (tester) async {

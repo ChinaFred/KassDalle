@@ -12,6 +12,7 @@ import { logError, logInfo, logWarn } from "../logging";
 import {
   parseMainProtein,
   parseMainStarch,
+  RECIPE_STYLES,
   styleWord,
   type MainProtein,
   type MainStarch,
@@ -28,6 +29,7 @@ import {
   hasWantedPreferences,
   mergeCriteria,
   unmetDetail,
+  vocabularyList,
   type CriteriaItem,
   type CriterionKey,
   type PlanningCriteria,
@@ -1074,7 +1076,11 @@ export function isLightRecipe(r: PlanningRecipeSummary): boolean | null {
   return null;
 }
 
-/** Ce que le prédicat des critères sait d'une recette du corpus. */
+/**
+ * Ce que le prédicat des critères sait d'une recette du corpus. Les styles
+ * viennent du client : lus en liste blanche (`RECIPE_STYLES`), pour qu'une
+ * valeur inconnue n'entre ni dans le prédicat ni dans le prompt.
+ */
 export function criteriaItemOf(r: PlanningRecipeSummary): CriteriaItem {
   const a = r.allergens;
   const present =
@@ -1087,9 +1093,7 @@ export function criteriaItemOf(r: PlanningRecipeSummary): CriteriaItem {
     mainStarch: typeof r.mainStarch === "string" ? r.mainStarch : null,
     prepMinutes: typeof r.prepTime === "number" && Number.isFinite(r.prepTime) ? r.prepTime : null,
     light: isLightRecipe(r),
-    styles: Array.isArray(r.styles)
-      ? r.styles.filter((s): s is string => typeof s === "string")
-      : null,
+    styles: Array.isArray(r.styles) ? vocabularyList(r.styles, RECIPE_STYLES) : null,
   };
 }
 
@@ -2161,8 +2165,8 @@ function describeCandidate(r: PlanningRecipeSummary): string {
   const starch = starchOf(r);
   if (starch) attrs.push(`féculent : ${STARCH_LABELS[starch]}`);
   if (r.cuisines && r.cuisines.length > 0) attrs.push(`cuisine : ${r.cuisines.join(", ")}`);
-  const styles = criteriaItemOf(r).styles ?? [];
-  if (styles.length > 0) attrs.push(`style : ${styles.map(styleWord).join(", ")}`);
+  const styles = (criteriaItemOf(r).styles ?? []).map(styleWord).filter((w) => w !== "");
+  if (styles.length > 0) attrs.push(`style : ${styles.join(", ")}`);
   if (r.mainIngredients && r.mainIngredients.length > 0) {
     attrs.push(`ingrédients : ${r.mainIngredients.slice(0, 6).join(", ")}`);
   }

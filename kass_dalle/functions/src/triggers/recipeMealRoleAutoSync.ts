@@ -15,8 +15,6 @@
  * que pour une recette classée — un trou ici est un trou silencieux là-bas.
  */
 
-import { isDeepStrictEqual } from "node:util";
-
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { recipeBudgetUserId } from "../ai/budget";
@@ -25,6 +23,7 @@ import { COLL_RECIPES, GEMINI_API_KEY } from "../config";
 import { containsPatch, mainIngredientsPatch, stylesPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
+import { onlyFieldsChanged, onlyStyleTagsChanged } from "./styleTagsEcho";
 
 const FEATURE = "inline_meal_role_classification";
 
@@ -117,54 +116,6 @@ export function mealRoleFailureResetNeeded(
   return (
     readFailureCount(data.meal_role_failure_count) > 0 && mealRoleContentChanged(data, beforeData)
   );
-}
-
-/** Vrai quand au moins un champ a changé, et seulement parmi [fields]. */
-function onlyFieldsChanged(
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
-  fields: ReadonlySet<string>,
-): boolean {
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  let changed = false;
-  for (const key of keys) {
-    if (isDeepStrictEqual(before[key], after[key])) continue;
-    if (!fields.has(key)) return false;
-    changed = true;
-  }
-  return changed;
-}
-
-/** Sous-champs de `tags` que le backfill « Style des recettes » écrit. */
-const STYLE_TAG_FIELDS: ReadonlySet<string> = new Set(["styles", "styles_checked_at"]);
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-/**
- * Vrai quand l'écriture ne change que le style (`tags.styles`,
- * `tags.styles_checked_at`) : c'est le backfill « Style des recettes ».
- * Sans cette garde, chacune de ses écritures sur une recette sans rôle
- * aurait déclenché ici un appel de classement, facturé à part.
- */
-export function onlyStyleTagsChanged(
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
-): boolean {
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  let changed = false;
-  for (const key of keys) {
-    if (isDeepStrictEqual(before[key], after[key])) continue;
-    if (key !== "tags") return false;
-    if (!onlyFieldsChanged(asRecord(before.tags), asRecord(after.tags), STYLE_TAG_FIELDS)) {
-      return false;
-    }
-    changed = true;
-  }
-  return changed;
 }
 
 /**

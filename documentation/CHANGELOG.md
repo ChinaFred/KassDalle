@@ -20,6 +20,37 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.60 — fonctionnel
+
+- Planning : une consigne de style est comprise et appliquée. « Généralement je fais de la
+  street food le vendredi » s'affiche « Compris : style street food le vendredi » et ne vaut
+  que pour le vendredi. Dix-huit styles : street food, réconfortant / gourmand, healthy,
+  frais / estival, d'hiver, terroir, bistrot, gastronomique, plat unique, à partager, apéritif
+  dînatoire, sur le pouce, pique-nique, barbecue, festif, brunch, pour les enfants, soirée
+  plateau. Sans plat du style, le créneau reçoit un plat ordinaire et la carte dit « aucun plat
+  street food dans vos recettes » ou « pas un plat street food : peu d'autres choix ».
+- Quand aucun plat ne tient toutes les préférences d'un créneau, elles sont abandonnées une à
+  une, le style en dernier. Avant, toutes l'étaient d'un coup.
+- Fiche recette : section « Style ». Un éditeur ou un administrateur la corrige par des
+  pastilles, trois au plus ; une correction à la main n'est jamais réécrite par l'IA.
+- Admin › Backfills : nouveau ponctuel « Style des recettes », 40 recettes par passage, un
+  appel d'IA facturé par recette. À lancer jusqu'à « terminé » après cette version.
+
+### v0.24.60 — technique
+
+- Champs `tags.styles`, `tags.styles_manual` et `tags.styles_checked_at`, posés par la passe du
+  rôle de repas (import, « Suggérer les tags », déclencheur) sans appel de plus, et par
+  `backfillRecipeStylesFn` (poste `backfill_recipe_styles`, verrou commun avec « Rôle des
+  recettes »). Une page hors recette sans `page_type` est marquée examinée sans appel.
+- `planning_constraints` : clés `styles_voulus` et `par_jour`, prompt en version 2 (chaque
+  compte retraduit ses consignes une fois), cache `criteria_by_weekday`. Présélection :
+  préférence `wanted_styles`, relâchée en dernier. Les styles d'une recette entrent dans le
+  prompt du planning en liste blanche.
+- `triggers/styleTagsEcho.ts` : une écriture qui ne change que le style ne relance ni le rôle
+  ni l'estimation des temps (`style_echo`).
+- Fixtures `meal_roles.json`, `planning_criteria.json` et `planning_slot_rules.json` étendues
+  (styles, correction manuelle, portée par jour, ordre de relâchement).
+
 ### v0.24.58 — technique
 
 Hébergement (tickets #160 et #164). `firebase.json` pose deux nouveaux en-têtes sur tout le

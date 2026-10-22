@@ -337,7 +337,7 @@ void main() {
       expect(style.values, ['Street food', 'Barbecue / plancha']);
     });
 
-    test('fiche : sans style, pas de section ; inconnu affiché tel quel', () {
+    test('fiche : sans style, pas de section ; inconnu jamais affiché', () {
       expect(
         buildRecipeTagSections(
           const RecipeTags(mealRole: 'plat', styles: ['  ']),
@@ -347,10 +347,14 @@ void main() {
       final sections = buildRecipeTagSections(
         const RecipeTags(styles: ['ancien_style', 'brunch']),
       );
-      expect(sections.firstWhere((s) => s.label == 'Style').values, [
-        'Brunch',
-        'ancien_style',
-      ]);
+      expect(sections.firstWhere((s) => s.label == 'Style').values, ['Brunch']);
+      // Rien que des valeurs inconnues : pas de section.
+      expect(
+        buildRecipeTagSections(
+          const RecipeTags(styles: ['ancien_style']),
+        ).map((s) => s.label),
+        isNot(contains('Style')),
+      );
     });
   });
 }

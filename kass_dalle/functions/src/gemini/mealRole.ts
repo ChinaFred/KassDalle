@@ -125,10 +125,16 @@ const RECIPE_STYLE_HINTS: Readonly<Partial<Record<RecipeStyle, string>>> = {
   sur_le_pouce: "sandwich, wrap, lunchbox",
 };
 
-/** Le style en minuscule initiale, pour une phrase : « street food », « d'hiver ». */
+/**
+ * Le style en minuscule initiale, pour une phrase : « street food », « d'hiver ».
+ * Une clé hors vocabulaire rend une chaîne vide : elle ne part jamais telle
+ * quelle dans un prompt.
+ */
 export function styleWord(key: string): string {
-  const label = (RECIPE_STYLE_LABELS as Record<string, string>)[key];
-  if (!label) return key;
+  const label = Object.prototype.hasOwnProperty.call(RECIPE_STYLE_LABELS, key)
+    ? (RECIPE_STYLE_LABELS as Record<string, string>)[key]
+    : undefined;
+  if (!label) return "";
   return label.charAt(0).toLowerCase() + label.slice(1);
 }
 
