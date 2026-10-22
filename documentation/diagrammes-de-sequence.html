@@ -2642,8 +2642,11 @@ sequenceDiagram
     <p class="sec-note">
       La même chaîne que la page scannée : transcription, traduction si le texte n'est pas en
       français, balisage, contrôle de fidélité. Seule
-      l'entrée de la passe 1 diffère — du texte au lieu d'une image.
-      <span class="path">recipe_create_screen.dart → extractRecipeFromTextFn →
+      l'entrée de la passe 1 diffère — du texte au lieu d'une image. L'appel se fait en flux :
+      la fonction annonce chaque étape au moment où elle commence, et l'écran les affiche
+      pendant la minute ou deux que dure la conversion.
+      <span class="path">recipe_create_screen.dart → gemini_service.dart (_callStreaming) →
+      extractRecipeFromTextFn → callable/_streaming.ts →
       gemini/extractor.ts → gemini/transcription.ts, gemini/translation.ts, gemini/tagging.ts,
       gemini/fidelity.ts</span>
     </p>
@@ -2663,9 +2666,14 @@ sequenceDiagram
   participant ST as Cloud Storage
 
   U->>E: colle un texte, puis « Mettre en forme avec l'IA »
-  E->>FN: le texte brut
-  FN->>FN: requireAuth("text_extraction")
+  E->>E: voile « Conversion de la recette », chronomètre local
+  E->>FN: le texte brut, en flux (Accept: text/event-stream)
+  FN->>FN: requireEditor("text_extraction"), bornes de l'entrée
+  Note over E,FN: Android, iOS, Windows : échec avant le premier message<br/>(Windows sans flux, erreur d'accès) → appel classique relancé, sans étapes.<br/>Web : l'erreur du serveur arrive en événement (statut 200)<br/>et se lève telle quelle, sans relance
+  Note over FN: avant chaque passe : client en flux parti<br/>(signal interrompu, ou sendChunk rend false)<br/>→ arrêt, HttpsError cancelled journalisée
 
+  FN--)E: message {etape: "lecture"}
+  E-->>U: « Lecture du texte » en cours
   FN->>T1: passe 1 — préambule texte + le MÊME prompt que la page
   T1->>M: recopie, ne balise rien
   M-->>T1: page_type, inventaire, sections, étapes, notes
@@ -2674,12 +2682,16 @@ sequenceDiagram
   end
 
   opt langue de la recette ≠ fr
+    FN--)E: message {etape: "traduction", langue: "en"}
+    E-->>U: « Traduction depuis l'anglais » insérée, en cours
     FN->>TR: poste recipe_translation, le même qu'un scan
     TR->>M: le JSON transcrit
     M-->>TR: le même JSON en français, mesures en métrique
     TR->>TR: translationShapeMismatches — sinon « Traduction impossible : … »
   end
 
+  FN--)E: message {etape: "balisage"}
+  E-->>U: « Repérage des ingrédients et des étapes » en cours
   FN->>T2: passe 2 — poste recipe_tagging, le même qu'un scan
   T2->>M: transforme la transcription en CookLang
   M-->>T2: cooklang, ingrédients normalisés, cuisines, types de plat,<br/>rôle dans un repas (meal_role, contains, suggested_sides,<br/>main_protein, main_starch)
@@ -2692,7 +2704,8 @@ sequenceDiagram
     CF-->>FN: balisage retenu, réserve affichée
   end
 
-  FN-->>E: cooklang, liste, tags, réserve, nombre de recettes trouvées,<br/>langue_origine si le texte a été traduit
+  FN-->>E: résultat final, même forme qu'un appel classique :<br/>cooklang, liste, tags, réserve, nombre de recettes trouvées,<br/>langue_origine si le texte a été traduit
+  Note over E,FN: en cas d'échec, un dernier message {erreur: {code, message}}<br/>précède l'erreur : les plugins Android et iOS ne transmettent<br/>pas l'erreur d'un flux
   opt texte traduit
     E-->>U: « Traduit de l'anglais, mesures converties.<br/>Le texte collé reste consultable comme document original. »
   end
@@ -2704,6 +2717,12 @@ sequenceDiagram
         <b>Le poste de la passe 2 est le même que pour un scan</b>, et ce n'est pas un oubli :
         c'est le même travail sur la même forme d'entrée. Lui donner un second nom aurait coupé en
         deux une ligne comptable qui mesure une seule chose.
+        <span class="expect">
+          <b>Les étapes affichées sont celles que le serveur annonce.</b> Aucune liste n'est
+          montrée tant qu'aucun message n'est arrivé : un appel sans flux affiche le titre, le
+          message et le chronomètre, jamais une liste figée. Au-delà de trois minutes, le voile
+          dit que le traitement continue et qu'il est inutile de relancer.
+        </span>
         <span class="expect">
           <b>Le compte des recettes trouvées repart vers l'écran.</b> Une seule est reprise —
           l'éditeur n'en édite qu'une — et l'utilisateur doit l'apprendre plutôt que de découvrir

@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -108,35 +109,8 @@ class GeminiService {
     Map<String, dynamic> payload,
   ) async {
     debugPrint('[geminiHttp] $name → start');
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw GeminiCallableException(
-        'unauthenticated',
-        'Utilisateur non connecté.',
-        null,
-      );
-    }
-    String? idToken;
-    try {
-      idToken = await user.getIdToken();
-      debugPrint(
-        '[geminiHttp] $name → got token (${idToken?.length ?? 0} chars)',
-      );
-    } catch (e, st) {
-      debugPrint('[geminiHttp] $name → getIdToken FAILED: $e\n$st');
-      unawaited(
-        ErrorReportService().reportError(
-          feature: 'gemini_http_get_id_token:$name',
-          error: e,
-          stackTrace: st,
-          context: {'user_id': user.uid},
-        ),
-      );
-      rethrow;
-    }
-    final url = Uri.parse(
-      'https://$_functionsRegion-$_firebaseProjectId.cloudfunctions.net/$name',
-    );
+    final idToken = await _webIdToken(name);
+    final url = _webCallableUrl(name);
     debugPrint('[geminiHttp] $name → POST $url');
     final http.Response res;
     try {
@@ -164,31 +138,277 @@ class GeminiService {
       '[geminiHttp] $name → HTTP ${res.statusCode} (${res.body.length} bytes)',
     );
     if (res.statusCode != 200) {
-      String code = 'internal';
-      String message = 'HTTP ${res.statusCode}';
-      dynamic details;
-      try {
-        final err = jsonDecode(res.body) as Map<String, dynamic>;
-        final errObj = err['error'] as Map<String, dynamic>?;
-        if (errObj != null) {
-          code = (errObj['status'] as String?)?.toLowerCase() ?? code;
-          message = (errObj['message'] as String?) ?? message;
-          details = errObj['details'];
-        }
-      } catch (e, st) {
-        unawaited(
-          ErrorReportService().reportError(
-            feature: 'gemini_http_error_decode:$name',
-            error: e,
-            stackTrace: st,
-            context: {'status_code': res.statusCode},
-          ),
-        );
-      }
-      throw GeminiCallableException(code, message, details);
+      throw _webHttpError(name, res.statusCode, res.body);
     }
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     return body['result'];
+  }
+
+  /// Jeton d'identité de l'utilisateur, pour un appel HTTP direct (web).
+  Future<String?> _webIdToken(String name) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw GeminiCallableException(
+        'unauthenticated',
+        'Utilisateur non connecté.',
+        null,
+      );
+    }
+    try {
+      final idToken = await user.getIdToken();
+      debugPrint(
+        '[geminiHttp] $name → got token (${idToken?.length ?? 0} chars)',
+      );
+      return idToken;
+    } catch (e, st) {
+      debugPrint('[geminiHttp] $name → getIdToken FAILED: $e\n$st');
+      unawaited(
+        ErrorReportService().reportError(
+          feature: 'gemini_http_get_id_token:$name',
+          error: e,
+          stackTrace: st,
+          context: {'user_id': user.uid},
+        ),
+      );
+      rethrow;
+    }
+  }
+
+  Uri _webCallableUrl(String name) => Uri.parse(
+    'https://$_functionsRegion-$_firebaseProjectId.cloudfunctions.net/$name',
+  );
+
+  /// Erreur d'une callable lue dans une réponse HTTP en échec (web).
+  GeminiCallableException _webHttpError(
+    String name,
+    int statusCode,
+    String body,
+  ) {
+    String code = 'internal';
+    String message = 'HTTP $statusCode';
+    dynamic details;
+    try {
+      final err = jsonDecode(body) as Map<String, dynamic>;
+      final errObj = err['error'] as Map<String, dynamic>?;
+      if (errObj != null) {
+        code = (errObj['status'] as String?)?.toLowerCase() ?? code;
+        message = (errObj['message'] as String?) ?? message;
+        details = errObj['details'];
+      }
+    } catch (e, st) {
+      unawaited(
+        ErrorReportService().reportError(
+          feature: 'gemini_http_error_decode:$name',
+          error: e,
+          stackTrace: st,
+          context: {'status_code': statusCode},
+        ),
+      );
+    }
+    return GeminiCallableException(code, message, details);
+  }
+
+  // ── Appel en flux ───────────────────────────────────────────────────────────
+
+  /// Appelle [name] en flux et passe chaque message intermédiaire à [onChunk].
+  ///
+  /// La callable écrit des messages pendant son travail, puis son résultat.
+  /// Le résultat rendu ici est le même que celui de [_call].
+  ///
+  /// Trois chemins selon la plateforme :
+  /// - web : POST HTTP direct, comme [_call], avec `Accept: text/event-stream`,
+  ///   et lecture des événements au fil de l'eau (le client `http` du web lit
+  ///   la réponse par `fetch`, morceau par morceau) ;
+  /// - Android et iOS : `HttpsCallable.stream` du SDK ;
+  /// - Windows : cloud_functions n'y déclare pas d'implémentation native, le
+  ///   flux échoue avant tout message, et l'appel repasse par [_call].
+  ///
+  /// Sur Android, iOS et Windows, un échec AVANT le premier message relance
+  /// l'appel classique, sans messages : les plugins natifs ne transmettent pas
+  /// l'erreur d'un flux, et l'appel classique la rend avec son code. Sur le
+  /// web, une erreur du serveur arrive dans la réponse (statut 200, événement
+  /// `error`) et se lève telle quelle, sans relance ; seule une panne réseau
+  /// avant le premier message y est relancée. Un échec APRÈS le premier
+  /// message ne se relance jamais : il coûterait une seconde conversion.
+  ///
+  /// Le serveur, de son côté, s'arrête avant l'appel de modèle suivant quand
+  /// le client en flux est parti : un appel relancé ne double donc pas la
+  /// facture, à une passe près au plus.
+  ///
+  /// Le serveur annonce son erreur dans un dernier message `erreur` avant de
+  /// la lever : les plugins Android et iOS terminent un flux en échec sans
+  /// transmettre l'erreur du serveur. Ce message l'emporte donc sur l'erreur
+  /// reçue par la plateforme.
+  Future<dynamic> _callStreaming(
+    String name,
+    Map<String, dynamic> payload,
+    void Function(Object? chunk) onChunk,
+  ) async {
+    var received = false;
+    GeminiCallableException? announced;
+    void handleChunk(Object? chunk) {
+      final serverError = callableStreamError(chunk);
+      if (serverError != null) {
+        announced = serverError;
+        return;
+      }
+      received = true;
+      try {
+        onChunk(chunk);
+      } catch (e, st) {
+        // Un message mal lu par l'écran ne coupe pas la conversion : il ne
+        // sert qu'à afficher la progression.
+        unawaited(
+          ErrorReportService().reportError(
+            feature: 'gemini_callable_stream_chunk:$name',
+            error: e,
+            stackTrace: st,
+          ),
+        );
+      }
+    }
+
+    try {
+      final (hasResult, data) = kIsWeb
+          ? await _streamViaHttp(name, payload, handleChunk)
+          : await _streamViaSdk(name, payload, handleChunk);
+      if (hasResult) return data;
+      throw StateError('Flux terminé sans résultat');
+    } on GeminiCallableException catch (e, st) {
+      // Web : erreur lue dans la réponse, avec son code. Pas de relance.
+      unawaited(
+        ErrorReportService().reportError(
+          feature: 'gemini_callable_stream:$name',
+          error: e,
+          stackTrace: st,
+          context: {'code': e.code, 'details': e.details},
+        ),
+      );
+      throw announced ?? e;
+    } catch (e, st) {
+      unawaited(
+        ErrorReportService().reportError(
+          feature: 'gemini_callable_stream:$name',
+          error: e,
+          stackTrace: st,
+          context: {
+            'chunk_received': received,
+            'announced_code': announced?.code,
+            if (e is FirebaseFunctionsException) 'code': e.code,
+          },
+        ),
+      );
+      final serverError = announced;
+      if (serverError != null) throw serverError;
+      if (!received) return _call(name, payload);
+      if (e is FirebaseFunctionsException) {
+        throw GeminiCallableException(e.code, e.message ?? '', e.details);
+      }
+      throw GeminiCallableException(
+        'unavailable',
+        'Le traitement a été interrompu avant la fin.',
+        null,
+      );
+    }
+  }
+
+  /// Flux par le SDK (Android, iOS). Rend `(false, null)` si le flux se
+  /// termine sans résultat : c'est ainsi que le plugin Android signale un
+  /// échec.
+  Future<(bool, dynamic)> _streamViaSdk(
+    String name,
+    Map<String, dynamic> payload,
+    void Function(Object? chunk) onChunk,
+  ) async {
+    final events = _callable(name).stream<Object?, Object?>(payload);
+    await for (final event in events) {
+      switch (event) {
+        case Chunk(:final partialData):
+          onChunk(partialData);
+        case Result(:final result):
+          return (true, result.data);
+      }
+    }
+    return (false, null);
+  }
+
+  /// Jeton App Check pour le flux HTTP direct (web), ou `null`.
+  ///
+  /// Un jeton absent ou en échec ne bloque pas l'appel : il part sans
+  /// l'en-tête, comme avant, et l'échec est remonté.
+  Future<String?> _webAppCheckToken(String name) async {
+    try {
+      final token = await FirebaseAppCheck.instance.getToken();
+      if (token == null || token.isEmpty) {
+        unawaited(
+          ErrorReportService().reportError(
+            feature: 'gemini_http_app_check:$name',
+            error: StateError('Jeton App Check absent'),
+          ),
+        );
+        return null;
+      }
+      return token;
+    } catch (e, st) {
+      unawaited(
+        ErrorReportService().reportError(
+          feature: 'gemini_http_app_check:$name',
+          error: e,
+          stackTrace: st,
+        ),
+      );
+      return null;
+    }
+  }
+
+  /// Flux par HTTP direct (web) : un événement `data: {...}` par ligne, et
+  /// `: ping` toutes les trente secondes pour garder la connexion ouverte.
+  Future<(bool, dynamic)> _streamViaHttp(
+    String name,
+    Map<String, dynamic> payload,
+    void Function(Object? chunk) onChunk,
+  ) async {
+    final idToken = await _webIdToken(name);
+    final appCheckToken = await _webAppCheckToken(name);
+    final url = _webCallableUrl(name);
+    final request = http.Request('POST', url)
+      ..headers.addAll({
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Authorization': 'Bearer $idToken',
+        'X-Firebase-AppCheck': ?appCheckToken,
+      })
+      ..body = jsonEncode({'data': payload});
+    final client = http.Client();
+    try {
+      final res = await client.send(request);
+      if (res.statusCode != 200) {
+        throw _webHttpError(
+          name,
+          res.statusCode,
+          await res.stream.bytesToString(),
+        );
+      }
+      final lines = res.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter());
+      await for (final line in lines) {
+        final event = parseCallableStreamLine(line);
+        switch (event) {
+          case null:
+            continue;
+          case CallableStreamMessage(:final data):
+            onChunk(data);
+          case CallableStreamResult(:final data):
+            return (true, data);
+          case CallableStreamFailure(:final error):
+            throw error;
+        }
+      }
+      return (false, null);
+    } finally {
+      client.close();
+    }
   }
 
   // ── Détection illustrations ─────────────────────────────────────────────────
@@ -321,8 +541,23 @@ class GeminiService {
   /// explicative — « dégermées », « avec la peau mais écaillée » — et la ligne
   /// d'origine. Les reconstituer ici en relisant les balises `@` du CookLang
   /// les perdait toutes les deux, sans que rien ne le signale.
-  Future<TextRecipeExtraction?> extractRecipeFromText(String text) async {
-    final data = await _call('extractRecipeFromTextFn', {'text': text});
+  ///
+  /// [onStep] reçoit chaque étape au moment où le serveur la commence :
+  /// lecture, traduction s'il y a lieu, repérage des ingrédients et des
+  /// étapes. Il n'est jamais appelé quand le flux n'est pas disponible
+  /// (Windows, ancienne version du serveur) : l'appel aboutit quand même.
+  Future<TextRecipeExtraction?> extractRecipeFromText(
+    String text, {
+    void Function(TextExtractionStep step)? onStep,
+  }) async {
+    const name = 'extractRecipeFromTextFn';
+    final payload = {'text': text};
+    final data = onStep == null
+        ? await _call(name, payload)
+        : await _callStreaming(name, payload, (chunk) {
+            final step = TextExtractionStep.fromChunk(chunk);
+            if (step != null) onStep(step);
+          });
     final map = Map<String, dynamic>.from(data as Map);
     final cooklang = (map['cooklang'] as String?)?.trim() ?? '';
     if (cooklang.isEmpty) return null;
@@ -938,4 +1173,128 @@ class GeminiCallableException implements Exception {
   GeminiCallableException(this.code, this.message, this.details);
   @override
   String toString() => 'GeminiCallableException[$code]: $message';
+}
+
+/// Étape de la conversion d'un texte collé, annoncée par le serveur au moment
+/// où elle commence.
+///
+/// [etape] vaut `lecture`, `traduction` ou `balisage`. [langue] est le code
+/// ISO 639-1 de la langue traduite, présent seulement pour `traduction`.
+class TextExtractionStep {
+  final String etape;
+  final String? langue;
+
+  const TextExtractionStep(this.etape, {this.langue});
+
+  static const lecture = 'lecture';
+  static const traduction = 'traduction';
+  static const balisage = 'balisage';
+
+  /// Lit un message du serveur ; `null` pour un message qui n'est pas une
+  /// étape connue (version future du serveur, message d'erreur).
+  static TextExtractionStep? fromChunk(Object? chunk) {
+    if (chunk is! Map) return null;
+    final etape = chunk['etape'];
+    if (etape is! String) return null;
+    if (etape != lecture && etape != traduction && etape != balisage) {
+      return null;
+    }
+    final langue = chunk['langue'];
+    return TextExtractionStep(
+      etape,
+      langue: etape == traduction && langue is String && langue.isNotEmpty
+          ? langue
+          : null,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is TextExtractionStep &&
+      other.etape == etape &&
+      other.langue == langue;
+
+  @override
+  int get hashCode => Object.hash(etape, langue);
+
+  @override
+  String toString() => 'TextExtractionStep($etape, $langue)';
+}
+
+/// Événement d'une réponse callable lue en flux (`text/event-stream`).
+sealed class CallableStreamEvent {
+  const CallableStreamEvent();
+}
+
+/// Message intermédiaire : `data: {"message": …}`.
+class CallableStreamMessage extends CallableStreamEvent {
+  final Object? data;
+  const CallableStreamMessage(this.data);
+}
+
+/// Résultat final : `data: {"result": …}`.
+class CallableStreamResult extends CallableStreamEvent {
+  final Object? data;
+  const CallableStreamResult(this.data);
+}
+
+/// Erreur finale : `data: {"error": {status, message, details}}`.
+class CallableStreamFailure extends CallableStreamEvent {
+  final GeminiCallableException error;
+  const CallableStreamFailure(this.error);
+}
+
+/// Lit une ligne d'une réponse callable en flux.
+///
+/// `null` pour une ligne vide, un commentaire (`: ping`, envoyé toutes les
+/// trente secondes) ou une ligne illisible. Le protocole callable n'écrit
+/// qu'une ligne `data:` par événement : `JSON.stringify` n'émet jamais de
+/// saut de ligne.
+CallableStreamEvent? parseCallableStreamLine(String line) {
+  if (!line.startsWith('data:')) return null;
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(line.substring(5).trim());
+  } on FormatException catch (e, st) {
+    unawaited(
+      ErrorReportService().reportError(
+        feature: 'gemini_callable_stream_decode',
+        error: e,
+        stackTrace: st,
+        context: {'line_length': line.length},
+      ),
+    );
+    return null;
+  }
+  if (decoded is! Map) return null;
+  if (decoded.containsKey('message')) {
+    return CallableStreamMessage(decoded['message']);
+  }
+  if (decoded.containsKey('result')) {
+    return CallableStreamResult(decoded['result']);
+  }
+  final error = decoded['error'];
+  if (error is Map) {
+    return CallableStreamFailure(
+      GeminiCallableException(
+        (error['status'] as String?)?.toLowerCase() ?? 'internal',
+        (error['message'] as String?) ?? '',
+        error['details'],
+      ),
+    );
+  }
+  return null;
+}
+
+/// L'erreur annoncée par le serveur dans un message `{"erreur": {code,
+/// message, details}}`, ou `null` pour tout autre message.
+GeminiCallableException? callableStreamError(Object? chunk) {
+  if (chunk is! Map) return null;
+  final error = chunk['erreur'];
+  if (error is! Map) return null;
+  return GeminiCallableException(
+    (error['code'] as String?) ?? 'internal',
+    (error['message'] as String?) ?? '',
+    error['details'],
+  );
 }

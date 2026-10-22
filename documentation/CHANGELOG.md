@@ -51,6 +51,49 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 - Fixtures `meal_roles.json`, `planning_criteria.json` et `planning_slot_rules.json` étendues
   (styles, correction manuelle, portée par jour, ordre de relâchement).
 
+### v0.24.60 — fonctionnel
+
+Nouvelle recette, « Mettre en forme avec l'IA ». La conversion d'un texte collé dure une à
+deux minutes : 131 s mesurées pour 5 557 caractères. Le voile disait « Patientez quelques
+secondes », et un membre a cru à un blocage. Le voile s'appelle maintenant « Conversion de la
+recette ». Il coche les étapes à mesure que le serveur les commence : « Lecture du texte »,
+« Traduction depuis l'anglais » quand le texte est traduit, « Repérage des ingrédients et des
+étapes ». Il affiche « Comptez 1 à 2 minutes. », le temps écoulé, et « Restez sur cet écran :
+la recette s'affichera ici. » Au-delà de trois minutes, l'estimation devient « C'est plus long
+que d'habitude. Le traitement continue : inutile de relancer. » Quitter l'écran pendant la
+conversion demande confirmation.
+
+Sur l'application Windows, les étapes ne s'affichent pas : le voile montre le titre, le
+message et le temps écoulé. Les autres voiles d'IA d'une recette (correction dans l'édition,
+amélioration d'un brouillon) affichent « Cela peut prendre une à deux minutes. Restez sur cet
+écran. » et le temps écoulé.
+
+### v0.24.60 — technique
+
+`extractRecipeFromTextFn` devient une callable en flux (firebase-functions 7,
+`response.sendChunk`). Elle envoie `{etape: "lecture"}`, `{etape: "traduction", langue}`
+seulement quand le texte est traduit, puis `{etape: "balisage"}`, chacun avant l'appel de
+modèle de son étape. En cas d'échec, un message `{erreur: {code, message, details}}` précède
+l'`HttpsError` : les plugins Android et iOS de cloud_functions 6.5 ne transmettent pas
+l'erreur d'un flux. Le résultat final ne change pas, et un appel classique le reçoit seul.
+`extractRecipeFromText` reçoit un rappel `onStep` et n'importe rien de Cloud Functions.
+Un envoi qui échoue est journalisé (`logError`) et la conversion continue
+(`callable/_streaming.ts`).
+
+Côté client, `GeminiService.extractRecipeFromText(text, onStep:)` lit le flux par
+`HttpsCallable.stream` sur Android et iOS, et par un POST direct avec
+`Accept: text/event-stream` et l'en-tête `X-Firebase-AppCheck` sur le web. Sur Android, iOS
+et Windows, un échec avant le premier message relance l'appel classique. Sur le web, l'erreur
+du serveur arrive en événement avec un statut 200 et se lève sans relance. Un échec après le
+premier message ne se relance pas, pour ne pas facturer une seconde conversion. Le serveur
+s'arrête avant la passe suivante quand le client en flux est parti (signal interrompu, ou
+`sendChunk` qui rend `false`) et rend `HttpsError("cancelled")` ; un appel classique ne
+s'arrête jamais. Dans l'écran Modifier, Ctrl+S est désactivé pendant un traitement d'IA.
+`AiProcessingOverlay` gagne la liste d'étapes, un chronomètre local et l'alerte des trois
+minutes ; son voile prend la couleur `scrim` du thème. Aucun appel de modèle ni poste de coût
+ne change. Tests : `textExtractionSteps.test.ts`, `ai_processing_overlay_test.dart`,
+`text_extraction_progress_test.dart`.
+
 ### v0.24.59 — fonctionnel
 
 *Admin › Backfills* : nouveau ponctuel « Retirer les ustensiles des ingrédients ». Il retire
