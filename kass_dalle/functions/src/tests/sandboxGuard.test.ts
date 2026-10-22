@@ -10,10 +10,15 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import type { CallableRequest } from "firebase-functions/v2/https";
+import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 
-import { readSandboxImage, sandboxFn } from "../sandbox/callable";
+import { readSandboxImage, sandboxFailure, sandboxFn } from "../sandbox/callable";
 import { PAGE_IMAGE_MAX_BYTES } from "../callable/_inputBounds";
+import {
+  PROVIDER_ERROR_CALLABLE_MESSAGE,
+  UNEXPECTED_CALLABLE_MESSAGE,
+} from "../callable/_callableErrors";
+import { GeminiError } from "../gemini/client";
 
 type SandboxCall = { run: (req: CallableRequest<unknown>) => Promise<unknown> };
 
@@ -78,5 +83,34 @@ describe("readSandboxImage — image bornée (ticket #163)", () => {
         JSON.stringify(data),
       );
     }
+  });
+});
+
+describe("sandboxFailure — aucun texte brut renvoyé (ticket #163)", () => {
+  const ctx = { userId: "admin-1", correlationId: "sandbox_test" };
+
+  test("une erreur non typée reçoit le texte fixe, sans son message", async () => {
+    const err = await sandboxFailure(
+      new Error("PERMISSION_DENIED: projects/demo/secrets/X"),
+      ctx,
+      "sandbox_detect_page",
+    );
+    assert.equal(err.code, "internal");
+    assert.equal(err.message, UNEXPECTED_CALLABLE_MESSAGE);
+  });
+
+  test("une erreur du fournisseur reçoit le texte fixe du fournisseur", async () => {
+    const err = await sandboxFailure(
+      new GeminiError("500 INTERNAL: upstream connect error"),
+      ctx,
+      "sandbox_detect_regions",
+    );
+    assert.equal(err.code, "internal");
+    assert.equal(err.message, PROVIDER_ERROR_CALLABLE_MESSAGE);
+  });
+
+  test("une HttpsError déjà rédigée passe telle quelle", async () => {
+    const original = new HttpsError("invalid-argument", "Image trop lourde.");
+    assert.equal(await sandboxFailure(original, ctx, "sandbox_detect_orientation"), original);
   });
 });

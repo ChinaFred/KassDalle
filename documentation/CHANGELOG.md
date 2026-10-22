@@ -20,6 +20,23 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
+### v0.24.50 — technique
+
+Durcissements des Cloud Functions, fin du ticket #163 (lot 9 de l'audit #151). Les points 3,
+4, 6 et 7 du ticket étaient déjà livrés (v0.24.31 et v0.24.32) ; cette version ferme les
+trois restes. `sandboxFn` ne renvoie plus le texte brut d'une erreur d'expérience
+(`err.message`, qui pouvait contenir un message du fournisseur ou du SDK) : `sandboxFailure`
+la journalise avec le compte, le poste et le `correlationId`, puis `toHttpsError` renvoie le
+texte fixe des callables d'IA. `recordUsage` revérifie la forme du `scanId`
+(`isValidScanId`) avant d'écrire `scan_spend/{scanId}` : un chemin d'appel qui oublierait le
+contrôle d'entrée ne peut plus y poser un identifiant arbitraire ; le coût reste dans
+`ai_usage` et la dépense du jour. Les refus d'accès d'`ensureAdminWithAudit` sont
+échantillonnés par opération et par compte : une ligne `WARNING` par minute et par instance
+au plus, avec le nombre de refus. La classe d'échantillonnage du webhook des tickets
+(`SignatureRejectionLog`) devient `LogSampler` dans `utils/logSampler.ts`, partagée, avec
+une variante par clé (`KeyedLogSampler`). Aucun droit retiré, aucun poste d'IA nouveau.
+Tests : `logSampler.test.ts`, `sandboxGuard.test.ts`.
+
 ### v0.24.49 — technique
 
 Fichier de vérification Google Search Console publié à la racine du site
