@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../../../core/presentation/image_enhancer_screen.dart';
+import '../../../../core/utils/platform_utils.dart';
 import '../../domain/recipe.dart';
 import '../cooklang_preview.dart';
 import '../edit/ingredient_list_editor.dart';
@@ -132,7 +133,7 @@ class DraftReviewWideBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 320,
+            width: PlatformUtils.sidePanelWidth,
             child: SingleChildScrollView(
               child: RecipeMetaPanel(
                 titleCtrl: data.titleCtrl,
@@ -203,7 +204,7 @@ class DraftReviewWideBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 320,
+          width: PlatformUtils.sidePanelWidth,
           child: SingleChildScrollView(
             child: RecipeMetaPanel(
               titleCtrl: data.titleCtrl,

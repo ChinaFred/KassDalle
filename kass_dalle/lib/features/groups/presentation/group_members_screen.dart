@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../admin/domain/email_invitation.dart';
 import '../../auth/domain/app_user.dart';
@@ -340,7 +341,9 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
+          constraints: const BoxConstraints(
+            maxWidth: PlatformUtils.maxContentWidth,
+          ),
           child: ListView(
             children: [
               if (canManage) ...[

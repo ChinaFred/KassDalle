@@ -494,7 +494,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         final screenTitle = isPage ? 'Modifier la page' : 'Modifier la recette';
 
         final scaffold = AppShortcuts(
-          onSave: saving ? null : () => _save(recipe),
+          // Rien ne s'enregistre sous le voile : le traitement en cours
+          // réécrirait la recette juste après.
+          onSave: saving || _aiProcessing ? null : () => _save(recipe),
           child: Scaffold(
             appBar: AppBar(
               title: Text(screenTitle),

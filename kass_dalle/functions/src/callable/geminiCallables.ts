@@ -42,7 +42,12 @@ import {
   InputBoundExceededError,
   readAiInputs,
 } from "./_inputBounds";
-import { extractRecipeFromText } from "../gemini/extractor";
+import {
+  TextExtractionCancelledError,
+  extractRecipeFromText,
+  type TextExtractionStep,
+} from "../gemini/extractor";
+import { progressSender } from "./_streaming";
 import { polishCooklang, polishMarkdown, refineRecipe, generateRecipe } from "../gemini/refiner";
 import { suggestRecipeTags, type SuggestTagsInput } from "../gemini/tagger";
 import { searchRecipes, extractBookCover } from "../gemini/search";
@@ -195,7 +200,20 @@ async function logUploadScanUsage(args: {
  */
 const extractionCallableOpts = { ...callableOpts, timeoutSeconds: 540 };
 
-export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req) => {
+/**
+ * Message envoyé au client pendant la conversion d'un texte collé.
+ *
+ * Une étape (`TextExtractionStep`) au début de chaque passe réelle. En cas
+ * d'échec, un dernier message `erreur` porte le code et le texte de l'erreur
+ * renvoyée : les plugins Android et iOS de cloud_functions terminent un flux
+ * en échec sans transmettre l'erreur du serveur (Android ferme le flux, iOS
+ * rend un code `unknown`). Sans ce message, un plafond d'IA atteint pendant la
+ * lecture s'afficherait comme une coupure sans explication.
+ */
+type TextExtractionChunk =
+  TextExtractionStep | { erreur: { code: string; message: string; details?: unknown } };
+
+export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req, res) => {
   // Le texte collé devient une recette : le lecteur n'en crée pas (règle
   // `recipes` create = éditeur), il ne déclenche donc pas l'extraction facturée.
   const ctx = await requireEditor(req, "text_extraction");
@@ -203,12 +221,32 @@ export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req
   const text = await readAiInputs({ ...ctx, feature: "text_extraction" }, (inputs) =>
     inputs.text(data.text, { field: "text", max: PASTED_TEXT_MAX_CHARS, required: true }),
   );
-  try {
-    const extraction = await extractRecipeFromText(text, {
-      ...ctx,
-      feature: "text_extraction",
+  // Les étapes partent vers l'écran qui attend ; un client qui n'écoute pas en
+  // flux (ancienne version, appel classique) ne reçoit que le résultat.
+  const progress = progressSender<TextExtractionChunk>(res, req.acceptsStreaming, (error, chunk) =>
+    logError({
+      message: "extractRecipeFromTextFn : message de progression non envoyé",
+      errorDescription: error instanceof Error ? error.message : String(error),
       moduleType: "IMPORT",
-    });
+      feature: "text_extraction",
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      extra: { chunk },
+    }),
+  );
+  try {
+    const extraction = await extractRecipeFromText(
+      text,
+      {
+        ...ctx,
+        feature: "text_extraction",
+        moduleType: "IMPORT",
+      },
+      // Client en flux parti avant la passe suivante : il relance un appel
+      // classique, et continuer facturerait la même conversion deux fois.
+      // Un appel classique ne s'arrête jamais (`clientGone` reste faux).
+      { onStep: progress.send, shouldStop: progress.clientGone },
+    );
     // Aucune recette : le client affiche le message, il n'a rien à ranger.
     if (!extraction) return { cooklang: null };
     return {
@@ -241,7 +279,27 @@ export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req
       ...(extraction.langueOrigine ? { langue_origine: extraction.langueOrigine } : {}),
     };
   } catch (e) {
-    throw await toHttpsError(e);
+    if (e instanceof TextExtractionCancelledError) {
+      await logError({
+        message: "extractRecipeFromTextFn : conversion arrêtée, client parti",
+        errorDescription: e.message,
+        moduleType: "IMPORT",
+        feature: "text_extraction",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        extra: { etape: e.etape },
+      });
+      throw new HttpsError("cancelled", "Conversion arrêtée : la connexion a été fermée.");
+    }
+    const error = await toHttpsError(e);
+    await progress.send({
+      erreur: {
+        code: error.code,
+        message: error.message,
+        ...(error.details !== undefined ? { details: error.details } : {}),
+      },
+    });
+    throw error;
   }
 });
 
