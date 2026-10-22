@@ -1,7 +1,7 @@
 /**
  * Style des recettes — rattrapage de l'existant (ponctuel).
  *
- * `tags.styles` est apparu en v0.24.60 : la passe du rôle (import, suggestion
+ * `tags.styles` est apparu en v0.24.61 : la passe du rôle (import, suggestion
  * de tags, déclencheur, backfill « Rôle des recettes ») le pose sur ce qui
  * arrive ou change. Les recettes déjà classées ne l'ont pas, et une consigne
  * de planning « street food le vendredi » ne peut se vérifier que sur une

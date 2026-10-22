@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.60 — fonctionnel
+### v0.24.61 — fonctionnel
 
 - Planning : une consigne de style est comprise et appliquée. « Généralement je fais de la
   street food le vendredi » s'affiche « Compris : style street food le vendredi » et ne vaut
@@ -36,7 +36,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 - Admin › Backfills : nouveau ponctuel « Style des recettes », 40 recettes par passage, un
   appel d'IA facturé par recette. À lancer jusqu'à « terminé » après cette version.
 
-### v0.24.60 — technique
+### v0.24.61 — technique
 
 - Champs `tags.styles`, `tags.styles_manual` et `tags.styles_checked_at`, posés par la passe du
   rôle de repas (import, « Suggérer les tags », déclencheur) sans appel de plus, et par
