@@ -51,6 +51,15 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 - Fixtures `meal_roles.json`, `planning_criteria.json` et `planning_slot_rules.json` étendues
   (styles, correction manuelle, portée par jour, ordre de relâchement).
 
+### v0.24.61 — technique
+
+Ticket #181 : les largeurs de mise en page écrites en dur ont reçu un nom dans `PlatformUtils`.
+`sidePanelWidth` (320 px) fixe le panneau latéral des écrans larges : recherche avancée,
+planning par lot, relecture d'un brouillon, recette générée. `maxContentWidth` (640 px) borne
+la colonne centrée de la recherche avancée, de la suggestion de repas et des membres d'un
+groupe. Huit occurrences sont remplacées dans six fichiers, sans changement visible. Les
+autres 320 et 640 gardent leur valeur : largeur d'un dialogue, taille d'image, mise en page PDF.
+
 ### v0.24.60 — fonctionnel
 
 Nouvelle recette, « Mettre en forme avec l'IA ». La conversion d'un texte collé dure une à

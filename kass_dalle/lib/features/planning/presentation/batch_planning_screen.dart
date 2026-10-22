@@ -2849,7 +2849,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SizedBox(
-                  width: 320,
+                  width: PlatformUtils.sidePanelWidth,
                   child: _buildSidePanel(
                     assignedCount: assignedCount,
                     totalSlots: totalSlots,
