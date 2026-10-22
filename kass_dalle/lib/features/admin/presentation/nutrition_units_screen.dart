@@ -51,7 +51,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
           // (v0.24.50), une fois les unités standard semées en production.
           // Cet écran montre et corrige ; il ne lance pas d'opération de masse.
           IconButton(
-            tooltip: 'Ajouter une unité',
+            tooltip: 'Nouvelle unité',
             onPressed: _openCreateDialog,
             icon: const Icon(Icons.add),
           ),
