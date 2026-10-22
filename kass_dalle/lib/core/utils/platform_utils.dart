@@ -70,8 +70,7 @@ class PlatformUtils {
   /// panneau, dialogue).
   static const double narrowContentBreakpoint = 480.0;
 
-  /// Largeur du panneau latéral d'un écran large : critères de recherche,
-  /// métadonnées d'un brouillon, panneau du planning par lot.
+  /// Largeur du panneau de gauche d'un écran large en deux colonnes.
   static const double sidePanelWidth = 320.0;
 
   /// Largeur maximale d'une colonne de contenu centrée (liste, formulaire),
