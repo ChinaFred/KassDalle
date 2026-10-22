@@ -24,6 +24,7 @@ import {
 } from "../ai/router";
 import { ANTHROPIC_EFFORT_CHOICES, ANTHROPIC_MODEL_CHOICES } from "../callable/aiRoutingCallable";
 import { builtinPricingTable } from "../ai/pricing";
+import { requestShapeFor } from "../ai/anthropic";
 
 function policy(over: Partial<AiRoutingPolicy> = {}): AiRoutingPolicy {
   return { ...DEFAULT_AI_ROUTING_POLICY, ...over };
@@ -82,6 +83,27 @@ describe("effort de réflexion Claude par poste", () => {
 
   test("la politique par défaut n'impose aucun effort", () => {
     assert.deepEqual(DEFAULT_AI_ROUTING_POLICY.anthropicEfforts, {});
+    assert.equal(DEFAULT_AI_ROUTING_POLICY.anthropicEffort, null);
+  });
+
+  test("l'effort par défaut sert les postes sans réglage propre", () => {
+    const p = policy({ anthropicEffort: "medium" });
+    assert.equal(resolveAnthropicEffort(p, "transcription_page"), "medium");
+    assert.equal(resolveAnthropicEffort(p, "recipe_tagging"), "medium");
+  });
+
+  test("le réglage du poste l'emporte sur l'effort par défaut", () => {
+    const p = policy({
+      anthropicEffort: "low",
+      anthropicEfforts: { transcription_page: "high" },
+    });
+    assert.equal(resolveAnthropicEffort(p, "transcription_page"), "high");
+    assert.equal(resolveAnthropicEffort(p, "recipe_tagging"), "low");
+  });
+
+  test("un effort par défaut illisible ne s'applique pas", () => {
+    const p = policy({ anthropicEffort: "xhigh" as unknown as "high" });
+    assert.equal(resolveAnthropicEffort(p, "transcription_page"), null);
   });
 });
 
@@ -117,6 +139,22 @@ describe("les modèles proposés sont facturables", () => {
       assert.ok(choice.label.trim().length > 0, choice.id);
       assert.ok(choice.hint.trim().length > 0, choice.id);
     }
+  });
+
+  test("supportsEffort suit la forme de la requête", () => {
+    // L'écran remplace les puces de réflexion par « Pas de réflexion avec … »
+    // sur un modèle qui ne reçoit pas l'effort : les deux doivent s'accorder.
+    for (const choice of ANTHROPIC_MODEL_CHOICES) {
+      assert.equal(
+        choice.supportsEffort,
+        requestShapeFor(choice.id, "high").effort !== null,
+        choice.id,
+      );
+    }
+    assert.equal(
+      ANTHROPIC_MODEL_CHOICES.find((c) => c.id === "claude-haiku-4-5")?.supportsEffort,
+      false,
+    );
   });
 
   test("le modèle par défaut du projet figure dans la liste", () => {

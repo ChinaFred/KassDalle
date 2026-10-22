@@ -74,13 +74,37 @@ describe("readRoutingPolicy — écriture de la politique en vigueur", () => {
     );
   });
 
-  test("un poste réglé sur le modèle par défaut n'écrit aucune exception", () => {
+  test("un choix explicite égal au modèle par défaut est gardé", () => {
+    // « Figer d'abord » : l'écran écrit l'ancien défaut sur chaque poste qui
+    // le suivait avant de changer le défaut. Effacer ce choix parce qu'il est
+    // égal au défaut ferait suivre le nouveau défaut à ces postes.
     const { policy } = readRoutingPolicy(
       { anthropicModel: "claude-sonnet-5", anthropicModels: { generate: "claude-sonnet-5" } },
       CATALOG,
       { onUnknown: "reject" },
     );
-    assert.deepEqual(policy.anthropicModels, {});
+    assert.deepEqual(policy.anthropicModels, { generate: "claude-sonnet-5" });
+  });
+
+  test("l'effort par défaut est lu, absent ou vide vaut « selon le poste »", () => {
+    const lire = (anthropicEffort: unknown) =>
+      readRoutingPolicy({ anthropicEffort } as unknown as Partial<AiRoutingPolicy>, CATALOG, {
+        onUnknown: "reject",
+      }).policy.anthropicEffort;
+    assert.equal(lire("medium"), "medium");
+    assert.equal(lire(undefined), null);
+    assert.equal(lire(null), null);
+    assert.equal(lire(""), null);
+  });
+
+  test("un effort par défaut hors des trois niveaux admis est refusé", () => {
+    assert.throws(
+      () =>
+        readRoutingPolicy({ anthropicEffort: "xhigh" as unknown as "high" }, CATALOG, {
+          onUnknown: "reject",
+        }),
+      RoutingPolicyError,
+    );
   });
 
   test("un effort de réflexion hors des trois niveaux admis est refusé", () => {
@@ -169,6 +193,17 @@ describe("readRoutingPolicy — relecture d'une configuration enregistrée", () 
     assert.match(stale[0], /transcription_page/);
   });
 
+  test("un effort par défaut invalide est écarté et signalé", () => {
+    const { policy, stale } = readRoutingPolicy(
+      presetPolicyFromMap({ anthropic_effort: "xhigh", features: { generate: "anthropic" } }),
+      CATALOG,
+      { onUnknown: "drop" },
+    );
+    assert.equal(policy.anthropicEffort, null);
+    assert.deepEqual(policy.features, { generate: "anthropic" });
+    assert.equal(stale.length, 1);
+  });
+
   test("un poste verrouillé écarte la valeur sans emporter la configuration", () => {
     const { policy, stale } = readRoutingPolicy(
       { features: { image_moderation: "anthropic", generate: "anthropic" } },
@@ -189,7 +224,7 @@ describe("readRoutingPolicy — relecture d'une configuration enregistrée", () 
 });
 
 describe("aller-retour Firestore d'une configuration", () => {
-  test("les huit réglages survivent à l'écriture puis à la relecture", () => {
+  test("les neuf réglages survivent à l'écriture puis à la relecture", () => {
     // C'est ce que subit « Haute performance » : la politique en vigueur est
     // écrite telle quelle, puis relue à chaque ouverture de l'écran. Un champ
     // égaré ici ne se verrait qu'à la facture.
@@ -199,6 +234,7 @@ describe("aller-retour Firestore d'une configuration", () => {
       anthropicModel: "claude-opus-5",
       anthropicModels: { generate: "claude-haiku-4-5" },
       anthropicEfforts: { transcription_page: "medium" },
+      anthropicEffort: "low",
       fallbackEnabled: false,
       thinkingBudget: 2048,
       thinkingBudgets: { generate: 0 },

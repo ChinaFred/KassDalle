@@ -125,5 +125,5 @@ class NutritionUnitsRepository {
   // 21/10/2026, en v0.24.40 : il écrivait en masse dans `nutrition_units`
   // depuis l'application. Il est passé dans Admin › Backfills (« Semer les
   // unités standard », `backfillDefaultUnitsFn`), retiré le 22/10/2026 en
-  // v0.24.50 une fois les unités semées en production.
+  // v0.24.51 une fois les unités semées en production.
 }

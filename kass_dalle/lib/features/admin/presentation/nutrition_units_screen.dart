@@ -48,7 +48,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
           // L'icône « Initialiser les unités par défaut » est retirée le
           // 21/10/2026 (v0.24.40) : le semis est passé dans Admin › Backfills,
           // « Semer les unités standard », lui-même retiré le 22/10/2026
-          // (v0.24.50), une fois les unités standard semées en production.
+          // (v0.24.51), une fois les unités standard semées en production.
           // Cet écran montre et corrige ; il ne lance pas d'opération de masse.
           IconButton(
             tooltip: 'Nouvelle unité',

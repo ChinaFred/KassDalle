@@ -71,7 +71,7 @@ void main() {
   testWidgets('état d\'un backfill retiré du code : ignoré, sans erreur', (
     tester,
   ) async {
-    // Les ponctuels retirés en v0.23.52, v0.24.33, v0.24.37, v0.24.44 et v0.24.50 laissent leur
+    // Les ponctuels retirés en v0.23.52, v0.24.33, v0.24.37, v0.24.44 et v0.24.51 laissent leur
     // `app_config/backfill_run_<clé>` en base, terminé ou même en cours.
     await _pump(
       tester,

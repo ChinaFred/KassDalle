@@ -75,20 +75,62 @@ imposait le même modèle à tous les autres. Transcrire une page de livre deman
 précision et se paie à la page ; estimer les calories d'une carotte est un rappel de
 connaissances répété quinze fois par recette. Écran **Admin → Moteur d'IA** : le sélecteur
 n'apparaît que sous un poste effectivement routé vers Claude — l'afficher inactif ailleurs
-ferait croire qu'il manque un réglage alors qu'il manque une bascule ; un poste réglé sur le
-défaut **n'écrit rien**, pour ne pas le figer le jour où le défaut change ; et seuls les
+ferait croire qu'il manque un réglage alors qu'il manque une bascule ; et seuls les
 identifiants de `ANTHROPIC_MODEL_CHOICES` sont acceptés à l'écriture, tous présents dans la
 grille tarifaire — un modèle hors grille se facturerait sans montant et gonflerait
-`total_unpriced_calls`.
+`total_unpriced_calls`. La liste du sélecteur « Modèle de Claude par défaut » vient aussi de
+`ANTHROPIC_MODEL_CHOICES` (elle n'est plus écrite dans l'écran, prix compris).
+
+**Un choix explicite égal au défaut est un choix propre, et changer un défaut fige d'abord
+(depuis le 22 octobre 2026).** Les trois défauts — moteur (`defaultProvider`), modèle de
+Claude (`anthropicModel`), réflexion de Claude (`anthropicEffort`) — servent les postes qui
+n'ont pas de clé dans `features`, `anthropicModels` ou `anthropicEfforts`. Chaque poste
+propose « Défaut (…) », qui retire la clé ; tout autre choix l'écrit, même égal au défaut —
+`readRoutingPolicy` ne retire plus un modèle par poste égal au défaut, et « Tout Gemini » /
+« Tout Claude » écrivent des choix explicites. Quand l'administrateur change un défaut,
+l'écran écrit d'abord l'ancienne valeur sur chaque poste qui la suivait, puis change le
+défaut (`AiRoutingDefaults`, `features/admin/domain/ai_routing_defaults.dart`, testé dans
+`test/ai_routing_defaults_test.dart`) ; une confirmation compte ces postes (« 12 postes
+suivent le modèle par défaut : ils garderont Sonnet 5. … »), et n'apparaît pas quand aucun
+poste ne suit le défaut. Le modèle et la réflexion ne comptent que les postes servis par
+Claude ; un poste verrouillé ne suit aucun défaut. Sous « Selon le poste », c'est l'effort du
+code de chaque poste qui est figé ; un poste dont le serveur n'envoie pas cet effort n'est pas
+figé. Le nouveau défaut ne sert donc qu'aux postes remis sur « Défaut », à ceux qu'ajoute
+une mise à jour et, pour le modèle et la réflexion de Claude, aux postes passés ensuite sur
+Claude : la confirmation de ces deux défauts le dit (`defaultChangeMessage`, `claudeOnly`).
+Chaque défaut affiche « Suivi par N postes », et le filtre « Suivent un
+défaut (N) » liste les postes qui en suivent au moins un. La liste filtrée est figée à
+l'appui sur le filtre : un poste qui reçoit un choix propre reste affiché jusqu'au prochain
+appui. Filtre actif, « Tout Gemini » et « Tout Claude » n'agissent que sur les postes
+affichés, hors verrouillés, comme les raccourcis de groupe. `AiRoutingDiff` compte à part les
+postes qui passent de « Défaut » à un choix propre à valeur égale, sans quoi une
+configuration qui ne diffère que par là se dirait « déjà le réglage affiché ».
 
 **L'effort de réflexion Claude se choisit aussi par POSTE, depuis le 27 septembre 2026.**
 `AiRoutingPolicy.anthropicEfforts` (`Record<feature, "low"|"medium"|"high">`) est résolu par
 `resolveAnthropicEffort(policy, feature)` et appliqué dans `callModel`, avant l'appel Claude.
-Contrairement au modèle, il n'y a pas de repli global : un poste sans réglage garde l'effort
-que **son propre code** pose (`ModelCallContext.effort`), parce qu'aucun effort commun n'a de
-sens entre la lecture d'une page et un rappel de calories. Écran **Admin → Moteur d'IA**, même
-sélecteur de visibilité que le modèle, avec une puce « Réglage du code » qui efface
-l'exception plutôt que de la pointer vers une valeur partagée.
+Ordre de résolution : le réglage du poste, puis l'effort par défaut de la politique
+(`anthropicEffort`, `"low"|"medium"|"high"|null`), puis l'effort que **le code du poste**
+demande. `null` (« Selon le poste », champ absent au déploiement) garde le comportement
+d'avant : chaque poste reçoit l'effort de son code. Écran **Admin → Moteur d'IA**, même
+sélecteur de visibilité que le modèle : « Défaut (basse) | Basse | Moyenne | Haute », où la
+parenthèse dit l'effort que le poste reçoit en suivant le défaut — « Selon le poste (haute) »
+quand le défaut vaut « Selon le poste ». Réglage général « Réflexion de Claude par défaut » :
+« Selon le poste » | Basse | Moyenne | Haute ; quand le modèle par défaut est Haiku 4.5, une
+ligne dit « Ignorée sur Haiku 4.5. S'applique aux postes réglés sur Sonnet 5 ou Opus 5. »
+
+**L'effort du code a une seule source, `ai/featureEfforts.ts`.** `CODE_EFFORTS` nomme les
+postes qui demandent autre chose que `DEFAULT_CODE_EFFORT` (`low`) : `high` pour
+`transcription_page`, `text_extraction`, `url_import_fallback`, `detect_illustrations`, les
+quatre `page_illustrations_*` et les trois `sandbox_detect_*` ; `medium` pour
+`recipe_translation`. Les appels lisent `codeEffortFor(feature)` au lieu de recopier la valeur
+(`transcription.ts`, `detector.ts`, `illustrations/extract.ts`, `translation.ts`, le bac à
+sable), `requestShapeFor` applique `DEFAULT_CODE_EFFORT` quand l'appel n'en précise aucun, et
+`getAiRoutingPolicyFn` envoie `codeEffort` avec chaque poste (`routableFeaturesForScreen`).
+`tests/featureEfforts.test.ts` vérifie que chaque clé est un poste de `ROUTABLE_FEATURES`,
+que l'écran reçoit `codeEffortFor` de chaque poste, et que `TAGGING_EFFORT`
+(`gemini/tagging.ts`, gardé pour sa logique de reprise) vaut l'effort de `recipe_tagging` et
+`url_import`.
 
 **Le soin se choisit par poste.** `ModelCallContext.effort` (`low` par défaut) pilote
 `output_config.effort` chez Claude. Ce réglage était figé à `low` pour tous les postes, avec
@@ -114,9 +156,12 @@ is not supported on this model » à `thinking: { type: "adaptive" }`, et refuse
 (`{ type: "enabled", budget_tokens }`) ; il n'en reçoit pas, parce qu'il sert de modèle
 rapide et bon marché pour un rappel de connaissances. Un effort réglé dans Admin → Moteur
 d'IA sur un poste servi par Haiku n'est pas transmis : une ligne DEBUG « effort … non
-transmis » le dit, et l'appel part quand même. Le sélecteur d'effort reste affiché sous
-Haiku ; l'indication du modèle (`ANTHROPIC_MODEL_CHOICES`) précise « Sans réflexion : le
-réglage d'effort ne s'y applique pas ». Avant ce correctif, tous les appels routés vers
+transmis » le dit, et l'appel part quand même. `ANTHROPIC_MODEL_CHOICES` porte
+`supportsEffort`, calculé par `modelSupportsEffort` (`requestShapeFor`) : faux pour Haiku 4.5.
+Sous un poste effectivement sur Haiku 4.5, l'écran remplace les puces de réflexion par « Pas
+de réflexion avec Haiku 4.5. », suivi, si une réflexion est enregistrée, de « Réflexion haute
+enregistrée, ignorée tant que le poste est sur Haiku 4.5. » ; la valeur enregistrée est
+gardée. Avant ce correctif, tous les appels routés vers
 Haiku échouaient et se repliaient sur Gemini. Un balisage coupé au plafond
 (`runTaggingAttempts`, `gemini/tagging.ts`) n'est pas refait à l'effort suivant quand le modèle
 qui a répondu ne reçoit pas l'effort (`effortReachesModel` : Haiku 4.5, ou Gemini, dont l'appel
@@ -1965,7 +2010,7 @@ charge `raw_cooklang` et efface `draft_cooklang` à l'enregistrement.
 
 Les unités standard (gramme, cuillère à soupe, verre, pincée…) ont été semées par le
 backfill ponctuel « Semer les unités standard » (`backfillDefaultUnitsFn`, v0.24.40), terminé
-en production le 21/10/2026 et retiré du code en v0.24.50 ; jusqu'en v0.24.39, ce semis
+en production le 21/10/2026 et retiré du code en v0.24.51 ; jusqu'en v0.24.39, ce semis
 s'écrivait depuis le client. Une unité semée porte `display_label`, `aliases`,
 `measurement_type`, `grams_per_unit` (poids et petites mesures) ou `volume_ml_per_unit`
 (volumes), `status: known` et `source: builtin`. L'écran Unités de mesure
@@ -2266,7 +2311,7 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 
 | Document | Ce qu'il décide |
 |---|---|
-| `ai_routing_policy` | Quel moteur sert quel poste, et les budgets de réflexion |
+| `ai_routing_policy` | Quel moteur sert quel poste, et les budgets de réflexion. Champs : `default_provider` (`"gemini"`/`"anthropic"`), `features` (`Map` poste → fournisseur), `anthropic_model` (`String`, modèle de Claude par défaut), `anthropic_models` (`Map` poste → modèle), `anthropic_effort` (`"low"`/`"medium"`/`"high"`, absent ou `null` = « Selon le poste », depuis le 22 octobre 2026 ; aucun backfill : l'absence garde le comportement d'avant), `anthropic_efforts` (`Map` poste → effort), `fallback_enabled` (`bool`), `thinking_budget` (`int?`), `thinking_budgets` (`Map` poste → `int`), `updated_at`, `updated_by`. Une clé de poste présente est un choix propre, même égale au défaut |
 | `ai_pricing` | La grille tarifaire — **plus aucun prix n'existe dans le code** ; la table du serveur ne sert qu'à semer ce document au premier démarrage. Par modèle (`models.{id}`) : `input_per_million`, `output_per_million`, `image_output_per_unit`, `analyzed_image_per_unit`, `free_units_per_month`, `grounded_search_per_unit` (`Number`, prix d'un appel ancré dans la recherche Google), `introductory` |
 | `ai_budget_policy` | Plafonds quotidiens par compte, en euros et en nombre d'appels, et le seuil d'alerte mensuel |
 | `app_check_policy` | Mode d'attestation : `off`, `monitor`, `enforce` |
@@ -2317,7 +2362,7 @@ est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/back
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
 récurrents ; `refresh_sodium` — ponctuel). Les ponctuels `default_units` et
-`users_schema_check` sont retirés en v0.24.50, une fois terminés en production ; leurs documents
+`users_schema_check` sont retirés en v0.24.51, une fois terminés en production ; leurs documents
 `app_config/backfill_run_default_units` et `app_config/backfill_run_users_schema_check` restent
 en base, plus rien ne les lit.
 Le ponctuel réutilisable `move_meals_to_group` (« Déplacer mes repas vers un groupe ») est
@@ -2377,7 +2422,7 @@ abandonner le tick. Aucune migration manuelle.
 ### 3.13 bis Collection `ai_routing_presets` — les configurations de routage
 
 Un document par configuration enregistrée. Chacun porte `name`, `name_key` (le
-nom en minuscules, qui interdit deux homonymes), `policy` — les sept réglages de
+nom en minuscules, qui interdit deux homonymes), `policy` — tous les réglages de
 l'écran, aux mêmes clés que `ai_routing_policy` —, `created_at`, `updated_at` et
 `updated_by`.
 
@@ -3078,7 +3123,7 @@ service cloud.firestore {
 
 | Collection | Lecture | Écriture |
 |---|---|---|
-| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. **Rôle** (v0.24.32, ticket #163) : `role` ne prend que `pending`, `reader`, `editor` ou `admin`, écrit à l'identique ; un `superadmin` ou un `admin ` est refusé. Le serveur lit le champ de la même façon (`readRole`, `functions/src/security/roles.ts`) : une autre valeur vaut « aucun rôle », dans les claims (`syncUserClaims`) comme dans les gardes des callables (`requireAuth`). Les lectures retiraient auparavant les espaces, et un `admin ` y devenait administrateur. Côté client, `UserRole` lit aussi le nom à l'identique et rabat une valeur inconnue sur `pending`. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Les documents écrits avant ces règles ont été contrôlés par le backfill ponctuel « Contrôler les comptes » (`backfillUsersSchemaCheckFn`, v0.24.42), en lecture seule : dernier passage, 7 comptes lus, 0 à revoir ; terminé en production le 22/10/2026, retiré du code en v0.24.50. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
+| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. **Rôle** (v0.24.32, ticket #163) : `role` ne prend que `pending`, `reader`, `editor` ou `admin`, écrit à l'identique ; un `superadmin` ou un `admin ` est refusé. Le serveur lit le champ de la même façon (`readRole`, `functions/src/security/roles.ts`) : une autre valeur vaut « aucun rôle », dans les claims (`syncUserClaims`) comme dans les gardes des callables (`requireAuth`). Les lectures retiraient auparavant les espaces, et un `admin ` y devenait administrateur. Côté client, `UserRole` lit aussi le nom à l'identique et rabat une valeur inconnue sur `pending`. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Les documents écrits avant ces règles ont été contrôlés par le backfill ponctuel « Contrôler les comptes » (`backfillUsersSchemaCheckFn`, v0.24.42), en lecture seule : dernier passage, 7 comptes lus, 0 à revoir ; terminé en production le 22/10/2026, retiré du code en v0.24.51. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` |
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
