@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.59 — fonctionnel
+### v0.24.60 — fonctionnel
 
 Nouvelle recette, « Mettre en forme avec l'IA ». La conversion d'un texte collé dure une à
 deux minutes : 131 s mesurées pour 5 557 caractères. Le voile disait « Patientez quelques
@@ -37,7 +37,7 @@ message et le temps écoulé. Les autres voiles d'IA d'une recette (correction d
 amélioration d'un brouillon) affichent « Cela peut prendre une à deux minutes. Restez sur cet
 écran. » et le temps écoulé.
 
-### v0.24.59 — technique
+### v0.24.60 — technique
 
 `extractRecipeFromTextFn` devient une callable en flux (firebase-functions 7,
 `response.sendChunk`). Elle envoie `{etape: "lecture"}`, `{etape: "traduction", langue}`
@@ -57,10 +57,42 @@ du serveur arrive en événement avec un statut 200 et se lève sans relance. Un
 premier message ne se relance pas, pour ne pas facturer une seconde conversion. Le serveur
 s'arrête avant la passe suivante quand le client en flux est parti (signal interrompu, ou
 `sendChunk` qui rend `false`) et rend `HttpsError("cancelled")` ; un appel classique ne
-s'arrête jamais. Dans l'écran Modifier, Ctrl+S est désactivé pendant un traitement d'IA. `AiProcessingOverlay` gagne la liste d'étapes, un chronomètre
-local et l'alerte des trois minutes ; son voile prend la couleur `scrim` du thème. Aucun appel
-de modèle ni poste de coût ne change. Tests : `textExtractionSteps.test.ts`,
-`ai_processing_overlay_test.dart`, `text_extraction_progress_test.dart`.
+s'arrête jamais. Dans l'écran Modifier, Ctrl+S est désactivé pendant un traitement d'IA.
+`AiProcessingOverlay` gagne la liste d'étapes, un chronomètre local et l'alerte des trois
+minutes ; son voile prend la couleur `scrim` du thème. Aucun appel de modèle ni poste de coût
+ne change. Tests : `textExtractionSteps.test.ts`, `ai_processing_overlay_test.dart`,
+`text_extraction_progress_test.dart`.
+
+### v0.24.59 — fonctionnel
+
+*Admin › Backfills* : nouveau ponctuel « Retirer les ustensiles des ingrédients ». Il retire
+des recettes déjà importées le papier sulfurisé, le film alimentaire et les autres ustensiles
+que d'anciens imports avaient pris pour des ingrédients, puis supprime leurs fiches du
+référentiel nutrition (`papier_sulfurise`…). La confirmation porte une case « Essai à blanc :
+ne rien modifier », cochée par défaut à chaque lancement : le passage liste alors dans « À
+revoir » les recettes et les fiches qui seraient corrigées, sans rien écrire. Un ustensile suivi
+d'une parenthèse (« caissettes (ou beurre) ») n'est pas touché : la recette passe dans « À
+revoir », à corriger à la main. La tuile est marquée « IA » : le passage n'appelle aucun modèle,
+mais chaque recette corrigée est recalculée, et ce recalcul peut en appeler un.
+
+### v0.24.59 — technique
+
+Nouveau callable `backfillUtensilsCleanupFn` (backfill ponctuel `utensils_cleanup`, aux deux
+registres et dans `backfill_schedule.json`), sans appel de modèle par le passage. Recettes :
+`@nom{…}` devient `#nom{…}` dans `raw_cooklang` et `draft_cooklang`, et les noms reconnus par
+`isUtensilLine` sortent de `ingredients` et de `ingredients_index` ; seuls les champs changés
+sont écrits, sous condition de la version lue (`lastUpdateTime`), et `onRecipeWritten`
+recalcule nutrition, courses et allergènes, avec d'éventuels appels de modèle sur le plafond du
+propriétaire. Fiches : après le parcours de toutes les recettes, une fiche
+`nutrition_ingredients` dont l'identifiant ou le nom canonique est un ustensile est supprimée
+si aucune recette ne la cite dans `ingredients_index` (nom canonique, identifiant et tous les
+alias, normalisés par `buildIngredientsIndex`, par lots de trente). `dryRun` vaut
+vrai par défaut et a son propre curseur (`utensils_cleanup_dry_run_backfill_checkpoint`).
+`LOCK_GROUPS` : le nettoyage ne tourne ni avec `enrich_referentials`, ni avec
+`refresh_sodium`, ni avec `allergens`, qui écrivent les fiches. La boîte à case de l'écran
+(`_confirmWithCheckbox`) sert désormais aussi « Réessayer aussi les éléments exclus après 3
+échecs ». Tests : `utensilsCleanup.test.ts`, `backfillSchedule.test.ts`,
+`backfill_status_test.dart`.
 
 ### v0.24.58 — technique
 

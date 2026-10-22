@@ -470,6 +470,30 @@ class GcpBillingRepository {
     return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
   }
 
+  /// Ustensiles : retire des recettes les ustensiles écrits comme
+  /// ingrédients (`@papier sulfurisé{}` devient `#papier sulfurisé{}`), puis
+  /// supprime leurs fiches du référentiel nutrition. Aucun appel de modèle.
+  /// [dryRun] n'écrit rien et liste ce qui serait corrigé dans `failures`.
+  /// Rend les compteurs tels quels ; les drapeaux valent 1 ou 0.
+  Future<BackfillCounts> backfillUtensilsCleanup({
+    required bool dryRun,
+    double maxMinutes = 8,
+  }) async {
+    final payload = <String, dynamic>{
+      'dryRun': dryRun,
+      'maxMinutes': maxMinutes,
+      'appVersion': kAppVersion,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillUtensilsCleanupFn',
+      payload,
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Allergènes : examine par lots de quarante les ingrédients du référentiel
   /// qui n'en ont pas (appels de modèle, poste `backfill_allergens`), puis
   /// recalcule `allergens` sur les recettes, sans appel. Réentrante, avec

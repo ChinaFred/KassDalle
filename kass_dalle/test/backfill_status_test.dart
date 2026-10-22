@@ -390,12 +390,44 @@ void main() {
         '38 classées, 0 restante',
       );
     });
+
+    test('ustensiles : l\'essai à blanc se distingue du nettoyage', () {
+      expect(
+        backfillReportSummary(BackfillKeys.utensilsCleanup, {
+          'essaiABlanc': true,
+          'recettesParcourues': true,
+          'corrigees': 12,
+          'fichesSupprimees': 1,
+        }),
+        'Essai à blanc : 12 recettes à corriger, 1 fiche à supprimer',
+      );
+      expect(
+        backfillReportSummary(BackfillKeys.utensilsCleanup, {
+          'essaiABlanc': false,
+          'recettesParcourues': true,
+          'corrigees': 12,
+          'fichesSupprimees': 2,
+          'echouees': 0,
+          'fichesEchouees': 0,
+        }),
+        '12 recettes corrigées, 2 fiches supprimées, 0 échec',
+      );
+      expect(
+        backfillReportSummary(BackfillKeys.utensilsCleanup, {
+          'essaiABlanc': true,
+          'recettesParcourues': false,
+          'corrigees': 5,
+          'aRevoirALaMain': 1,
+        }),
+        'Essai à blanc : 5 recettes à corriger, fiches non examinées, '
+        '1 à revoir à la main',
+      );
+    });
   });
 
   group('rangement', () {
     test('trois sections, ordre fixe du registre', () {
-      // Le registre n'a plus qu'un ponctuel : un second, d'essai, remplit la
-      // section « à lancer ».
+      // Un ponctuel d'essai s'ajoute à ceux du registre, après eux.
       final sections = backfillSections(
         [...kBackfillRegistry, _testPonctuel],
         {
@@ -415,13 +447,19 @@ void main() {
         'recipe_roles',
         'shopping_products',
       ]);
-      expect(sections.ponctuelsALancer.map((d) => d.key), ['test_ponctuel']);
+      expect(sections.ponctuelsALancer.map((d) => d.key), [
+        'utensils_cleanup',
+        'test_ponctuel',
+      ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['refresh_sodium']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer.map((d) => d.key), ['refresh_sodium']);
+      expect(sections.ponctuelsALancer.map((d) => d.key), [
+        'refresh_sodium',
+        'utensils_cleanup',
+      ]);
       expect(sections.ponctuelsTermines, isEmpty);
     });
 
