@@ -145,6 +145,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'passage suivant.\n\n'
             'Dépense importante : autant qu\'un premier remplissage du '
             'référentiel. Relancez tant que le résultat indique « incomplet ».';
+      case BackfillKeys.recipeStyles:
+        return 'Demande à l\'IA le style de chaque recette pas encore '
+            'examinée : zéro à trois parmi street food, réconfortant, '
+            'brunch… Un appel par recette, quarante au plus. Un style corrigé '
+            'à la main n\'est pas soumis à l\'IA.\n\n'
+            'Appels d\'IA facturés. Relancez tant que le résultat indique '
+            '« incomplet ».';
       default:
         return '';
     }
@@ -246,6 +253,22 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           message: '${r.restantesSentence}\nCe passage : ${r.passSummary}',
           failures: r.failures,
           termineAuto: false,
+        );
+      case BackfillKeys.recipeStyles:
+        final r = await _repo.backfillRecipeStyles();
+        return _fromCounts(
+          r,
+          'Recettes : parcourues=${r['examinees']}, '
+          'examinées par l\'IA=${r['stylees']}, '
+          'dont sans style=${r['sansStyle']}, '
+          'déjà examinées=${r['dejaExaminees']}, '
+          'corrigées à la main=${r['manuelles']}, '
+          'hors recette=${r['horsRecette']}, échecs=${r['echouees']}, '
+          'restantes=${r['restantes'] ?? 'décompte impossible'}'
+          '${(r['completed'] ?? 0) == 1 && (r['echouees'] ?? 0) == 0 ? ' — terminé' : ' — incomplet'}'
+          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
+          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
+          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
       case BackfillKeys.shoppingProducts:
         final r = await _repo.backfillShopping();
@@ -1016,6 +1039,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.recipeRoles: Icons.restaurant_outlined,
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
+    BackfillKeys.recipeStyles: Icons.style_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

@@ -20,11 +20,14 @@ import {
   MAX_DURATION_MIN,
   checkExclusions,
   checkPreferences,
+  criteriaByWeekdayToMap,
+  criteriaForWeekday,
   describeCriteria,
   emptyServiceDetail,
   formatMinutes,
   mergeCriteria,
   planningCriteriaToMap,
+  readCriteriaByWeekday,
   readPlanningCriteria,
   unmetDetail,
   type CriteriaItem,
@@ -36,6 +39,7 @@ interface FixtureItem {
   main_starch?: string;
   prep_minutes?: number;
   light?: boolean;
+  styles?: string[];
 }
 
 interface CheckCase {
@@ -56,6 +60,14 @@ interface Fixture {
   }>;
   exclusion_cases: CheckCase[];
   preference_cases: CheckCase[];
+  weekday_read_cases: Array<{ name: string; raw: unknown; expected: Record<string, unknown> }>;
+  weekday_cases: Array<{
+    name: string;
+    criteria: Record<string, unknown>;
+    criteria_by_weekday: unknown;
+    weekday: number;
+    expected: Record<string, unknown>;
+  }>;
 }
 
 const FIXTURE = path.join(__dirname, "..", "..", "..", "test-fixtures", "planning_criteria.json");
@@ -68,6 +80,7 @@ function itemOf(raw: FixtureItem): CriteriaItem {
     mainStarch: raw.main_starch ?? null,
     prepMinutes: raw.prep_minutes ?? null,
     light: raw.light ?? null,
+    styles: raw.styles ?? null,
   };
 }
 
@@ -101,6 +114,24 @@ describe("réunion des critères d'un créneau", () => {
     test(c.name, () => {
       const merged = mergeCriteria(c.parts.map(readPlanningCriteria));
       assert.deepEqual(planningCriteriaToMap(merged), c.expected);
+    });
+  }
+});
+
+describe("critères réservés à un jour de semaine", () => {
+  for (const c of fixture.weekday_read_cases) {
+    test(`lecture : ${c.name}`, () => {
+      assert.deepEqual(criteriaByWeekdayToMap(readCriteriaByWeekday(c.raw)), c.expected);
+    });
+  }
+  for (const c of fixture.weekday_cases) {
+    test(c.name, () => {
+      const got = criteriaForWeekday(
+        readPlanningCriteria(c.criteria),
+        readCriteriaByWeekday(c.criteria_by_weekday),
+        c.weekday,
+      );
+      assert.deepEqual(planningCriteriaToMap(got), c.expected);
     });
   }
 });
@@ -170,6 +201,44 @@ describe("phrases", () => {
     assert.equal(
       describeCriteria(c),
       "sans porc en protéine principale · sans gluten (allergènes) · 30 min de préparation au plus",
+    );
+  });
+});
+
+describe("style voulu — phrases", () => {
+  const c = readPlanningCriteria({ wanted_styles: ["street_food"] });
+  const item: CriteriaItem = {
+    allergens: null,
+    mainProtein: null,
+    mainStarch: null,
+    prepMinutes: null,
+    light: null,
+    styles: ["frais_estival"],
+  };
+  const [result] = checkPreferences(c, item);
+
+  test("aucun plat du style dans le corpus", () => {
+    assert.equal(
+      unmetDetail(result, c, item, { corpusStyles: new Set(["healthy"]) }),
+      "Aucun plat street food dans vos recettes",
+    );
+  });
+
+  test("des plats du style existent, écartés", () => {
+    assert.equal(
+      unmetDetail(result, c, item, { corpusStyles: new Set(["street_food"]) }),
+      "Pas un plat street food : peu d'autres choix",
+    );
+  });
+
+  test("corpus inconnu : peu d'autres choix", () => {
+    assert.equal(unmetDetail(result, c, item), "Pas un plat street food : peu d'autres choix");
+  });
+
+  test("le prompt cite le style voulu", () => {
+    assert.equal(
+      describeCriteria(readPlanningCriteria({ wanted_styles: ["street_food", "barbecue"] })),
+      "de préférence un plat street food ou barbecue / plancha",
     );
   });
 });

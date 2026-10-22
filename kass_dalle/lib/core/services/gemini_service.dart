@@ -536,6 +536,8 @@ class GeminiService {
       String? mainProtein,
       String? mainStarch,
       bool mainIngredientsChecked,
+      List<String> styles,
+      bool stylesChecked,
     })
   >
   suggestRecipeTags({required String titre, required String cooklang}) async {
@@ -564,6 +566,10 @@ class GeminiService {
       mainProtein: nonEmpty('mainProtein'),
       mainStarch: nonEmpty('mainStarch'),
       mainIngredientsChecked: map['mainIngredientsChecked'] == true,
+      // Le style : vide avec `stylesChecked` vrai veut dire « examiné, aucun
+      // style » ; `stylesChecked` faux, « pas su ».
+      styles: strings('styles'),
+      stylesChecked: map['stylesChecked'] == true,
     );
   }
 

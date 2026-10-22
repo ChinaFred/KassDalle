@@ -309,6 +309,16 @@ void main() {
       );
     });
 
+    test('style voulu relâché : lu et dit', () {
+      expect(RelaxedCriterion.listFrom(['wanted_styles']), [
+        RelaxedCriterion.wantedStyles,
+      ]);
+      expect(
+        RelaxedCriterion.wantedStyles.sentence,
+        'Style souhaité introuvable, faute d\'autre choix',
+      );
+    });
+
     testWidgets('la ligne d\'origine les dit après la source', (tester) async {
       await tester.pumpWidget(
         MaterialApp(

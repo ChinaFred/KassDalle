@@ -581,6 +581,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               onMainStarchChanged: setMainStarch,
               mealContains: selectedContains,
               onMealContainsChanged: setContains,
+              styles: selectedStyles,
+              onStylesChanged: setStyles,
               suggestingTags: suggestingTags,
               onSuggestTags: () =>
                   suggestTagsWithAI(_currentRecipe?.titre ?? ''),
@@ -708,6 +710,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     onMainStarchChanged: setMainStarch,
                     mealContains: selectedContains,
                     onMealContainsChanged: setContains,
+                    styles: selectedStyles,
+                    onStylesChanged: setStyles,
                     suggestingTags: suggestingTags,
                     onSuggestTags: () =>
                         suggestTagsWithAI(_currentRecipe?.titre ?? ''),

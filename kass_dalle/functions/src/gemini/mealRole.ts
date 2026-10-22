@@ -13,7 +13,11 @@
  *    les accompagnements classiques, nommés simplement ;
  *  - `main_protein`, `main_starch` — pour un plat ou un accompagnement, la
  *    protéine et le féculent principaux, que la présélection du planning lit
- *    pour varier le cycle (`proteinOf`, `starchOf` dans `planning.ts`).
+ *    pour varier le cycle (`proteinOf`, `starchOf` dans `planning.ts`) ;
+ *  - `styles` — zéro à trois styles d'un vocabulaire fermé (`RECIPE_STYLES` :
+ *    street food, réconfortant, healthy…), que la présélection lit quand une
+ *    consigne en demande un (`wanted_styles`). `styles_checked_at` marque la
+ *    recette examinée, même sans style.
  *
  * Au modèle la reconnaissance, une fois par recette ; au programme la
  * composition, à chaque planning. Ce module porte ce qu'on demande au modèle
@@ -57,6 +61,92 @@ export const MAIN_STARCHES = [
 ] as const;
 export type MainStarch = (typeof MAIN_STARCHES)[number];
 
+/**
+ * Style d'une recette (`tags.styles`). Même ordre et mêmes libellés que
+ * `styles` et `style_labels` dans `test-fixtures/meal_roles.json` : le client
+ * les affiche et les propose à la correction.
+ */
+export const RECIPE_STYLES = [
+  "street_food",
+  "reconfortant",
+  "healthy",
+  "frais_estival",
+  "hiver",
+  "terroir",
+  "bistrot",
+  "gastronomique",
+  "plat_unique",
+  "a_partager",
+  "aperitif_dinatoire",
+  "sur_le_pouce",
+  "pique_nique",
+  "barbecue",
+  "festif",
+  "brunch",
+  "enfants",
+  "soiree_plateau",
+] as const;
+export type RecipeStyle = (typeof RECIPE_STYLES)[number];
+
+/** Styles gardés au plus sur une recette. */
+export const MAX_STYLES = 3;
+
+/** Libellé d'un style : celui de l'écran, cité dans le prompt et dans les écarts du planning. */
+export const RECIPE_STYLE_LABELS: Readonly<Record<RecipeStyle, string>> = {
+  street_food: "Street food",
+  reconfortant: "Réconfortant / gourmand",
+  healthy: "Healthy / équilibré",
+  frais_estival: "Frais / estival",
+  hiver: "D'hiver",
+  terroir: "Terroir / plat de grand-mère",
+  bistrot: "Bistrot / brasserie",
+  gastronomique: "Gastronomique / raffiné",
+  plat_unique: "Plat unique",
+  a_partager: "À partager",
+  aperitif_dinatoire: "Apéritif dînatoire",
+  sur_le_pouce: "Sur le pouce",
+  pique_nique: "Pique-nique / buffet",
+  barbecue: "Barbecue / plancha",
+  festif: "Festif / pour recevoir",
+  brunch: "Brunch",
+  enfants: "Pour les enfants",
+  soiree_plateau: "Soirée plateau / télé",
+};
+
+/** Ce que recouvre un style, pour le modèle seul. */
+const RECIPE_STYLE_HINTS: Readonly<Partial<Record<RecipeStyle, string>>> = {
+  street_food: "burger, tacos, kebab, pizza, hot-dog, fish and chips, junk food",
+  reconfortant: "mijotés, gratins, plats généreux",
+  frais_estival: "salades composées, plats froids",
+  hiver: "potées, raclette, choucroute",
+  plat_unique: "one-pot",
+  a_partager: "fondue, raclette, tapas, mezze",
+  aperitif_dinatoire: "bouchées",
+  sur_le_pouce: "sandwich, wrap, lunchbox",
+};
+
+/** Le style en minuscule initiale, pour une phrase : « street food », « d'hiver ». */
+export function styleWord(key: string): string {
+  const label = (RECIPE_STYLE_LABELS as Record<string, string>)[key];
+  if (!label) return key;
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/**
+ * Le style, mot pour mot, dans le prompt du rôle et dans celui du backfill
+ * « Style des recettes ». Aucun exemple rempli : les valeurs et ce qu'elles
+ * recouvrent.
+ */
+export const STYLES_PROMPT = `"styles" = le style de la recette, zéro à ${MAX_STYLES} valeurs parmi :
+${RECIPE_STYLES.map((k) => {
+  const hint = RECIPE_STYLE_HINTS[k];
+  return `- "${k}" : ${RECIPE_STYLE_LABELS[k]}${hint ? ` (${hint})` : ""}`;
+}).join("\n")}
+- Ne retiens un style que s'il décrit clairement la recette. Tableau vide si aucun ne convient.`;
+
+/** La clé JSON du style. */
+export const STYLES_JSON_KEY = `"styles": ["<${RECIPE_STYLES.join(" | ")}>"]`;
+
 /** Seuls ces rôles portent une protéine et un féculent principaux. */
 export const ROLES_WITH_MAIN_INGREDIENTS: readonly MealRole[] = ["plat", "accompagnement"];
 
@@ -73,7 +163,17 @@ export interface MainProteinStarch {
   mainIngredientsChecked: boolean;
 }
 
-export interface MealRoleFields extends MainProteinStarch {
+export interface RecipeStylesAnswer {
+  styles: RecipeStyle[];
+  /**
+   * Vrai quand le modèle a répondu sur le style : la clé porte une liste,
+   * même vide. Les écrivains posent alors `tags.styles` et
+   * `tags.styles_checked_at`. Faux : le style reste inconnu.
+   */
+  stylesChecked: boolean;
+}
+
+export interface MealRoleFields extends MainProteinStarch, RecipeStylesAnswer {
   mealRole: MealRole | null;
   contains: MealComponent[];
   suggestedSides: string[];
@@ -86,6 +186,8 @@ export const EMPTY_MEAL_ROLE_FIELDS: MealRoleFields = {
   mainProtein: null,
   mainStarch: null,
   mainIngredientsChecked: false,
+  styles: [],
+  stylesChecked: false,
 };
 
 /** Longueur maximale d'un nom d'accompagnement ; au-delà, c'est une phrase. */
@@ -142,13 +244,16 @@ plat | accompagnement | entree | dessert | snack
 classiques pour CE plat, en français, chacun en un nom court de garniture courante, sans quantité.
 Tableau vide pour un plat complet, un accompagnement, une entrée, un dessert ou un snack.
 
-${MAIN_PROTEIN_STARCH_PROMPT}`;
+${MAIN_PROTEIN_STARCH_PROMPT}
+
+${STYLES_PROMPT}`;
 
 /** Les clés JSON attendues, à recopier dans le format de sortie d'un prompt. */
 export const MEAL_ROLE_JSON_KEYS = `"meal_role": "<plat | accompagnement | entree | dessert | snack>",
   "contains": ["<proteine | feculent | legume>"],
   "suggested_sides": ["<nom court d'une garniture courante>"],
-  ${MAIN_PROTEIN_STARCH_JSON_KEYS}`;
+  ${MAIN_PROTEIN_STARCH_JSON_KEYS},
+  ${STYLES_JSON_KEY}`;
 
 /** Les signes diacritiques détachés par NFD (U+0300 à U+036F). */
 const COMBINING_MARKS = new RegExp(
@@ -249,6 +354,28 @@ export function containsPatch(
 }
 
 /**
+ * Vrai quand le style (`tags.styles`) a été corrigé à la main : le client
+ * pose `tags.styles_manual = true`, booléen strict. Cas verrouillés par
+ * `styles_manual_cases` de `test-fixtures/meal_roles.json`.
+ */
+export function isStylesManual(existingTags: Record<string, unknown>): boolean {
+  return existingTags.styles_manual === true;
+}
+
+/**
+ * `styles` à écrire : celui du modèle, quand il a répondu et que la recette
+ * ne porte pas de correction à la main. Rien sinon : le modèle ne réécrit
+ * jamais un style corrigé, ni au classement, ni au backfill forcé.
+ */
+export function stylesPatch(
+  existingTags: Record<string, unknown>,
+  answer: RecipeStylesAnswer,
+): { styles?: RecipeStyle[] } {
+  if (!answer.stylesChecked || isStylesManual(existingTags)) return {};
+  return { styles: answer.styles };
+}
+
+/**
  * Variantes d'écriture admises : accent, pluriel, ligature, espace au lieu du
  * tiret bas. Aucun synonyme de sens (« poulet », « veau ») : une valeur
  * voisine rangée par le code serait une valeur inventée.
@@ -318,6 +445,29 @@ function ownAlias<T>(table: Record<string, T>, key: string): T | null {
   return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : null;
 }
 
+/** Clé normalisée → style : accent, casse, espace ou tiret au lieu du tiret bas. */
+const STYLE_ALIASES: Record<string, RecipeStyle> = Object.fromEntries(
+  RECIPE_STYLES.map((k) => [normalizeRoleKey(k), k]),
+);
+
+/**
+ * Le style rendu par le modèle, en liste blanche : les trois premières
+ * valeurs reconnues, une fois chacune, rangées dans l'ordre du vocabulaire.
+ * `stylesChecked` : la réponse porte une liste, même vide. Cas verrouillés
+ * par `styles_parse_cases` de `test-fixtures/meal_roles.json`.
+ */
+export function parseRecipeStyles(value: unknown): RecipeStylesAnswer {
+  if (!Array.isArray(value)) return { styles: [], stylesChecked: false };
+  const found = new Set<RecipeStyle>();
+  for (const v of value) {
+    if (found.size >= MAX_STYLES) break;
+    if (typeof v !== "string") continue;
+    const style = ownAlias(STYLE_ALIASES, normalizeRoleKey(v));
+    if (style) found.add(style);
+  }
+  return { styles: RECIPE_STYLES.filter((k) => found.has(k)), stylesChecked: true };
+}
+
 /** Le rôle, ou `null` si la valeur n'est pas parmi celles admises. */
 export function parseMealRole(value: unknown): MealRole | null {
   if (typeof value !== "string") return null;
@@ -362,7 +512,8 @@ export function parseSuggestedSides(value: unknown): string[] {
  *
  * Sans rôle reconnu, rien n'est gardé : un « contains » sans rôle ne dit pas
  * à quoi il s'applique. Les accompagnements n'ont de sens que pour un plat ;
- * la protéine et le féculent, que pour un plat ou un accompagnement.
+ * la protéine et le féculent, que pour un plat ou un accompagnement. Le
+ * style vaut pour tout rôle.
  */
 export function parseMealRoleFields(json: Record<string, unknown>): MealRoleFields {
   const mealRole = parseMealRole(json.meal_role);
@@ -375,6 +526,7 @@ export function parseMealRoleFields(json: Record<string, unknown>): MealRoleFiel
     contains: parseMealContains(json.contains),
     suggestedSides: mealRole === "plat" ? parseSuggestedSides(json.suggested_sides) : [],
     ...main,
+    ...parseRecipeStyles(json.styles),
   };
 }
 

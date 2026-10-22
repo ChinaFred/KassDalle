@@ -33,6 +33,7 @@ abstract final class BackfillKeys {
   static const recipeRoles = 'recipe_roles';
   static const shoppingProducts = 'shopping_products';
   static const refreshSodium = 'refresh_sodium';
+  static const recipeStyles = 'recipe_styles';
 }
 
 class BackfillDefinition {
@@ -144,6 +145,17 @@ const List<BackfillDefinition> kBackfillRegistry = [
     description: 'Corrige le sel compté deux fois dans les ingrédients salés.',
     usesAi: true,
     passLimit: 'Chaque passage travaille au plus huit minutes.',
+  ),
+  BackfillDefinition(
+    key: BackfillKeys.recipeStyles,
+    kind: BackfillKind.ponctuel,
+    title: 'Style des recettes',
+    description:
+        "Attribue jusqu'à trois styles (street food, brunch, réconfortant…) "
+        'aux recettes pas encore examinées. Une correction à la main est '
+        'gardée.',
+    usesAi: true,
+    passLimit: 'Chaque passage traite au plus 40 recettes.',
   ),
 ];
 

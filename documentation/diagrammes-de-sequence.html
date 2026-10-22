@@ -4912,7 +4912,8 @@ sequenceDiagram
     <p class="sec-note">
       Les textes libres des préférences — préférences générales, contrainte d'un jour — sont
       traduits par le modèle en critères d'un vocabulaire fermé, une fois par texte modifié ;
-      le programme les vérifie. Une exclusion ne se relâche jamais, une préférence se relâche
+      le programme les vérifie. Un critère qui nomme un jour (« street food le vendredi ») ne
+      vaut que pour les créneaux de ce jour. Une exclusion ne se relâche jamais, une préférence se relâche
       et l'écran le dit. Rien ne part à la frappe.
       <span class="path">batch_planning_screen.dart → suggestMealPlanFn →
       gemini/planningConstraintsStore.ts (understandPlanningTexts) → gemini/planningConstraints.ts
@@ -4935,7 +4936,7 @@ sequenceDiagram
   U->>B: écrit « Pas de porc, 30 min max, pas trop gras »
   B->>B: sous le champ : « Sera lu au prochain « Planifier avec l'IA ». »
   U->>B: Planifier avec l'IA
-  B->>SP: résumés (allergens compris), globalConstraints, notes des créneaux
+  B->>SP: résumés (allergens compris, styles si la recette est examinée), globalConstraints, notes des créneaux
   SP->>FS: users/{uid}/preferences/planning_constraints
   FS-->>SP: entrées par empreinte SHA-256 du texte
   alt tous les textes en cache, mode code, ou estimation au-delà du plafond de la génération
@@ -4943,17 +4944,17 @@ sequenceDiagram
   else textes modifiés (16 au plus, 2 000 car.)
     SP->>M: askJson(planning_constraints, maxTokens 12 000)
     alt réponse lisible
-      M-->>SP: textes : exclus, voulus, préparation max, léger, non_traduit
+      M-->>SP: textes : exclus, voulus (styles compris), préparation max, léger,<br/>par_jour (« street food le vendredi »), non_traduit
       SP->>SP: parseConstraintsAnswer — valeurs hors vocabulaire écartées
       SP->>FS: écrit les traductions réussies (40 entrées au plus)
     else panne, réponse illisible, plafond du jour
       Note over SP: logError ou logWarn — le texte part au prompt tel quel, « non vérifié »
     end
   end
-  SP->>PL: preselect avec les critères de chaque créneau (générales + note du jour)
+  SP->>PL: preselect avec les critères de chaque créneau (générales + note du jour,<br/>plus ceux réservés à son jour de semaine)
   PL->>PL: exclusion violée : jamais candidate, plat, entrée, dessert
   PL->>PL: recettes vérifiées d'abord, puis aux allergènes inconnus faute de mieux : « non vérifiés »
-  PL->>PL: préférence non tenue : écartée, puis relâchée (wanted, in_cycle,<br/>variety_window, max_duration en dernier)
+  PL->>PL: préférence non tenue : écartée, puis relâchée une à une (wanted_starches,<br/>wanted_proteins, light, in_cycle, variety_window, max_duration),<br/>le style voulu après toute la cascade : « Aucun plat street food dans vos recettes »
   alt service sans candidat par une exclusion
     PL-->>SP: unmet status empty : « Aucun dessert sans fruits à coque. »
   end

@@ -5,7 +5,8 @@
 /// deux fois dans le cycle », puis la fenêtre de variété. Elle le dit dans
 /// `relaxed` de chaque liste classée — et depuis la v0.24.19 les préférences
 /// comprises des textes (`wanted_proteins`, `wanted_starches`, `light`) et
-/// la durée maximale (`max_duration`). Le repas garde ces clés
+/// la durée maximale (`max_duration`) ; depuis la v0.24.54, le style voulu
+/// (`wanted_styles`), relâché en dernier. Le repas garde ces clés
 /// (`relaxed_criteria`) pour que l'écart reste lisible après la validation,
 /// dans la ligne d'origine du choix.
 library;
@@ -27,6 +28,10 @@ enum RelaxedCriterion {
   maxDuration(
     'max_duration',
     'plus long que la durée demandée, faute d\'autre choix',
+  ),
+  wantedStyles(
+    'wanted_styles',
+    'style souhaité introuvable, faute d\'autre choix',
   );
 
   /// Clé écrite par le serveur et stockée sur le repas.

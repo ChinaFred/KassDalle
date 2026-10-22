@@ -28,7 +28,7 @@ import {
   MAX_CALLABLE_INSTANCES,
   REGION,
 } from "../config";
-import { containsPatch, mainIngredientsPatch } from "../gemini/mealRole";
+import { containsPatch, mainIngredientsPatch, stylesPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 import { resolvePageType } from "../triggers/recipeWritten";
@@ -388,6 +388,8 @@ export async function runRecipeRolesPass(
           // (`contains_manual`), même en reprise forcée.
           const patch = mainIngredientsPatch(tags, fields);
           const contains = containsPatch(tags, fields.contains);
+          // Le style aussi, sauf correction à la main (`styles_manual`).
+          const styles = stylesPatch(tags, fields);
           await doc.ref.update({
             "tags.meal_role": fields.mealRole,
             ...("contains" in contains ? { "tags.contains": contains.contains } : {}),
@@ -396,6 +398,12 @@ export async function runRecipeRolesPass(
             ...(patch.main_starch ? { "tags.main_starch": patch.main_starch } : {}),
             ...(fields.mainIngredientsChecked
               ? { "tags.main_ingredients_checked_at": FieldValue.serverTimestamp() }
+              : {}),
+            ...("styles" in styles
+              ? {
+                  "tags.styles": styles.styles,
+                  "tags.styles_checked_at": FieldValue.serverTimestamp(),
+                }
               : {}),
             "tags.roles_tagged_at": FieldValue.serverTimestamp(),
             // Un succès remet le compteur d'échecs à zéro.

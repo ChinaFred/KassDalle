@@ -37,6 +37,9 @@ class DraftReviewFormData {
 
   /// Ce que la recette apporte, tel que le formulaire le montre.
   final List<String> selectedContains;
+
+  /// Style de la recette, tel que le formulaire le montre.
+  final List<String> selectedStyles;
   final bool suggestingTags;
   final List<RecipeIngredient> formIngredients;
 
@@ -48,6 +51,7 @@ class DraftReviewFormData {
   final void Function(String?) onMainProteinChanged;
   final void Function(String?) onMainStarchChanged;
   final void Function(List<String>)? onContainsChanged;
+  final void Function(List<String>)? onStylesChanged;
   final VoidCallback? onSuggestTags;
   final void Function(List<RecipeIngredient>) onIngredientsChanged;
   final Future<String?> Function(Uint8List, String)? onUploadImage;
@@ -80,6 +84,7 @@ class DraftReviewFormData {
     required this.selectedMainProtein,
     required this.selectedMainStarch,
     this.selectedContains = const [],
+    this.selectedStyles = const [],
     required this.suggestingTags,
     required this.formIngredients,
     required this.onBookChanged,
@@ -89,6 +94,7 @@ class DraftReviewFormData {
     required this.onMainProteinChanged,
     required this.onMainStarchChanged,
     this.onContainsChanged,
+    this.onStylesChanged,
     this.onSuggestTags,
     required this.onIngredientsChanged,
     this.onUploadImage,
@@ -154,6 +160,8 @@ class DraftReviewWideBody extends StatelessWidget {
                 onMainStarchChanged: data.onMainStarchChanged,
                 mealContains: data.selectedContains,
                 onMealContainsChanged: data.onContainsChanged,
+                styles: data.selectedStyles,
+                onStylesChanged: data.onStylesChanged,
                 suggestingTags: data.suggestingTags,
                 onSuggestTags: data.onSuggestTags,
                 pageType: data.pageType,
@@ -225,6 +233,8 @@ class DraftReviewWideBody extends StatelessWidget {
               onMainStarchChanged: data.onMainStarchChanged,
               mealContains: data.selectedContains,
               onMealContainsChanged: data.onContainsChanged,
+              styles: data.selectedStyles,
+              onStylesChanged: data.onStylesChanged,
               suggestingTags: data.suggestingTags,
               onSuggestTags: data.onSuggestTags,
               pageType: data.pageType,
@@ -456,6 +466,8 @@ class DraftReviewNarrowBody extends StatelessWidget {
     onMainStarchChanged: data.onMainStarchChanged,
     mealContains: data.selectedContains,
     onMealContainsChanged: data.onContainsChanged,
+    styles: data.selectedStyles,
+    onStylesChanged: data.onStylesChanged,
     suggestingTags: data.suggestingTags,
     onSuggestTags: data.onSuggestTags,
     pageType: data.pageType,

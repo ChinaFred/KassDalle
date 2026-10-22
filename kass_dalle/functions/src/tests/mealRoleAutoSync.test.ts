@@ -15,6 +15,7 @@ import {
   mealRoleCallAllowed,
   mealRoleContentChanged,
   mealRoleFailureResetNeeded,
+  onlyStyleTagsChanged,
 } from "../triggers/recipeMealRoleAutoSync";
 
 const base = { titre: "Quiche", raw_cooklang: "@oeufs{3}", tags: { dish_types: ["entrée"] } };
@@ -96,5 +97,32 @@ describe("remise à zéro — recette déjà classée", () => {
     const before = { titre: "A", tags: { meal_role: "plat" }, meal_role_failure_count: 2 };
     const after = { ...before, titre: "B" };
     assert.equal(mealRoleFailureResetNeeded(after, before), false);
+  });
+});
+
+describe("une écriture du seul style ne déclenche pas de classement", () => {
+  const before = { ...base, tags: { dish_types: ["entrée"] } };
+  const after = {
+    ...base,
+    tags: { dish_types: ["entrée"], styles: ["street_food"], styles_checked_at: 1 },
+  };
+
+  test("le backfill « Style des recettes » écrit le style d'une recette sans rôle : non", () => {
+    assert.equal(onlyStyleTagsChanged(before, after), true);
+    assert.equal(mealRoleCallAllowed(after, before), false);
+  });
+
+  test("un autre tag change avec le style : la garde ne s'applique pas", () => {
+    const other = { ...after, tags: { ...after.tags, dish_types: ["plat"] } };
+    assert.equal(onlyStyleTagsChanged(before, other), false);
+    assert.equal(mealRoleCallAllowed(other, before), true);
+  });
+
+  test("le titre change : la garde ne s'applique pas", () => {
+    assert.equal(onlyStyleTagsChanged(before, { ...after, titre: "Tarte" }), false);
+  });
+
+  test("écho identique : rien n'a changé, ce n'est pas une écriture de style", () => {
+    assert.equal(onlyStyleTagsChanged(before, { ...before }), false);
   });
 });

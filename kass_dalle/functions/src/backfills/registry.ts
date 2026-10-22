@@ -40,6 +40,7 @@ export const BACKFILL_KEYS = [
   "recipe_roles",
   "shopping_products",
   "refresh_sodium",
+  "recipe_styles",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -111,6 +112,13 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     usesAi: true,
     defaultSchedule: null,
   },
+  {
+    key: "recipe_styles",
+    kind: "ponctuel",
+    title: "Style des recettes",
+    usesAi: true,
+    defaultSchedule: null,
+  },
 ];
 
 /** La définition d'une clé, ou `null` si elle n'existe pas. */
@@ -127,11 +135,14 @@ export function recurrentKeys(): BackfillKey[] {
 /**
  * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
  * ensemble : l'enrichissement des référentiels et la réparation du sel
- * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est refusé pendant que l'autre tient
- * son verrou. Un backfill peut appartenir à plusieurs groupes.
+ * réécrivent tous deux `per100g` des ingrédients ; le rôle et le style des
+ * recettes écrivent tous deux `tags.styles`. Un passage de l'un est refusé
+ * pendant que l'autre tient son verrou. Un backfill peut appartenir à
+ * plusieurs groupes.
  */
 const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
   ["enrich_referentials", "refresh_sodium"],
+  ["recipe_roles", "recipe_styles"],
 ];
 
 /** Les autres backfills dont le verrou bloque [key], dans l'ordre des groupes. */

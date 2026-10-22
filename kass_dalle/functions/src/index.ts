@@ -168,6 +168,7 @@ export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledBackfills } from "./scheduled/backfillSchedule";
 export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdminCallable";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
+export { backfillRecipeStylesFn } from "./callable/recipeStylesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
 // `backfillDefaultUnitsFn` (v0.24.40) et `backfillUsersSchemaCheckFn` (v0.24.42) sont retirés en

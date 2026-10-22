@@ -569,14 +569,16 @@ flowchart LR
         <b>Les critères écrits en texte libre sont vérifiés</b> : au clic sur « Planifier avec
         l'IA », l'IA traduit une fois les textes modifiés (préférences générales, contrainte
         d'un jour) en critères — allergène, protéine ou féculent exclus, protéine ou féculent
-        souhaités, durée maximale, léger — et Kass'Dalle les vérifie lui-même. Sous chaque champ,
-        « Compris : sans porc · 30 min max », puis « Transmis à l'IA, non vérifié : « pas trop
+        souhaités, durée maximale, léger, style souhaité — et Kass'Dalle les vérifie lui-même. Un critère qui nomme un jour (« street food le vendredi ») ne vaut que ce jour-là. Sous chaque champ,
+        « Compris : sans porc · 30 min max » ou « Compris : sans porc · style street food le
+        vendredi », puis « Transmis à l'IA, non vérifié : « pas trop
         gras » » — ou « Non lu, l'IA n'a pas répondu : « … » » quand l'IA du planning n'a pas
         répondu à la génération, « Non lu, l'IA n'a pas été appelée (plafond atteint) : « … » »
         quand un plafond a évité l'appel, et « Non lu, aucun choix à faire entre recettes, l'IA
         n'a pas été appelée : « … » » quand aucun créneau n'avait plus d'une recette possible. Une exclusion ne se relâche jamais : « Dessert : à choisir. Aucun dessert sans
         fruits à coque. » avec « Choisir ». Une préférence se relâche et la carte le dit :
-        « 1 h 10, au-delà des 45 min demandées : peu d'autres choix ». Un avis compte les
+        « 1 h 10, au-delà des 45 min demandées : peu d'autres choix » ; le style se relâche en
+        dernier : « Aucun plat street food dans vos recettes ». Un avis compte les
         créneaux concernés et mène au premier. Un accompagnement qui contient un allergène exclu
         n'est jamais proposé par le programme ; choisi à la main, il est signalé « contient :
         gluten ».
@@ -720,6 +722,7 @@ flowchart LR
     b17(["Choisir le rôle de la recette dans un repas"])
     b20(["Corriger la protéine et le féculent&lt;br/&gt;d'un plat ou d'un accompagnement"])
     b21(["Corriger ce que la recette apporte&lt;br/&gt;protéine, féculent, légume"])
+    b26(["Corriger le style de la recette&lt;br/&gt;trois styles au plus"])
     b18(["Retoucher une illustration par l'IA"])
     b2(["Créer une recette à la main"])
     b3(["Faire générer une recette&lt;br/&gt;en brouillon"])
@@ -758,6 +761,7 @@ flowchart LR
   LEC --- b17
   LEC --- b20
   LEC --- b21
+  LEC --- b26
   ADM --- b18
   EDI --- b21
   ADM --- b21
@@ -850,6 +854,12 @@ flowchart LR
         <b>Ce que la recette apporte</b> se corrige de même, par trois pastilles Protéine,
         Féculent, Légume sous « Féculent principal » ; choisir un féculent coche Féculent,
         « Sans féculent » le décoche, et le modèle ne réécrit plus cette correction.
+        <b>Le style de la recette</b> (street food, brunch, réconfortant… zéro à trois parmi
+        dix-huit) est posé par le même appel que le rôle ; les recettes déjà classées le
+        reçoivent par la reprise « Style des recettes ». Il se corrige par dix-huit pastilles
+        « Style », après « Rôle dans un repas », pour tout rôle ; au troisième style coché, les
+        autres se désactivent. Une correction à la main n'est plus réécrite par le modèle. La
+        fiche l'affiche dans la section « Style ».
         Ni l'import, ni le classement à l'écriture, ni une reprise ne remplacent une valeur posée à la main ; « Suggérer les tags », geste explicite, remplit les deux listes. Passer le rôle à entrée,
         dessert ou snack efface les deux valeurs à l'enregistrement.
         <b>La traduction n'a lieu que pour une recette écrite dans une autre langue</b>, que la
@@ -1067,7 +1077,7 @@ flowchart LR
         chacune. Une ligne ouvre la recette, ou la relecture d'un brouillon ; le crayon ouvre
         l'éditeur, et un brouillon n'en a pas. La liste est relue à chaque dépliage et au retour
         de la recette ouverte.
-        <b>Backfills ponctuels et récurrents.</b> L'écran range ses six reprises en trois
+        <b>Backfills ponctuels et récurrents.</b> L'écran range ses sept reprises en trois
         sections : récurrents, ponctuels à lancer, ponctuels terminés. Chaque tuile affiche l'état
         de son dernier passage, lu en direct. Un récurrent se programme — jours et heure de
         Paris — et passe seul, chaque heure jusqu'à la fin s'il lui reste du travail, ou jusqu'au

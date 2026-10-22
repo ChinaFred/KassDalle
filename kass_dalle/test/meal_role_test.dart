@@ -255,4 +255,102 @@ void main() {
       );
     });
   });
+
+  group('style d\'une recette', () {
+    test('vocabulaire, libellés et plafond : les mêmes que côté serveur', () {
+      final styles = List<String>.from(fixture['styles'] as List);
+      expect(kRecipeStyles, styles);
+      final labels = Map<String, dynamic>.from(fixture['style_labels'] as Map);
+      expect(labels.keys.toList(), styles);
+      for (final s in kRecipeStyles) {
+        expect(recipeStyleLabel(s), labels[s], reason: s);
+      }
+      expect(kMaxRecipeStyles, fixture['max_styles']);
+      expect(recipeStyleLabel('inconnu'), 'inconnu');
+    });
+
+    final cases = (fixture['styles_manual_cases'] as List)
+        .cast<Map<String, dynamic>>();
+    for (final c in cases) {
+      test('correction à la main : ${c['name']}', () {
+        final tags = RecipeTags.fromMap(
+          Map<String, dynamic>.from(c['tags'] as Map),
+        );
+        expect(tags.stylesManual, c['manual']);
+        final after = mealStylesAfterSuggestion(
+          manual: tags.stylesManual,
+          current: tags.styles,
+          suggested: List<String>.from(c['model_styles'] as List),
+        );
+        expect(after, List<String>.from(c['result'] as List));
+      });
+    }
+
+    test('lus et réécrits avec la carte des tags, inconnus sans marqueur', () {
+      final checked = RecipeTags.fromMap({
+        'meal_role': 'plat',
+        'styles': <String>[],
+        'styles_checked_at': Timestamp.fromDate(DateTime(2026, 10, 22)),
+      });
+      expect(checked.stylesKnown, isTrue);
+      final map = checked.toMap();
+      expect(map['styles'], isEmpty);
+      expect(map['styles_checked_at'], DateTime(2026, 10, 22));
+      expect(map.containsKey('styles_manual'), isFalse);
+
+      final manual = RecipeTags.fromMap({
+        'styles': ['street_food'],
+        'styles_manual': true,
+      });
+      expect(manual.toMap()['styles'], ['street_food']);
+      expect(manual.toMap()['styles_manual'], isTrue);
+
+      // Jamais examinée : rien n'est écrit, le style reste inconnu.
+      final unknown = RecipeTags.fromMap({'meal_role': 'plat'});
+      expect(unknown.stylesKnown, isFalse);
+      expect(unknown.toMap().containsKey('styles'), isFalse);
+      expect(unknown.toMap().containsKey('styles_checked_at'), isFalse);
+
+      // Lecture tolérante : une valeur qui n'est pas une liste vaut vide.
+      final bad = RecipeTags.fromMap({
+        'styles': 'street_food',
+        'styles_manual': 'true',
+      });
+      expect(bad.styles, isEmpty);
+      expect(bad.stylesManual, isFalse);
+    });
+
+    test('fiche : « Style » après « Occasion », avant le rôle', () {
+      final sections = buildRecipeTagSections(
+        const RecipeTags(
+          cuisines: ['américaine'],
+          occasions: ['soirée'],
+          mealRole: 'plat',
+          styles: ['barbecue', 'street_food'],
+        ),
+      );
+      final labels = sections.map((s) => s.label).toList();
+      expect(labels.indexOf('Style'), labels.indexOf('Occasion') + 1);
+      expect(labels.indexOf('Rôle dans un repas'), labels.indexOf('Style') + 1);
+      final style = sections.firstWhere((s) => s.label == 'Style');
+      // Libellés complets, dans l'ordre du vocabulaire.
+      expect(style.values, ['Street food', 'Barbecue / plancha']);
+    });
+
+    test('fiche : sans style, pas de section ; inconnu affiché tel quel', () {
+      expect(
+        buildRecipeTagSections(
+          const RecipeTags(mealRole: 'plat', styles: ['  ']),
+        ).map((s) => s.label),
+        isNot(contains('Style')),
+      );
+      final sections = buildRecipeTagSections(
+        const RecipeTags(styles: ['ancien_style', 'brunch']),
+      );
+      expect(sections.firstWhere((s) => s.label == 'Style').values, [
+        'Brunch',
+        'ancien_style',
+      ]);
+    });
+  });
 }

@@ -129,6 +129,10 @@ Map<String, dynamic> planningRecipeSummary(Recipe r) => {
     'mainProtein': ?r.tags.mainProtein,
     'mainStarch': ?r.tags.mainStarch,
   },
+  // Le style, seulement quand il est connu (examiné, corrigé ou posé) :
+  // absent, une préférence de style laisse passer la recette au lieu de
+  // l'écarter comme « sans style ».
+  if (r.tags.stylesKnown) 'styles': r.tags.styles,
   // Les parts de la recette : le serveur dit si le repas sera redimensionné.
   if (r.portions != null && r.portions! > 0) 'portions': r.portions,
   // Les allergènes calculés par le serveur : une exclusion d'allergène se

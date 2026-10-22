@@ -27,6 +27,19 @@ List<RecipeTagSection> buildRecipeTagSections(RecipeTags tags) {
   if (occasions.isNotEmpty) {
     sections.add(RecipeTagSection(label: 'Occasion', values: occasions));
   }
+  // Le style : libellés complets, dans l'ordre du vocabulaire ; une valeur
+  // hors vocabulaire suit, telle quelle.
+  final styles = orderedRecipeStyles(
+    tags.styles.map((s) => s.trim()).where((s) => s.isNotEmpty),
+  );
+  if (styles.isNotEmpty) {
+    sections.add(
+      RecipeTagSection(
+        label: 'Style',
+        values: [for (final s in styles) recipeStyleLabel(s)],
+      ),
+    );
+  }
   // En dernier : la liste des recettes ne montre que les deux premières
   // sections, et Cuisine + Type de plat y disent plus qu'un mot sur cinq.
   final mealRole = tags.mealRole?.trim() ?? '';

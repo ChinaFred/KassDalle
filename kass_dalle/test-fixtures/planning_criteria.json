@@ -7,10 +7,11 @@
     { "key": "wanted_proteins", "regime": "preference", "values": "main_proteins" },
     { "key": "wanted_starches", "regime": "preference", "values": "main_starches" },
     { "key": "max_duration", "regime": "preference", "values": "minutes" },
-    { "key": "light", "regime": "preference", "values": "boolean" }
+    { "key": "light", "regime": "preference", "values": "boolean" },
+    { "key": "wanted_styles", "regime": "preference", "values": "styles" }
   ],
   "max_duration_bounds": { "min": 5, "max": 600 },
-  "_read_comment": "Lecture d'un objet de critères stocké (cache users/{uid}/preferences/planning_constraints) ou rendu par le modèle. Donnée non fiable : une valeur hors vocabulaire est écartée, une liste est dédoublonnée et rangée dans l'ordre du vocabulaire (règlement INCO pour les allergènes, meal_roles.json pour protéines et féculents). max_duration : entier de 5 à 600, sinon absent. light : booléen strict. Une valeur à la fois exclue et voulue quitte la liste voulue : l'exclusion l'emporte. expected : la forme canonique, les sept clés.",
+  "_read_comment": "Lecture d'un objet de critères stocké (cache users/{uid}/preferences/planning_constraints) ou rendu par le modèle. Donnée non fiable : une valeur hors vocabulaire est écartée, une liste est dédoublonnée et rangée dans l'ordre du vocabulaire (règlement INCO pour les allergènes, meal_roles.json pour protéines et féculents). max_duration : entier de 5 à 600, sinon absent. light : booléen strict. Une valeur à la fois exclue et voulue quitte la liste voulue : l'exclusion l'emporte. wanted_styles : styles voulus, vocabulaire styles de meal_roles.json. expected : la forme canonique, les huit clés.",
   "read_cases": [
     {
       "name": "objet complet",
@@ -21,7 +22,8 @@
         "wanted_proteins": ["poisson"],
         "wanted_starches": ["riz"],
         "max_duration": 30,
-        "light": true
+        "light": true,
+        "wanted_styles": ["barbecue", "street_food"]
       },
       "expected": {
         "excluded_allergens": ["gluten", "lait"],
@@ -30,7 +32,8 @@
         "wanted_proteins": ["poisson"],
         "wanted_starches": ["riz"],
         "max_duration": 30,
-        "light": true
+        "light": true,
+        "wanted_styles": ["street_food", "barbecue"]
       }
     },
     {
@@ -38,7 +41,8 @@
       "raw": {
         "excluded_allergens": ["lactose", "lait", "lait", 3, null],
         "excluded_proteins": ["porc", "jambon"],
-        "wanted_starches": ["quinoa"]
+        "wanted_starches": ["quinoa"],
+        "wanted_styles": ["junk_food", "street_food", "street_food", "Street food"]
       },
       "expected": {
         "excluded_allergens": ["lait"],
@@ -47,7 +51,8 @@
         "wanted_proteins": [],
         "wanted_starches": [],
         "max_duration": null,
-        "light": false
+        "light": false,
+        "wanted_styles": ["street_food"]
       }
     },
     {
@@ -60,7 +65,8 @@
         "wanted_proteins": [],
         "wanted_starches": [],
         "max_duration": null,
-        "light": false
+        "light": false,
+        "wanted_styles": []
       }
     },
     {
@@ -73,7 +79,8 @@
         "wanted_proteins": [],
         "wanted_starches": [],
         "max_duration": null,
-        "light": false
+        "light": false,
+        "wanted_styles": []
       }
     },
     {
@@ -86,7 +93,8 @@
         "wanted_proteins": [],
         "wanted_starches": [],
         "max_duration": 600,
-        "light": false
+        "light": false,
+        "wanted_styles": []
       }
     },
     {
@@ -99,7 +107,8 @@
         "wanted_proteins": [],
         "wanted_starches": [],
         "max_duration": null,
-        "light": false
+        "light": false,
+        "wanted_styles": []
       }
     },
     {
@@ -117,7 +126,8 @@
         "wanted_proteins": ["volaille"],
         "wanted_starches": [],
         "max_duration": null,
-        "light": false
+        "light": false,
+        "wanted_styles": []
       }
     },
     {
@@ -130,11 +140,12 @@
         "wanted_proteins": [],
         "wanted_starches": [],
         "max_duration": null,
-        "light": false
+        "light": false,
+        "wanted_styles": []
       }
     }
   ],
-  "_merge_comment": "Critères d'un créneau : ceux des préférences générales et ceux de la note du jour, réunis. Listes : union, dans l'ordre du vocabulaire. max_duration : la plus petite. light : l'un ou l'autre. L'exclusion l'emporte encore sur le voulu.",
+  "_merge_comment": "Critères d'un créneau : ceux des préférences générales et ceux de la note du jour, réunis. Listes (styles compris) : union, dans l'ordre du vocabulaire. max_duration : la plus petite. light : l'un ou l'autre. L'exclusion l'emporte encore sur le voulu.",
   "merge_cases": [
     {
       "name": "union et durée la plus courte",
@@ -149,7 +160,8 @@
         "wanted_proteins": [],
         "wanted_starches": [],
         "max_duration": 30,
-        "light": false
+        "light": false,
+        "wanted_styles": []
       }
     },
     {
@@ -162,7 +174,22 @@
         "wanted_proteins": [],
         "wanted_starches": [],
         "max_duration": 20,
-        "light": true
+        "light": true,
+        "wanted_styles": []
+      }
+    },
+    {
+      "name": "styles : union, dans l'ordre du vocabulaire",
+      "parts": [{ "wanted_styles": ["barbecue"] }, { "wanted_styles": ["street_food", "barbecue"] }],
+      "expected": {
+        "excluded_allergens": [],
+        "excluded_proteins": [],
+        "excluded_starches": [],
+        "wanted_proteins": [],
+        "wanted_starches": [],
+        "max_duration": null,
+        "light": false,
+        "wanted_styles": ["street_food", "barbecue"]
       }
     },
     {
@@ -175,7 +202,8 @@
         "wanted_proteins": [],
         "wanted_starches": [],
         "max_duration": null,
-        "light": false
+        "light": false,
+        "wanted_styles": []
       }
     }
   ],
@@ -267,8 +295,32 @@
       "expected": []
     }
   ],
-  "_preference_comment": "Prédicat des préférences — serveur seul : le client n'applique que les exclusions. verdict : violates (préférence non tenue, values = ce que l'élément porte), ok, unknown (donnée absente : l'élément passe, faute de preuve contraire). max_duration compare prep_minutes, la préparation, comme la contrainte « Prépa max ». light : l'élément dit s'il est léger (true, false ou absent).",
+  "_preference_comment": "Prédicat des préférences — serveur seul : le client n'applique que les exclusions. verdict : violates (préférence non tenue, values = ce que l'élément porte), ok, unknown (donnée absente : l'élément passe, faute de preuve contraire). max_duration compare prep_minutes, la préparation, comme la contrainte « Prépa max ». light : l'élément dit s'il est léger (true, false ou absent). wanted_styles : l'un des styles voulus suffit (union) ; styles absent = recette jamais examinée (pas de tags.styles_checked_at), le verdict est unknown ; values = les styles de l'élément, dans l'ordre du vocabulaire.",
   "preference_cases": [
+    {
+      "name": "style voulu : tenu",
+      "criteria": { "wanted_styles": ["street_food", "barbecue"] },
+      "item": { "styles": ["barbecue", "festif"] },
+      "expected": [{ "key": "wanted_styles", "verdict": "ok", "values": [] }]
+    },
+    {
+      "name": "style voulu : non tenu, la recette n'en porte aucun",
+      "criteria": { "wanted_styles": ["street_food"] },
+      "item": { "styles": [] },
+      "expected": [{ "key": "wanted_styles", "verdict": "violates", "values": [] }]
+    },
+    {
+      "name": "style voulu : non tenu, la recette en porte un autre",
+      "criteria": { "wanted_styles": ["street_food"] },
+      "item": { "styles": ["frais_estival", "healthy"] },
+      "expected": [{ "key": "wanted_styles", "verdict": "violates", "values": ["healthy", "frais_estival"] }]
+    },
+    {
+      "name": "style voulu, recette jamais examinée : passe",
+      "criteria": { "wanted_styles": ["street_food"] },
+      "item": {},
+      "expected": [{ "key": "wanted_styles", "verdict": "unknown", "values": [] }]
+    },
     {
       "name": "protéine voulue : tenue",
       "criteria": { "wanted_proteins": ["poisson", "fruits_de_mer"] },
@@ -327,5 +379,18 @@
         { "key": "light", "verdict": "ok", "values": [] }
       ]
     }
+  ],
+  "_weekday_comment": "Portée par jour de semaine. Un texte compris porte les critères valables tous les jours (criteria) et, à part, ceux qu'il réserve à un jour nommé (« le vendredi ») : criteria_by_weekday, clés \"1\" (lundi) à \"7\" (dimanche), chaque valeur un objet de critères lu comme read_cases. Lecture (weekday_read_cases) : une clé hors 1 à 7, une valeur qui n'est pas un objet ou un objet sans critère est écartée ; expected : les jours gardés, forme canonique. Critères d'un texte pour un jour (weekday_cases) : criteria réunis à ceux de ce jour, même réunion que merge_cases. Le serveur l'applique à chaque créneau selon son jour de semaine (slotCriteriaOf), le client au jour affiché (criteriaForDay).",
+  "weekday_read_cases": [
+    {"name": "vendredi seul", "raw": {"5": {"wanted_styles": ["street_food"]}}, "expected": {"5": {"excluded_allergens": [], "excluded_proteins": [], "excluded_starches": [], "wanted_proteins": [], "wanted_starches": [], "max_duration": null, "light": false, "wanted_styles": ["street_food"]}}},
+    {"name": "clés hors 1 à 7, valeurs vides ou illisibles écartées", "raw": {"0": {"light": true}, "8": {"light": true}, "vendredi": {"light": true}, "5.0": {"light": true}, "1": {}, "2": {"wanted_styles": ["junk_food"]}, "3": "porc", "7": {"excluded_proteins": ["porc"]}}, "expected": {"7": {"excluded_allergens": [], "excluded_proteins": ["porc"], "excluded_starches": [], "wanted_proteins": [], "wanted_starches": [], "max_duration": null, "light": false, "wanted_styles": []}}},
+    {"name": "pas un objet : aucun jour", "raw": [{"wanted_styles": ["street_food"]}], "expected": {}},
+    {"name": "absent : aucun jour", "raw": null, "expected": {}}
+  ],
+  "weekday_cases": [
+    {"name": "le vendredi : le style s'ajoute au vendredi", "criteria": {"excluded_proteins": ["porc"]}, "criteria_by_weekday": {"5": {"wanted_styles": ["street_food"]}}, "weekday": 5, "expected": {"excluded_allergens": [], "excluded_proteins": ["porc"], "excluded_starches": [], "wanted_proteins": [], "wanted_starches": [], "max_duration": null, "light": false, "wanted_styles": ["street_food"]}},
+    {"name": "un autre jour : le style du vendredi ne s'applique pas", "criteria": {"excluded_proteins": ["porc"]}, "criteria_by_weekday": {"5": {"wanted_styles": ["street_food"]}}, "weekday": 2, "expected": {"excluded_allergens": [], "excluded_proteins": ["porc"], "excluded_starches": [], "wanted_proteins": [], "wanted_starches": [], "max_duration": null, "light": false, "wanted_styles": []}},
+    {"name": "réunion : durée la plus courte, exclusion qui l'emporte", "criteria": {"max_duration": 45, "wanted_proteins": ["porc"]}, "criteria_by_weekday": {"3": {"max_duration": 20, "excluded_proteins": ["porc"]}}, "weekday": 3, "expected": {"excluded_allergens": [], "excluded_proteins": ["porc"], "excluded_starches": [], "wanted_proteins": [], "wanted_starches": [], "max_duration": 20, "light": false, "wanted_styles": []}},
+    {"name": "sans portée par jour", "criteria": {"light": true}, "criteria_by_weekday": null, "weekday": 1, "expected": {"excluded_allergens": [], "excluded_proteins": [], "excluded_starches": [], "wanted_proteins": [], "wanted_starches": [], "max_duration": null, "light": true, "wanted_styles": []}}
   ]
 }

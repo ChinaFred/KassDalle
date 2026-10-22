@@ -24,6 +24,7 @@ import {
   type MainStarch,
   type MealComponent,
   type MealRole,
+  type RecipeStyle,
 } from "./mealRole";
 import type { TranscribedRecipe } from "./transcription";
 import { noteDitQuelqueChose, noteFromRawLine } from "../nutrition/ingredientNote";
@@ -209,6 +210,10 @@ export interface TaggedRecipe {
   mainStarch: MainStarch | null;
   /** Le modèle a répondu sur la protéine et le féculent (`parseMainProteinStarch`). */
   mainIngredientsChecked: boolean;
+  /** Styles reconnus par la même passe (`parseRecipeStyles`). */
+  styles: RecipeStyle[];
+  /** Le modèle a répondu sur le style, même sans en retenir aucun. */
+  stylesChecked: boolean;
 }
 
 /**

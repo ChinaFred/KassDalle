@@ -310,6 +310,8 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
         mainProtein: prepared.tagged.mainProtein,
         mainStarch: prepared.tagged.mainStarch,
         mainIngredientsChecked: prepared.tagged.mainIngredientsChecked,
+        styles: prepared.tagged.styles,
+        stylesChecked: prepared.tagged.stylesChecked,
         userId: owner,
         bookId: book.id,
         bookTitre: book.titre,
@@ -832,6 +834,8 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
         mainProtein: null,
         mainStarch: null,
         mainIngredientsChecked: false,
+        styles: [],
+        stylesChecked: false,
         userId,
         bookId,
         bookTitre,
@@ -909,6 +913,8 @@ async function processJob(req: Request<ProcessorPayload>): Promise<void> {
         mainProtein: tagged.mainProtein,
         mainStarch: tagged.mainStarch,
         mainIngredientsChecked: tagged.mainIngredientsChecked,
+        styles: tagged.styles,
+        stylesChecked: tagged.stylesChecked,
         userId,
         bookId,
         bookTitre,
@@ -1253,6 +1259,10 @@ async function saveDraft(args: {
   mainStarch: string | null;
   /** Le modèle a répondu : la recette est marquée examinée et le backfill la saute. */
   mainIngredientsChecked: boolean;
+  /** Styles rendus par la passe 2 ; vides quand le modèle n'en a retenu aucun. */
+  styles: string[];
+  /** Le modèle a répondu sur le style : `styles_checked_at` est posé, le backfill « Style des recettes » la saute. */
+  stylesChecked: boolean;
   userId: string;
   bookId?: string;
   bookTitre?: string;
@@ -1506,6 +1516,12 @@ async function saveDraft(args: {
       ...(args.mainStarch ? { main_starch: args.mainStarch } : {}),
       ...(args.mainIngredientsChecked
         ? { main_ingredients_checked_at: FieldValue.serverTimestamp() }
+        : {}),
+      // Le style, écrit seulement quand le modèle a répondu, même sans style
+      // retenu : la recette est alors examinée. Une recette neuve ne porte
+      // aucune correction à la main.
+      ...(args.stylesChecked
+        ? { styles: args.styles, styles_checked_at: FieldValue.serverTimestamp() }
         : {}),
     },
     book_id: bookId ?? null,

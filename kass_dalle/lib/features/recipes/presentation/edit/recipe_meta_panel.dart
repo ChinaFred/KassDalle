@@ -24,6 +24,14 @@ const kMainIngredientHelper =
 const kMealContainsHelper =
     'Le planning propose un accompagnement pour ce qui manque.';
 
+/// Styles cochés au plus sur une recette.
+const kStylesMaxHelper =
+    'Trois styles au plus : retirez-en un pour en choisir un autre.';
+
+/// Aide sous les pastilles « Style ».
+const kStylesHelper =
+    'Le planning s\'en sert, par exemple pour "street food le vendredi".';
+
 /// Shared metadata form panel used by draft review, recipe edit, and recipe
 /// create screens.
 ///
@@ -67,6 +75,11 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
   /// et seulement pour un plat ou un accompagnement.
   final List<String> mealContains;
   final void Function(List<String>)? onMealContainsChanged;
+
+  /// Style de la recette (`tags.styles`). Les pastilles « Style » ne
+  /// s'affichent que si [onStylesChanged] est fourni.
+  final List<String> styles;
+  final void Function(List<String>)? onStylesChanged;
   final bool suggestingTags;
   final VoidCallback? onSuggestTags;
 
@@ -101,6 +114,8 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
     this.onMainStarchChanged,
     this.mealContains = const [],
     this.onMealContainsChanged,
+    this.styles = const [],
+    this.onStylesChanged,
     this.suggestingTags = false,
     this.onSuggestTags,
     this.pageType,
@@ -395,6 +410,12 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             const SizedBox(height: 12),
           ],
 
+          // Le style vaut pour tout rôle : un dessert peut être festif.
+          if (widget.onStylesChanged != null) ...[
+            _buildStyles(theme),
+            const SizedBox(height: 12),
+          ],
+
           if (showMainIngredients && widget.onMainProteinChanged != null) ...[
             _mainIngredientDropdown(
               key: const ValueKey('mainProteinDropdown'),
@@ -645,6 +666,59 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
         const SizedBox(height: 4),
         Text(
           kMealContainsHelper,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// « Style » : dix-huit pastilles, trois cochées au plus. Au plafond, les
+  /// autres se désactivent et l'aide le dit. Une valeur hors vocabulaire lue
+  /// en base reste en place sans pastille.
+  Widget _buildStyles(ThemeData theme) {
+    final current = widget.styles;
+    final known = current.where(kRecipeStyles.contains).length;
+    final full = known >= kMaxRecipeStyles;
+    void toggle(String value, bool selected) {
+      final next = [...current];
+      if (selected) {
+        if (!next.contains(value)) next.add(value);
+      } else {
+        next.remove(value);
+      }
+      widget.onStylesChanged!(orderedRecipeStyles(next));
+    }
+
+    return Column(
+      key: const ValueKey('recipeStylesChips'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Style',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final value in kRecipeStyles)
+              FilterChip(
+                label: Text(recipeStyleLabel(value)),
+                selected: current.contains(value),
+                onSelected: widget.saving || (full && !current.contains(value))
+                    ? null
+                    : (v) => toggle(value, v),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          full ? kStylesMaxHelper : kStylesHelper,
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

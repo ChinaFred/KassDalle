@@ -394,8 +394,8 @@ void main() {
 
   group('rangement', () {
     test('trois sections, ordre fixe du registre', () {
-      // Le registre n'a plus qu'un ponctuel : un second, d'essai, remplit la
-      // section « à lancer ».
+      // Un ponctuel d'essai s'ajoute au registre : la section « à lancer »
+      // garde l'ordre du registre.
       final sections = backfillSections(
         [...kBackfillRegistry, _testPonctuel],
         {
@@ -415,13 +415,19 @@ void main() {
         'recipe_roles',
         'shopping_products',
       ]);
-      expect(sections.ponctuelsALancer.map((d) => d.key), ['test_ponctuel']);
+      expect(sections.ponctuelsALancer.map((d) => d.key), [
+        'recipe_styles',
+        'test_ponctuel',
+      ]);
       expect(sections.ponctuelsTermines.map((d) => d.key), ['refresh_sodium']);
     });
 
     test('état illisible : tous les ponctuels restent à lancer', () {
       final sections = backfillSections(kBackfillRegistry, const {});
-      expect(sections.ponctuelsALancer.map((d) => d.key), ['refresh_sodium']);
+      expect(sections.ponctuelsALancer.map((d) => d.key), [
+        'refresh_sodium',
+        'recipe_styles',
+      ]);
       expect(sections.ponctuelsTermines, isEmpty);
     });
 

@@ -22,7 +22,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { recipeBudgetUserId } from "../ai/budget";
 import { BACKFILL_FAILURE_LIMIT, readFailureCount } from "../backfills/failureMemory";
 import { COLL_RECIPES, GEMINI_API_KEY } from "../config";
-import { containsPatch, mainIngredientsPatch } from "../gemini/mealRole";
+import { containsPatch, mainIngredientsPatch, stylesPatch } from "../gemini/mealRole";
 import { suggestMealRole } from "../gemini/tagger";
 import { logError, logInfo } from "../logging";
 
@@ -73,7 +73,9 @@ export function mealRoleContentChanged(
  *  - non si l'écriture ne change que la mémoire des échecs : c'est le
  *    backfill qui vient de compter un échec, ou ce déclencheur qui vient de
  *    remettre le compteur à zéro. Sans cette garde, chaque échec du backfill
- *    coûtait un second appel, ici, dans la seconde.
+ *    coûtait un second appel, ici, dans la seconde ;
+ *  - non si l'écriture ne change que le style (`onlyStyleTagsChanged`) : le
+ *    backfill « Style des recettes » ne classe pas les rôles.
  */
 export function mealRoleCallAllowed(
   data: Record<string, unknown>,
@@ -91,6 +93,7 @@ export function mealRoleCallAllowed(
     return false;
   }
   if (beforeData && onlyFieldsChanged(beforeData, data, MEAL_ROLE_MEMORY_FIELDS)) return false;
+  if (beforeData && onlyStyleTagsChanged(beforeData, data)) return false;
   return true;
 }
 
@@ -127,6 +130,38 @@ function onlyFieldsChanged(
   for (const key of keys) {
     if (isDeepStrictEqual(before[key], after[key])) continue;
     if (!fields.has(key)) return false;
+    changed = true;
+  }
+  return changed;
+}
+
+/** Sous-champs de `tags` que le backfill « Style des recettes » écrit. */
+const STYLE_TAG_FIELDS: ReadonlySet<string> = new Set(["styles", "styles_checked_at"]);
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * Vrai quand l'écriture ne change que le style (`tags.styles`,
+ * `tags.styles_checked_at`) : c'est le backfill « Style des recettes ».
+ * Sans cette garde, chacune de ses écritures sur une recette sans rôle
+ * aurait déclenché ici un appel de classement, facturé à part.
+ */
+export function onlyStyleTagsChanged(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): boolean {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  let changed = false;
+  for (const key of keys) {
+    if (isDeepStrictEqual(before[key], after[key])) continue;
+    if (key !== "tags") return false;
+    if (!onlyFieldsChanged(asRecord(before.tags), asRecord(after.tags), STYLE_TAG_FIELDS)) {
+      return false;
+    }
     changed = true;
   }
   return changed;
@@ -210,6 +245,8 @@ export async function syncRecipeMealRole(args: {
     // Ce que la recette apporte, corrigé à la main (`contains_manual`), n'est
     // jamais réécrit par le modèle.
     const contains = containsPatch(tags, fields.contains);
+    // Le style, corrigé à la main (`styles_manual`), n'est jamais réécrit.
+    const styles = stylesPatch(tags, fields);
     await getFirestore()
       .collection(COLL_RECIPES)
       .doc(recipeId)
@@ -222,6 +259,12 @@ export async function syncRecipeMealRole(args: {
         ...(patch.main_starch ? { "tags.main_starch": patch.main_starch } : {}),
         ...(fields.mainIngredientsChecked
           ? { "tags.main_ingredients_checked_at": FieldValue.serverTimestamp() }
+          : {}),
+        ...("styles" in styles
+          ? {
+              "tags.styles": styles.styles,
+              "tags.styles_checked_at": FieldValue.serverTimestamp(),
+            }
           : {}),
         "tags.roles_tagged_at": FieldValue.serverTimestamp(),
       });
