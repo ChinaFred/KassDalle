@@ -36,8 +36,12 @@ dans `backfill_schedule.json`, branché dans `scheduledPassFor`), sans appel de 
 y a plus d'un jour, supprimés quand le ticket manque, appartient à un autre compte ou ne les
 désigne pas par `screenshot_path`. Pas de TTL Firestore : il demanderait une date d'expiration
 écrite par le client, qu'une application restée sur une ancienne version n'écrirait pas.
-Aucune règle ne change. Tests : `retention.test.ts`, `backfillSchedule.test.ts`,
-`backfill_status_test.dart`, `admin_backfills_screen_test.dart`.
+Règles : `isErrorReport` exige `timestamp`, au plus un jour après `request.time` ; un rapport
+sans date ou daté de l'an 9999 échapperait à la purge. Tous les clients écrivent déjà ce
+champ. Les captures sont listées par pages de 500, 5 000 au plus par passage ; un identifiant
+de ticket illisible par Firestore (`__x__`) désigne une capture orpheline. Tests : `retention.test.ts`, `backfillSchedule.test.ts`,
+`backfill_status_test.dart`, `admin_backfills_screen_test.dart`, et trois cas de
+`rules-tests` (rapport sans date, daté du futur, daté de l'instant).
 
 ### v0.24.60 — fonctionnel
 

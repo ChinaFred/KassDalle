@@ -150,7 +150,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'captures jointes à un ticket que plus aucun ticket ne cite '
             '(dépôt abandonné, capture remplacée). Une capture rattachée à '
             'son ticket reste, quel que soit son âge.\n\n'
-            'Aucun appel d\'IA. Cinq mille rapports par passage. À '
+            'Aucun appel d\'IA. Cinq mille rapports et cinq mille captures '
+            'par passage. À '
             'programmer chaque jour pour que la règle des 90 jours tienne '
             'seule.';
       case BackfillKeys.utensilsCleanup:
@@ -291,12 +292,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         final r = await _repo.backfillRetention();
         return _fromCounts(
           r,
-          'Rapports d\'erreur supprimés=${r['rapportsSupprimes']} | '
+          'Rapports d\'erreur supprimés=${r['rapportsSupprimes']}, '
+          'lots en échec=${r['lotsRapportsEchoues']} | '
           'Captures : examinées=${r['capturesExaminees']}, '
           'supprimées=${r['capturesSupprimees']}, '
           'trop récentes pour être jugées=${r['capturesRecentes']}, '
           'échecs=${r['capturesEchouees']}'
-          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet, relancer'}'
+          '${(r['completed'] ?? 0) != 1
+              ? ' — incomplet, relancer'
+              : (r['capturesEchouees'] ?? 0) > 0
+              ? ' — parcours terminé, captures en échec retentées au prochain passage'
+              : ' — terminé'}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',

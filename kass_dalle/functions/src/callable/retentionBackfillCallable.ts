@@ -28,6 +28,7 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 
 import { COLL_TICKETS, MAX_CALLABLE_INSTANCES, REGION } from "../config";
+import { isPlausibleDocId } from "../tickets/rules";
 import { logError, logInfo } from "../logging";
 import { requireAdmin, type AuthContext } from "./_auth";
 import { runBackfillFromCallable } from "../backfills/runner";
@@ -58,6 +59,10 @@ const DEFAULT_MAX_REPORTS = 5000;
 const BATCH_SIZE = 400;
 /** Marge gardée sur le délai de la fonction. */
 const DEADLINE_MARGIN_MS = 45_000;
+/** Captures examinées par passage, au plus. */
+const MAX_SCREENSHOTS_PER_PASS = 5000;
+/** Fichiers de `tickets/` listés par page. */
+const SCREENSHOT_PAGE_SIZE = 500;
 /** Trois échecs de suite : une panne, pas trois éléments difficiles. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
@@ -73,6 +78,8 @@ export interface RetentionResponse {
   rapportsSupprimes: number;
   /** Tous les rapports trop anciens sont partis. */
   rapportsParcourus: boolean;
+  /** Tentatives de suppression d'un lot de rapports en échec. */
+  lotsRapportsEchoues: number;
   /** Captures examinées dans `tickets/`. */
   capturesExaminees: number;
   /** Captures orphelines supprimées. */
@@ -93,6 +100,7 @@ function emptyResponse(): RetentionResponse {
   return {
     rapportsSupprimes: 0,
     rapportsParcourus: false,
+    lotsRapportsEchoues: 0,
     capturesExaminees: 0,
     capturesSupprimees: 0,
     capturesRecentes: 0,
@@ -183,9 +191,11 @@ async function runReportsPhase(
       consecutiveFailures = 0;
     } catch (e) {
       // Le lot est relu au tour suivant ; trois échecs de suite arrêtent la
-      // phase. Pas d'entrée « à revoir » : un rapport ne s'ouvre pas depuis
-      // la liste, le journal suffit.
+      // phase, qui n'est alors pas parcourue. Pas d'entrée « à revoir » : un
+      // rapport ne s'ouvre pas depuis la liste ; le compteur et le journal
+      // disent l'échec.
       consecutiveFailures += 1;
+      response.lotsRapportsEchoues += 1;
       await logError("Conservation — échec de suppression d'un lot de rapports d'erreur", {
         correlationId: ctx.correlationId,
         userId: ctx.userId,
@@ -194,6 +204,7 @@ async function runReportsPhase(
         errorDescription: e instanceof Error ? e.message : String(e),
         extra: { firstReportId: page.docs[0].id, size: page.size, consecutiveFailures },
       });
+      continue;
     }
     if (page.size < size) {
       response.rapportsParcourus = true;
@@ -211,70 +222,137 @@ async function runScreenshotsPhase(
   response: RetentionResponse,
   review: BackfillReview,
 ): Promise<void> {
-  const [files] = await getStorage().bucket().getFiles({ prefix: "tickets/" });
+  const bucket = getStorage().bucket();
   const nowMs = Date.now();
-
-  // Une lecture de ticket par identifiant distinct, groupées.
-  const ticketIds = new Set<string>();
-  for (const file of files) {
-    const parsed = parseScreenshotPath(file.name);
-    if (parsed) ticketIds.add(parsed.ticketId);
-  }
-  const tickets = new Map<string, Record<string, unknown>>();
-  const ids = [...ticketIds];
-  for (let i = 0; i < ids.length; i += 100) {
-    const refs = ids.slice(i, i + 100).map((id) => db.collection(COLL_TICKETS).doc(id));
-    const snaps = await db.getAll(...refs);
-    for (const snap of snaps) {
-      if (snap.exists) tickets.set(snap.id, snap.data() as Record<string, unknown>);
-    }
-  }
-
   let consecutiveFailures = 0;
-  for (const file of files) {
+  let pageToken: string | undefined;
+  let unreadableSeen = false;
+
+  // Par pages : le nombre de fichiers sous `tickets/` dépend de ce que les
+  // comptes déposent, et le délai se vérifie entre deux pages.
+  for (;;) {
     if (Date.now() > bounds.deadline) {
       response.stoppedByDeadline = true;
       return;
     }
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-      response.stoppedByErrors = true;
+    const [files, next] = await bucket.getFiles({
+      prefix: "tickets/",
+      maxResults: SCREENSHOT_PAGE_SIZE,
+      autoPaginate: false,
+      ...(pageToken ? { pageToken } : {}),
+    });
+    const tickets = await readTickets(db, ctx, files);
+    if (tickets.unreadable.size > 0) unreadableSeen = true;
+
+    for (const file of files) {
+      if (Date.now() > bounds.deadline) {
+        response.stoppedByDeadline = true;
+        return;
+      }
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        response.stoppedByErrors = true;
+        return;
+      }
+      if (response.capturesExaminees >= MAX_SCREENSHOTS_PER_PASS) {
+        response.stoppedByBudget = true;
+        return;
+      }
+      const parsed = parseScreenshotPath(file.name);
+      if (!parsed) continue;
+      response.capturesExaminees += 1;
+
+      const created = Date.parse(String(file.metadata?.timeCreated ?? ""));
+      if (!Number.isFinite(created) || nowMs - created < ORPHAN_SCREENSHOT_MIN_AGE_MS) {
+        response.capturesRecentes += 1;
+        continue;
+      }
+      // Lot de tickets illisible : aucun fichier de ce lot n'est jugé.
+      if (tickets.unreadable.has(parsed.ticketId)) continue;
+      if (!isOrphanScreenshot(file.name, parsed.uid, tickets.found.get(parsed.ticketId))) {
+        continue;
+      }
+
+      try {
+        await file.delete();
+        response.capturesSupprimees += 1;
+        consecutiveFailures = 0;
+      } catch (e) {
+        response.capturesEchouees += 1;
+        consecutiveFailures += 1;
+        review.add({
+          kind: "ticket",
+          id: parsed.ticketId,
+          label: `Capture du ticket ${parsed.ticketId}`,
+          reason: `Échec de suppression : ${shortErrorMessage(e)}`,
+        });
+        await logError("Conservation — échec de suppression d'une capture orpheline", {
+          correlationId: ctx.correlationId,
+          userId: ctx.userId,
+          moduleType: "DESIGN",
+          feature: FEATURE,
+          errorDescription: e instanceof Error ? e.message : String(e),
+          extra: { ticketId: parsed.ticketId, consecutiveFailures },
+        });
+      }
+    }
+
+    pageToken = (next as { pageToken?: string } | null)?.pageToken;
+    if (!pageToken) {
+      // Un lot de tickets illisible, sur n'importe quelle page, laisse des
+      // captures non jugées : le parcours n'est pas fini.
+      response.capturesParcourues = !unreadableSeen;
       return;
     }
+  }
+}
+
+/**
+ * Identifiant de ticket lisible par Firestore. Un dépôt Storage accepte tout
+ * segment ; `__x__` est réservé par Firestore et ferait échouer la lecture
+ * groupée. Un tel identifiant ne peut désigner aucun ticket.
+ */
+export function isReadableTicketId(id: string): boolean {
+  return isPlausibleDocId(id) && !/^__.*__$/.test(id);
+}
+
+/**
+ * Les tickets des fichiers d'une page, lus par lots de cent. Un identifiant
+ * illisible est traité comme un ticket absent ; un lot en échec est
+ * journalisé et ses identifiants sont mis à part (`unreadable`).
+ */
+async function readTickets(
+  db: FirebaseFirestore.Firestore,
+  ctx: AuthContext,
+  files: { name: string }[],
+): Promise<{ found: Map<string, Record<string, unknown>>; unreadable: Set<string> }> {
+  const ids = new Set<string>();
+  for (const file of files) {
     const parsed = parseScreenshotPath(file.name);
-    if (!parsed) continue;
-    response.capturesExaminees += 1;
-
-    const created = Date.parse(String(file.metadata?.timeCreated ?? ""));
-    if (!Number.isFinite(created) || nowMs - created < ORPHAN_SCREENSHOT_MIN_AGE_MS) {
-      response.capturesRecentes += 1;
-      continue;
-    }
-    if (!isOrphanScreenshot(file.name, parsed.uid, tickets.get(parsed.ticketId))) continue;
-
+    if (parsed && isReadableTicketId(parsed.ticketId)) ids.add(parsed.ticketId);
+  }
+  const found = new Map<string, Record<string, unknown>>();
+  const unreadable = new Set<string>();
+  const list = [...ids];
+  for (let i = 0; i < list.length; i += 100) {
+    const chunk = list.slice(i, i + 100);
     try {
-      await file.delete();
-      response.capturesSupprimees += 1;
-      consecutiveFailures = 0;
+      const snaps = await db.getAll(...chunk.map((id) => db.collection(COLL_TICKETS).doc(id)));
+      for (const snap of snaps) {
+        if (snap.exists) found.set(snap.id, snap.data() as Record<string, unknown>);
+      }
     } catch (e) {
-      response.capturesEchouees += 1;
-      consecutiveFailures += 1;
-      review.add({
-        kind: "ticket",
-        id: parsed.ticketId,
-        label: `Capture du ticket ${parsed.ticketId}`,
-        reason: `Échec de suppression : ${shortErrorMessage(e)}`,
-      });
-      await logError("Conservation — échec de suppression d'une capture orpheline", {
+      for (const id of chunk) unreadable.add(id);
+      await logError("Conservation — lecture d'un lot de tickets impossible", {
         correlationId: ctx.correlationId,
         userId: ctx.userId,
         moduleType: "DESIGN",
         feature: FEATURE,
         errorDescription: e instanceof Error ? e.message : String(e),
-        extra: { ticketId: parsed.ticketId, consecutiveFailures },
+        extra: { tickets: chunk.length },
       });
     }
   }
-  response.capturesParcourues = true;
+  return { found, unreadable };
 }
 
 // ── Point d'entrée ──────────────────────────────────────────────────────────
@@ -324,9 +402,9 @@ export function summarizeRetention(r: RetentionResponse): PassSummary {
     remaining: r.completed ? 0 : null,
     toReview: r.aRevoir.total,
     spendCapHit: false,
-    // Une suppression en échec se retente au passage suivant, sans appel de
-    // modèle.
-    unresolved: 0,
+    // Parcours fini mais captures en échec : « incomplet » sans reprise
+    // horaire ; elles se retentent au prochain passage programmé.
+    unresolved: r.capturesEchouees,
   };
 }
 
@@ -348,8 +426,8 @@ export async function runRetentionPass(
     await runScreenshotsPhase(db, ctx, bounds, response, review);
   }
 
-  response.completed =
-    response.rapportsParcourus && response.capturesParcourues && response.capturesEchouees === 0;
+  // Le parcours seul ; les captures en échec partent dans `unresolved`.
+  response.completed = response.rapportsParcourus && response.capturesParcourues;
   response.aRevoir = review.toJSON();
 
   await logInfo({

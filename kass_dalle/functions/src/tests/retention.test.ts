@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import {
   ERROR_REPORT_RETENTION_DAYS,
   isOrphanScreenshot,
+  isReadableTicketId,
   parseScreenshotPath,
   reportCutoff,
   summarizeRetention,
@@ -38,6 +39,18 @@ describe("parseScreenshotPath", () => {
     assert.equal(parseScreenshotPath("tickets/u1/t1/a/b.png"), null);
     assert.equal(parseScreenshotPath("users/u1/t1/screenshot.png"), null);
     assert.equal(parseScreenshotPath("tickets//t1/screenshot.png"), null);
+  });
+});
+
+describe("isReadableTicketId", () => {
+  test("identifiant Firestore ordinaire : lisible", () => {
+    assert.equal(isReadableTicketId("aB3_x-9"), true);
+  });
+
+  test("identifiant réservé ou hors forme : illisible, donc capture orpheline", () => {
+    assert.equal(isReadableTicketId("__x__"), false);
+    assert.equal(isReadableTicketId("a.b"), false);
+    assert.equal(isReadableTicketId(""), false);
   });
 });
 
@@ -75,6 +88,7 @@ describe("summarizeRetention", () => {
   const base: RetentionResponse = {
     rapportsSupprimes: 12,
     rapportsParcourus: true,
+    lotsRapportsEchoues: 0,
     capturesExaminees: 3,
     capturesSupprimees: 1,
     capturesRecentes: 0,
@@ -91,6 +105,12 @@ describe("summarizeRetention", () => {
     const s = summarizeRetention(base);
     assert.equal(s.complete, true);
     assert.equal(s.remaining, 0);
+  });
+
+  test("parcours fini avec des captures en échec : non résolues, sans reprise", () => {
+    const s = summarizeRetention({ ...base, capturesEchouees: 2 });
+    assert.equal(s.complete, true);
+    assert.equal(s.unresolved, 2);
   });
 
   test("passage arrêté : reste inconnu", () => {

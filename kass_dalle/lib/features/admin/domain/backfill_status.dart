@@ -431,7 +431,8 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
     case BackfillKeys.retention:
       return '${_count(n('rapportsSupprimes'), 'rapport supprimé', 'rapports supprimés')}, '
           '${_count(n('capturesSupprimees'), 'capture supprimée', 'captures supprimées')}'
-          '${siPositif('capturesEchouees', 'échec', 'échecs')}';
+          '${siPositif('capturesEchouees', 'échec', 'échecs')}'
+          '${siPositif('lotsRapportsEchoues', 'lot de rapports en échec', 'lots de rapports en échec')}';
     case BackfillKeys.utensilsCleanup:
       // Les fiches ne sont examinées qu'une fois toutes les recettes
       // parcourues : avant, « 0 fiche » se lirait comme un constat.
