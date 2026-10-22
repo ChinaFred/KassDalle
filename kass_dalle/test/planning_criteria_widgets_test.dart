@@ -190,6 +190,54 @@ void main() {
       );
     });
 
+    testWidgets('style compris : « style X ou Y », mots courts', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        'Pas de porc, street food ou barbecue',
+        const ConstraintTranslation(
+          text: 'Pas de porc, street food ou barbecue',
+          criteria: PlanningCriteria(
+            excludedProteins: ['porc'],
+            wantedStyles: ['street_food', 'barbecue'],
+          ),
+          untranslated: '',
+        ),
+      );
+      expect(
+        find.text('Compris : sans porc · style street food ou barbecue'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('critère réservé à un jour : suivi de ce jour', (tester) async {
+      await pump(
+        tester,
+        'Pas de porc, street food le vendredi',
+        const ConstraintTranslation(
+          text: 'Pas de porc, street food le vendredi',
+          criteria: PlanningCriteria(excludedProteins: ['porc']),
+          criteriaByWeekday: {
+            5: PlanningCriteria(wantedStyles: ['street_food']),
+          },
+          untranslated: '',
+        ),
+      );
+      expect(
+        find.text('Compris : sans porc · style street food le vendredi'),
+        findsOneWidget,
+      );
+    });
+
+    test('mot court de chaque style', () {
+      expect(recipeStyleShortWord('frais_estival'), 'frais');
+      expect(recipeStyleShortWord('hiver'), "d'hiver");
+      expect(recipeStyleShortWord('enfants'), 'pour les enfants');
+      expect(recipeStyleShortWord('soiree_plateau'), 'soirée plateau');
+      expect(recipeStyleShortWord('inconnu'), 'inconnu');
+    });
+
     testWidgets('pas encore lu : dit, sans rien traduire', (tester) async {
       await pump(tester, 'sans noix', null);
       expect(

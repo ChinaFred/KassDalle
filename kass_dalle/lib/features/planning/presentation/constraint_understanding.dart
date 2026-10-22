@@ -70,7 +70,7 @@ class ConstraintUnderstandingLines extends StatelessWidget {
         ),
       );
     } else {
-      final labels = t.criteria.labels;
+      final labels = t.labels;
       if (labels.isNotEmpty) {
         lines.add(
           _line(

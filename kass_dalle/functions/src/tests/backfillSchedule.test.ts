@@ -456,10 +456,11 @@ describe("auteur de la programmation", () => {
 });
 
 describe("verrou commun", () => {
-  test("l'enrichissement bloque le sel ; les autres ne bloquent personne", () => {
+  test("l'enrichissement bloque le sel, le rôle bloque le style ; les autres ne bloquent personne", () => {
     assert.deepEqual(lockSiblings("enrich_referentials"), ["refresh_sodium", "utensils_cleanup"]);
     assert.deepEqual(lockSiblings("refresh_sodium"), ["enrich_referentials", "utensils_cleanup"]);
-    assert.deepEqual(lockSiblings("recipe_roles"), []);
+    assert.deepEqual(lockSiblings("recipe_roles"), ["recipe_styles"]);
+    assert.deepEqual(lockSiblings("recipe_styles"), ["recipe_roles"]);
   });
   test("le nettoyage des ustensiles bloque ceux qui écrivent les fiches", () => {
     assert.deepEqual(lockSiblings("utensils_cleanup"), [
@@ -472,7 +473,7 @@ describe("verrou commun", () => {
 });
 
 describe("registre et validation", () => {
-  test("cinq récurrents, deux ponctuels, clés uniques", () => {
+  test("cinq récurrents, trois ponctuels, clés uniques", () => {
     assert.deepEqual(recurrentKeys(), [
       "nutrition",
       "enrich_referentials",
@@ -480,7 +481,7 @@ describe("registre et validation", () => {
       "recipe_roles",
       "shopping_products",
     ]);
-    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 2);
+    assert.equal(BACKFILLS.filter((b) => b.kind === "ponctuel").length, 3);
     assert.equal(new Set(BACKFILLS.map((b) => b.key)).size, BACKFILLS.length);
     assert.equal(backfillDefinition("inconnu"), null);
     // Ponctuels retirés en v0.23.52, v0.24.33, v0.24.37, v0.24.44 et v0.24.52 : leur clé n'est plus connue.

@@ -198,6 +198,34 @@ describe("décision du déclencheur", () => {
     assert.deepEqual(decideEstimatedTimes(removed, NOW), { kind: "none", reason: "up_to_date" });
   });
 
+  test("une écriture qui ne change que le style n'appelle pas le modèle", () => {
+    const before = recette({ tags: { prep_time: 10 } });
+    assert.equal(decideEstimatedTimes(before, NOW, before).kind, "estimate");
+    // Backfill « Style des recettes » : styles et marqueur d'examen.
+    const styled = recette({
+      tags: {
+        prep_time: 10,
+        styles: ["street_food"],
+        styles_checked_at: Timestamp.fromMillis(NOW),
+      },
+    });
+    assert.deepEqual(decideEstimatedTimes(styled, NOW, before), {
+      kind: "none",
+      reason: "style_echo",
+    });
+    // Correction à la main du style seul.
+    const manual = recette({ tags: { prep_time: 10, styles: ["hiver"], styles_manual: true } });
+    assert.deepEqual(decideEstimatedTimes(manual, NOW, before), {
+      kind: "none",
+      reason: "style_echo",
+    });
+    // Le style change avec une autre donnée : la décision ordinaire s'applique.
+    const withTitle = { ...styled, titre: "Autre titre" };
+    assert.equal(decideEstimatedTimes(withTitle, NOW, before).kind, "estimate");
+    // Création (pas d'avant) : on estime.
+    assert.equal(decideEstimatedTimes(styled, NOW).kind, "estimate");
+  });
+
   test("l'écho de l'écriture de l'estimation ne rappelle pas le modèle", () => {
     const data = recette();
     const decision = decideEstimatedTimes(data, NOW);

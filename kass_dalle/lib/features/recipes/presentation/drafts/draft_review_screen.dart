@@ -968,6 +968,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         onMainStarchChanged: setMainStarch,
         selectedContains: selectedContains,
         onContainsChanged: setContains,
+        selectedStyles: selectedStyles,
+        onStylesChanged: setStyles,
         onIngredientsChanged: setIngredients,
         onSuggestTags: canEnrich
             ? () => suggestTagsWithAI(

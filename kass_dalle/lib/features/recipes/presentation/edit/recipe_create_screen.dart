@@ -515,6 +515,8 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
               onMainStarchChanged: setMainStarch,
               mealContains: selectedContains,
               onMealContainsChanged: setContains,
+              styles: selectedStyles,
+              onStylesChanged: setStyles,
             ),
           ),
         ),
@@ -607,6 +609,8 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                     onMainStarchChanged: setMainStarch,
                     mealContains: selectedContains,
                     onMealContainsChanged: setContains,
+                    styles: selectedStyles,
+                    onStylesChanged: setStyles,
                   ),
                 ),
                 HybridRecipeEditor(

@@ -131,6 +131,7 @@ export const onRecipeWritten = onDocumentWritten(
       syncRecipeEstimatedTimes({
         recipeRef: after.ref,
         data,
+        beforeData,
         correlationId: newCorrelationId(qualify("ecriture_recette", "durees_estimees")),
         scanId,
       }),

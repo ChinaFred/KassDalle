@@ -139,6 +139,7 @@ interface FxRecipe {
   portions?: number | null;
   rating?: number;
   allergens?: { present: string[]; complete: boolean };
+  styles?: string[];
 }
 
 /** Créneau tel que la fixture l'écrit. */
@@ -267,7 +268,7 @@ interface PreselectionFixture {
         /** Services vidés par une exclusion. */
         unmet?: Array<{ service: string; key: string; status: string }>;
         /** Écarts par plat de la liste. */
-        plat_unmet?: Record<string, Array<{ key: string; status: string }>>;
+        plat_unmet?: Record<string, Array<{ key: string; status: string; detail?: string }>>;
       }>;
     };
     why: string;
@@ -475,6 +476,7 @@ function summaryOf(r: FxRecipe): PlanningRecipeSummary {
     ...(r.main_starch ? { mainStarch: r.main_starch } : {}),
     ...(r.portions != null ? { portions: r.portions } : {}),
     ...(r.allergens ? { allergens: r.allergens } : {}),
+    ...(r.styles ? { styles: r.styles } : {}),
   };
 }
 
@@ -829,7 +831,11 @@ describe("présélection — listes par créneau", () => {
           const plat: RankedCandidate | undefined = got.plats.find((p) => p.recipeId === id);
           assert.ok(plat, `plat ${id} classé`);
           assert.deepEqual(
-            (plat.unmet ?? []).map((u) => ({ key: u.key, status: u.status })),
+            (plat.unmet ?? []).map((u, i) => ({
+              key: u.key,
+              status: u.status,
+              ...(gaps[i]?.detail != null ? { detail: u.detail } : {}),
+            })),
             gaps,
           );
         }

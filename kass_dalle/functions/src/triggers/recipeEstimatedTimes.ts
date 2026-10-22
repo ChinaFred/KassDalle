@@ -39,6 +39,7 @@ import { recipeBudgetUserId } from "../ai/budget";
 import { readDurations } from "../cooklang/parser";
 import { estimateRecipeTimes, type TimeEstimate } from "../gemini/timeEstimate";
 import { logError, logInfo } from "../logging";
+import { STYLE_TAG_FIELDS_WITH_MANUAL, onlyStyleTagsChanged } from "./styleTagsEcho";
 
 export const TIME_ESTIMATE_FEATURE = "time_estimate";
 
@@ -124,7 +125,10 @@ export function parseStoredEstimatedTimes(value: unknown): StoredEstimatedTimes 
 
 /** Ce que l'écriture d'une recette demande pour ses durées estimées. */
 export type EstimatedTimesDecision =
-  | { kind: "none"; reason: "complete" | "up_to_date" | "pending" | "no_content" }
+  | {
+      kind: "none";
+      reason: "complete" | "up_to_date" | "pending" | "no_content" | "style_echo";
+    }
   | { kind: "clear"; fingerprint: string }
   | { kind: "estimate"; fingerprint: string };
 
@@ -140,11 +144,20 @@ export type EstimatedTimesDecision =
  *   que le texte ou le titre de la recette change.
  * - Il en manque une : on estime, sauf si une estimation existe déjà pour ce
  *   contenu, ou si une réservation récente est en cours.
+ * - [beforeData] fourni et l'écriture ne change que le style
+ *   (`tags.styles`, `tags.styles_checked_at`, `tags.styles_manual`) : rien.
+ *   Le backfill « Style des recettes » écrit ces champs sur des centaines de
+ *   recettes ; sans cette garde, chaque recette sans estimation aurait reçu
+ *   un appel `time_estimate` facturé, que le style ne demande pas.
  */
 export function decideEstimatedTimes(
   data: Record<string, unknown>,
   nowMs: number,
+  beforeData?: Record<string, unknown>,
 ): EstimatedTimesDecision {
+  if (beforeData && onlyStyleTagsChanged(beforeData, data, STYLE_TAG_FIELDS_WITH_MANUAL)) {
+    return { kind: "none", reason: "style_echo" };
+  }
   const read = readRecipeDurations(data);
   if (read.prep != null && read.cook != null) {
     if (data.estimated_times === undefined) return { kind: "none", reason: "complete" };
@@ -201,12 +214,14 @@ export function doneEstimatedTimes(
 export async function syncRecipeEstimatedTimes(args: {
   recipeRef: DocumentReference;
   data: Record<string, unknown>;
+  /** La recette avant l'écriture : un écho de style seul n'estime rien. */
+  beforeData?: Record<string, unknown>;
   correlationId: string;
   scanId?: string;
 }): Promise<void> {
-  const { recipeRef, data, correlationId, scanId } = args;
+  const { recipeRef, data, beforeData, correlationId, scanId } = args;
   const userId = recipeBudgetUserId(data.created_by);
-  const first = decideEstimatedTimes(data, Date.now());
+  const first = decideEstimatedTimes(data, Date.now(), beforeData);
   if (first.kind === "none") return;
 
   const logFailure = (message: string, err: unknown) =>

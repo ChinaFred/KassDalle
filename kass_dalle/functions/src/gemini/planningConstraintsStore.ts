@@ -6,8 +6,10 @@
  * qu'il n'a pas su traduire. Le document est écrit par le serveur seul ; son
  * titulaire le lit pour afficher « Compris : … » sous chaque champ.
  *
- * Forme : `{ entries: { <sha256>: { text, criteria, untranslated,
- * prompt_version, translated_at } }, updated_at }`, quarante entrées au plus.
+ * Forme : `{ entries: { <sha256>: { text, criteria, criteria_by_weekday,
+ * untranslated, prompt_version, translated_at } }, updated_at }`, quarante
+ * entrées au plus. `criteria_by_weekday` (depuis la version 2 du prompt) :
+ * les critères réservés à un jour, `{ "5": { …critères… } }`.
  *
  * Aucun SDK lourd : `firebase-admin/firestore` seul, déjà chargé par le reste
  * du bundle.
@@ -31,13 +33,23 @@ import {
   translationSpentUsd,
   type TextUnderstanding,
 } from "./planningConstraints";
-import { planningCriteriaToMap, readPlanningCriteria } from "./planningCriteria";
+import {
+  criteriaByWeekdayToMap,
+  planningCriteriaToMap,
+  readCriteriaByWeekday,
+  readPlanningCriteria,
+} from "./planningCriteria";
 
 /** Ce que la génération dit d'un texte, renvoyé au client. */
 export interface ConstraintTextOutcome {
   text: string;
-  /** Forme canonique (`planningCriteriaToMap`). */
+  /** Forme canonique (`planningCriteriaToMap`) : critères de tous les jours. */
   criteria: Record<string, unknown>;
+  /**
+   * Critères réservés à un jour de semaine (`criteriaByWeekdayToMap`) :
+   * `{ "5": { …critères… } }`. Vide sans critère de ce genre.
+   */
+  criteria_by_weekday: Record<string, unknown>;
   untranslated: string;
   /**
    * `cached` : lu dans le cache, aucun appel. `translated` : traduit par cet
@@ -92,10 +104,12 @@ export function readConstraintCache(data: unknown): Map<string, CacheEntry> {
     }
     const at = v.translated_at as { toMillis?: unknown } | null | undefined;
     const ms = at != null && typeof at.toMillis === "function" ? Number(at.toMillis()) : 0;
+    const byWeekday = readCriteriaByWeekday(v.criteria_by_weekday);
     out.set(hash, {
       text: v.text,
       understanding: {
         criteria: readPlanningCriteria(v.criteria),
+        ...(byWeekday.size > 0 ? { criteriaByWeekday: byWeekday } : {}),
         untranslated: typeof v.untranslated === "string" ? v.untranslated : "",
       },
       translatedAtMs: Number.isFinite(ms) ? ms : 0,
@@ -158,6 +172,7 @@ export async function understandPlanningTexts(args: {
   ): ConstraintTextOutcome => ({
     text,
     criteria: planningCriteriaToMap(u?.criteria ?? readPlanningCriteria(null)),
+    criteria_by_weekday: criteriaByWeekdayToMap(u?.criteriaByWeekday ?? new Map()),
     untranslated: u?.untranslated ?? text,
     status,
   });
@@ -236,6 +251,7 @@ export async function understandPlanningTexts(args: {
     fresh[constraintTextHash(text)] = {
       text,
       criteria: planningCriteriaToMap(u.criteria),
+      criteria_by_weekday: criteriaByWeekdayToMap(u.criteriaByWeekday ?? new Map()),
       untranslated: u.untranslated,
       prompt_version: PLANNING_CONSTRAINTS_PROMPT_VERSION,
       translated_at: now,

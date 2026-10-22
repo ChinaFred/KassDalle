@@ -445,6 +445,37 @@ class GcpBillingRepository {
     );
   }
 
+  /// Style des recettes (ponctuel) : un appel de modèle par recette jamais
+  /// examinée (poste `backfill_recipe_styles`), quarante par passage. Un style
+  /// corrigé à la main ne change pas. Réentrante, avec reprise sur point de
+  /// contrôle. Rend les compteurs tels quels (`stylees`, `sansStyle`,
+  /// `dejaExaminees`, `manuelles`, `horsRecette`, `echouees`, `restantes`) ;
+  /// les drapeaux valent 1 ou 0. Les recettes à revoir sont dans `failures`.
+  Future<BackfillCounts> backfillRecipeStyles({
+    double maxMinutes = 8,
+    int maxRecipes = 40,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+    bool force = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'maxMinutes': maxMinutes,
+      'maxRecipes': maxRecipes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+      'force': force,
+      'appVersion': kAppVersion,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillRecipeStylesFn',
+      payload,
+      timeout: const Duration(minutes: 9),
+    );
+
+    return BackfillCounts.fromMap(Map<String, dynamic>.from(raw as Map));
+  }
+
   /// Recalcule `shopping_products` sur toutes les recettes, sans appel de
   /// modèle. Réentrante, avec reprise sur point de contrôle. Rend les
   /// compteurs tels quels ; les drapeaux valent 1 ou 0. Les recettes à

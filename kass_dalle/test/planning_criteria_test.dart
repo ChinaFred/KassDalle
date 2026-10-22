@@ -67,6 +67,58 @@ void main() {
     }
   });
 
+  group('critères réservés à un jour de semaine', () {
+    for (final c in (fixture['weekday_read_cases'] as List).cast<Map>()) {
+      test('lecture : ${c['name']}', () {
+        expect(
+          criteriaByWeekdayToMap(readCriteriaByWeekday(c['raw'])),
+          c['expected'],
+        );
+      });
+    }
+    for (final c in (fixture['weekday_cases'] as List).cast<Map>()) {
+      test(c['name'] as String, () {
+        final got = criteriaForWeekday(
+          PlanningCriteria.fromMap(c['criteria']),
+          readCriteriaByWeekday(c['criteria_by_weekday']),
+          c['weekday'] as int,
+        );
+        expect(got.toMap(), c['expected']);
+      });
+    }
+
+    test('traduction relue : le style du vendredi ne vaut que le vendredi', () {
+      const text = 'Street food le vendredi';
+      final translation = ConstraintTranslation.fromMap({
+        'text': text,
+        'criteria': <String, Object?>{},
+        'criteria_by_weekday': {
+          '5': {
+            'wanted_styles': ['street_food'],
+          },
+        },
+        'untranslated': '',
+        'status': 'translated',
+      })!;
+      final translations = {text: translation};
+      expect(criteriaForTexts(translations, [text], weekday: 5).wantedStyles, [
+        'street_food',
+      ]);
+      expect(
+        criteriaForTexts(translations, [text], weekday: 3).wantedStyles,
+        isEmpty,
+      );
+      expect(criteriaForTexts(translations, [text]).wantedStyles, isEmpty);
+    });
+
+    test('« Compris » cite le style voulu', () {
+      expect(
+        const PlanningCriteria(wantedStyles: ['street_food', 'hiver']).labels,
+        ['style street food ou d\'hiver'],
+      );
+    });
+  });
+
   group('prédicat d\'exclusion', () {
     for (final c in (fixture['exclusion_cases'] as List).cast<Map>()) {
       test(c['name'] as String, () {

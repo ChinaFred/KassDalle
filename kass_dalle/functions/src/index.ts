@@ -170,6 +170,7 @@ export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledBackfills } from "./scheduled/backfillSchedule";
 export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdminCallable";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
+export { backfillRecipeStylesFn } from "./callable/recipeStylesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
 export { backfillUtensilsCleanupFn } from "./callable/utensilsCleanupBackfillCallable";
