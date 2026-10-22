@@ -28,11 +28,11 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { COLL_AI_USAGE, COLL_AI_USAGE_MONTHLY, COLL_TOKEN_USAGE } from "../config";
-import { logError } from "../logging";
+import { logError, logWarn } from "../logging";
 import { periodOf } from "../billing/periods";
 import { estimateAiCostUsd, loadAiPricingTable } from "./pricing";
 import { UNATTRIBUTED, addToDailySpend } from "./budget";
-import { addToScanSpend } from "./importBudget";
+import { addToScanSpend, isValidScanId } from "./importBudget";
 import type { AiProvider } from "./types";
 
 /** Fournisseur d'un appel — `internal` couvre ce qui n'est pas de l'inférence. */
@@ -543,8 +543,23 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
   // Même règle que la dépense du jour : écrit après l'appel, et un échec
   // d'écriture ne fait pas échouer un appel déjà facturé. Il rend seulement le
   // plafond de l'import trop permissif d'un appel, et cela doit se voir.
+  //
+  // Le `scanId` a déjà été contrôlé à l'entrée (`uploadScanId` pour
+  // `scanAndPromoteUploadFn`, `jobDispatcher` pour un job) : forme et
+  // propriétaire du compteur. La forme est revérifiée ici, au seul point qui
+  // écrit `scan_spend/{scanId}` : un chemin d'appel futur qui oublierait le
+  // contrôle ne pourrait pas y poser un identifiant arbitraire. Le
+  // propriétaire n'est pas relu ici : ce serait une lecture de plus par appel
+  // de modèle, dans une transaction sur un document que les tranches d'un
+  // livre incrémentent en parallèle (audit #151, ticket #163).
   const scanId = (entry.scanId ?? "").trim();
-  if (scanId.length > 0) {
+  if (scanId.length > 0 && !isValidScanId(scanId)) {
+    await logWarn({
+      message: "Dépense du scan non comptée : scanId mal formé",
+      userId: trimmedUserId || undefined,
+      extra: { feature: entry.feature, scanIdLength: scanId.length },
+    });
+  } else if (scanId.length > 0) {
     try {
       await addToScanSpend({ scanId, costUsd });
     } catch (err) {
