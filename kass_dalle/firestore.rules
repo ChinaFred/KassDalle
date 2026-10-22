@@ -1063,7 +1063,10 @@ service cloud.firestore {
     /// `storage_bytes` les octets d'un envoi : 21 pages de moins de 50 Mo
     /// (`kMaxImportPages`, plafond de la quarantaine), ou un livre de moins
     /// de 300 Mo. L'administrateur passe par la première branche, sans
-    /// borne.
+    /// borne. La borne vaut par écriture, pas par durée : elle empêche un
+    /// saut unique vers une valeur quelconque, pas une suite d'écritures
+    /// (quatre écritures au pas maximal passent 4 Gio). Fermer ce compteur
+    /// au client demande de le tenir côté serveur.
     function countsUp(field, maxStep) {
       return !(field in request.resource.data)
         || (request.resource.data[field] is int
