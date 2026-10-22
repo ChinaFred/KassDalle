@@ -432,6 +432,25 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
     case BackfillKeys.refreshSodium:
       return '${_count(n('refreshedIngredients'), 'ingrédient repris', 'ingrédients repris')}, '
           '${_count(n('failedIngredients'), 'échec', 'échecs')}';
+    case BackfillKeys.utensilsCleanup:
+      // Les fiches ne sont examinées qu'une fois toutes les recettes
+      // parcourues : avant, « 0 fiche » se lirait comme un constat.
+      final fiches = report['recettesParcourues'] == true;
+      final echecs = n('echouees') + n('fichesEchouees');
+      // Un essai à blanc compte ce qui serait corrigé : le résumé le dit
+      // d'abord, pour qu'on ne le lise pas comme un nettoyage fait.
+      if (report['essaiABlanc'] == true) {
+        return 'Essai à blanc : '
+            '${_count(n('corrigees'), 'recette à corriger', 'recettes à corriger')}, '
+            '${fiches ? _count(n('fichesSupprimees'), 'fiche à supprimer', 'fiches à supprimer') : 'fiches non examinées'}'
+            '${siPositif('aRevoirALaMain', 'à revoir à la main', 'à revoir à la main')}'
+            '${echecs > 0 ? ', ${_count(echecs, 'échec', 'échecs')}' : ''}';
+      }
+      return '${_count(n('corrigees'), 'recette corrigée', 'recettes corrigées')}, '
+          '${fiches ? _count(n('fichesSupprimees'), 'fiche supprimée', 'fiches supprimées') : 'fiches non examinées'}'
+          '${siPositif('aRevoirALaMain', 'à revoir à la main', 'à revoir à la main')}'
+          '${siPositif('aReprendre', 'à reprendre', 'à reprendre')}, '
+          '${_count(echecs, 'échec', 'échecs')}';
     default:
       return '';
   }
@@ -508,6 +527,14 @@ String backfillStatusLine({
             ? 'Incomplet$when$withSummary · $echecs. Relancez pour réessayer.'
             : 'Incomplet$when$withSummary · $echecs, nouvel essai '
                   '${formatNextRunShort(next, now)}';
+      }
+      // Un essai à blanc arrivé au bout qui a trouvé quoi corriger : relancer
+      // tel quel referait le même essai. Arrêté avant la fin, il se relance.
+      if (def.key == BackfillKeys.utensilsCleanup &&
+          state.lastReport?['essaiABlanc'] == true &&
+          state.lastReport?['recettesParcourues'] == true) {
+        return 'Incomplet$when$withSummary. Décochez « Essai à blanc » au '
+            'lancement pour corriger.';
       }
       return 'Incomplet$when$withSummary. Relancez pour continuer.';
   }
