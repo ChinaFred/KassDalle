@@ -428,15 +428,6 @@ String backfillReportSummary(String key, Map<String, dynamic>? report) {
     case BackfillKeys.refreshSodium:
       return '${_count(n('refreshedIngredients'), 'ingrédient repris', 'ingrédients repris')}, '
           '${_count(n('failedIngredients'), 'échec', 'échecs')}';
-    case BackfillKeys.defaultUnits:
-      return '${_count(n('creees'), 'unité créée', 'unités créées')}, '
-          '${_count(n('completees'), 'complétée', 'complétées')}, '
-          '${_count(n('dejaAJour'), 'déjà à jour', 'déjà à jour')}, '
-          '${_count(n('echouees'), 'échec', 'échecs')}';
-    case BackfillKeys.usersSchemaCheck:
-      return '${_count(n('examines'), 'compte lu', 'comptes lus')}, '
-          '${_count(n('nonConformes'), 'à revoir', 'à revoir')}, '
-          '${_count(n('echoues'), 'échec', 'échecs')}';
     default:
       return '';
   }

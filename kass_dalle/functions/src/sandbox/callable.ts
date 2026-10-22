@@ -14,7 +14,11 @@ import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/
 
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { requireAdmin, type AuthContext } from "../callable/_auth";
+import { callableErrorAlreadyLogged, toHttpsError } from "../callable/_callableErrors";
 import { PAGE_IMAGE_MAX_BYTES } from "../callable/_inputBounds";
+import { logError } from "../logging";
+import { BudgetExceededError } from "../ai/budget";
+import { StoragePathRefusedError } from "../utils/storagePath";
 import { readModelChoice } from "./model";
 import { detectOrientation } from "./orientation";
 import { detectPageQuad } from "./page";
@@ -109,6 +113,40 @@ export function readSandboxImage(data: SandboxRequest | undefined): {
   return { bytes: Buffer.from(bytesBase64, "base64"), mimeType };
 }
 
+/**
+ * L'erreur d'une expérience, traduite pour l'appelant.
+ *
+ * Le texte brut (fournisseur, SDK, Firestore) ne part plus au client : il est
+ * journalisé ici avec le compte, l'expérience et le `correlationId`, puis
+ * `toHttpsError` renvoie un texte fixe (audit #151, ticket #163). Une
+ * `HttpsError` déjà rédigée passe telle quelle ; une erreur du fournisseur déjà
+ * journalisée par `gemini/client.ts` ne reçoit pas de seconde ligne.
+ */
+export async function sandboxFailure(
+  err: unknown,
+  ctx: AuthContext,
+  feature: string,
+): Promise<HttpsError> {
+  if (err instanceof HttpsError) return err;
+  // Plafond d'IA et chemin refusé : des refus attendus, au message rédigé côté
+  // serveur, que `toHttpsError` rend tels quels. Pas de ligne ERROR pour eux.
+  if (err instanceof BudgetExceededError || err instanceof StoragePathRefusedError) {
+    return toHttpsError(err, { alreadyLogged: true });
+  }
+  if (!callableErrorAlreadyLogged(err)) {
+    await logError({
+      message: "sandboxFn : expérience en échec — texte fixe renvoyé au client",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      feature,
+      moduleType: "DESIGN",
+      extra: { errorName: err instanceof Error ? err.name : typeof err },
+    });
+  }
+  return toHttpsError(err, { alreadyLogged: true });
+}
+
 export const sandboxFn = onCall<SandboxRequest>(sandboxOpts, async (req) => {
   const experiment = req.data?.experiment;
   // Une seule garde, avant tout aiguillage : un appel non administrateur est
@@ -158,8 +196,7 @@ async function detectPage(
     });
     return { page };
   } catch (err) {
-    if (err instanceof HttpsError) throw err;
-    throw new HttpsError("internal", err instanceof Error ? err.message : String(err));
+    throw await sandboxFailure(err, ctx, FEATURE_DETECT_PAGE);
   }
 }
 
@@ -185,8 +222,7 @@ async function detectRegions(
     });
     return { regions: result.regions, engines: result.engines };
   } catch (err) {
-    if (err instanceof HttpsError) throw err;
-    throw new HttpsError("internal", err instanceof Error ? err.message : String(err));
+    throw await sandboxFailure(err, ctx, FEATURE_DETECT_REGIONS);
   }
 }
 
@@ -212,7 +248,6 @@ async function detectPageOrientation(
     });
     return { orientation };
   } catch (err) {
-    if (err instanceof HttpsError) throw err;
-    throw new HttpsError("internal", err instanceof Error ? err.message : String(err));
+    throw await sandboxFailure(err, ctx, FEATURE_DETECT_ORIENTATION);
   }
 }

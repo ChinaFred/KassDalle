@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.52 — fonctionnel
+### v0.24.56 — fonctionnel
 
 Admin › Tickets : le libellé du bouton « Valider et lancer le développement », qui passait
 à la ligne sur un téléphone de 360 px (ticket #181), se réduit pour tenir sur une ligne au
@@ -31,6 +31,108 @@ ligne. Avec un texte agrandi, il garde sa taille et passe à la ligne. Les autre
 « Fermer » sur les visionneuses, erreur des titres privés et des invitations par e-mail
 affichée) ou relèvent de choix assumés : barre du bas sans libellés, confirmations de
 succès retirées au ticket #143.
+
+### v0.24.55 — technique
+
+Durcissements des règles Firestore et Storage, ticket #162 (audit #151), limités aux points
+qui ne retirent aucun droit utilisé par le client. Storage : le `get` d'un fichier de
+`covers/`, `scans/`, `illustrations/`, `recipes/` et `users/` exige un compte nommé selon son
+document `users/{uid}` (`isApprovedReader()`). Un compte en attente, révoqué à l'instant ou
+sans document ne lit plus ces fichiers par le SDK ; un compte nommé à l'instant les lit sans
+attendre son jeton, comme le routeur l'ouvre sur le rôle du document. Coût : une lecture
+Firestore par téléchargement d'octets (`getData`) ; l'affichage par URL n'en coûte aucune.
+
+Firestore : un compteur de `app_config/usage` écrit par un compte non administrateur monte
+au plus d'un pas par écriture, 1 pour `scans_AAAA_MM` et 21 × 50 Mio pour `storage_bytes`
+(`countsUp(champ, pas)`), ce qu'écrit `UsageTracker.recordScan`. `planned_meals.components`
+est une liste de 100 entrées au plus, à la création et à toute mise à jour qui le modifie ;
+l'éditeur en écrit 70 au plus. Points du ticket non codés : la quarantaine réservée aux
+éditeurs (retire un droit du lecteur), le volume d'`error_reports` (les règles ne comptent
+pas), la liste fermée des champs de `planned_meals` (`PlannedMeal.extra`) et
+`revokeRefreshTokens` (change la connexion). Les points 4 (politiques d'IA) et 5 (`users`,
+`groups`) étaient déjà livrés en v0.24.30 et v0.24.31. Tests ajoutés dans
+`rules-tests/test/storage.test.mjs` et `firestore.test.mjs`.
+
+### v0.24.54 — technique
+
+Durcissements des Cloud Functions, fin du ticket #163 (lot 9 de l'audit #151). Les points 3,
+4, 6 et 7 du ticket étaient déjà livrés (v0.24.31 et v0.24.32) ; cette version ferme les
+trois restes. `sandboxFn` ne renvoie plus le texte brut d'une erreur d'expérience
+(`err.message`, qui pouvait contenir un message du fournisseur ou du SDK) : `sandboxFailure`
+la journalise avec le compte, le poste et le `correlationId`, puis `toHttpsError` renvoie le
+texte fixe des callables d'IA. `recordUsage` revérifie la forme du `scanId`
+(`isValidScanId`) avant d'écrire `scan_spend/{scanId}` : un chemin d'appel qui oublierait le
+contrôle d'entrée ne peut plus y poser un identifiant arbitraire ; le coût reste dans
+`ai_usage` et la dépense du jour. Les refus d'accès d'`ensureAdminWithAudit` sont
+échantillonnés par opération et par compte : une ligne `WARNING` par minute et par instance
+au plus, avec le nombre de refus. La classe d'échantillonnage du webhook des tickets
+(`SignatureRejectionLog`) devient `LogSampler` dans `utils/logSampler.ts`, partagée, avec
+une variante par clé (`KeyedLogSampler`). Aucun droit retiré, aucun poste d'IA nouveau.
+Tests : `logSampler.test.ts`, `sandboxGuard.test.ts`.
+
+### v0.24.53 — technique
+
+- Planning : les plafonds de sortie de la conception de recette (`PLANNING_CONCEPT_MAX_TOKENS`,
+  6 000 → 16 000 jetons) et de la traduction des consignes (`PLANNING_CONSTRAINTS_MAX_TOKENS`,
+  3 000 → 12 000) suivent celui du planning (v0.24.51) : la réflexion de Claude compte dans
+  `max_tokens` et pouvait consommer toute la sortie sans rendre de texte. Mesures sur Sonnet 5 :
+  752 et 865 jetons pour une conception, 662 pour une traduction. Seuls les jetons produits sont
+  facturés ; ce qui monte, c'est le coût plafond estimé avant l'appel (0,06 $ → 0,16 $ par
+  conception, 0,03-0,05 $ → 0,12-0,14 $ par traduction sur Sonnet 5), qui reste sous le plafond
+  de 0,50 € par génération. Une conception dont l'appel échoue garde sa réservation : la
+  génération en permet alors moins, jamais plus.
+
+### v0.24.52 — technique
+
+Retrait de deux backfills ponctuels terminés en production, d'après la liste « Copier la
+liste » d'Admin › Backfills : « Semer les unités standard » (`default_units`, terminé le
+21/10/2026 en v0.24.41, 2 unités créées, 38 complétées, 0 échec) et « Contrôler les comptes »
+(`users_schema_check`, terminé le 22/10/2026 en v0.24.46, 7 comptes lus, 0 à revoir). Sortent
+du code : les callables `backfillDefaultUnitsFn` et `backfillUsersSchemaCheckFn`, leurs
+exports, `nutrition/defaultUnits.ts` et `security/userDocument.ts` (que seuls ces callables
+lisaient), leurs tests, leurs entrées dans les deux registres et dans `backfill_schedule.json`,
+le groupe de verrou `enrich_referentials`/`default_units`, les méthodes du repository, les
+`case` de l'écran, les résumés, les icônes, et la nature `account` de la feuille « À revoir »
+avec sa consigne `kAccountFailuresHelp`, que plus rien ne produit. L'écran Unités de mesure
+vide ne renvoie plus vers Admin › Backfills. Les documents `app_config/backfill_run_<clé>`
+restent en base ; plus rien ne les lit. Aucun poste d'IA n'est concerné : les deux passages
+n'appelaient pas de modèle.
+
+### v0.24.51 — technique
+
+- Planning : le plafond de sortie du poste `planning` passe de 4 000 à 16 000 jetons
+  (`PLANNING_MAX_TOKENS`). Sur Claude Sonnet 5, la réflexion adaptative compte dans
+  `max_tokens` : le 22 octobre, l'appel a consommé ses 4 000 jetons en réflexion sans
+  rendre de texte, et le planning est retombé sur le choix par le code avec l'avis
+  « L'IA n'a pas répondu ». Le coût plafond estimé passe de 0,05 $ à 0,17 $ sur Sonnet 5,
+  sous le plafond de 0,50 € par génération. Gemini ne reçoit pas ce plafond : seule son
+  estimation de coût change.
+
+### v0.24.50 — fonctionnel
+
+- Admin › Moteur d'IA : chaque poste propose « Défaut (…) » pour le moteur, le modèle de
+  Claude et la réflexion, à côté des choix propres. Un choix propre s'enregistre même s'il
+  est égal au défaut. Avant, changer le modèle global faisait basculer tous les postes qui
+  n'avaient jamais été touchés, et ceux réglés à la main sur la même valeur.
+- Changer un défaut ne modifie plus aucun poste existant : l'écran écrit d'abord l'ancienne
+  valeur sur chaque poste qui le suivait, après une confirmation qui les compte. Le nouveau
+  défaut sert aux postes remis sur « Défaut », passés sur Claude ou ajoutés par une mise à
+  jour.
+- Nouveau réglage « Réflexion de Claude par défaut » (Selon le poste, Basse, Moyenne, Haute).
+  Chaque défaut affiche le nombre de postes qui le suivent, et le filtre « Suivent un défaut »
+  les liste. Un poste sur Haiku 4.5 affiche « Pas de réflexion avec Haiku 4.5. ».
+
+### v0.24.50 — technique
+
+- Nouveau champ `anthropic_effort` dans `app_config/ai_routing_policy` et dans les
+  configurations enregistrées. Absent, il vaut « Selon le poste » : le comportement en ligne
+  ne change pas, aucun backfill. `readRoutingPolicy` ne retire plus un modèle par poste égal
+  au défaut.
+- L'effort de réflexion prévu par le code de chaque poste vit dans `ai/featureEfforts.ts`
+  (`CODE_EFFORTS`, `codeEffortFor`), lu par les appels et envoyé à l'écran. Un test refuse un
+  `effort: "high"` écrit en dur ailleurs. Nouvelle logique dupliquée : l'ordre de résolution
+  de l'effort, verrouillé par `ai_effort_resolution.json` et déclaré dans `CLAUDE.md` et le
+  skill `logique-dupliquee` ; le skill `nouveau-poste-ia` cite `CODE_EFFORTS`.
 
 ### v0.24.49 — technique
 

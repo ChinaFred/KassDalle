@@ -75,20 +75,62 @@ imposait le même modèle à tous les autres. Transcrire une page de livre deman
 précision et se paie à la page ; estimer les calories d'une carotte est un rappel de
 connaissances répété quinze fois par recette. Écran **Admin → Moteur d'IA** : le sélecteur
 n'apparaît que sous un poste effectivement routé vers Claude — l'afficher inactif ailleurs
-ferait croire qu'il manque un réglage alors qu'il manque une bascule ; un poste réglé sur le
-défaut **n'écrit rien**, pour ne pas le figer le jour où le défaut change ; et seuls les
+ferait croire qu'il manque un réglage alors qu'il manque une bascule ; et seuls les
 identifiants de `ANTHROPIC_MODEL_CHOICES` sont acceptés à l'écriture, tous présents dans la
 grille tarifaire — un modèle hors grille se facturerait sans montant et gonflerait
-`total_unpriced_calls`.
+`total_unpriced_calls`. La liste du sélecteur « Modèle de Claude par défaut » vient aussi de
+`ANTHROPIC_MODEL_CHOICES` (elle n'est plus écrite dans l'écran, prix compris).
+
+**Un choix explicite égal au défaut est un choix propre, et changer un défaut fige d'abord
+(depuis le 22 octobre 2026).** Les trois défauts — moteur (`defaultProvider`), modèle de
+Claude (`anthropicModel`), réflexion de Claude (`anthropicEffort`) — servent les postes qui
+n'ont pas de clé dans `features`, `anthropicModels` ou `anthropicEfforts`. Chaque poste
+propose « Défaut (…) », qui retire la clé ; tout autre choix l'écrit, même égal au défaut —
+`readRoutingPolicy` ne retire plus un modèle par poste égal au défaut, et « Tout Gemini » /
+« Tout Claude » écrivent des choix explicites. Quand l'administrateur change un défaut,
+l'écran écrit d'abord l'ancienne valeur sur chaque poste qui la suivait, puis change le
+défaut (`AiRoutingDefaults`, `features/admin/domain/ai_routing_defaults.dart`, testé dans
+`test/ai_routing_defaults_test.dart`) ; une confirmation compte ces postes (« 12 postes
+suivent le modèle par défaut : ils garderont Sonnet 5. … »), et n'apparaît pas quand aucun
+poste ne suit le défaut. Le modèle et la réflexion ne comptent que les postes servis par
+Claude ; un poste verrouillé ne suit aucun défaut. Sous « Selon le poste », c'est l'effort du
+code de chaque poste qui est figé ; un poste dont le serveur n'envoie pas cet effort n'est pas
+figé. Le nouveau défaut ne sert donc qu'aux postes remis sur « Défaut », à ceux qu'ajoute
+une mise à jour et, pour le modèle et la réflexion de Claude, aux postes passés ensuite sur
+Claude : la confirmation de ces deux défauts le dit (`defaultChangeMessage`, `claudeOnly`).
+Chaque défaut affiche « Suivi par N postes », et le filtre « Suivent un
+défaut (N) » liste les postes qui en suivent au moins un. La liste filtrée est figée à
+l'appui sur le filtre : un poste qui reçoit un choix propre reste affiché jusqu'au prochain
+appui. Filtre actif, « Tout Gemini » et « Tout Claude » n'agissent que sur les postes
+affichés, hors verrouillés, comme les raccourcis de groupe. `AiRoutingDiff` compte à part les
+postes qui passent de « Défaut » à un choix propre à valeur égale, sans quoi une
+configuration qui ne diffère que par là se dirait « déjà le réglage affiché ».
 
 **L'effort de réflexion Claude se choisit aussi par POSTE, depuis le 27 septembre 2026.**
 `AiRoutingPolicy.anthropicEfforts` (`Record<feature, "low"|"medium"|"high">`) est résolu par
 `resolveAnthropicEffort(policy, feature)` et appliqué dans `callModel`, avant l'appel Claude.
-Contrairement au modèle, il n'y a pas de repli global : un poste sans réglage garde l'effort
-que **son propre code** pose (`ModelCallContext.effort`), parce qu'aucun effort commun n'a de
-sens entre la lecture d'une page et un rappel de calories. Écran **Admin → Moteur d'IA**, même
-sélecteur de visibilité que le modèle, avec une puce « Réglage du code » qui efface
-l'exception plutôt que de la pointer vers une valeur partagée.
+Ordre de résolution : le réglage du poste, puis l'effort par défaut de la politique
+(`anthropicEffort`, `"low"|"medium"|"high"|null`), puis l'effort que **le code du poste**
+demande. `null` (« Selon le poste », champ absent au déploiement) garde le comportement
+d'avant : chaque poste reçoit l'effort de son code. Écran **Admin → Moteur d'IA**, même
+sélecteur de visibilité que le modèle : « Défaut (basse) | Basse | Moyenne | Haute », où la
+parenthèse dit l'effort que le poste reçoit en suivant le défaut — « Selon le poste (haute) »
+quand le défaut vaut « Selon le poste ». Réglage général « Réflexion de Claude par défaut » :
+« Selon le poste » | Basse | Moyenne | Haute ; quand le modèle par défaut est Haiku 4.5, une
+ligne dit « Ignorée sur Haiku 4.5. S'applique aux postes réglés sur Sonnet 5 ou Opus 5. »
+
+**L'effort du code a une seule source, `ai/featureEfforts.ts`.** `CODE_EFFORTS` nomme les
+postes qui demandent autre chose que `DEFAULT_CODE_EFFORT` (`low`) : `high` pour
+`transcription_page`, `text_extraction`, `url_import_fallback`, `detect_illustrations`, les
+quatre `page_illustrations_*` et les trois `sandbox_detect_*` ; `medium` pour
+`recipe_translation`. Les appels lisent `codeEffortFor(feature)` au lieu de recopier la valeur
+(`transcription.ts`, `detector.ts`, `illustrations/extract.ts`, `translation.ts`, le bac à
+sable), `requestShapeFor` applique `DEFAULT_CODE_EFFORT` quand l'appel n'en précise aucun, et
+`getAiRoutingPolicyFn` envoie `codeEffort` avec chaque poste (`routableFeaturesForScreen`).
+`tests/featureEfforts.test.ts` vérifie que chaque clé est un poste de `ROUTABLE_FEATURES`,
+que l'écran reçoit `codeEffortFor` de chaque poste, et que `TAGGING_EFFORT`
+(`gemini/tagging.ts`, gardé pour sa logique de reprise) vaut l'effort de `recipe_tagging` et
+`url_import`.
 
 **Le soin se choisit par poste.** `ModelCallContext.effort` (`low` par défaut) pilote
 `output_config.effort` chez Claude. Ce réglage était figé à `low` pour tous les postes, avec
@@ -114,9 +156,12 @@ is not supported on this model » à `thinking: { type: "adaptive" }`, et refuse
 (`{ type: "enabled", budget_tokens }`) ; il n'en reçoit pas, parce qu'il sert de modèle
 rapide et bon marché pour un rappel de connaissances. Un effort réglé dans Admin → Moteur
 d'IA sur un poste servi par Haiku n'est pas transmis : une ligne DEBUG « effort … non
-transmis » le dit, et l'appel part quand même. Le sélecteur d'effort reste affiché sous
-Haiku ; l'indication du modèle (`ANTHROPIC_MODEL_CHOICES`) précise « Sans réflexion : le
-réglage d'effort ne s'y applique pas ». Avant ce correctif, tous les appels routés vers
+transmis » le dit, et l'appel part quand même. `ANTHROPIC_MODEL_CHOICES` porte
+`supportsEffort`, calculé par `modelSupportsEffort` (`requestShapeFor`) : faux pour Haiku 4.5.
+Sous un poste effectivement sur Haiku 4.5, l'écran remplace les puces de réflexion par « Pas
+de réflexion avec Haiku 4.5. », suivi, si une réflexion est enregistrée, de « Réflexion haute
+enregistrée, ignorée tant que le poste est sur Haiku 4.5. » ; la valeur enregistrée est
+gardée. Avant ce correctif, tous les appels routés vers
 Haiku échouaient et se repliaient sur Gemini. Un balisage coupé au plafond
 (`runTaggingAttempts`, `gemini/tagging.ts`) n'est pas refait à l'effort suivant quand le modèle
 qui a répondu ne reçoit pas l'effort (`effortReachesModel` : Haiku 4.5, ou Gemini, dont l'appel
@@ -1963,12 +2008,13 @@ et relit la liste. Un brouillon s'ouvre sur `/drafts/{id}`. Un
 crayon vers `/recipes/{id}/edit` est masqué pour une recette non validée : l'éditeur
 charge `raw_cooklang` et efface `draft_cooklang` à l'enregistrement.
 
-Les quarante unités standard (gramme, cuillère à soupe, verre, pincée…) se sèment par le
-backfill ponctuel « Semer les unités standard » (`backfillDefaultUnitsFn`, §7.10), qui lit
-`DEFAULT_NUTRITION_UNITS` (`functions/src/nutrition/defaultUnits.ts`). Jusqu'en v0.24.39,
-ce semis s'écrivait depuis le client (icône de l'écran Unités de mesure). Une unité semée
-porte `display_label`, `aliases`, `measurement_type`, `grams_per_unit` (poids et petites
-mesures) ou `volume_ml_per_unit` (volumes), `status: known` et `source: builtin`.
+Les unités standard (gramme, cuillère à soupe, verre, pincée…) ont été semées par le
+backfill ponctuel « Semer les unités standard » (`backfillDefaultUnitsFn`, v0.24.40), terminé
+en production le 21/10/2026 et retiré du code en v0.24.52 ; jusqu'en v0.24.39, ce semis
+s'écrivait depuis le client. Une unité semée porte `display_label`, `aliases`,
+`measurement_type`, `grams_per_unit` (poids et petites mesures) ou `volume_ml_per_unit`
+(volumes), `status: known` et `source: builtin`. L'écran Unités de mesure
+n'a plus de bouton de semis : il montre et corrige.
 
 `nutrition_units/{unitId}` porte les mêmes champs de traçabilité, plus les alias observés,
 des exemples d'ingrédients associés et un `grams_per_unit` — **jamais** posé sur une unité
@@ -2059,7 +2105,7 @@ Cinq collections, écrites par `recordUsage` et par lui seul — sauf la carte `
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
 | `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls`, `total_analyzed_image_units` et `total_grounded_searches`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` (la seule quantité dont dépend une franchise mensuelle) et `grounded_searches` (appels ancrés dans Google, à rapprocher de la ligne « grounding » de la facture). `getMonthlyCostsFn` rend ce dernier total en `ai.groundedSearches` |
 | `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel : `uid`, `day`, `calls`, `cost_usd`, `unpriced_calls` (incrémentés par `recordUsage` après l'appel — d'un appel, ou du nombre d'images analysées pour la relance de modération, `dailyCalls`, depuis v0.23.48), `updated_at`, et `reservations` (`Map<String, {at_ms: Number, usd: Number, feature: String}>`, depuis v0.23.10) — les appels en cours, réservés avant de partir et retirés à leur fin ; une entrée de plus de quinze minutes est ignorée puis supprimée. Aucune reprise : un document sans `reservations` se lit comme « rien en cours ». Un document par jour : aucune remise à zéro à planifier, et l'historique reste lisible tel quel — `getAiBudgetFn` accepte un paramètre `day` (`AAAA-MM-JJ`), ce qui permet à Admin → Dépense par utilisateur de remonter à une journée passée. Un second paramètre, `scope` (`months` par défaut, ou `day`), ramène **le tableau entier** à cette journée : l'agrégat mensuel n'ayant pas de dimension jour, la ventilation par compte et par poste est alors reconstruite depuis `ai_usage` sur les bornes UTC du jour, par pages de mille lignes et jusqu'à vingt mille — au-delà, la réponse porte `spendsTruncated: true` et l'écran annonce des montants incomplets. Deux paramètres `from` et `to` (`HH:MM` UTC, ignorés hors `scope: day`) resserrent la lecture à une partie du jour, la minute `to` comprise ; la réponse rend les bornes appliquées (`spendFrom`, `spendTo`), une fin qui précède le début étant écartée et rendue nulle. Ce mode ne lit aucun document de `ai_usage_monthly`. Le serveur refuse une date impossible ou à venir et retombe alors sur aujourd'hui ; il renvoie `day` (le jour lu) **et** `currentDay` (le jour courant), pour que l'écran sache s'il regarde une journée close |
-| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. Un `scanId` venu du client n'atteint ce document qu'après deux contrôles : `scanAndPromoteUploadFn` l'écarte (`undefined`, `logWarn`) s'il n'a pas la forme `isValidScanId` ou si `scanOwnerConflict` désigne un autre compte — le contrôle du fichier a lieu, son coût reste dans `ai_usage` et la dépense du jour, sans compteur de scan ; `jobDispatcher` (`dispatchScanId`) le remplace par un identifiant serveur dans les mêmes cas. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`, avec le message « Plafond de cet import atteint : X dépensés pour Y autorisés. Pour continuer, appuyez sur « Relancer » : un nouveau budget de Z sera accordé. » (Z = `step_usd`, phrase omise sans palier ; `importBudgetDenial`). Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
+| `scan_spend/{scanId}` | Compteur de ce qu'un scan a coûté et plafond d'un import de livre. `recordUsage` y ajoute chaque appel qui porte un `scanId` (`cost_usd`, `calls`, `unpriced_calls`). `runBookImport` y pose `limit_usd`, `step_usd` et `user_id` depuis `budget_limit_usd`, jamais à la baisse ; `setImportCeiling` et `raiseImportCeiling` refusent (`ForeignScanError`) un compteur dont `user_id` désigne un autre compte. Un `scanId` venu du client n'atteint ce document qu'après deux contrôles : `scanAndPromoteUploadFn` l'écarte (`undefined`, `logWarn`) s'il n'a pas la forme `isValidScanId` ou si `scanOwnerConflict` désigne un autre compte — le contrôle du fichier a lieu, son coût reste dans `ai_usage` et la dépense du jour, sans compteur de scan ; `jobDispatcher` (`dispatchScanId`) le remplace par un identifiant serveur dans les mêmes cas. `recordUsage`, seul point qui écrit ce document, revérifie la forme (`isValidScanId`, v0.24.54) : un `scanId` mal formé n'y ajoute rien, avec un `logWarn` ; le coût reste dans `ai_usage` et la dépense du jour. Le propriétaire n'y est pas relu, pour ne pas ajouter une lecture transactionnelle par appel de modèle sur un document que les tranches d'un livre incrémentent en parallèle. `recipeProcessor` le relit avant le premier appel de chaque tranche de livre, et avant chaque traduction d'une recette étrangère de la tranche (`assertWithinImportBudget`) et lève `BudgetExceededError` (`reason: import`) quand `cost_usd >= limit_usd` : la tranche part en dead letter `budget_exceeded`, avec le message « Plafond de cet import atteint : X dépensés pour Y autorisés. Pour continuer, appuyez sur « Relancer » : un nouveau budget de Z sera accordé. » (Z = `step_usd`, phrase omise sans palier ; `importBudgetDenial`). Relancer une tranche depuis la file — `jobDispatcher` voit le job revenir en `queued` — relève le plafond à `cost_usd + step_usd` si, et seulement si, il est atteint. Le contrôle ne vaut que pour le pipeline d'import : la nutrition calculée plus tard sur ces recettes porte le même `scanId` et n'est pas bloquée. Un plafond est en dollars, unité du coût mesuré |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 
 ---
@@ -2265,7 +2311,7 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 
 | Document | Ce qu'il décide |
 |---|---|
-| `ai_routing_policy` | Quel moteur sert quel poste, et les budgets de réflexion |
+| `ai_routing_policy` | Quel moteur sert quel poste, et les budgets de réflexion. Champs : `default_provider` (`"gemini"`/`"anthropic"`), `features` (`Map` poste → fournisseur), `anthropic_model` (`String`, modèle de Claude par défaut), `anthropic_models` (`Map` poste → modèle), `anthropic_effort` (`"low"`/`"medium"`/`"high"`, absent ou `null` = « Selon le poste », depuis le 22 octobre 2026 ; aucun backfill : l'absence garde le comportement d'avant), `anthropic_efforts` (`Map` poste → effort), `fallback_enabled` (`bool`), `thinking_budget` (`int?`), `thinking_budgets` (`Map` poste → `int`), `updated_at`, `updated_by`. Une clé de poste présente est un choix propre, même égale au défaut |
 | `ai_pricing` | La grille tarifaire — **plus aucun prix n'existe dans le code** ; la table du serveur ne sert qu'à semer ce document au premier démarrage. Par modèle (`models.{id}`) : `input_per_million`, `output_per_million`, `image_output_per_unit`, `analyzed_image_per_unit`, `free_units_per_month`, `grounded_search_per_unit` (`Number`, prix d'un appel ancré dans la recherche Google), `introductory` |
 | `ai_budget_policy` | Plafonds quotidiens par compte, en euros et en nombre d'appels, et le seuil d'alerte mensuel |
 | `app_check_policy` | Mode d'attestation : `off`, `monitor`, `enforce` |
@@ -2315,7 +2361,10 @@ Firestore refusent l'écriture client, administrateur compris (`*_checkpoint`,
 est classé **ponctuel** ou **récurrent** dans un registre, `functions/src/backfills/registry.ts`,
 et son pendant client `lib/features/admin/domain/backfill_registry.dart` (mêmes clés :
 `nutrition`, `enrich_referentials`, `allergens`, `recipe_roles`, `shopping_products` —
-récurrents ; `refresh_sodium`, `default_units`, `users_schema_check` — ponctuels). `default_units` parcourt en un passage sa liste fixe de quarante unités, sans point de reprise. `users_schema_check` lit toute la collection `users` en un passage, sans point de reprise, et n'écrit que son état `app_config/backfill_run_users_schema_check`.
+récurrents ; `refresh_sodium` — ponctuel). Les ponctuels `default_units` et
+`users_schema_check` sont retirés en v0.24.52, une fois terminés en production ; leurs documents
+`app_config/backfill_run_default_units` et `app_config/backfill_run_users_schema_check` restent
+en base, plus rien ne les lit.
 Le ponctuel réutilisable `move_meals_to_group` (« Déplacer mes repas vers un groupe ») est
 retiré en v0.24.44 sur demande, sans avoir été marqué terminé ; avec lui disparaît la notion de
 ponctuel réutilisable (`reusable`) du registre client : le menu ⋮ propose « Marquer comme
@@ -2373,7 +2422,7 @@ abandonner le tick. Aucune migration manuelle.
 ### 3.13 bis Collection `ai_routing_presets` — les configurations de routage
 
 Un document par configuration enregistrée. Chacun porte `name`, `name_key` (le
-nom en minuscules, qui interdit deux homonymes), `policy` — les sept réglages de
+nom en minuscules, qui interdit deux homonymes), `policy` — tous les réglages de
 l'écran, aux mêmes clés que `ai_routing_policy` —, `created_at`, `updated_at` et
 `updated_by`.
 
@@ -3074,7 +3123,7 @@ service cloud.firestore {
 
 | Collection | Lecture | Écriture |
 |---|---|---|
-| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. **Rôle** (v0.24.32, ticket #163) : `role` ne prend que `pending`, `reader`, `editor` ou `admin`, écrit à l'identique ; un `superadmin` ou un `admin ` est refusé. Le serveur lit le champ de la même façon (`readRole`, `functions/src/security/roles.ts`) : une autre valeur vaut « aucun rôle », dans les claims (`syncUserClaims`) comme dans les gardes des callables (`requireAuth`). Les lectures retiraient auparavant les espaces, et un `admin ` y devenait administrateur. Côté client, `UserRole` lit aussi le nom à l'identique et rabat une valeur inconnue sur `pending`. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Les documents écrits avant ces règles se contrôlent par le backfill ponctuel « Contrôler les comptes » (`backfillUsersSchemaCheckFn`, §7.10), en lecture seule, qui signale les écarts qui cassent la lecture de la fiche, les droits du compte ou la lecture de la révocation. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
+| `users/{uid}` | titulaire ou admin | **champs permis** (v0.24.30, ticket #162) : création limitée aux champs d'`AppUser.toFirestore` (`keys().hasOnly`), `uid` absent ou égal à l'uid du document ; mise à jour par le titulaire limitée à `last_seen_at`, `photo_url`, `display_name`, `preferred_name`, `free_recipe_cover_url`, `import_illustrations` ; mise à jour d'un autre compte par un admin limitée à `role`, `is_revoked`, `preferred_name` (`affectedKeys().hasOnly`) ; `uid` ne change donc plus après la création ; `photo_url` nulle ou de 2048 caractères au plus. **Types** : à la création, `created_at` et `last_seen_at` en `timestamp` et `display_name` en chaîne sont obligatoires ; à la mise à jour, `last_seen_at`, `display_name`, `role` et `is_revoked` gardent leur type quand ils changent, et ne se retirent pas (`updatedTypesOk`). `AppUser.fromFirestore` lève une exception sans eux. **Rôle** (v0.24.32, ticket #163) : `role` ne prend que `pending`, `reader`, `editor` ou `admin`, écrit à l'identique ; un `superadmin` ou un `admin ` est refusé. Le serveur lit le champ de la même façon (`readRole`, `functions/src/security/roles.ts`) : une autre valeur vaut « aucun rôle », dans les claims (`syncUserClaims`) comme dans les gardes des callables (`requireAuth`). Les lectures retiraient auparavant les espaces, et un `admin ` y devenait administrateur. Côté client, `UserRole` lit aussi le nom à l'identique et rabat une valeur inconnue sur `pending`. `watchAllUsers` saute en plus un document illisible et le signale une fois (`admin.watchAllUsers`) : la liste continue avec les autres comptes. Les documents écrits avant ces règles ont été contrôlés par le backfill ponctuel « Contrôler les comptes » (`backfillUsersSchemaCheckFn`, v0.24.42), en lecture seule : dernier passage, 7 comptes lus, 0 à revoir ; terminé en production le 22/10/2026, retiré du code en v0.24.52. Le client lit l'uid sur l'identifiant du document, jamais sur le champ (`watchAllUsers`, `watchAppUser`) : un compte en attente qui portait l'uid d'un éditeur faisait révoquer l'éditeur depuis Admin › Comptes. Testé dans `rules-tests` (« users — champ uid et champs permis », « users — rôle lu sur le document ») |
 | `user_profiles` | `isApproved()` | **serveur seul** (`allow write: if false`) — `syncUserClaims` |
 | `group_reach` | le titulaire, ou un admin | **serveur seul** — `syncGroupReach` ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses livres |
 | `recipes/{id}/origine` | compte nommé qui peut lire la recette (`canReadRecipe` par `get()` sur la recette) | **serveur seul** (`allow write: if false`) — `recipeProcessor` écrit, `onRecipeWritten` supprime |
@@ -3085,12 +3134,12 @@ service cloud.firestore {
 | `recipe_ratings` | l'auteur, ou tout compte qui peut lire la recette notée (`canReadRecipe` par `get()` sur `recipe_id`) — donc un membre de mes groupes | création par un compte nommé, à son nom (`user_id`), sur une recette qu'il peut lire, sous l'identifiant `{uid}_{recipeId}` et aucun autre : une note par membre et par recette, sans quoi un doublon compterait deux fois dans la moyenne de la famille ; modification et suppression par l'auteur ou un admin, compte nommé et non révoqué, `user_id` et `recipe_id` figés. Création et modification exigent une note bien formée (`isValidRating`) : `rating` entier de 0 à 10, `updated_at` en `timestamp`, aucun autre champ que les quatre du schéma. La famille entière décode les notes d'une recette : une note mal formée ferait échouer l'affichage chez tous |
 | `groups` | membres du groupe, et ses invités (`invited_ids`) | création par un editor ou un admin (`isEditor()`, v0.23.54 : plus le reader), à son nom, soi seul membre, sans invité, avec les seuls champs que `createGroup` écrit (`keys().hasOnly` : `name`, `owner_id`, `member_ids`, `invited_ids`, `created_at` — v0.24.30, ticket #162) ; `owner_id` figé ; cinq mises à jour et elles seules : **gestion** (`isManagement`) par le propriétaire s'il est editor (`isEditor()`, v0.23.54), ou par un admin — renommer, inviter, annuler une invitation, retirer un membre, jamais en ajouter un, le propriétaire restant membre ; **réduction** (`isShrinking`, v0.23.54) par le propriétaire quel que soit son rôle — `invited_ids` et `member_ids` ne font que perdre des comptes, le propriétaire reste membre, rien d'autre ne change (ni nom, ni invitation nouvelle) ; **acceptation** par l'invité — son uid passe de `invited_ids` à `member_ids`, rien d'autre ; **refus** par l'invité — son uid sort de `invited_ids` ; **sortie** d'un membre autre que le propriétaire — son uid sort de `member_ids` (refusée avant la v0.23.19 : « Quitter le groupe » échouait). Acceptation, refus et sortie restent ouverts à tout rôle approuvé. Suppression par le propriétaire quel que soit son rôle, ou par un admin : un reader propriétaire d'un groupe créé avant la v0.23.54 ne peut pas le quitter, la suppression est sa seule sortie. Testé dans `rules-tests` (« groupes — rôle éditeur requis ») |
 | `processing_jobs` | admin, ou propriétaire du job — un éditeur ne lit plus les jobs d'autrui (v0.23.12) ; sa file de travail ne liste que les siens, la vue de tous les jobs est réservée à l'admin | création par un éditeur ou un admin (`isEditor()`), à son propre nom (`created_by == request.auth.uid`) : un `reader` n'importe pas, un job lançant le pipeline facturé (`jobDispatcher`) ; jamais de type `recipeUrlImport`, que seule `importRecipeFromUrlFn` crée après ses contrôles (adresse, doublon, plafond) ; un `recipeUrlImport` ne se relance qu'en `error` de code `timeout` ou sans code, en incrémentant `url_retry_count` de un, deux fois au plus (`urlRelaunchAllowed`), et ne s'annule qu'en `queued` ou `processing` (`urlJobInFlight`) — annuler un job terminé le rendrait relançable ; une annulation, de tout job, laisse `url_retry_count` inchangé (`retryCountUnchanged`), pour qu'elle ne remette pas le compteur à zéro ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation, et la relance (retour en `queued`, qui relance le pipeline) exige aussi `isEditor()` — un propriétaire qui n'est pas éditeur ne peut écrire que l'annulation exacte de `cancelJob` (`status: 'error'` et `cancel_requested: true`), car `jobDispatcher` met aussi en file un job au statut absent ou vide ; « Ce n'est pas un doublon » (`isDuplicateResume`) : le propriétaire **éditeur ou administrateur** fait passer un job de `duplicate` à `queued` avec `duplicate_override: true`, en ne touchant que `status`, `duplicate_override`, `error_message`, `current_step` et `updated_at` — `created_recipe_ids` reste en place, `duplicate_override` ne se pose sur aucun autre statut, un lecteur propriétaire ne reprend pas, un import par lien non plus ; à la création, le job naît en `queued` (statut absent admis) et sans aucun des champs que seul le pipeline écrit pour les doublons (`titre_keys`, `titre_key_pages`, `titre_key_titres`, `duplicate_checked`, `duplicates`, `pending_items`, `duplicate_override`) — posés par le client sur un job jamais mis en file, ils arrêteraient les imports suivants du même livre ; une relance par le propriétaire éditeur n'écrit que `queued` ou `error`, jamais `duplicate`, et ne part pas d'un job `duplicate` (seules la reprise et l'annulation en sortent) ; suppression par un admin, par le propriétaire **éditeur ou administrateur** d'un job au statut `duplicate` (rien n'y tourne, et la ligne n'a pas d'autre sortie que la reprise), ou par le propriétaire **actif** (`isApproved()` : approuvé, non révoqué), quel que soit son rôle, d'un job au statut `error` (v0.24.31) — un job `owner_not_editor` n'a pas d'autre sortie ; aucun déclencheur ne suit cette suppression : le fichier `scans/`, `scan_spend/{scan_id}` (trace comptable) et la dead letter restent, et `relaunchDeadLetterFn` refuse ensuite la relance (« Job original supprimé ») ; `additional_file_urls`, quand il est présent, est une liste de **20 entrées au plus**, en création comme en mise à jour, administrateur compris (`additionalFileUrlsBounded`, v0.24.17) : le pipeline télécharge chaque page et l'envoie au modèle |
-| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur resté sans le champ, que le backfill `group_planning_reach` (retiré en v0.24.33) n'a pas atteint, ne se lit pas) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
+| `planned_meals` | le propriétaire, même en attente ou révoqué ; et, en lecture seule, un compte nommé (`isApproved()`) dont `planning_reach/{lecteur}.uids` contient le propriétaire (`canReadPlanningOf`, une lecture de `planning_reach` par requête, avec `exists()`), **pour un repas personnel seulement** (`resource.data.group_id == null`, champ présent : un repas antérieur resté sans le champ, que le backfill `group_planning_reach` (retiré en v0.24.33) n'a pas atteint, ne se lit pas) — la requête du client filtre `uid == propriétaire` et `group_id == null`, et une requête sans ce second filtre est refusée : le partage personnel n'ouvre pas les repas des groupes du propriétaire. Cette lecture porte sur tout le document : `justification`, `choice_source`, `dismissed_recipe_ids` et `components[].justification` sont lisibles par l'audience ; le client ne les affiche pas, ce qui n'est pas une protection (décision provisoire, §3.7). **Planning de groupe** : en lecture seule aussi, un compte nommé dont `planning_reach/{lecteur}.group_ids` contient le `group_id` du repas (`canReadGroupPlanning`) et dont le `uid` est le propriétaire actuel du groupe (une lecture de `groups/{group_id}`) — la requête du client filtre `group_id == groupe` et `uid == propriétaire` ; un invité ne lit pas | création et modification par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) : un lecteur, un compte en attente ou révoqué ne planifie pas ; `uid` d'un repas figé ; `group_id` figé ; `components` est une liste de 100 entrées au plus, testée à la création et à toute mise à jour qui le modifie (v0.24.55, ticket #162 : l'éditeur en écrit 70 au plus, 10 services de 6 accompagnements ; un repas antérieur plus long reste modifiable hors composants) — les autres champs ne sont pas listés, `PlannedMeal.extra` réécrivant ceux d'une version plus récente ; un repas qui porte `group_id` exige que l'appelant soit `owner_id` de ce groupe (`ownsMealGroup`, une lecture de `groups/{group_id}`) ; suppression d'un repas par son propriétaire **éditeur ou administrateur** seul (`isEditor()`) : un lecteur ne supprime plus ses repas antérieurs |
 | `planning_config` | le propriétaire seul, même en attente ou révoqué | création, modification et suppression par le propriétaire **éditeur ou administrateur** (`isEditor()`, v0.23.47) ; `shared_group_ids`, s'il est présent, est une liste de 50 éléments au plus, et `group_portions` une table de 50 entrées au plus (`isPlanningConfig`) — les règles ne vérifient pas le type de chaque élément, le serveur ignore ce qui n'est pas un identifiant de groupe |
 | `planning_reach` | le titulaire, ou un admin | **serveur seul** — `syncPlanningReachFor` (déclencheurs `syncGroupReach`, `syncPlanningReachOnConfig`, `syncPlanningReachOnRole`) ; un compte qui pourrait s'ajouter la portée d'un autre lirait ses repas |
 | `meal_suggestions` | l'auteur (`author_uid`) ou le propriétaire du groupe (`group_owner_id`), compte nommé (`isApproved()`) ; un autre membre ne lit pas les suggestions des autres ; une requête sans l'un de ces deux filtres est refusée | création par un compte nommé, à son nom, sous l'identifiant imposé `{group_id}_{uid}_{day}_{0..4}` (`suggestionIds` : cinq au plus par auteur, groupe et jour), membre d'un groupe **actif** (`canReadGroupPlanning`, `planning_reach.group_ids`) et présent dans `member_ids` du groupe, **pas** son propriétaire ; `group_owner_id` égal à `owner_id` du groupe (une lecture de `groups/{group_id}`) ; forme `isMealSuggestion` : liste de champs fermée, `day` date réelle de la veille à J+60 (`isSuggestionDay`), recette (`recipe_id` + `recipe_titre` ≤ 200) **ou** nom libre (`free_title` ≤ 60), `note` ≤ 200, `created_at == request.time`. Aucune mise à jour. Suppression par l'auteur ou le propriétaire du groupe. Le serveur supprime celles d'un groupe supprimé et d'un membre sorti (`syncGroupReach`) |
 | `error_reports` | admin, ou l'auteur du rapport | création par l'auteur non révoqué — un compte en attente, et un compte neuf sans document, en écrivent ; la révocation est lue par `exists()` pour ne pas échouer avant la création du document. Forme imposée (`isErrorReport`, v0.23.48) : les neuf champs de `ErrorReport.toFirestore` et aucun autre, `user_id` égal à l'appelant, `timestamp` en `timestamp`, textes facultatifs bornés — `job_id`, `feature`, `error_type` 400 caractères, `app_version` 100, `error_message` 8 000, `stack_trace` 4 000, `context` 8 000 (une chaîne JSON ; une carte est refusée, la règle ne pouvant pas en mesurer les valeurs). Le client tronque à la moitié de ces bornes : aucun rapport n'est refusé pour sa taille. Modification et purge par l'admin |
-| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** les documents de `isServerOnlyConfig`, écrits par le serveur seul : `backfill_schedules`, `backfill_run_*`, `tickets_status` et `apk_notification` — un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; depuis v0.24.31 (ticket #162), les politiques `ai_pricing` (`setAiPricingFn`), `ai_routing_policy` (`setAiRoutingPolicyFn`), `ai_budget_policy` (`setAiBudgetFn`), `app_check_policy` (`setAppCheckPolicyFn`) et `nutrition_source_policy` (`setNutritionSourcePolicyFn`), les documents serveur `image_moderation`, `currency_rate`, `anthropic_costs`, `planning_policy` (réglages de la présélection, lus par `gemini/planningStore.ts`) et `ai_budget_alert` (dernière alerte de budget, `scheduled/aiBudgetAlertSchedule.ts`), et les points de reprise `*_checkpoint` et `backfill_cursor_*` — une écriture directe contournait la validation de la callable (`readPolicyOrThrow`, garde-fou `enforce` d'App Check), sa trace d'audit et App Check. L'administrateur écrit encore `tickets` (plafonds, sans callable), `usage` et les autres réglages ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas (`countsUp`) |
+| `app_config` | admin ; `usage`, `ai_pricing` et `tickets` par tout compte nommé (`isApproved()`) | admin, **sauf** les documents de `isServerOnlyConfig`, écrits par le serveur seul : `backfill_schedules`, `backfill_run_*`, `tickets_status` et `apk_notification` — un administrateur qui les écrirait directement pourrait programmer un passage imputé au plafond d'un autre compte, lever un verrou, ou effacer l'alerte d'un jeton GitHub refusé ; depuis v0.24.31 (ticket #162), les politiques `ai_pricing` (`setAiPricingFn`), `ai_routing_policy` (`setAiRoutingPolicyFn`), `ai_budget_policy` (`setAiBudgetFn`), `app_check_policy` (`setAppCheckPolicyFn`) et `nutrition_source_policy` (`setNutritionSourcePolicyFn`), les documents serveur `image_moderation`, `currency_rate`, `anthropic_costs`, `planning_policy` (réglages de la présélection, lus par `gemini/planningStore.ts`) et `ai_budget_alert` (dernière alerte de budget, `scheduled/aiBudgetAlertSchedule.ts`), et les points de reprise `*_checkpoint` et `backfill_cursor_*` — une écriture directe contournait la validation de la callable (`readPolicyOrThrow`, garde-fou `enforce` d'App Check), sa trace d'audit et App Check. L'administrateur écrit encore `tickets` (plafonds, sans callable), `usage` et les autres réglages ; sur `usage`, tout compte nommé, limité à `storage_bytes`, `updated_at` et au compteur `scans_AAAA_MM` du mois courant ou précédent (`hasOnly`), chaque compteur écrit restant un entier positif qui ne recule pas et qui monte au plus d'un pas par écriture (`countsUp(champ, pas)`, v0.24.55, ticket #162) : 1 pour un compteur de scans, 21 × 50 Mio pour `storage_bytes` (21 pages d'un import, chacune sous le plafond de 50 Mo de la quarantaine ; un livre pèse moins de 300 Mo) — `UsageTracker.recordScan` n'écrit que ces incréments ; la borne vaut par écriture et non par durée, une suite d'écritures au pas maximal reste permise (la fermer demanderait un compteur tenu par le serveur) ; l'administrateur n'a pas de pas maximal |
 | `ai_routing_presets` | admin | **serveur seul** — `aiRoutingPresetsFn` contrôle une configuration contre le catalogue de postes avant de l'écrire |
 | `nutrition_ingredients` | `isApproved()` | serveur ; l'admin modifie seulement `shopping_product`, `shopping_product_source`, `allergens`, `allergens_source`, `allergens_at` et `updated_at`. Création et suppression refusées au client |
 | `nutrition_units` | `isApproved()` | admin |
@@ -3258,6 +3307,10 @@ lister un dossier — passe deux contrôles, dans cet ordre :
    OU le document le dit). Un rôle inconnu (`"admin "`) ne vaut rien ; sans document, la
    lecture de `.data` échoue et la règle refuse.
 
+Le `get` d'un fichier des dossiers publiés ne passe que le second contrôle
+(`isApprovedReader()`, v0.24.55, ticket #162) : un compte en attente ne lit plus ces
+fichiers par le SDK, et un compte nommé à l'instant les lit sans attendre son jeton.
+
 Avant la v0.24.48, ces règles ne lisaient que le jeton. Un administrateur rétrogradé gardait la
 lecture de `rejected/` et de la quarantaine des autres jusqu'au renouvellement de son jeton
 (une heure au plus) — `syncUserClaims` ne révoque pas les jetons pour un passage d'`admin` à
@@ -3266,13 +3319,16 @@ déjà ces droits (`roleOf()`, v0.24.30).
 
 **Coût.** Une lecture Firestore par requête Storage qui atteint le second contrôle : un dépôt
 dans la quarantaine (photo, scan, livre), une capture de ticket, une lecture ou un listage
-d'administrateur. Les deux branches du dépôt en quarantaine sont ordonnées pour qu'un lecteur
+d'administrateur, et depuis la v0.24.55 le `get` d'un fichier publié (`isApprovedReader()`).
+Les deux branches du dépôt en quarantaine sont ordonnées pour qu'un lecteur
 comme un éditeur ne lisent le document qu'une fois, et le type et la taille se testent avant
 le rôle. Ne coûtent **aucune** lecture : les images affichées, servies par URL de
-téléchargement (les règles ne s'évaluent pas), le `get` d'un fichier publié (jeton seul,
-`isActive()`), la lecture par un compte de ses propres fichiers (`isOwner`), et toute requête
-d'un compte dont le jeton n'annonce aucun rôle — un inconnu qui multiplie les requêtes ne
-déclenche pas de lecture facturée. À l'échelle de la famille (quelques dizaines de dépôts par
+téléchargement (les règles ne s'évaluent pas), la lecture par un compte de ses propres
+fichiers (`isOwner`), et tout dépôt ou listage d'un compte dont le jeton n'annonce aucun
+rôle. Le `get` d'un fichier publié lit le document même pour un compte en attente : seuls
+les téléchargements d'octets du client l'atteignent (`getData` de la retouche d'une image,
+de l'extraction d'illustrations et de la relecture d'un brouillon), quelques-uns par
+recette retouchée. À l'échelle de la famille (quelques dizaines de dépôts par
 jour), le surcoût se compte en centimes par an au tarif Firestore.
 
 **Écarts qui restent avec Firestore.**
@@ -3280,9 +3336,15 @@ jour), le surcoût se compte en centimes par an au tarif Firestore.
 - Un rôle **accordé** attend le jeton : un compte nommé à l'instant (claim `pending`,
   document `reader`) ne dépose rien avant le renouvellement de son jeton, comme avant. Le
   claim reste la première porte, pour la raison de coût ci-dessus.
-- Le `get` d'un fichier des dossiers publiés ne lit que le jeton : ces fichiers restent
-  joignables par leur URL de téléchargement, que la révocation n'invalide pas, et la lecture
-  du document n'y ajouterait qu'un coût.
+- Le `get` d'un fichier des dossiers publiés (`isApprovedReader()`, v0.24.55, ticket #162)
+  lit le rôle sur le **document** ; le claim ne sert plus que de repli pour un document sans
+  rôle, et le jeton porte encore la révocation (`isActive()`) : un compte en attente, révoqué
+  ou sans document ne lit plus ces fichiers par le SDK, et un compte nommé à l'instant les lit tout
+  de suite, comme le routeur du client l'ouvre sur le rôle du document
+  (`resolveRedirect`). Un essai d'aligner cette lecture sur le claim (2026-10-05) avait coupé
+  l'accès au fondateur, le temps que son jeton porte le rôle. Les fichiers restent joignables
+  par leur URL de téléchargement, que les règles n'évaluent pas et que la révocation
+  n'invalide pas.
 - Un compte révoqué dont le jeton est encore valide relit ses **propres** fichiers de
   `quarantine/` (`isOwner(uid) || isAdmin()`) pendant une heure au plus : ce sont ses
   données, et la révocation coupe déjà tout dépôt.
@@ -3342,10 +3404,15 @@ service firebase.storage {
       return !isRevoked(d) && roleOf(d) in roles;
     }
 
-    // Le sas d'entrée, côté fichiers. Ne concerne que l'écriture : fermer aussi
-    // la lecture ferait clignoter les images de qui n'a pas renouvelé son jeton,
-    // pour un gain nul (les URL ne se devinent pas).
+    // Le sas d'entrée, côté fichiers, pour l'écriture : jeton ET document.
     function isApproved() { return hasRoleIn(['reader', 'editor', 'admin']); }
+
+    // Le `get` des dossiers publiés (v0.24.55, ticket #162) : le rôle du
+    // document, le claim en repli pour un document sans rôle. Un compte en attente n'y lit plus rien ; un compte nommé à
+    // l'instant lit tout de suite, comme le routeur du client l'y autorise.
+    function isApprovedReader() {
+      return isActive() && hasDocRoleIn(userDoc(), ['reader', 'editor', 'admin']);
+    }
 
     function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
 
@@ -3393,7 +3460,7 @@ service firebase.storage {
     // rendrait la modération contournable en une ligne de code.
 
     match /covers/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
@@ -3437,12 +3504,12 @@ service firebase.storage {
         && isEditor();
     }
 
-    // Lire un fichier dont on a l'adresse : tout compte actif. LISTER le
+    // Lire un fichier dont on a l'adresse : tout compte nommé. LISTER le
     // dossier : son propriétaire ou un admin (v0.23.8). Le client ne liste
     // aucun dossier publié ; `covers/`, `illustrations/{uid}` et `users/{uid}`
     // ne se listent que par un admin.
     match /scans/{uid}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isActive() && (isOwner(uid) || isAdmin());
       allow write: if false;              // Admin SDK uniquement
     }
@@ -3457,20 +3524,20 @@ service firebase.storage {
     }
 
     match /illustrations/{uid}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
 
     // Lister le dossier d'une recette, qui peut être privée : admin seul.
     match /recipes/{recipeId}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isAdmin();
       allow write: if false;
     }
 
     match /users/{uid}/{allPaths=**} {
-      allow get: if isActive();
+      allow get: if isApprovedReader();
       allow list: if isAdmin();   // lister : administrateur seul
       allow write: if false;
     }
@@ -3553,7 +3620,11 @@ npm test   # firebase emulators:exec --only firestore,storage --project demo-kas
   Storage, dossiers publiés, quarantaine (propriété, rôle, types, tailles), `rejected/`,
   `tickets/`, et le rôle et la révocation relus sur le document (administrateur rétrogradé,
   compte révoqué à l'instant, éditeur rétrogradé lecteur, rôle inconnu, jeton sans document,
-  document sans rôle, compte nommé à l'instant, chemins courants de chaque rôle).
+  document sans rôle, compte nommé à l'instant, chemins courants de chaque rôle) ; le `get`
+  d'un dossier publié refusé au compte en attente, au compte révoqué à l'instant et au jeton
+  sans document, permis au compte nommé à l'instant et au document sans rôle (v0.24.55) ;
+  côté Firestore, le pas maximal des compteurs de `app_config/usage` et la borne de
+  `planned_meals.components` (v0.24.55).
 - Le bloc « requêtes du client » rejoue la forme des requêtes de `recipe_repository.dart`,
   `book_repository.dart`, `planning_providers.dart`, `annotation_repository.dart` et
   `recipe_rating_repository.dart`. L'émulateur évalue une requête sur ses filtres, comme la
@@ -4134,7 +4205,7 @@ premier jeton refusé.
 (`WEBHOOK_MAX_BODY_BYTES`, plafond des livraisons GitHub) rend 413, et une requête sans en-tête
 `X-GitHub-Event` rend 400. Secret vide : 503, journalisé au plus une fois par minute et par instance ; signature absente ou fausse : 401, journalisé
 par un `logWarn` au plus une fois par minute et par instance, qui porte le nombre de refus
-depuis le relevé précédent (`SignatureRejectionLog`) ; corps illisible : 400. Événements
+depuis le relevé précédent (`LogSampler`, `utils/logSampler.ts`) ; corps illisible : 400. Événements
 traités (`updatesFromEvent`) :
 
 - `issues` (`opened`, `edited`, `labeled`, `unlabeled`, `closed`, `reopened`) : statut dérivé
@@ -5231,7 +5302,9 @@ principaux voyagent avec le résumé, et dire « vérifié » sur cette base ser
 
 - **Traduction** (`understandPlanningTexts`, poste `planning_constraints`) : avant la
   présélection, `suggestMealPlanFn` relit le cache (§3.8 sexies) ; les textes absents sont
-  traduits en **un** appel (`translateConstraintTexts`, `askJson`, 45 s, `maxTokens` 3 000),
+  traduits en **un** appel (`translateConstraintTexts`, `askJson`, 45 s, `maxTokens` 12 000,
+  `PLANNING_CONSTRAINTS_MAX_TOKENS` : la réflexion de Claude compte dans ce plafond ; mesuré à
+  662 jetons de sortie sur Sonnet 5 le 22 oct. 2026 ; Gemini ne le reçoit pas),
   seize textes de 2 000 caractères au plus — au-delà, le texte part tel quel. Jamais en mode
   `code` (« Autre suggestion » lit le cache seul), jamais à la frappe. Échec du modèle ou
   plafond du jour (`BudgetExceededError`) : `logError` ou `logWarn`, les textes partent au
@@ -5280,8 +5353,10 @@ qui n'a pas été traduit part dans `=== PRÉFÉRENCES GÉNÉRALES ===` ou
 `[PRÉFÉRENCES DU JOUR : …]`. Un texte non compris part en entier, comme avant. Un créneau sans choix à faire (un seul candidat partout) n'est pas envoyé. Le
 nombre de parts n'est plus une consigne : « les quantités sont recalculées à l'affichage ».
 Le modèle rend `[{slot, recipe_id, starter_id?, dessert_id?}]`, sans phrase. `maxTokens` :
-4 000 (`PLANNING_MAX_TOKENS`) ; sur Gemini, la sortie reste bornée par
-`thinking_budgets.planning`.
+16 000 (`PLANNING_MAX_TOKENS`). Sur Claude, la réflexion compte dans ce plafond : à 4 000,
+Sonnet 5 en effort `low` les a consommés en réflexion sans rendre de texte (22 oct. 2026),
+d'où l'avis « L'IA n'a pas répondu ». Gemini ne reçoit pas `maxTokens` : sa sortie reste
+bornée par `thinking_budgets.planning`, et la constante ne sert qu'au coût plafond.
 
 **Lecture de la réponse** (`validateModelChoices`) : un identifiant hors de la tête du
 créneau, déjà pris, ou un créneau oublié est remplacé par le premier candidat libre de la
@@ -5320,15 +5395,18 @@ plafond sur la grille en vigueur (`estimateCallCeilingUsd` : caractères / 3 en 
 illisible ou taux absent : pas d'estimation inventée, `logWarn`, le plafond en euros ne
 s'applique pas — le plafond de nombre de conceptions et le plafond du jour restent actifs.
 
-**Conceptions** (`generateRecipeConceptFn`, poste `planning_concept`, `maxTokens` 6 000).
-Avec `runId`, la conception est rattachée à sa génération : `reservePlanningConcept`
+**Conceptions** (`generateRecipeConceptFn`, poste `planning_concept`, `maxTokens` 16 000,
+`PLANNING_CONCEPT_MAX_TOKENS`). Sur Claude, la réflexion compte dans ce plafond ; une
+conception a rendu 752 et 865 jetons de sortie sur Sonnet 5 (7 oct. 2026). Gemini ne le
+reçoit pas. Avec `runId`, la conception est rattachée à sa génération : `reservePlanningConcept`
 (transaction sur `users/{uid}/planning_runs/{runId}`) refuse une génération inconnue sous
 l'appelant (`not-found`), de plus de 6 heures, au compteur atteint, ou dont le coût cumulé
 plus les réservations en cours plus l'estimation dépasserait le plafond
 (`resource-exhausted`, `details.reason`). Le compteur est incrémenté et l'estimation réservée
 (`reserved_usd`) **avant** l'appel, dans la même transaction : des conceptions lancées en
 parallèle se voient l'une l'autre. Après, `addPlanningRunCost` ajoute le coût enregistré et
-libère la réservation. La réponse porte `conceptsRemaining`. Sans `runId`, la conception est un geste
+libère la réservation. Une conception dont l'appel lève garde sa réservation : le plafond
+reste plus strict, jamais plus large. La réponse porte `conceptsRemaining`. Sans `runId`, la conception est un geste
 unitaire (« Concevoir avec l'IA » sur un créneau, idée retenue dans le sélecteur) : hors
 plafond de génération, borné par le plafond du jour. Le plafond de génération ne borne donc
 que les conceptions automatiques ; le total des conceptions, automatiques et manuelles, n'est
@@ -6452,7 +6530,7 @@ tranche à `transcription_page` et aux postes de la chaîne d'import, sous le `s
 
 ### 7.10 Ce qui tourne tout seul, et ce qu'on relance à la main
 
-Cinq tâches planifiées (Cloud Scheduler), sept reprises manuelles (huit backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
+Cinq tâches planifiées (Cloud Scheduler), cinq reprises manuelles (six backfills : `backfillEnrichReferentialsFn` porte aussi « Reprendre le sel ») et deux réglages. Aucune
 tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur propre
 `correlationId`.
 
@@ -6470,8 +6548,6 @@ tâche n'est déclenchée par un utilisateur ; toutes journalisent sous leur pro
 | `backfillEnrichReferentialsFn` | `admin` | enrichit les référentiels d'unités et d'ingrédients (backfill récurrent `enrich_referentials`) ; avec `refreshSodium`, la réparation du sel compté deux fois (backfill ponctuel `refresh_sodium`) : cibles = profils qui portent du sodium sans `sodium_repaired_at` (`isSodiumRepairTarget`), marque posée avec le profil réparé (`enrichedIngredientPayload`), un échec reste cible et compte dans `unresolvedFailures` ; le passage n'est complet que si son parcours a commencé au début de la collection et n'a pas buté sur l'échéance (`enrichPassCompleted`) — un passage repris à mi-chemin remet le curseur au début et se dit incomplet —, et il n'est marqué terminé qu'après un parcours entier sans échec ni élément à revoir. Mémoire des échecs (compteurs) hors `refreshSodium` : une unité (`ai_weight_failure_count`) ou un ingrédient (`enrichment_failure_count`) qui échoue trois fois n'est plus soumis au modèle, sauf `retryExcluded`. Une unité demandée il y a moins de vingt heures n'est pas soumise (elle ne compte pas comme un échec). Compte rendu : `excludedUnits`, `excludedIngredients`, `unresolvedFailures` en plus des compteurs |
 | `backfillShoppingFn` | `admin` | recalcule `shopping_products` sur toutes les recettes, sans appel de modèle, sans réécrire une recette dont le résultat ne change pas. Le type de page se lit par `resolvePageType` : une page typée dans son seul CookLang (`>> page_type:`) est « hors recette », pas « sans ingrédient ». 500 recettes par appel par défaut, point de reprise dans `app_config/shopping_products_backfill_checkpoint` |
 | `backfillAllergensFn` | `admin` | deux phases à chaque appel. **Ingrédients** : parcourt `nutrition_ingredients` et soumet au modèle, par lots de quarante (poste `backfill_allergens`, 400 ingrédients par appel par défaut), ceux qui n'ont pas de champ `allergens` ; un ingrédient déjà examiné, par le modèle ou par l'admin, n'est ni redemandé ni refacturé, et l'écriture est conditionnelle (transaction). **Recettes** : seulement quand le référentiel a été parcouru en entier, recalcule `allergens` sur chaque recette sans appel de modèle (500 par appel par défaut), sans réécrire une recette dont le résultat ne change pas. S'arrête après trois lots ou trois recettes en échec de suite. Un ingrédient qui échoue trois fois (`allergens_failure_count`) n'est plus soumis au modèle, sauf `retryExcluded`. Une page dont `resolvePageType` (le champ, sinon `>> page_type:` dans le CookLang) ne dit pas `recipe` est comptée « hors recette ». Compte rendu : ingrédients examinés, ignorés, en erreur, exclus (`ingredientsExclus`), échecs non exclus (`echecsNonExclus`) ; recettes calculées, identiques, encore incomplètes, hors recette, échecs. Points de reprise dans `app_config/allergens_ingredients_backfill_checkpoint` et `app_config/allergens_recipes_backfill_checkpoint`. À lancer après le déploiement, puis après chaque correction d'un ingrédient — Admin › Backfills, « Allergènes des ingrédients et des recettes » |
-| `backfillDefaultUnitsFn` | `admin` | ponctuel `default_units`, « Semer les unités standard ». Pour chacune des quarante unités de `DEFAULT_NUTRITION_UNITS` (`nutrition/defaultUnits.ts`), une transaction lit `nutrition_units/{id}` : absent, il est créé complet (`status: known`, `source: builtin`, `seen_count: 0`) ; présent, seuls les champs manquants sont complétés — `grams_per_unit` ou `volume_ml_per_unit` absent ou nul, `display_label` absent ou vide, `measurement_type` égal à `unknown` —, le statut passe alors à `known` et une source `fallback_auto` devient `builtin` (`defaultUnitPlan`). Une valeur présente n'est jamais écrasée ; une unité complète n'est pas réécrite. Un libellé ou un type mal formé compte comme présent. Sans curseur : la liste entière tient dans un passage. Arrêt sur trois échecs de suite. Compte rendu : `total`, `examinees`, `creees`, `completees`, `dejaAJour`, `echouees`, `restantes`. Terminé tout seul quand les quarante unités sont examinées sans échec. Partage son verrou avec `enrich_referentials`, qui écrit aussi `grams_per_unit` des unités. Sans appel de modèle. `defaultUnits.test.ts` vérifie que chaque unité a le type et le facteur de la table de repli de `quantityConversion.ts` |
-| `backfillUsersSchemaCheckFn` | `admin` | ponctuel `users_schema_check`, « Contrôler les comptes ». **Lecture seule** : parcourt `users` (pages de 200, 5 000 comptes au plus par passage) et n'écrit rien dans la collection. Chaque document est contrôlé contre ce qui casse réellement (`userDocumentIssues`, `functions/src/security/userDocument.ts`), et chaque raison nomme le champ entre parenthèses et dit son effet. **La fiche n'apparaît pas dans Comptes** (`AppUser.fromFirestore` lève) : `email` ou `display_name` absent, nul ou non texte ; `created_at` ou `last_seen_at` absent ou autre chose qu'un `Timestamp` ; `preferred_name`, `photo_url` ou `free_recipe_cover_url` présent et non texte ; `is_revoked` présent, non nul et non booléen ; `role` présent et non texte. **Compte sans droit**, affiché « en attente » dans Comptes : `role` absent, nul ou texte inconnu (`readRole`, valeurs comparées à l'identique). **Toute règle qui lit la révocation échoue pour ce compte** : `is_revoked` absent (`isRevoked()` lit le champ sans valeur par défaut). `is_revoked: null` est conforme. Une valeur citée qui contient « @ » est remplacée par « (valeur masquée) ». Non contrôlés, parce qu'ils ne bloquent rien : un champ hors de la liste des règles et un `uid` différent de l'identifiant (la mise à jour ne teste que les champs qu'elle change, `_upsertUser` ne touche que `last_seen_at`, `photo_url` et `display_name`, le client lit l'uid sur l'identifiant, aucune Function ne lit `users.uid`) ; la longueur des noms (`nameOk`) et de `photo_url` (`photoUrlOk`), la forme de la couverture (`coverUrlOk`), que les règles ne vérifient que quand le champ change. Sans point de reprise : un contrôle ne conclut « rien à revoir » que sur un parcours entier fait en un passage. Arrêt sur le délai et sur trois échecs de suite. Compte rendu : `examines`, `conformes`, `nonConformes`, `echoues`, `collectionParcourue`. Terminé tout seul quand un passage lit toute la collection sans rien à revoir. Sans appel de modèle. À lancer après le déploiement de la v0.24.42 ; un compte listé se corrige à la main dans la console Firebase, puis on relance |
 | `backfillRecipeRolesFn` | `admin` | pose `tags.meal_role`, `contains` (jamais sur une recette corrigée à la main, `contains_manual`, même avec `force` : `containsPatch`), `suggested_sides` et `roles_tagged_at` — plus `main_protein` et `main_starch` s'ils sont absents (`mainIngredientsPatch`), et `main_ingredients_checked_at` quand le modèle a répondu — sur les recettes antérieures à leur ajout. Un appel de modèle par recette (poste `backfill_recipe_roles`), 40 recettes par appel par défaut ; une recette déjà classée est sautée, sauf `force`. Une page dont `resolvePageType` ne dit pas `recipe` est comptée « hors recette ». Une recette que le modèle n'a pas su classer ou en échec trois fois (`meal_role_failure_count`) n'est plus soumise, sauf `retryExcluded` ou `force` (`exclues`, `echecsNonExclus` au compte rendu). S'arrête après trois échecs de suite. Point de reprise dans `app_config/recipe_roles_backfill_checkpoint` |
 
 Une reprise ponctuelle réutilisable est retirée en v0.24.44 sur demande de l'administrateur,
@@ -6532,8 +6608,7 @@ où il s'est arrêté, et l'appel suivant repart de là.
   second passage du même backfill — un double clic, un autre appareil, la tâche horaire — est
   refusé, `failed-precondition`, et l'écran affiche le message du serveur. Deux backfills
   différents tournent ensemble, sauf ceux d'un même `LOCK_GROUPS` (`backfills/registry.ts`) :
-  `enrich_referentials` et `refresh_sodium` réécrivent tous deux `per100g` des ingrédients ;
-  `enrich_referentials` et `default_units` écrivent tous deux `grams_per_unit` des unités.
+  `enrich_referentials` et `refresh_sodium` réécrivent tous deux `per100g` des ingrédients.
   L'un refuse de partir pendant que l'autre tient son verrou (même transaction, qui lit l'état
   des deux). Un backfill peut appartenir à plusieurs groupes (`lockSiblings` les réunit). Un verrou dont l'échéance est passée est repris ;
 - enregistre l'issue : statut, origine, date, compte rendu complet (`last_report`), ou le
@@ -6650,7 +6725,7 @@ Journaux : la tâche écrit sous `backfill_programme`, chaque passage programmé
 **Liste « à revoir ».** Chaque reprise manuelle renvoie, en plus de ses compteurs, le champ
 `aRevoir: { items, total }` : les éléments que le passage n'a pas pu traiter, nommés. Une
 entrée vaut `{ kind, id, label, reason }` : `kind` est `ingredient`, `unit`, `recipe`,
-`account`, `meal`, `ticket` ou `invitation` ; `label` le nom canonique, le titre de la recette (`titre`) ou le nom du compte ;
+`meal`, `ticket` ou `invitation` ; `label` le nom canonique ou le titre de la recette (`titre`) ;
 `reason` la raison en français simple. Le collecteur commun, `callable/_backfillReview.ts`
 (`BackfillReview`), garde les cent premières entrées dans l'ordre de traitement ; `total`
 compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée que dans le
@@ -6663,8 +6738,6 @@ compte au-delà. La liste vit dans la réponse du passage, et n'est recopiée qu
 | `backfillRecipeRolesFn` | recettes que le modèle n'a pas su classer, recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième, « Plus redemandé à l'IA après 3 échecs » pour une recette sautée |
 | `backfillShoppingFn` | recettes sans ingrédient (liste de courses vide), recettes en échec d'écriture |
 | `backfillAllergensFn` | ingrédients sans réponse du modèle (« Pas de réponse de l'IA ») ou d'un lot en échec (« Lot en échec : <message> ») ; recettes incomplètes avec les ingrédients non examinés (« Recette incomplète : beurre, farine non examinés »), recettes en échec ; « — plus redemandé à l'IA après 3 échecs » au troisième échec d'un ingrédient, « Plus redemandé à l'IA après 3 échecs » pour un ingrédient sauté. Les ingrédients sans réponse sont aussi journalisés, avec leurs noms (`logWarn`, `allergenExamination.ts`) |
-| `backfillDefaultUnitsFn` | unités dont l'écriture a échoué (« Échec d'écriture : <message> », nature `unit`), nommées par leur libellé |
-| `backfillUsersSchemaCheckFn` | comptes dont le document casse une lecture ou une règle, nature `account`, toutes les raisons réunies par « ; », chacune avec le champ entre parenthèses et son effet (« rôle inconnu (role) « superadmin » : compte sans droit, affiché « en attente » dans Comptes », « date de création absente (created_at) : la fiche n'apparaît pas dans Comptes », « indicateur de révocation absent (is_revoked) : toute règle qui lit la révocation échoue pour ce compte »), ou « Contrôle impossible : <message> ». Nommés par leur prénom (nom préféré, sinon premier mot du nom Google, 20 caractères au plus, écarté s'il contient « @ ») et les six premiers caractères de l'uid — « Marie (abcdef…) », « Compte abcdef… » sans nom —, **jamais par l'adresse**. La feuille « À revoir » affiche en plus, sous chaque compte, l'identifiant complet du document, à chercher dans la console Firebase, et la consigne « Ces fiches ne se corrigent pas depuis l'application… » ; « Copier la liste » (`copyLine`) n'en recopie pas l'identifiant complet |
 
 Côté client, `BackfillFailures` (`features/admin/domain/backfill_failures.dart`) lit le champ ;
 absent, il vaut `null` et l'écran n'affiche que les compteurs. La tuile relit la liste du
@@ -6697,6 +6770,7 @@ code, et une réimplémentation doit la reproduire :
 | Image à relire hors des dossiers publiés (amélioration d'illustration, visuel de dressage précédent) | `downloadStorageBytes` n'admet que `illustrations/` et `recipes/` : `permission-denied` avant tout téléchargement |
 | Trop d'appels d'IA simultanés pour un compte, depuis une callable | Attente jusqu'à 20 s, puis `BudgetExceededError` de motif `concurrency`, rendu en `resource-exhausted`. Le pipeline, les déclencheurs et les tâches planifiées ne sont pas limités en simultanéité |
 | Chemin Storage refusé par une callable | `logWarn` avec le compte et le chemin, puis `permission-denied` : une tentative de lecture de `rejected/…` laisse une trace |
+| Accès refusé à une callable de facturation ou de qualité des données (`ensureAdminWithAudit`) | `logWarn` avec l'uid et l'opération, échantillonné par opération et par compte (`KeyedLogSampler`, `utils/logSampler.ts`, v0.24.54) : une ligne par minute et par instance au plus, qui porte le nombre de refus depuis le relevé précédent (`extra.refused`) ; une autre erreur de la garde reste un `logError` à chaque fois |
 | Clé du fournisseur absente | Repli sur Gemini, avec un `WARNING` nommant le poste et le moteur attendu |
 | Grille tarifaire illisible | L'appel a lieu, l'usage est enregistré **sans montant**, compté dans `total_unpriced_calls`. Jamais de prix de repli |
 | Appel abouti puis échoué côté client | L'usage est enregistré **sans jetons** : le fournisseur facture, l'appel ne doit pas devenir invisible |
@@ -8112,8 +8186,13 @@ pourtant, et une réimplémentation doit connaître leur contrat :
   ou inconnu compris (v0.24.17). Chaque expérience reçoit le contexte de cette garde et
   pose elle-même son poste de coût (`ctx.feature`) ;
 - l'image d'une expérience est bornée à 20 Mo décodés (`readSandboxImage`, plafond
-  `PAGE_IMAGE_MAX_BYTES` importé de `callable/_inputBounds.ts`) ; l'erreur d'une expérience rend `err.message`,
-  lisible par le seul administrateur ;
+  `PAGE_IMAGE_MAX_BYTES` importé de `callable/_inputBounds.ts`) ; l'erreur d'une expérience
+  ne rend plus son texte brut (v0.24.54, ticket #163) : `sandboxFailure` la journalise
+  (`logError`, compte, poste, `correlationId`), sauf erreur du fournisseur déjà journalisée,
+  puis `toHttpsError` renvoie le texte fixe des callables d'IA ; une `HttpsError` déjà rédigée
+  (image trop lourde) passe telle quelle, et un plafond d'IA (`BudgetExceededError`) ou un
+  chemin refusé (`StoragePathRefusedError`) sort par `toHttpsError` avec son message, sans
+  ligne ERROR ;
 - rien n'y est enregistré — ni Firestore, ni Storage sur les chemins de production ;
 - le bac à sable **lit** le code de l'application, ne l'édite jamais : une expérience qui
   doit modifier un comportement existant en copie le code.
