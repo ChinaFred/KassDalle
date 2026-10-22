@@ -153,6 +153,60 @@ void main() {
     });
   });
 
+  // Retirer une photo réécrit `image_urls`, hors des deux écritures d'un
+  // lecteur (valider, détacher) : le bouton n'apparaît pas.
+  group('onglet Photos de la fiche, avec photo', () {
+    Recipe withPhoto() {
+      final r = _recipe();
+      return Recipe(
+        id: r.id,
+        titre: r.titre,
+        langue: r.langue,
+        rawCooklang: r.rawCooklang,
+        imageUrls: const ['https://example.com/a.jpg'],
+        reviewStatus: r.reviewStatus,
+        tags: r.tags,
+        ingredientsIndex: r.ingredientsIndex,
+        createdBy: r.createdBy,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      );
+    }
+
+    testWidgets('propriétaire lecteur : ni « Ajouter » ni suppression', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        PhotosTab(
+          recipeId: 'r1',
+          recipe: withPhoto(),
+          canEdit: true,
+          canEnrich: false,
+        ),
+      );
+      expect(find.text('Ajouter'), findsNothing);
+      expect(find.byTooltip('Supprimer cette photo'), findsNothing);
+    });
+
+    testWidgets('propriétaire éditeur : « Ajouter » et suppression', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        PhotosTab(
+          recipeId: 'r1',
+          recipe: withPhoto(),
+          canEdit: true,
+          canEnrich: true,
+        ),
+        canEdit: true,
+      );
+      expect(find.text('Ajouter'), findsOneWidget);
+      expect(find.byTooltip('Supprimer cette photo'), findsOneWidget);
+    });
+  });
+
   group('onglet Photos du brouillon, sans photo', () {
     Future<String?> upload(Uint8List bytes, String name) async => null;
 

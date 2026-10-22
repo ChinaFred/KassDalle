@@ -805,7 +805,10 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                 ? null
                 : retryableJobs.length,
             deleteCount: selectedItems.length,
-            assignBookCount: selectedDrafts.isEmpty
+            // Ranger un brouillon sans le valider est réservé à l'éditeur :
+            // un lecteur ne pose que les champs de la validation
+            // (`firestore.rules`, `readerValidatesDraft`).
+            assignBookCount: (selectedDrafts.isEmpty || !canImport)
                 ? null
                 : selectedDrafts.length,
             onAssignBook: () =>

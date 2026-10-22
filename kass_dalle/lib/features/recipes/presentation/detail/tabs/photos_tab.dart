@@ -23,10 +23,11 @@ class PhotosTab extends ConsumerStatefulWidget {
   final String recipeId;
   final Recipe recipe;
 
-  /// Propriétaire ou administrateur : supprimer une photo.
+  /// Propriétaire ou administrateur : choisit le texte de l'état vide.
   final bool canEdit;
 
-  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : ajouter une photo.
+  /// Propriétaire ET éditeur (`AppUser.canEnrichRecipe`) : ajouter ou
+  /// supprimer une photo (`image_urls`, hors des écritures d'un lecteur).
   final bool canEnrich;
 
   const PhotosTab({
@@ -114,7 +115,7 @@ class PhotosTabState extends ConsumerState<PhotosTab>
               itemBuilder: (_, i) => _PhotoTile(
                 url: urls[i],
                 onTap: () => showGallery(urls, i),
-                onDelete: widget.canEdit
+                onDelete: widget.canEnrich
                     ? () => deleteIllustration(urls[i])
                     : null,
               ),

@@ -72,11 +72,16 @@ class AppUser {
   /// seulement des écrans vides et des erreurs de permission.
   bool get canRead => !isRevoked && role != UserRole.pending;
 
-  /// Peut modifier ou supprimer la recette créée par [createdBy].
+  /// Peut supprimer la recette créée par [createdBy], valider ce brouillon et
+  /// la détacher d'un livre — les seuls gestes d'écriture d'un lecteur sur sa
+  /// recette.
   ///
-  /// Miroir de la règle `recipes` de `firestore.rules` : on ne modifie que ses
+  /// Miroir de la règle `recipes` de `firestore.rules` : on n'agit que sur ses
   /// propres recettes, éditeur compris ; l'administrateur agit comme le
-  /// créateur. Un `created_by` vide n'appartient à personne.
+  /// créateur. Un `created_by` vide n'appartient à personne. Toute autre
+  /// écriture (texte, photos, tags, type de page, couverture, IA) demande
+  /// [canEnrichRecipe] : un lecteur créateur n'a plus que la validation et
+  /// le détachement (`readerValidatesDraft`, `readerDetachesFromBook`).
   bool canModifyRecipe(String createdBy) =>
       canRead && (isAdmin || (createdBy.isNotEmpty && createdBy == uid));
 

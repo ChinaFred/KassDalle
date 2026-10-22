@@ -778,7 +778,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     _DraftOverflowAction.delete => _confirmDelete(recipe),
                   },
                   itemBuilder: (ctx) => [
-                    if ((recipe.sourceFileUrl ?? '').isNotEmpty)
+                    // Effacer le scan source réécrit la recette : pas pour
+                    // un lecteur, qui ne pose que les champs de la
+                    // validation (`firestore.rules`).
+                    if (canEnrich && (recipe.sourceFileUrl ?? '').isNotEmpty)
                       const PopupMenuItem(
                         value: _DraftOverflowAction.clearSourceFile,
                         child: ListTile(
@@ -932,8 +935,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   }
 
   /// Les rappels du formulaire. [canEnrich] faux (lecteur, ou recette d'un
-  /// autre) : envoi de photo, cadrage depuis le scan, retouche, IA et
-  /// suggestion de tags à `null`, donc masqués.
+  /// autre) : envoi et suppression de photo, cadrage depuis le scan,
+  /// retouche, IA, suggestion de tags et type de page à `null`, donc masqués.
+  /// Un lecteur garde le formulaire et « Valider » : la validation est l'une
+  /// de ses deux écritures permises (`firestore.rules`).
   DraftReviewFormData _formData(Recipe recipe, {required bool canEnrich}) =>
       DraftReviewFormData(
         titleCtrl: titleCtrl,
@@ -982,9 +987,15 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         onEnhanceAi: (i) => _enhanceIllustrationAi(recipe, i),
         onShowRefineDialog: canEnrich ? () => _showRefineDialog(recipe) : null,
         onShowGallery: _showIllustrationGallery,
-        onDeleteIllustration: (url) => _deleteIllustrationDirect(recipe, url),
+        onDeleteIllustration: canEnrich
+            ? (url) => _deleteIllustrationDirect(recipe, url)
+            : null,
         pageType: recipe.pageType,
-        onPageTypeChanged: (newType) => _changePageType(recipe, newType),
+        // Le type de page s'écrit tout de suite, hors validation : réservé à
+        // l'éditeur.
+        onPageTypeChanged: canEnrich
+            ? (newType) => _changePageType(recipe, newType)
+            : null,
       );
 
   Future<void> _validate(Recipe recipe) async {

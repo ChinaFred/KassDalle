@@ -412,7 +412,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         // propriétaire ET éditeur (tickets #162 et #163). Un propriétaire
         // lecteur garde le détachement et la suppression ([canEdit]).
         final canEnrich = user?.canEnrichRecipe(recipe.createdBy) ?? false;
-        _stripLegacyStorageSection(recipe, canEdit: canEdit);
+        // Le nettoyage réécrit `raw_cooklang` : hors des deux écritures d'un
+        // lecteur (`firestore.rules`).
+        _stripLegacyStorageSection(recipe, canEdit: canEnrich);
 
         Future<void> onSelectedPortionsChanged(int value) async {
           if (_selectedPortions == value) return;

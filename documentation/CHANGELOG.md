@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-22
 
-### v0.24.62 — fonctionnel
+### v0.24.63 — fonctionnel
 
 Tickets #162 et #163 : enrichir une recette demande d'en être propriétaire et éditeur. Un
 lecteur ne voit plus, même sur ses propres recettes, « Modifier la recette » ou « Modifier la
@@ -46,11 +46,13 @@ tags » revient dans le panneau de métadonnées (bloc Catégorisation), pour un
 administrateur, avec l'infobulle « Proposer cuisine, type, rôle, protéine et féculent avec
 l'IA ».
 
-La décision « un lecteur ne modifie plus ses recettes » côté règles Firestore n'est pas
-appliquée dans cette version : elle empêcherait le lecteur de valider ses brouillons et de
-détacher une recette d'un livre, deux gestes que l'administrateur doit d'abord trancher.
+Un lecteur ne modifie plus ses recettes, règles Firestore comprises. Il garde trois gestes
+d'écriture sur elles : valider un brouillon, détacher d'un livre, supprimer. Ses autres
+boutons d'écriture disparaissent aussi : retirer une photo, « Supprimer le scan source »,
+type de page de la relecture, « Ranger » dans la file des brouillons, intégration, retrait et
+remise à zéro du dressage dans la recette.
 
-### v0.24.62 — technique
+### v0.24.63 — technique
 
 Ticket #163, point 1 : `polishCooklangFn`, `polishMarkdownFn`, `refineRecipeFn`,
 `extractBookCoverFn` (`book_cover`, non déployée), `suggestRecipeTagsFn`,
@@ -75,9 +77,19 @@ par lots de 400, 50 lots au plus par passage, et journalise le nombre supprimé
 (`error_reports_purge`). Un rapport sans `timestamp` reste. Export dans `index.ts` sans import
 lourd ; `COLL_ERROR_REPORTS` dans `config.ts`.
 
-Client : `AppUser.canEnrichRecipe(createdBy)` (`canEdit && canModifyRecipe`) est le seul
-prédicat lu par les écrans ; `photoFailureMessage`, `aiFailureMessage` et
-`isPermissionRefusal` dans `core/widgets/error_message.dart`. `canModifyRecipe` ne change pas.
+Règle `recipes` de `firestore.rules` : la mise à jour exige `isEditor()`, sauf deux
+écritures d'un lecteur créateur. `readerValidatesDraft` : champs de `validateDraft` seuls
+(`affectedKeys().hasOnly`), statut `draft` ou `inReview` vers `validated`.
+`readerDetachesFromBook` : `book_id`, `book_titre` et `updated_at` seuls, les deux premiers à
+`null`. La suppression ne change pas. Tests `rules-tests` : modification de texte refusée au
+lecteur, validation et détachement permis, validation qui touche un autre champ refusée ;
+sept tests qui faisaient écrire un lecteur pour vérifier une autre règle passent par
+l'administrateur ou une recette d'éditeur (`recipes/editor-in-other-book`).
+
+Client : `AppUser.canEnrichRecipe(createdBy)` (`canEdit && canModifyRecipe`) commande tout
+geste qui écrit autre chose que la validation et le détachement ; `canModifyRecipe` garde
+« Valider », « Détacher du livre » et « Supprimer ». `photoFailureMessage`,
+`aiFailureMessage` et `isPermissionRefusal` dans `core/widgets/error_message.dart`.
 Code mort retiré : `RecipeDetailBody` (`recipe_detail_widgets.dart`), qu'aucun écran
 n'instanciait.
 

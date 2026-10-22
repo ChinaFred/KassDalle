@@ -426,6 +426,11 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     // #162 et #163). L'état vide le lui dit, sans bouton.
     final editorOnly = widget.isOwner && !ref.watch(canEditProvider);
 
+    // Retirer une photo réécrit `image_urls` : propriétaire ET éditeur. Un
+    // lecteur n'écrit sur son brouillon que les champs de la validation
+    // (`firestore.rules`, `readerValidatesDraft`).
+    final canRemove = widget.isOwner && ref.watch(canEditProvider);
+
     final hasPhotos = widget.recipe.imageUrls.isNotEmpty;
 
     // Les vignettes ne se lisent que si elles sont AUTANT que les photos.
@@ -466,7 +471,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // ── Barre d'actions (toujours visible) ──────────────────────────────
-        if (canAddManual || canGenerateAi || (hasPhotos && widget.isOwner))
+        if (canAddManual || canGenerateAi || (hasPhotos && canRemove))
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
             // Les actions passent à la ligne au lieu de sortir de l’écran.
@@ -536,7 +541,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                       icon: const Icon(Icons.crop, size: AppIconSize.inline),
                       label: const Text('Cadrer depuis le scan'),
                     ),
-                  if (hasPhotos && widget.isOwner)
+                  if (hasPhotos && canRemove)
                     IconButton(
                       tooltip: 'Sélectionner plusieurs',
                       icon: const Icon(Icons.checklist_outlined),
@@ -597,7 +602,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                         ? () =>
                               widget.onShowGallery!(widget.recipe.imageUrls, i)
                         : null,
-                    onDelete: (!_selectMode && widget.isOwner)
+                    onDelete: (!_selectMode && canRemove)
                         ? () => _removeAt(i)
                         : null,
                     onEdit:

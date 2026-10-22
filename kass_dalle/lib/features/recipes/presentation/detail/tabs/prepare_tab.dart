@@ -133,7 +133,7 @@ class PrepareTabState extends ConsumerState<PrepareTab>
                 onTapIllustration: recipe.imageUrls.isNotEmpty
                     ? (i) => showGallery(recipe.imageUrls, i)
                     : null,
-                onDeleteIllustration: widget.canEdit
+                onDeleteIllustration: widget.canEnrich
                     ? deleteIllustration
                     : null,
                 onCreateShoppingList: recipe.ingredients.isNotEmpty

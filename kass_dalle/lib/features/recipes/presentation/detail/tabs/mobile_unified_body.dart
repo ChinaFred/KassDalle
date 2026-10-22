@@ -150,7 +150,7 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
       onTapIllustration: recipe.imageUrls.isNotEmpty
           ? (i) => showGallery(recipe.imageUrls, i)
           : null,
-      onDeleteIllustration: widget.canEdit ? deleteIllustration : null,
+      onDeleteIllustration: widget.canEnrich ? deleteIllustration : null,
       onCreateShoppingList: recipe.ingredients.isNotEmpty
           ? () => addRecipeToShoppingList(
               context,

@@ -553,6 +553,13 @@ class _AdviceView extends StatelessWidget {
   /// Créateur ou admin, et rôle éditeur : seul cas où un visuel d'étape peut
   /// être produit.
   final bool canGenerateImages;
+
+  /// Intégrer, retirer ou remettre à zéro réécrit la recette (`raw_cooklang`,
+  /// `plating_advice`) : même condition que les visuels. Un lecteur créateur
+  /// n'écrit sur sa recette que la validation et le détachement
+  /// (`firestore.rules`) ; il garde le conseil et « Régénérer », servis par
+  /// le serveur.
+  bool get canWriteRecipe => canGenerateImages;
   final int? generatingImageIndex;
   final Object? error;
   final void Function(int index) onGenerateImage;
@@ -656,13 +663,13 @@ class _AdviceView extends StatelessWidget {
                 icon: const Icon(Icons.refresh, size: AppIconSize.small),
                 label: const Text('Régénérer'),
               ),
-            if (canEdit && onResetImages != null)
+            if (canWriteRecipe && onResetImages != null)
               OutlinedButton.icon(
                 onPressed: busy ? null : onResetImages,
                 icon: const Icon(Icons.restart_alt, size: AppIconSize.small),
                 label: const Text('Réinitialiser les visuels'),
               ),
-            if (canEdit)
+            if (canWriteRecipe)
               FilledButton.tonalIcon(
                 onPressed: busy ? null : onInsertIntoRecipe,
                 icon: const Icon(
@@ -675,7 +682,7 @@ class _AdviceView extends StatelessWidget {
                       : 'Intégrer à la recette',
                 ),
               ),
-            if (canEdit && onRemoveFromRecipe != null)
+            if (canWriteRecipe && onRemoveFromRecipe != null)
               TextButton.icon(
                 onPressed: onRemoveFromRecipe,
                 icon: const Icon(

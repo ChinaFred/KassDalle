@@ -245,10 +245,13 @@ void main() {
       expect(user('editor').canModifyBook('moi'), isTrue);
     });
 
-    test('un lecteur modifie sa recette, pas un livre', () {
-      expect(user('reader').canModifyRecipe('moi'), isTrue);
-      expect(user('reader').canModifyBook('moi'), isFalse);
-    });
+    test(
+      'un lecteur agit sur sa recette (valider, détacher, supprimer), pas sur un livre',
+      () {
+        expect(user('reader').canModifyRecipe('moi'), isTrue);
+        expect(user('reader').canModifyBook('moi'), isFalse);
+      },
+    );
 
     test('un administrateur modifie le contenu de tous', () {
       expect(user('admin').canModifyRecipe('autre'), isTrue);
