@@ -9,12 +9,8 @@ import { logError } from "../logging";
 import {
   MEAL_ROLE_JSON_KEYS,
   MEAL_ROLE_PROMPT,
-  STYLES_JSON_KEY,
-  STYLES_PROMPT,
   parseMealRoleFields,
-  parseRecipeStyles,
   type MealRoleFields,
-  type RecipeStylesAnswer,
 } from "./mealRole";
 
 export interface SuggestTagsInput {
@@ -145,38 +141,4 @@ Si la recette n'est pas culinaire ou si tu n'es pas sûr, laisse "meal_role" vid
 
   const json = await readJson(result.text, ctx, ctx.feature);
   return parseMealRoleFields(json);
-}
-
-/**
- * Le style d'une recette seul, pour le backfill « Style des recettes » : le
- * rôle, la protéine et le reste, déjà posés et parfois corrigés à la main, ne
- * sont pas redemandés. `stylesChecked` faux : le modèle n'a pas répondu sur
- * le style, la recette reste à examiner.
- */
-export async function suggestRecipeStyles(
-  input: { titre: string; cooklang: string; dishTypes: string[] },
-  ctx: ModelCallContext,
-): Promise<RecipeStylesAnswer> {
-  const dishTypes = input.dishTypes.filter((t) => t.trim().length > 0);
-  const prompt = `Tu es un expert en classification culinaire. Dis quel est le style de cette recette.
-
-TITRE: ${input.titre}
-${dishTypes.length > 0 ? `TYPES DE PLAT DÉJÀ CONNUS: ${dishTypes.join(", ")}\n` : ""}
-CONTENU (format CookLang):
-${truncatedContent(input.cooklang)}
-
-${STYLES_PROMPT}
-
-Retourne UNIQUEMENT ce JSON (sans balises markdown, sans commentaire) :
-{
-  ${STYLES_JSON_KEY}
-}`;
-
-  const result = await callModel({
-    parts: [textPart(prompt)],
-    ctx: { ...ctx, timeoutMs: 30_000 },
-  });
-
-  const json = await readJson(result.text, ctx, ctx.feature);
-  return parseRecipeStyles(json.styles);
 }

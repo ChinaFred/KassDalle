@@ -154,30 +154,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             'par passage. À '
             'programmer chaque jour pour que la règle des 90 jours tienne '
             'seule.';
-      case BackfillKeys.utensilsCleanup:
-        return 'Avec « Essai à blanc » cochée, rien n\'est modifié : le passage '
-            'liste dans « À revoir » les recettes et les fiches du '
-            'référentiel qu\'il corrigerait. Décochez « Essai à blanc » '
-            'ci-dessous pour corriger.\n\n'
-            'Sans essai à blanc, ce passage retire des recettes les ustensiles écrits '
-            'comme ingrédients (papier sulfurisé, film alimentaire, '
-            'piques…) : ils restent cités dans les étapes, comme ustensiles. '
-            'Une fois toutes les recettes parcourues, il supprime les fiches '
-            'd\'ustensiles du référentiel qu\'aucune recette ne cite plus. '
-            'Un ustensile suivi d\'une parenthèse n\'est pas touché : la '
-            'recette passe dans « À revoir ».\n\n'
-            'Aucun appel d\'IA par le passage. Chaque recette corrigée voit '
-            'sa nutrition, ses courses et ses allergènes recalculés, comme '
-            'après une modification : ce recalcul peut appeler l\'IA, sur le '
-            'plafond du propriétaire de la recette. Deux mille recettes par '
-            'passage.';
-      case BackfillKeys.recipeStyles:
-        return 'Demande à l\'IA le style de chaque recette pas encore '
-            'examinée : zéro à trois parmi street food, réconfortant, '
-            'brunch… Un appel par recette, quarante au plus. Un style corrigé '
-            'à la main n\'est pas soumis à l\'IA.\n\n'
-            'Appels d\'IA facturés. Relancez tant que le résultat indique '
-            '« incomplet ».';
       default:
         return '';
     }
@@ -211,11 +187,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
   /// Lance le passage de [def] et met en forme son compte rendu.
   /// [retryExcluded] : la case « Réessayer aussi les éléments exclus après 3 échecs ».
-  /// [dryRun] : la case « Essai à blanc » des ustensiles.
   Future<_PassOutcome> _runPass(
     BackfillDefinition def, {
     bool retryExcluded = false,
-    bool dryRun = false,
   }) async {
     switch (def.key) {
       case BackfillKeys.nutrition:
@@ -282,22 +256,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           failures: r.failures,
           termineAuto: false,
         );
-      case BackfillKeys.recipeStyles:
-        final r = await _repo.backfillRecipeStyles();
-        return _fromCounts(
-          r,
-          'Recettes : parcourues=${r['examinees']}, '
-          'examinées par l\'IA=${r['stylees']}, '
-          'dont sans style=${r['sansStyle']}, '
-          'déjà examinées=${r['dejaExaminees']}, '
-          'corrigées à la main=${r['manuelles']}, '
-          'hors recette=${r['horsRecette']}, échecs=${r['echouees']}, '
-          'restantes=${r['restantes'] ?? 'décompte impossible'}'
-          '${(r['completed'] ?? 0) == 1 && (r['echouees'] ?? 0) == 0 ? ' — terminé' : ' — incomplet'}'
-          '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
-          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
       case BackfillKeys.shoppingProducts:
         final r = await _repo.backfillShopping();
         return _fromCounts(
@@ -327,39 +285,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
               ? ' — parcours terminé, captures en échec retentées au prochain passage'
               : ' — terminé'}'
           '${_flag(r, 'stoppedByBudget', ' (quota du passage atteint, relancer pour continuer)')}'
-          '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
-          '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
-        );
-      case BackfillKeys.utensilsCleanup:
-        final r = await _repo.backfillUtensilsCleanup(dryRun: dryRun);
-        final blanc = (r['essaiABlanc'] ?? 0) == 1;
-        final complet = (r['completed'] ?? 0) == 1;
-        final trouve = (r['corrigees'] ?? 0) + (r['fichesSupprimees'] ?? 0);
-        final String fin;
-        if (!complet) {
-          fin = ' — incomplet, relancer';
-        } else if (!blanc) {
-          fin = ' — terminé';
-        } else if (trouve > 0) {
-          fin = ' — essai terminé : décochez « Essai à blanc » pour corriger';
-        } else {
-          fin = ' — essai terminé : rien à corriger automatiquement';
-        }
-        return _fromCounts(
-          r,
-          '${blanc ? 'Essai à blanc, rien n\'est modifié. ' : ''}'
-          'Recettes : examinées=${r['examinees']}, '
-          '${blanc ? 'à corriger' : 'corrigées'}=${r['corrigees']}, '
-          'déjà propres=${r['dejaPropres']}, '
-          'à revoir à la main=${r['aRevoirALaMain']}, '
-          'modifiées pendant le passage=${r['aReprendre']}, '
-          'échecs=${r['echouees']} | '
-          'Fiches du référentiel : '
-          '${(r['recettesParcourues'] ?? 0) == 1 ? 'trouvées=${r['fichesTrouvees']}, '
-                    '${blanc ? 'à supprimer' : 'supprimées'}=${r['fichesSupprimees']}, '
-                    'encore citées=${r['fichesEncoreCitees']}, '
-                    'échecs=${r['fichesEchouees']}' : 'non examinées, elles le seront une fois toutes les recettes parcourues'}'
-          '$fin'
           '${_flag(r, 'stoppedByErrors', ' (trois échecs de suite : voir les rapports d\'erreurs)')}'
           '${_flag(r, 'stoppedByDeadline', ' (arrêt préventif, relancer pour continuer)')}',
         );
@@ -400,7 +325,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     BackfillDefinition def, {
     required String checkboxLabel,
     required bool initialValue,
-    String Function(bool checked)? confirmLabelFor,
   }) async {
     var checked = initialValue;
     final confirmed = await showDialog<bool>(
@@ -431,7 +355,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(confirmLabelFor?.call(checked) ?? 'Lancer'),
+              child: const Text('Lancer'),
             ),
           ],
         ),
@@ -445,21 +369,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     final done = state?.isDone ?? false;
     final doneAt = state?.termineLe;
     var retryExcluded = false;
-    var dryRun = false;
     final bool ok;
-    if (def.key == BackfillKeys.utensilsCleanup) {
-      // Cochée par défaut, même pour une relance après « terminé » : un
-      // lancement ne modifie rien tant qu'on ne la décoche pas.
-      final answer = await _confirmWithCheckbox(
-        def,
-        checkboxLabel: 'Essai à blanc : ne rien modifier',
-        initialValue: true,
-        confirmLabelFor: (checked) =>
-            checked ? 'Lancer l\'essai' : 'Corriger les recettes',
-      );
-      ok = answer.ok;
-      dryRun = answer.checked;
-    } else if (done) {
+    if (done) {
       ok = await _confirm(
         title: 'Relancer « ${def.title} » ?',
         content:
@@ -488,11 +399,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
     setState(() => _launching.add(def.key));
     try {
-      final outcome = await _runPass(
-        def,
-        retryExcluded: retryExcluded,
-        dryRun: dryRun,
-      );
+      final outcome = await _runPass(def, retryExcluded: retryExcluded);
       if (!mounted) return;
       ref.invalidate(referentialKpisProvider);
       setState(() {
@@ -989,6 +896,26 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   // `firestore.rules`. Dernier passage : 7 comptes lus, 0 à revoir, 0 échec.
   // Les règles refusent désormais toute écriture hors schéma.
   //
+  // Deux ponctuels, marqués terminés en production le 23/10/2026 en v0.24.66,
+  // sont retirés en v0.24.67 (23 octobre 2026) :
+  //
+  // « Retirer les ustensiles des ingrédients » (`backfillUtensilsCleanupFn`,
+  // v0.24.59, terminé automatiquement) a retiré des recettes les ustensiles
+  // écrits comme ingrédients (`@papier sulfurisé{}` devenu `#papier
+  // sulfurisé{}`), puis supprimé du référentiel les fiches d'ustensiles
+  // qu'aucune recette ne citait plus. Il proposait un essai à blanc. Dernier
+  // passage : 0 recette corrigée, 0 fiche supprimée, 0 échec, 0 à revoir.
+  // L'import et le déclencheur d'écriture écartent les ustensiles
+  // (`nutrition/utensils.ts`, `core/utils/utensils.dart`).
+  //
+  // « Style des recettes » (`backfillRecipeStylesFn`, v0.24.62, marqué
+  // terminé à la main) a posé `tags.styles` et `tags.styles_checked_at` sur
+  // les recettes antérieures au style, par un appel de modèle par recette
+  // (poste `backfill_recipe_styles`, gardé au catalogue comptable). Dernier
+  // passage : 0 examinée, 0 échec, 0 restante, 0 à revoir. La passe du rôle
+  // (import, suggestion de tags, déclencheur, « Rôle des recettes ») pose le
+  // style sur ce qui arrive ou change.
+  //
   // Depuis v0.23.45, chaque backfill est classé ponctuel ou récurrent
   // (`backfill_registry.dart`, `functions/src/backfills/registry.ts`). Un
   // ponctuel terminé reste visible en bas de l'écran jusqu'à son retrait du
@@ -1141,9 +1068,7 @@ class _BackfillCardState extends State<_BackfillCard> {
     BackfillKeys.recipeRoles: Icons.restaurant_outlined,
     BackfillKeys.shoppingProducts: Icons.shopping_cart_outlined,
     BackfillKeys.refreshSodium: Icons.science_outlined,
-    BackfillKeys.utensilsCleanup: Icons.cleaning_services_outlined,
     BackfillKeys.retention: Icons.auto_delete_outlined,
-    BackfillKeys.recipeStyles: Icons.style_outlined,
   };
 
   bool get _done => widget.state?.isDone ?? false;

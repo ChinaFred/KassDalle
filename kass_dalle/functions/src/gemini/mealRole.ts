@@ -139,11 +139,10 @@ export function styleWord(key: string): string {
 }
 
 /**
- * Le style, mot pour mot, dans le prompt du rôle et dans celui du backfill
- * « Style des recettes ». Aucun exemple rempli : les valeurs et ce qu'elles
- * recouvrent.
+ * Le style, mot pour mot, dans le prompt du rôle. Aucun exemple rempli : les
+ * valeurs et ce qu'elles recouvrent.
  */
-export const STYLES_PROMPT = `"styles" = le style de la recette, zéro à ${MAX_STYLES} valeurs parmi :
+const STYLES_PROMPT = `"styles" = le style de la recette, zéro à ${MAX_STYLES} valeurs parmi :
 ${RECIPE_STYLES.map((k) => {
   const hint = RECIPE_STYLE_HINTS[k];
   return `- "${k}" : ${RECIPE_STYLE_LABELS[k]}${hint ? ` (${hint})` : ""}`;
@@ -151,7 +150,7 @@ ${RECIPE_STYLES.map((k) => {
 - Ne retiens un style que s'il décrit clairement la recette. Tableau vide si aucun ne convient.`;
 
 /** La clé JSON du style. */
-export const STYLES_JSON_KEY = `"styles": ["<${RECIPE_STYLES.join(" | ")}>"]`;
+const STYLES_JSON_KEY = `"styles": ["<${RECIPE_STYLES.join(" | ")}>"]`;
 
 /** Seuls ces rôles portent une protéine et un féculent principaux. */
 export const ROLES_WITH_MAIN_INGREDIENTS: readonly MealRole[] = ["plat", "accompagnement"];

@@ -168,11 +168,11 @@ export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledBackfills } from "./scheduled/backfillSchedule";
 export { setBackfillScheduleFn, setBackfillDoneFn } from "./callable/backfillAdminCallable";
 export { backfillRecipeRolesFn } from "./callable/recipeRolesBackfillCallable";
-export { backfillRecipeStylesFn } from "./callable/recipeStylesBackfillCallable";
 export { backfillShoppingFn } from "./callable/shoppingBackfillCallable";
 export { backfillAllergensFn } from "./callable/allergensBackfillCallable";
-export { backfillUtensilsCleanupFn } from "./callable/utensilsCleanupBackfillCallable";
 export { backfillRetentionFn } from "./callable/retentionBackfillCallable";
+// `backfillUtensilsCleanupFn` (v0.24.59) et `backfillRecipeStylesFn` (v0.24.62) sont retirés en
+// v0.24.67 : lancés en production et marqués terminés le 23/10/2026, leur travail est fait.
 // `backfillDefaultUnitsFn` (v0.24.40) et `backfillUsersSchemaCheckFn` (v0.24.42) sont retirés en
 // v0.24.52 : lancés en production et marqués terminés, leur travail est fait.
 // `backfillUserProfilesFn` (v0.23.14) et `backfillGroupReachFn` (v0.23.19) sont retirés en

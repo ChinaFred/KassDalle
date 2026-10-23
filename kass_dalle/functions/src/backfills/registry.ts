@@ -26,6 +26,8 @@
  * `move_meals_to_group`.
  * Retirés en v0.24.52, une fois terminés en production : `default_units` et
  * `users_schema_check`.
+ * Retirés en v0.24.67, une fois terminés en production : `utensils_cleanup` et
+ * `recipe_styles`.
  * Leurs documents `app_config/backfill_run_<clé>` restent en base ; plus rien
  * ne les lit. La liste complète, avec les versions : skill `backfill`,
  * « Backfills retirés ».
@@ -40,9 +42,7 @@ export const BACKFILL_KEYS = [
   "recipe_roles",
   "shopping_products",
   "refresh_sodium",
-  "utensils_cleanup",
   "retention",
-  "recipe_styles",
 ] as const;
 
 export type BackfillKey = (typeof BACKFILL_KEYS)[number];
@@ -121,22 +121,6 @@ export const BACKFILLS: readonly BackfillDefinition[] = [
     usesAi: true,
     defaultSchedule: null,
   },
-  {
-    key: "utensils_cleanup",
-    kind: "ponctuel",
-    title: "Retirer les ustensiles des ingrédients",
-    // Le passage n'appelle aucun modèle, mais chaque recette corrigée est
-    // recalculée par `onRecipeWritten`, qui peut en appeler un.
-    usesAi: true,
-    defaultSchedule: null,
-  },
-  {
-    key: "recipe_styles",
-    kind: "ponctuel",
-    title: "Style des recettes",
-    usesAi: true,
-    defaultSchedule: null,
-  },
 ];
 
 /** La définition d'une clé, ou `null` si elle n'existe pas. */
@@ -153,18 +137,11 @@ export function recurrentKeys(): BackfillKey[] {
 /**
  * Backfills qui écrivent les mêmes documents et ne doivent pas tourner
  * ensemble : l'enrichissement des référentiels et la réparation du sel
- * réécrivent tous deux `per100g` des ingrédients. Le nettoyage des ustensiles
- * supprime des fiches que ces deux-là, et les allergènes, pourraient recréer
- * par une écriture fusionnée. Le rôle et le style des recettes écrivent tous
- * deux `tags.styles`. Un passage de l'un est refusé pendant que l'autre tient
+ * réécrivent tous deux `per100g` des ingrédients. Un passage de l'un est refusé pendant que l'autre tient
  * son verrou. Un backfill peut appartenir à plusieurs groupes.
  */
 const LOCK_GROUPS: readonly (readonly BackfillKey[])[] = [
   ["enrich_referentials", "refresh_sodium"],
-  ["utensils_cleanup", "enrich_referentials"],
-  ["utensils_cleanup", "refresh_sodium"],
-  ["utensils_cleanup", "allergens"],
-  ["recipe_roles", "recipe_styles"],
 ];
 
 /** Les autres backfills dont le verrou bloque [key], dans l'ordre des groupes. */

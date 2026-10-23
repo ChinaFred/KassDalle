@@ -314,7 +314,8 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'Donne à chaque recette existante zéro à trois styles — street food, '
         'réconfortant, healthy… —, que le planning lit quand une consigne en '
         'demande un. Un appel par recette, quarante par passage, lancé depuis '
-        'Admin › Backfills.',
+        'Admin › Backfills. Retiré du code en v0.24.67, son travail fait ; '
+        'gardé ici pour nommer les mois déjà comptés.',
   ),
   'backfill_recipe_protein': FeatureInfo(
     label: 'Protéine et féculent des plats (backfill)',
