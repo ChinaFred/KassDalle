@@ -478,6 +478,13 @@ class PlanningRepository {
     });
   }
 
+  /// Change les parts d'un repas planifié (`target_portions`). Seul le repas
+  /// est écrit : la recette garde ses parts, et les quantités se recalculent
+  /// à l'affichage et dans les courses.
+  Future<void> updateMealPortions(String id, int targetPortions) async {
+    await _col.doc(id).update({'target_portions': targetPortions});
+  }
+
   /// Met à jour l'heure d'un repas planifié existant.
   Future<void> updateMealTime(String id, DateTime newTime) async {
     await _col.doc(id).update({'planned_at': Timestamp.fromDate(newTime)});
@@ -538,8 +545,22 @@ class PlanningRepository {
   }
 
   /// Sauvegarde les préférences de planning.
-  Future<void> savePreferences(PlanningPreferences prefs) async {
-    await _prefsDoc.set(prefs.toFirestore(), SetOptions(merge: true));
+  ///
+  /// L'écriture fusionne : une entrée retirée de `group_portions` resterait
+  /// en base. [clearedGroupPortions] nomme les groupes rendus à leur défaut,
+  /// dont l'entrée est supprimée.
+  Future<void> savePreferences(
+    PlanningPreferences prefs, {
+    Set<String> clearedGroupPortions = const {},
+  }) async {
+    final data = prefs.toFirestore();
+    if (clearedGroupPortions.isNotEmpty) {
+      data['group_portions'] = <String, Object>{
+        ...prefs.groupPortions,
+        for (final id in clearedGroupPortions) id: FieldValue.delete(),
+      };
+    }
+    await _prefsDoc.set(data, SetOptions(merge: true));
   }
 
   /// Lecture ponctuelle du dernier périmètre choisi, pour l'ouverture de

@@ -285,6 +285,9 @@ class PlanningMealTile extends StatelessWidget {
   final VoidCallback? onOtherSuggestion;
   final VoidCallback? onReschedule;
 
+  /// « Changer les parts » : les parts de ce repas, sans toucher à la recette.
+  final VoidCallback? onChangePortions;
+
   /// Ouvre l'éditeur « Composer le repas » : menu ⋮, ou appui sur la ligne
   /// « Il manque » ou « Apports du plat inconnus ».
   final VoidCallback? onCompose;
@@ -360,6 +363,7 @@ class PlanningMealTile extends StatelessWidget {
     this.onClearRecipe,
     this.onOtherSuggestion,
     this.onReschedule,
+    this.onChangePortions,
     this.onCompose,
     this.onComplete,
     this.sideStatus,
@@ -971,6 +975,7 @@ class PlanningMealTile extends StatelessWidget {
       PlanningMealAction.otherSuggestion: ?_action(onOtherSuggestion),
       PlanningMealAction.changeRecipe: ?_action(onChangeRecipe),
       PlanningMealAction.reschedule: ?_action(onReschedule),
+      PlanningMealAction.changePortions: ?_action(onChangePortions),
       // Un menu se compose toujours. Un plat, ou une recette pas encore
       // classée : pas un dessert, une entrée ni un accompagnement, qui ne
       // reçoivent pas d'accompagnement.
@@ -1029,6 +1034,10 @@ class PlanningMealTile extends StatelessWidget {
       PlanningMealAction.reschedule => (
         Icons.calendar_month_outlined,
         'Replanifier',
+      ),
+      PlanningMealAction.changePortions => (
+        Icons.people_outline,
+        'Changer les parts',
       ),
       PlanningMealAction.composeMeal => (
         Icons.restaurant_menu_outlined,
@@ -1111,6 +1120,7 @@ enum PlanningMealAction {
   otherSuggestion,
   changeRecipe,
   reschedule,
+  changePortions,
   composeMeal,
   switchToMenu,
   switchToDish,
