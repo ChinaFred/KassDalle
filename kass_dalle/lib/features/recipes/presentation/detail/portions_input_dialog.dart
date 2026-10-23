@@ -12,15 +12,19 @@ import 'package:flutter/material.dart';
 ///
 /// Séparée de l'affichage pour que la règle se teste sans monter de widget :
 /// c'est elle qui décide, le dialogue ne fait que la montrer.
+///
+/// [unit] nomme ce qu'on compte dans le message : « portions » sur la fiche
+/// recette, « parts » dans le planning.
 String? validatePortionsInput(
   String raw, {
   required int minPortions,
   required int maxPortions,
+  String unit = 'portions',
 }) {
   final parsed = int.tryParse(raw.trim());
   if (parsed == null) return 'Saisis un nombre entier.';
   if (parsed < minPortions || parsed > maxPortions) {
-    return 'Le nombre de portions doit être entre $minPortions et $maxPortions.';
+    return 'Le nombre de $unit doit être entre $minPortions et $maxPortions.';
   }
   return null;
 }
@@ -29,12 +33,16 @@ class PortionsInputDialog extends StatefulWidget {
   final int current;
   final int minPortions;
   final int maxPortions;
+  final String title;
+  final String unit;
 
   const PortionsInputDialog({
     super.key,
     required this.current,
     required this.minPortions,
     required this.maxPortions,
+    this.title = 'Nombre de portions',
+    this.unit = 'portions',
   });
 
   @override
@@ -58,6 +66,7 @@ class _PortionsInputDialogState extends State<PortionsInputDialog> {
       _ctrl.text,
       minPortions: widget.minPortions,
       maxPortions: widget.maxPortions,
+      unit: widget.unit,
     );
     if (error != null) {
       setState(() => _errorText = error);
@@ -69,13 +78,14 @@ class _PortionsInputDialogState extends State<PortionsInputDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Nombre de portions'),
+      title: Text(widget.title),
       content: TextField(
         controller: _ctrl,
         keyboardType: TextInputType.number,
         autofocus: true,
         decoration: InputDecoration(
-          labelText: 'Portions',
+          labelText:
+              '${widget.unit[0].toUpperCase()}${widget.unit.substring(1)}',
           hintText: '${widget.minPortions} - ${widget.maxPortions}',
           errorText: _errorText,
           errorMaxLines: 3,
@@ -105,6 +115,8 @@ Future<int?> showPortionsInputDialog(
   required int current,
   required int minPortions,
   required int maxPortions,
+  String title = 'Nombre de portions',
+  String unit = 'portions',
 }) {
   return showDialog<int>(
     context: context,
@@ -112,6 +124,8 @@ Future<int?> showPortionsInputDialog(
       current: current,
       minPortions: minPortions,
       maxPortions: maxPortions,
+      title: title,
+      unit: unit,
     ),
   );
 }

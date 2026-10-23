@@ -23,6 +23,7 @@ void main() {
     WidgetTester tester, {
     int? basePortions,
     int? targetPortions,
+    String? recipeId = 'r1',
   }) async {
     final backend = TestBackend(planningWrites: true);
     final now = DateTime.now();
@@ -33,6 +34,7 @@ void main() {
           PlannedMeal(
             id: 'm1',
             uid: backend.user.uid,
+            recipeId: recipeId,
             recipeTitre: 'Friterie',
             plannedAt: DateTime(now.year, now.month, now.day, 19),
             durationMinutes: 45,
@@ -83,7 +85,7 @@ void main() {
       targetPortions: 4,
     );
     await openDialog(tester);
-    expect(find.text('Nombre de portions'), findsOneWidget);
+    expect(find.text('Nombre de parts'), findsOneWidget);
     expect(find.widgetWithText(TextField, '4'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '6');
@@ -116,10 +118,19 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Valider'));
     await tester.pumpAndSettle();
     expect(
-      find.text('Le nombre de portions doit être entre 1 et 99.'),
+      find.text('Le nombre de parts doit être entre 1 et 99.'),
       findsOneWidget,
     );
     expect((await stored(backend)).containsKey('target_portions'), isFalse);
+  });
+
+  testWidgets('un créneau vide ne propose pas « Changer les parts »', (
+    tester,
+  ) async {
+    await pumpPlanning(tester, recipeId: null);
+    await tester.tap(find.byType(PopupMenuButton<PlanningMealAction>));
+    await tester.pumpAndSettle();
+    expect(find.text('Changer les parts'), findsNothing);
   });
 
   group('Préférences : « Parts des groupes »', () {
@@ -198,7 +209,7 @@ void main() {
     ) async {
       final backend = await pumpConfig(tester);
       expect(find.text('Parts des groupes'), findsOneWidget);
-      expect(find.text('3 (une par membre)'), findsOneWidget);
+      expect(find.text('Vide : une part par membre'), findsOneWidget);
       await tester.enterText(field(), '6');
       await tester.tap(find.widgetWithText(TextButton, 'Enregistrer'));
       await tester.pumpAndSettle();

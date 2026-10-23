@@ -975,7 +975,10 @@ class PlanningMealTile extends StatelessWidget {
       PlanningMealAction.otherSuggestion: ?_action(onOtherSuggestion),
       PlanningMealAction.changeRecipe: ?_action(onChangeRecipe),
       PlanningMealAction.reschedule: ?_action(onReschedule),
-      PlanningMealAction.changePortions: ?_action(onChangePortions),
+      // Un créneau vide n'a rien à mettre à l'échelle ; un repas libre
+      // garde l'action pour ses accompagnements.
+      if (meal.recipeId != null || meal.components.isNotEmpty)
+        PlanningMealAction.changePortions: ?_action(onChangePortions),
       // Un menu se compose toujours. Un plat, ou une recette pas encore
       // classée : pas un dessert, une entrée ni un accompagnement, qui ne
       // reçoivent pas d'accompagnement.

@@ -688,9 +688,10 @@ class _GroupPortionsSection extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Parts prévues pour chaque nouveau repas du groupe. Vide : une '
-            'part par membre. Les repas déjà planifiés gardent leurs parts ; '
-            'menu ⋮ › « Changer les parts » pour en modifier un.',
+            'Parts prévues pour chaque nouveau repas du groupe. Elles '
+            'remplacent les « Parts à préparer » du jour. Les repas déjà '
+            'planifiés gardent leurs parts : menu du repas › « Changer les '
+            'parts » pour en modifier un.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -709,7 +710,8 @@ class _GroupPortionsSection extends ConsumerWidget {
                 ],
                 decoration: InputDecoration(
                   labelText: group.name,
-                  hintText: '${groupMemberCount(group)} (une par membre)',
+                  hintText: '${groupMemberCount(group)}',
+                  helperText: 'Vide : une part par membre',
                   suffixText: 'parts',
                   isDense: true,
                   floatingLabelBehavior: FloatingLabelBehavior.always,

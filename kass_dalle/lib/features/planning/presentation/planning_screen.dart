@@ -916,6 +916,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       current: current.clamp(1, 99),
       minPortions: 1,
       maxPortions: 99,
+      title: 'Nombre de parts',
+      unit: 'parts',
     );
     if (picked == null || picked == meal.targetPortions || !mounted) return;
     final repo = ref.read(planningRepositoryProvider);
@@ -928,7 +930,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        context.showSnackBar('Les parts n\'ont pas pu être modifiées.');
+        context.showErrorSnackBar('Parts non modifiées. Réessayez.');
       }
     }
   }
