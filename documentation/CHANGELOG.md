@@ -23,7 +23,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 ### v0.24.68 — fonctionnel
 
 Les parts d'un repas planifié se changent enfin. Le menu ⋮ d'un repas propose « Changer les
-parts » : la fenêtre « Nombre de portions » (1 à 99) écrit `target_portions` sur le repas seul.
+parts » : la fenêtre « Nombre de parts » (1 à 99) écrit `target_portions` sur le repas seul.
 La recette garde ses parts ; la fiche, les courses et les accompagnements suivent.
 
 Préférences du planning reçoit une section « Parts des groupes » : un champ par groupe dont le
