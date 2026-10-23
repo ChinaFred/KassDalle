@@ -251,7 +251,8 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Rôle des recettes dans un repas (backfill)",
     group: "Planning",
   },
-  { id: "backfill_recipe_styles", label: "Style des recettes (backfill)", group: "Planning" },
+  // `backfill_recipe_styles` a quitté cette liste avec `backfillRecipeStylesFn`,
+  // retiré le 23 octobre 2026 (v0.24.67). Il reste au catalogue comptable.
   // `backfill_recipe_protein` a quitté cette liste avec `backfillRecipeProteinFn`,
   // retiré le 13 octobre 2026 (v0.23.52). Il reste au catalogue comptable.
   {

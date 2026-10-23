@@ -107,7 +107,7 @@ describe("une écriture du seul style ne déclenche pas de classement", () => {
     tags: { dish_types: ["entrée"], styles: ["street_food"], styles_checked_at: 1 },
   };
 
-  test("le backfill « Style des recettes » écrit le style d'une recette sans rôle : non", () => {
+  test("une écriture du style seul sur une recette sans rôle : non", () => {
     assert.equal(onlyStyleTagsChanged(before, after), true);
     assert.equal(mealRoleCallAllowed(after, before), false);
   });

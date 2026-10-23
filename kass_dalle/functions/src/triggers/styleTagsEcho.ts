@@ -1,16 +1,17 @@
 /**
  * Échos d'écriture qui ne changent que le style d'une recette.
  *
- * Le backfill « Style des recettes » écrit `tags.styles` et
- * `tags.styles_checked_at` sur des centaines de recettes ; chacune de ces
- * écritures réveille `onRecipeWritten`. Les traitements qui appellent un
+ * Une écriture de `tags.styles` et `tags.styles_checked_at` seuls (le backfill
+ * « Style des recettes », retiré en v0.24.67, en a écrit sur des centaines de
+ * recettes ; une correction du style à la main en écrit encore) réveille
+ * `onRecipeWritten`. Les traitements qui appellent un
  * modèle (rôle dans un repas, durées estimées) lisent ces gardes pour ne pas
  * facturer un appel sur une écriture qui ne touche aucune de leurs entrées.
  */
 
 import { isDeepStrictEqual } from "node:util";
 
-/** Sous-champs de `tags` que le backfill « Style des recettes » écrit. */
+/** Sous-champs de `tags` que pose l'examen du style d'une recette. */
 export const STYLE_TAG_FIELDS: ReadonlySet<string> = new Set(["styles", "styles_checked_at"]);
 
 /**
@@ -47,8 +48,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 /**
  * Vrai quand l'écriture ne change que des sous-champs [fields] de `tags`
- * (par défaut `tags.styles` et `tags.styles_checked_at`) : c'est le backfill
- * « Style des recettes ». Faux pour une création, et quand rien n'a changé.
+ * (par défaut `tags.styles` et `tags.styles_checked_at`). Faux pour une création, et quand rien n'a changé.
  */
 export function onlyStyleTagsChanged(
   before: Record<string, unknown>,

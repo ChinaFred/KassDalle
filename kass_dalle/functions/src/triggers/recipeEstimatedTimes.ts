@@ -146,9 +146,10 @@ export type EstimatedTimesDecision =
  *   contenu, ou si une réservation récente est en cours.
  * - [beforeData] fourni et l'écriture ne change que le style
  *   (`tags.styles`, `tags.styles_checked_at`, `tags.styles_manual`) : rien.
- *   Le backfill « Style des recettes » écrit ces champs sur des centaines de
- *   recettes ; sans cette garde, chaque recette sans estimation aurait reçu
- *   un appel `time_estimate` facturé, que le style ne demande pas.
+ *   Le backfill « Style des recettes » (retiré en v0.24.67) écrivait ces
+ *   champs sur des centaines de recettes, et une correction de style à la
+ *   main les écrit encore ; sans cette garde, chaque recette sans estimation
+ *   recevrait un appel `time_estimate` facturé, que le style ne demande pas.
  */
 export function decideEstimatedTimes(
   data: Record<string, unknown>,

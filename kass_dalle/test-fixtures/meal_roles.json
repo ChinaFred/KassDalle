@@ -79,7 +79,7 @@
       "result": ["proteine"]
     }
   ],
-  "_styles_comment": "Style d'une recette (tags.styles) : zéro à trois clés de ce vocabulaire fermé, posées par le modèle dans la passe du rôle (import, suggestion de tags, déclencheur) ou par le backfill « Style des recettes ». Décidé par functions/src/gemini/mealRole.ts (RECIPE_STYLES, RECIPE_STYLE_LABELS), qui seul lit la réponse du modèle ; repris par meal_role.dart (kRecipeStyles, recipeStyleLabel) pour l'affichage et la correction. Même ordre et mêmes libellés des deux côtés. Le serveur cite les libellés dans le prompt et dans les écarts du planning (« Aucun plat street food dans vos recettes »). Une recette examinée porte tags.styles_checked_at, même sans style : sans ce marqueur, le style est inconnu.",
+  "_styles_comment": "Style d'une recette (tags.styles) : zéro à trois clés de ce vocabulaire fermé, posées par le modèle dans la passe du rôle (import, suggestion de tags, déclencheur), et jusqu'en v0.24.67 par le backfill « Style des recettes », retiré depuis. Décidé par functions/src/gemini/mealRole.ts (RECIPE_STYLES, RECIPE_STYLE_LABELS), qui seul lit la réponse du modèle ; repris par meal_role.dart (kRecipeStyles, recipeStyleLabel) pour l'affichage et la correction. Même ordre et mêmes libellés des deux côtés. Le serveur cite les libellés dans le prompt et dans les écarts du planning (« Aucun plat street food dans vos recettes »). Une recette examinée porte tags.styles_checked_at, même sans style : sans ce marqueur, le style est inconnu.",
   "styles": [
     "street_food",
     "reconfortant",
@@ -121,7 +121,7 @@
     "soiree_plateau": "Soirée plateau / télé"
   },
   "max_styles": 3,
-  "_styles_manual_comment": "Correction à la main de tags.styles : le client pose tags.styles_manual = true (booléen strict). Le modèle ne réécrit alors jamais styles : ni l'import, ni le déclencheur, ni le backfill « Rôle des recettes » ou « Style des recettes » (même en reprise forcée), ni « Suggérer les tags » côté client. Chaque cas : les tags en base, ce que rend le modèle, si la correction est reconnue (manual) et ce que styles vaut après (result).",
+  "_styles_manual_comment": "Correction à la main de tags.styles : le client pose tags.styles_manual = true (booléen strict). Le modèle ne réécrit alors jamais styles : ni l'import, ni le déclencheur, ni le backfill « Rôle des recettes » (même en reprise forcée), ni « Suggérer les tags » côté client. Chaque cas : les tags en base, ce que rend le modèle, si la correction est reconnue (manual) et ce que styles vaut après (result).",
   "styles_manual_cases": [
     {"name": "corrigé à la main : le modèle ne réécrit pas", "tags": {"meal_role": "plat", "styles": ["street_food"], "styles_manual": true}, "model_styles": ["healthy"], "manual": true, "result": ["street_food"]},
     {"name": "corrigé à la main, vide : reste vide", "tags": {"styles": [], "styles_manual": true}, "model_styles": ["festif", "brunch"], "manual": true, "result": []},

@@ -195,6 +195,8 @@ version d'ajout.
 | `move_meals_to_group` | Déplacer mes repas vers un groupe | `backfillMoveMealsToGroupFn` | — (réutilisable, jamais terminé ; dernier passage le 14/10/2026) | v0.24.44 |
 | `default_units` | Semer les unités standard | `backfillDefaultUnitsFn` | le 21/10/2026, v0.24.41 | v0.24.52 |
 | `users_schema_check` | Contrôler les comptes | `backfillUsersSchemaCheckFn` | le 22/10/2026, v0.24.46 | v0.24.52 |
+| `utensils_cleanup` | Retirer les ustensiles des ingrédients | `backfillUtensilsCleanupFn` | le 23/10/2026, v0.24.66 | v0.24.67 |
+| `recipe_styles` | Style des recettes | `backfillRecipeStylesFn` | le 23/10/2026, v0.24.66 (marqué à la main) | v0.24.67 |
 
 Un tiret signale une information que le dépôt ne garde pas. Les autres opérations retirées
 avant le registre (v0.23.45), sans version de retrait connue, sont décrites dans le

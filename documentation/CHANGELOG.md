@@ -18,6 +18,28 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-23
+
+### v0.24.67 — technique
+
+Deux backfills ponctuels, terminés en production le 23/10/2026 en v0.24.66, sortent du code.
+« Retirer les ustensiles des ingrédients » (`utensils_cleanup`, `backfillUtensilsCleanupFn`)
+s'est terminé automatiquement ; dernier passage : 0 recette corrigée, 0 fiche supprimée,
+0 échec, 0 à revoir. « Style des recettes » (`recipe_styles`, `backfillRecipeStylesFn`) a été
+marqué à la main ; dernier passage : 0 examinée, 0 échec, 0 restante, 0 à revoir.
+
+Partent avec eux : les deux callables et leurs tests, leurs entrées dans les deux registres et
+dans `backfill_schedule.json`, leurs groupes de `LOCK_GROUPS`, les méthodes
+`backfillUtensilsCleanup` et `backfillRecipeStyles` du repository, leurs `case` et icônes
+d'Admin › Backfills, la case « Essai à blanc » (`dryRun` de `_runPass`, `confirmLabelFor` de
+`_confirmWithCheckbox`, ligne d'état « Décochez « Essai à blanc » »), et `suggestRecipeStyles`
+(`gemini/tagger.ts`), que seul le backfill du style appelait. `STYLES_PROMPT` et
+`STYLES_JSON_KEY` ne sont plus exportés. Le poste `backfill_recipe_styles` quitte
+`ROUTABLE_FEATURES` et reste au catalogue comptable. La liste fermée des ustensiles, la passe
+du rôle qui pose le style et `onlyStyleTagsChanged` restent. Les curseurs et les documents
+`app_config/backfill_run_utensils_cleanup` et `backfill_run_recipe_styles` restent en base,
+plus rien ne les lit.
+
 ## 2026-10-22
 
 ### v0.24.66 — fonctionnel

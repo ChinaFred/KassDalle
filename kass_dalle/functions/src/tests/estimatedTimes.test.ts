@@ -201,7 +201,7 @@ describe("décision du déclencheur", () => {
   test("une écriture qui ne change que le style n'appelle pas le modèle", () => {
     const before = recette({ tags: { prep_time: 10 } });
     assert.equal(decideEstimatedTimes(before, NOW, before).kind, "estimate");
-    // Backfill « Style des recettes » : styles et marqueur d'examen.
+    // Écriture du style seul (correction à la main, ou ancien backfill « Style des recettes ») : styles et marqueur d'examen.
     const styled = recette({
       tags: {
         prep_time: 10,

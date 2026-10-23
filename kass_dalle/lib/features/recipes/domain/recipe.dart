@@ -317,7 +317,8 @@ class RecipeTags {
 
   /// Style de la recette (`tags.styles`) : zéro à trois clés de
   /// [kRecipeStyles] (`street_food`, `reconfortant`…), posées par le modèle
-  /// avec le rôle ou par le backfill « Style des recettes ». Lu par la
+  /// avec le rôle (et, jusqu'en v0.24.67, par le backfill « Style des
+  /// recettes »), ou corrigées à la main. Lu par la
   /// présélection du planning quand une consigne demande un style.
   final List<String> styles;
 

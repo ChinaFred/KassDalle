@@ -857,8 +857,8 @@ flowchart LR
         Féculent, Légume sous « Féculent principal » ; choisir un féculent coche Féculent,
         « Sans féculent » le décoche, et le modèle ne réécrit plus cette correction.
         <b>Le style de la recette</b> (street food, brunch, réconfortant… zéro à trois parmi
-        dix-huit) est posé par le même appel que le rôle ; les recettes déjà classées le
-        reçoivent par la reprise « Style des recettes ». Il se corrige par dix-huit pastilles
+        dix-huit) est posé par le même appel que le rôle ; les recettes classées avant lui
+        l'ont reçu par une reprise ponctuelle, retirée depuis. Il se corrige par dix-huit pastilles
         « Style », après les champs qui dépendent du rôle et avant « Cuisine », pour tout rôle ; au troisième style coché, les
         autres se désactivent. Une correction à la main n'est plus réécrite par le modèle. La
         fiche l'affiche dans la section « Style ».
@@ -1086,7 +1086,7 @@ flowchart LR
         chacune. Une ligne ouvre la recette, ou la relecture d'un brouillon ; le crayon ouvre
         l'éditeur, et un brouillon n'en a pas. La liste est relue à chaque dépliage et au retour
         de la recette ouverte.
-        <b>Backfills ponctuels et récurrents.</b> L'écran range ses neuf reprises en trois
+        <b>Backfills ponctuels et récurrents.</b> L'écran range ses sept reprises en trois
         sections : récurrents, ponctuels à lancer, ponctuels terminés. Chaque tuile affiche l'état
         de son dernier passage, lu en direct. Un récurrent se programme — jours et heure de
         Paris — et passe seul, chaque heure jusqu'à la fin s'il lui reste du travail, ou jusqu'au
@@ -1100,10 +1100,6 @@ flowchart LR
         trois fois ; la confirmation propose « Réessayer aussi les éléments exclus après 3 échecs ».
         Une recette exclue de « Rôle des recettes » est aussi reclassée, compteur remis à zéro,
         dès qu'on modifie son titre, ses ingrédients ou ses étapes.
-        « Retirer les ustensiles des ingrédients » propose « Essai à blanc : ne rien modifier »,
-        cochée par défaut à chaque lancement : le passage liste dans « À revoir » les recettes et
-        les fiches du référentiel qu'il corrigerait, sans rien écrire. Décochée, le bouton devient
-        « Corriger les recettes ».
         <b>« Copier la liste »</b>, sous l'en-tête « Ponctuels terminés », copie une ligne par
         ponctuel terminé : clé technique, titre, date et version de fin, automatique ou marqué à
         la main, dernier compte rendu. L'administrateur la colle à la session qui retire ces
