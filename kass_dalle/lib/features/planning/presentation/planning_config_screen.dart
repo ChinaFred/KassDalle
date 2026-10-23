@@ -13,6 +13,7 @@ import '../domain/planning_criteria.dart';
 import '../domain/planning_history.dart';
 import '../domain/planning_preferences.dart';
 import '../domain/planning_refusals.dart';
+import '../domain/planning_target.dart';
 import '../services/calendar_service.dart';
 import 'constraint_understanding.dart';
 import 'planning_providers.dart';
@@ -46,6 +47,10 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
   final Map<int, TextEditingController> _notesControllers = {};
   final Map<int, TextEditingController> _maxPrepControllers = {};
   final Map<int, TextEditingController> _targetPortionsControllers = {};
+
+  /// « Parts des groupes » : un champ par groupe planifié, créé à son premier
+  /// affichage depuis `group_portions`.
+  final Map<String, TextEditingController> _groupPortionsControllers = {};
 
   /// Les préférences telles que chargées, sous une forme comparable : ce qui
   /// en diffère au moment de partir est une modification non enregistrée.
@@ -89,6 +94,9 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
       c.dispose();
     }
     for (final c in _targetPortionsControllers.values) {
+      c.dispose();
+    }
+    for (final c in _groupPortionsControllers.values) {
       c.dispose();
     }
     super.dispose();
@@ -197,15 +205,35 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     );
   }
 
+  TextEditingController _groupPortionsControllerFor(String groupId) =>
+      _groupPortionsControllers.putIfAbsent(groupId, () {
+        final set = _prefs?.groupPortions[groupId] ?? 0;
+        return TextEditingController(text: set > 0 ? '$set' : '');
+      });
+
   PlanningPreferences _buildPrefs() {
     final constraints = <int, DayConstraint>{};
     for (int d = 1; d <= 7; d++) {
       final c = _buildConstraint(d);
       if (!c.isEmpty) constraints[d] = c;
     }
+    // Un champ vide ou à zéro rend au groupe son défaut, le nombre de
+    // membres. Les groupes non affichés gardent leur valeur.
+    final groupPortions = Map<String, int>.from(
+      _prefs?.groupPortions ?? const {},
+    );
+    for (final e in _groupPortionsControllers.entries) {
+      final value = int.tryParse(e.value.text.trim()) ?? 0;
+      if (value > 0) {
+        groupPortions[e.key] = value;
+      } else {
+        groupPortions.remove(e.key);
+      }
+    }
     return (_prefs ?? const PlanningPreferences()).copyWith(
       dailyConstraints: constraints,
       globalConstraints: _globalConstraintsCtrl.text.trim(),
+      groupPortions: groupPortions,
     );
   }
 
@@ -291,7 +319,14 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     setState(() => _saving = true);
     try {
       final repo = ref.read(planningRepositoryProvider);
-      await repo?.savePreferences(_buildPrefs());
+      final prefs = _buildPrefs();
+      await repo?.savePreferences(
+        prefs,
+        clearedGroupPortions: {
+          for (final id in _prefs?.groupPortions.keys ?? const <String>[])
+            if (!prefs.groupPortions.containsKey(id)) id,
+        },
+      );
       _saved = true;
       if (mounted) {
         context.showSuccessSnackBar('Préférences enregistrées');
@@ -393,6 +428,18 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
             ),
           ),
           const SizedBox(height: 8),
+          // Parts des groupes : seulement pour qui planifie un groupe.
+          if ((ref.watch(ownedPlanningGroupsProvider).value ?? const [])
+              .isNotEmpty) ...[
+            _CollapsibleSection(
+              icon: Icons.groups_outlined,
+              title: 'Parts des groupes',
+              child: _GroupPortionsSection(
+                controllerFor: _groupPortionsControllerFor,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           // 1. Contraintes globales
           _CollapsibleSection(
             icon: Icons.comment_outlined,
@@ -619,6 +666,62 @@ class _SharingSection extends ConsumerWidget {
   static String _membersLabel(FamilyGroup group) {
     final count = {group.ownerId, ...group.memberIds}.length;
     return count == 1 ? '1 membre' : '$count membres';
+  }
+}
+
+/// « Parts des groupes » : les parts par défaut d'un nouveau repas, pour
+/// chaque groupe dont l'utilisateur planifie les repas. Vide : le nombre de
+/// membres.
+class _GroupPortionsSection extends ConsumerWidget {
+  final TextEditingController Function(String groupId) controllerFor;
+
+  const _GroupPortionsSection({required this.controllerFor});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final groups =
+        ref.watch(ownedPlanningGroupsProvider).value ?? const <FamilyGroup>[];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Parts prévues pour chaque nouveau repas du groupe. Elles '
+            'remplacent les « Parts à préparer » du jour. Les repas déjà '
+            'planifiés gardent leurs parts : menu du repas › « Changer les '
+            'parts » pour en modifier un.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final group in groups)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: TextFormField(
+                key: ValueKey('group-portions-${group.id}'),
+                controller: controllerFor(group.id),
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(2),
+                ],
+                decoration: InputDecoration(
+                  labelText: group.name,
+                  hintText: '${groupMemberCount(group)}',
+                  helperText: 'Vide : une part par membre',
+                  suffixText: 'parts',
+                  isDense: true,
+                  floatingLabelBehavior: FloatingLabelBehavior.always,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

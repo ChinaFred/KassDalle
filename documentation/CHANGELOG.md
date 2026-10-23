@@ -20,6 +20,17 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-10-23
 
+### v0.24.68 — fonctionnel
+
+Les parts d'un repas planifié se changent enfin. Le menu ⋮ d'un repas propose « Changer les
+parts » : la fenêtre « Nombre de parts » (1 à 99) écrit `target_portions` sur le repas seul.
+La recette garde ses parts ; la fiche, les courses et les accompagnements suivent.
+
+Préférences du planning reçoit une section « Parts des groupes » : un champ par groupe dont le
+compte planifie les repas. Il écrit `group_portions`, que le code lisait sans qu'aucun écran ne
+le règle ; un repas de groupe prenait donc toujours une part par membre. Un champ vidé rend le
+défaut et supprime l'entrée en base.
+
 ### v0.24.67 — technique
 
 Deux backfills ponctuels, terminés en production le 23/10/2026 en v0.24.66, sortent du code.

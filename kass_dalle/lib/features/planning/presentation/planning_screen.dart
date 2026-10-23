@@ -14,6 +14,7 @@ import '../../groups/domain/family_group.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/shopping_cart.dart';
+import '../../recipes/presentation/detail/portions_input_dialog.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
 import '../domain/planning_history.dart';
 import '../../recipes/domain/recipe_advice_access.dart';
@@ -900,6 +901,38 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     if (picked == null || !mounted) return;
     final repo = ref.read(planningRepositoryProvider);
     await repo?.rescheduleMeal(meal, picked);
+  }
+
+  /// « Changer les parts » : écrit `target_portions` sur le repas seul. La
+  /// recette garde ses parts ; la fiche, les courses et les accompagnements
+  /// recalculent les quantités pour ce repas.
+  Future<void> _changePortions(PlannedMeal meal) async {
+    final recipePortions = meal.recipeId == null
+        ? null
+        : _mealRecipes[meal.recipeId]?.portions;
+    final current = meal.portionsForComponents ?? recipePortions ?? 1;
+    final picked = await showPortionsInputDialog(
+      context,
+      current: current.clamp(1, 99),
+      minPortions: 1,
+      maxPortions: 99,
+      title: 'Nombre de parts',
+      unit: 'parts',
+    );
+    if (picked == null || picked == meal.targetPortions || !mounted) return;
+    final repo = ref.read(planningRepositoryProvider);
+    try {
+      await repo?.updateMealPortions(meal.id, picked);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.changePortions',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Parts non modifiées. Réessayez.');
+      }
+    }
   }
 
   Future<void> _exportAllToCalendar(List<PlannedMeal> meals) async {
@@ -2710,6 +2743,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       onDelete: () => _deleteMeal(meal),
       onChangeRecipe: () => _changeRecipe(meal),
       onReschedule: () => _rescheduleMeal(meal),
+      onChangePortions: () => _changePortions(meal),
       onCompose: () => _composeMeal(meal),
       onSwitchToMenu: () => _composeMeal(meal, initialKind: MealKind.menu),
       onSwitchToDish: () => _switchToDish(meal),
