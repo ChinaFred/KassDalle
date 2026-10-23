@@ -1261,7 +1261,7 @@ async function saveDraft(args: {
   mainIngredientsChecked: boolean;
   /** Styles rendus par la passe 2 ; vides quand le modèle n'en a retenu aucun. */
   styles: string[];
-  /** Le modèle a répondu sur le style : `styles_checked_at` est posé, le backfill « Style des recettes » la saute. */
+  /** Le modèle a répondu sur le style : `styles_checked_at` est posé, le style de la recette est connu. */
   stylesChecked: boolean;
   userId: string;
   bookId?: string;

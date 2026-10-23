@@ -73,8 +73,9 @@ export function mealRoleContentChanged(
  *    backfill qui vient de compter un échec, ou ce déclencheur qui vient de
  *    remettre le compteur à zéro. Sans cette garde, chaque échec du backfill
  *    coûtait un second appel, ici, dans la seconde ;
- *  - non si l'écriture ne change que le style (`onlyStyleTagsChanged`) : le
- *    backfill « Style des recettes » ne classe pas les rôles.
+ *  - non si l'écriture ne change que le style (`onlyStyleTagsChanged`) : une
+ *    correction de style ne classe pas les rôles (de même que le backfill
+ *    « Style des recettes », retiré en v0.24.67).
  */
 export function mealRoleCallAllowed(
   data: Record<string, unknown>,
