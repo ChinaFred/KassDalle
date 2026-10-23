@@ -53,6 +53,7 @@ void main() {
     await _pump(tester, size: const Size(400, 4800), runs: runs);
     expect(find.text('Récurrents (6)'), findsOneWidget);
     expect(find.text('Ponctuels à lancer (0)'), findsOneWidget);
+    expect(find.text('Tous les ponctuels sont terminés.'), findsOneWidget);
     expect(find.text('Ponctuels terminés (1)'), findsOneWidget);
     expect(
       find.text('Programmation : Tous les jours à 5 h'),

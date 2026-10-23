@@ -752,7 +752,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  // Dix-huit opérations ont quitté cet écran, et le code derrière elles avec.
+  // Des opérations ont quitté cet écran, et le code derrière elles avec. La
+  // liste complète, avec les versions : skill `backfill`, « Backfills retirés ».
   //
   // « Amorcer les droits utilisateurs » rattrapait les comptes créés avant que
   // le déclencheur `syncUserClaims` n'existe. Ce déclencheur écrit désormais les
