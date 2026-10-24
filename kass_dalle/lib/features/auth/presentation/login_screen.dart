@@ -102,7 +102,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         Image.asset('assets/Icon.png', width: 120, height: 120),
                         const SizedBox(height: 24),
                         Text(
-                          "Kass'dalle",
+                          "Kass'Dalle",
                           style: Theme.of(context).textTheme.headlineLarge
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),

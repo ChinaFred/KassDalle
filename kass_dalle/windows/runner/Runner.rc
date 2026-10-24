@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "dev.kassbi" "\0"
-            VALUE "FileDescription", "kass_dalle" "\0"
+            VALUE "FileDescription", "Kass'Dalle" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "kass_dalle" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 dev.kassbi. All rights reserved." "\0"
             VALUE "OriginalFilename", "kass_dalle.exe" "\0"
-            VALUE "ProductName", "kass_dalle" "\0"
+            VALUE "ProductName", "Kass'Dalle" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
