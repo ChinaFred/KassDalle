@@ -100,7 +100,7 @@ class KassDalleApp extends ConsumerWidget {
     ref.listen(pendingSharedTextProvider, (_, _) {});
 
     return MaterialApp.router(
-      title: "Kass'dalle",
+      title: "Kass'Dalle",
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,

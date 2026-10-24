@@ -18,6 +18,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-24
+
+### v0.24.69 — fonctionnel
+
+Le nom de l'application s'écrit « Kass'Dalle » partout. L'écran de connexion, le titre de
+l'onglet du navigateur (`MaterialApp.title`) et la description de `pubspec.yaml` écrivaient
+« Kass'dalle ». La page d'accueil publique et l'écran de consentement OAuth de Google
+écrivent « Kass'Dalle » : Google compare le nom de la page d'accueil à celui de l'écran de
+consentement pour valider le branding.
+
 ## 2026-10-23
 
 ### v0.24.68 — fonctionnel
