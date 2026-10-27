@@ -2197,7 +2197,7 @@ sequenceDiagram
   FS-->>SR: onDocumentWritten
   SR->>GR: recalcule la portée du propriétaire —<br/>ce groupe n'y ajoute encore personne
 
-  O->>G: Nom ou adresse e-mail complète
+  O->>G: Nom ou e-mail complet (avec @)
   alt saisie sans « @ » — par nom, à chaque frappe
     G->>US: searchUsers — lecture plafonnée à 200 profils publics
     US-->>G: candidats — nom seul, ni adresse ni rôle

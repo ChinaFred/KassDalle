@@ -351,7 +351,7 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SearchBar(
                     controller: _searchController,
-                    hintText: 'Nom ou adresse e-mail complète',
+                    hintText: 'Nom ou e-mail complet (avec @)',
                     leading: busy
                         ? const SizedBox(
                             width: 18,
@@ -437,6 +437,13 @@ class _GroupMembersScreenState extends ConsumerState<GroupMembersScreen> {
                                 ? 'Aucun compte pour cette adresse. Un compte '
                                       'en attente de validation n\'apparaît '
                                       'qu\'une fois validé.'
+                                : looksLikeEmailFragment(typed)
+                                ? 'Aucun membre trouvé pour « $typed ». '
+                                      'Pour chercher par adresse, saisissez '
+                                      'l\'adresse complète, avec le @ et le '
+                                      'domaine. Un compte en attente de '
+                                      'validation n\'apparaît qu\'une fois '
+                                      'validé.'
                                 : 'Aucun membre trouvé pour « $typed ». '
                                       'Cherchez par nom, ou par adresse '
                                       'e-mail complète. Un compte en attente '
