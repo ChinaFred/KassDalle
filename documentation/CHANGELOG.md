@@ -18,6 +18,18 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-10-27
+
+### v0.24.70 — fonctionnel
+
+Ticket #232. Dans « Membres du groupe », la recherche d'un membre par un début d'adresse
+(`prenom.nom`) ne trouvait personne, sans que l'écran explique pourquoi. La règle ne change
+pas : seule l'adresse complète est cherchée, pour ne pas permettre de lister les adresses des
+comptes. L'indice du champ devient « Nom ou e-mail complet (avec @) ». Quand la
+saisie contient un point ou un chiffre, sans `@`, et que la recherche par nom ne trouve rien,
+le message dit de saisir l'adresse complète, avec le @ et le domaine. Aucun changement de
+règles, de Functions ni de données.
+
 ## 2026-10-24
 
 ### v0.24.69 — fonctionnel

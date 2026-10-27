@@ -27,6 +27,19 @@ void main() {
     });
   });
 
+  group('looksLikeEmailFragment', () {
+    test('un début d\'adresse sans @ est reconnu', () {
+      expect(looksLikeEmailFragment('olivier.davreux.lbe'), isTrue);
+      expect(looksLikeEmailFragment('marie75'), isTrue);
+    });
+
+    test('un nom ou une adresse avec @ ne l\'est pas', () {
+      expect(looksLikeEmailFragment('Marie'), isFalse);
+      expect(looksLikeEmailFragment('marie.dupont@gmail.com'), isFalse);
+      expect(looksLikeEmailFragment(''), isFalse);
+    });
+  });
+
   group('memberFromSearchResponse', () {
     test('compte trouvé : identifiant et noms publics', () {
       final profile = memberFromSearchResponse({

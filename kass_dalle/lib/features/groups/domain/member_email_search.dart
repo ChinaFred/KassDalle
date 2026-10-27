@@ -13,6 +13,12 @@ import '../../auth/domain/user_profile.dart';
 /// nom s'arrête dès le `@`, un nom n'en contient pas.
 bool isEmailLikeQuery(String query) => query.contains('@');
 
+/// Vrai si la saisie ressemble à un début d'adresse sans en être une : pas de
+/// `@`, mais un point ou un chiffre (`prenom.nom`). Un nom propre en contient
+/// rarement. L'écran le dit quand la recherche par nom ne trouve rien.
+bool looksLikeEmailFragment(String query) =>
+    !isEmailLikeQuery(query) && RegExp(r'[.0-9]').hasMatch(query);
+
 /// Vrai si la saisie a la forme d'une adresse complète : la recherche par
 /// adresse peut partir. Même contrôle que l'invitation par e-mail.
 bool isCompleteEmailQuery(String query) =>
