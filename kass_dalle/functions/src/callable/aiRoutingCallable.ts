@@ -437,6 +437,11 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Détection des zones d'une page",
     group: "Bac à sable",
   },
+  {
+    id: "sandbox_meal_workshop_turn",
+    label: "Atelier repas — tour de conversation",
+    group: "Bac à sable",
+  },
 ];
 
 /**

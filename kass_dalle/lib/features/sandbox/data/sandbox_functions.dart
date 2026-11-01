@@ -29,11 +29,22 @@ class SandboxCallException implements Exception {
   final String code;
   final String message;
 
-  const SandboxCallException(this.code, this.message);
+  /// Les `details` de la `HttpsError`, quand la fonction en a posé : la
+  /// raison d'un refus, la consommation d'un tour facturé mais illisible.
+  final Map<String, dynamic>? details;
+
+  const SandboxCallException(this.code, this.message, {this.details});
+
+  /// `details.reason`, quand il existe.
+  String? get reason =>
+      details?['reason'] is String ? details!['reason'] as String : null;
 
   @override
   String toString() => 'SandboxCallException($code): $message';
 }
+
+Map<String, dynamic>? _detailsOf(Object? raw) =>
+    raw is Map ? Map<String, dynamic>.from(raw) : null;
 
 class SandboxFunctions {
   final ErrorReportService _errorReportService;
@@ -82,7 +93,11 @@ class SandboxFunctions {
           context: {'experiment': data['experiment'], 'code': error.code},
         ),
       );
-      throw SandboxCallException(error.code, error.message ?? '');
+      throw SandboxCallException(
+        error.code,
+        error.message ?? '',
+        details: _detailsOf(error.details),
+      );
     }
   }
 
@@ -139,12 +154,14 @@ class SandboxFunctions {
     if (response.statusCode != 200) {
       String code = 'internal';
       String message = 'HTTP ${response.statusCode}';
+      Map<String, dynamic>? details;
       try {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         final error = body['error'] as Map<String, dynamic>?;
         if (error != null) {
           code = (error['status'] as String?)?.toLowerCase() ?? code;
           message = (error['message'] as String?) ?? message;
+          details = _detailsOf(error['details']);
         }
       } catch (error, stackTrace) {
         // Un corps d'erreur illisible reste une erreur : on garde le code HTTP
@@ -158,7 +175,7 @@ class SandboxFunctions {
           ),
         );
       }
-      throw SandboxCallException(code, message);
+      throw SandboxCallException(code, message, details: details);
     }
 
     final body = jsonDecode(response.body) as Map<String, dynamic>;

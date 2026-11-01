@@ -117,6 +117,7 @@ const kFeatureProcess = <String, String>{
   'sandbox_detect_page': 'Bac à sable',
   'sandbox_detect_orientation': 'Bac à sable',
   'sandbox_detect_regions': 'Bac à sable',
+  'sandbox_meal_workshop_turn': 'Bac à sable',
   // Les quatre étapes de l'extraction des illustrations d'une page importée.
   // Séparées et non regroupées : le pré-contrôle arrête la chaîne sur les pages
   // sans image, et c'est en le comptant à part qu'on sait ce qu'il fait gagner.
@@ -628,6 +629,14 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Expérimental : repère les photos, dessins, schémas et blocs '
         'manuscrits d\'une page redressée, et rend leurs quatre coins.',
+  ),
+  'sandbox_meal_workshop_turn': FeatureInfo(
+    label: 'Atelier repas — tour de conversation',
+    description:
+        'Expérimental : un tour de conversation pour composer un menu '
+        'complet. Le modèle reçoit la bibliothèque résumée, les garnitures '
+        'et les préférences du foyer, et rend un texte et le menu en JSON. '
+        'Rien n\'est enregistré.',
   ),
 
   // L'extraction des illustrations d'une page importée, sortie du bac à sable.

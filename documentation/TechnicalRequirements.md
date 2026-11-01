@@ -6443,7 +6443,9 @@ Depuis la v0.23.11, chaque callable qui envoie une entrée du client à un modè
 `readAiInputs` (`callable/_inputBounds.ts`), juste après la garde d'accès et **avant** tout
 appel de modèle et toute réservation de budget. Les entrées produites par le serveur
 (pipeline d'import, déclencheurs) et le bac à sable (`sandboxFn`, réservé à `admin`) ne
-passent pas par là. Le bac à sable borne quand même son image : `readSandboxImage`
+passent pas par là, à une exception près : l'atelier repas (`meal_workshop.turn`, v0.24.72)
+lit son entrée par `readAiInputs` (`readMealWorkshopInput`, §13.3). Le bac à sable borne
+quand même son image : `readSandboxImage`
 (`sandbox/callable.ts`) refuse en `invalid-argument` un `bytesBase64` de plus de 20 Mo
 décodés (`PAGE_IMAGE_MAX_BYTES`, importé de `callable/_inputBounds.ts`), mesuré avant tout
 décodage (v0.24.32, ticket #163).
@@ -8480,6 +8482,40 @@ pourtant, et une réimplémentation doit connaître leur contrat :
   (image trop lourde) passe telle quelle, et un plafond d'IA (`BudgetExceededError`) ou un
   chemin refusé (`StoragePathRefusedError`) sort par `toHttpsError` avec son message, sans
   ligne ERROR ;
+- **expérience « Atelier repas »** (v0.24.72, palier 0 du cadrage
+  `documentation/ToDo/SPEC-atelier-repas.md`) : `case "meal_workshop.turn"`, module
+  `sandbox/mealWorkshop.ts`, poste `sandbox_meal_workshop_turn` (groupe « Bac à sable »,
+  routable Gemini ou Claude, effort du code `low`). Un tour = un appel : le serveur reçoit
+  l'historique (20 tours au plus, alternance stricte personne puis modèle et fin sur une
+  réponse du modèle, 1 500 caractères par message de la personne et 6 000 par réponse du
+  modèle rejouée, refus en `invalid-argument` au-delà, `details.reason:
+  meal_workshop_max_turns` pour le 21e), le
+  message, les résumés `buildRecipeSummary` du périmètre « Mes recettes » + « Ma famille »
+  de l'administrateur, ses garnitures (`id`, `name`, `category`), `globalConstraints` du
+  planning, le nombre de parts (1 à 99) et le menu du tour précédent. L'entrée passe par
+  `readAiInputs` (tailles journalisées, jamais le contenu). Le prompt place le texte de la
+  personne dans les seules sections `=== CONVERSATION ===` et `=== DEMANDE ===`, sans
+  exemple rempli. La réponse `{ reponse, menu }` est lue en liste blanche par `controlMenu` :
+  rôles `entree | plat | sorbet | fromage | dessert | autre`, `recipe_id` hors corpus → `null`
+  et `unknown_recipe_id: true` (compté dans `control.inventedIds`), `staple_id` hors envoi →
+  `null`, 10 services et 6 accompagnements par plat au plus (`control.truncated`), titre d'une
+  recette du corpus repris du résumé, titre absent ou en double → service écarté
+  (`control.droppedCourses`), `course_label` ≤ 30, titre ≤ 60, description et `why` ≤ 200,
+  parts toujours celles de la personne. Rendu au client : `reponse`, `menu` contrôlé,
+  `control`, `raw` (JSON brut, ≤ 20 000 caractères), `usage` (`costUsd` = `recordedCostUsd`
+  ou `null`, jetons d'entrée et de sortie, durée, fournisseur, modèle, `stopReason`),
+  `promptChars`, `turn`. `maxTokens` 6 000 : borne la sortie de Claude par `callModel`, et
+  celle d'un modèle Gemini imposé par `maxOutputTokens` (`callChosenGemini`,
+  `sandbox/model.ts`) ; un Gemini servi par la politique n'est pas borné, `callModel` ne
+  transmettant pas `maxTokens` à Gemini (comportement du routeur, hors bac à sable). Une réponse illisible lève `internal` avec `details.reason:
+  meal_workshop_unreadable`, la consommation du tour (facturé) et un aperçu borné du texte ;
+  `logError` porte `responsePreview` tronqué à 500 caractères. Les bornes 10 et 6 recopient
+  `kMaxCoursesPerMenu` et `kMaxSidesPerDish` du client : au portage (palier 1), elles
+  rejoignent le tableau « Logique dupliquée Dart ↔ TypeScript » avec une fixture. Côté
+  client (`presentation/experiments/meal_workshop/`), deux zones — conversation, menu en
+  cours — plus une zone « Mesures » : `SandboxModelPicker`, taille du contexte envoyé, ligne
+  de coût sous chaque réponse, volet « Réponse brute », tableau des tours à copier. Rien
+  n'est écrit ;
 - rien n'y est enregistré — ni Firestore, ni Storage sur les chemins de production ;
 - le bac à sable **lit** le code de l'application, ne l'édite jamais : une expérience qui
   doit modifier un comportement existant en copie le code.

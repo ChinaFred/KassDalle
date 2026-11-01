@@ -20,6 +20,32 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-01
 
+### v0.24.72 — technique
+
+Bac à sable : expérience « Atelier repas », palier 0 du cadrage posé le même jour
+(`documentation/ToDo/SPEC-atelier-repas.md`, `documentation/ToDo/UX-atelier-repas.md`,
+ajoutés au dépôt). Depuis Admin › Bac à sable, l'administrateur converse pour composer un
+menu complet ; à chaque tour, le serveur (`sandboxFn`, `case "meal_workshop.turn"`,
+`functions/src/sandbox/mealWorkshop.ts`) envoie au modèle les résumés de ses recettes et de
+celles de sa famille, ses garnitures, les préférences générales du planning, le menu en cours
+et la conversation (20 tours et 1 500 caractères par message au plus, refus au-delà), puis
+contrôle le JSON rendu en liste blanche : rôles connus, identifiant de recette hors corpus
+neutralisé et compté, 10 services et 6 accompagnements au plus, titres et textes bornés.
+L'écran redessine le menu, marque « Modifié » les services changés, dit « Menu inchangé »
+quand le JSON n'a pas bougé, et montre dans une zone « Mesures » le choix du modèle, la
+taille du contexte envoyé, le coût (`recordedCostUsd`, « non chiffré » sans montant), les
+jetons et la durée de chaque tour, le JSON brut et les champs du contrôle, et un tableau des
+tours à copier. Nouveau poste `sandbox_meal_workshop_turn`, groupe « Bac à sable », inscrit
+aux trois endroits. Rien n'est écrit en base ; rien n'entre en release.
+
+Ce que le palier 0 doit mesurer avant le palier 1 (dix conversations scénarisées de 10 à
+20 tours, corpus de 100 recettes au moins, les deux moteurs) : la tenue de l'état du menu
+sur 20 tours, le nombre d'identifiants inventés pour 100 tours, la part des recettes du
+corpus citées quand l'une convient, le coût moyen et maximal d'un tour selon la taille du
+corpus et la longueur de l'historique, la part de tours refusés par le contrôle, la longueur
+du texte rendu, et le respect des préférences du foyer. Les chiffres décideront d'un plafond
+du corpus envoyé ou d'une mise en cache du préfixe du prompt.
+
 ### v0.24.71 — fonctionnel
 
 L'écran de démarrage est retiré. Au lancement, l'application ouvre directement la route

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/experiment.dart';
 import 'experiments/image_import_screen.dart';
+import 'experiments/meal_workshop/meal_workshop_screen.dart';
 
 /// La liste des expériences du bac à sable.
 ///
@@ -17,6 +18,15 @@ final List<Experiment> kExperiments = <Experiment>[
         'du traitement avant d\'ajouter la suivante.',
     icon: Icons.add_photo_alternate_outlined,
     builder: (_) => const SandboxImageImportScreen(),
+  ),
+  Experiment(
+    id: 'meal-workshop',
+    title: 'Atelier repas',
+    subtitle:
+        'Converser pour composer un menu. Le JSON du menu et le coût de '
+        'chaque tour sont lisibles. Rien n\'est enregistré.',
+    icon: Icons.restaurant_menu,
+    builder: (_) => const SandboxMealWorkshopScreen(),
   ),
 ];
 

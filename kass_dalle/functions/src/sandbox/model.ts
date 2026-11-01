@@ -94,7 +94,12 @@ export async function askModel(args: {
         ? resolveAnthropicModel(policy, args.ctx.feature)
         : GEMINI_MODEL;
 
-    const result = await callModel({ parts: args.parts, ctx: args.ctx });
+    // `maxTokens` suit l'appel. Il ne borne la sortie que chez Claude :
+    // `callModel` ne le transmet pas à Gemini (`callProvider`, `ai/router.ts`),
+    // où seuls le plafond du modèle et le budget quotidien s'appliquent —
+    // comportement existant du routeur, à reprendre en production, hors du
+    // bac à sable. Le modèle Gemini imposé, lui, le reçoit (`callChosenGemini`).
+    const result = await callModel({ parts: args.parts, ctx: args.ctx, maxTokens: args.maxTokens });
     const answered = `${result.provider}/${result.model}`;
     const wanted = `${wantedProvider}/${wantedModel}`;
     return { result, requested: answered === wanted ? null : wanted };
@@ -113,7 +118,7 @@ export async function askModel(args: {
     const called =
       choice.provider === "anthropic"
         ? await callChosenAnthropic(args.parts, args.ctx, callId, choice.model, args.maxTokens)
-        : await callChosenGemini(args.parts, args.ctx, callId, choice.model);
+        : await callChosenGemini(args.parts, args.ctx, callId, choice.model, args.maxTokens);
     await recordModelUsage(called, args.ctx);
     return called;
   });
@@ -143,12 +148,18 @@ async function callChosenAnthropic(
  * donc par `createGenerativeModel`, qui existe pour ça — c'est le point de
  * sortie prévu du client Gemini, et il garde l'import du SDK confiné à son
  * fichier.
+ *
+ * `maxTokens` devient `maxOutputTokens` de la requête : la requête est
+ * construite ici, sans toucher `gemini/client.ts`. Sur un modèle 2.5, les
+ * jetons de réflexion peuvent entrer dans ce plafond ; une réponse coupée se
+ * lit à son `stopReason` (`MAX_TOKENS`), rendu à l'appelant.
  */
 async function callChosenGemini(
   parts: ModelPart[],
   ctx: ModelCallContext,
   callId: string,
   model: string,
+  maxTokens?: number,
 ): Promise<ModelCallResult> {
   const geminiParts = parts.map((part) =>
     part.kind === "text"
@@ -159,6 +170,7 @@ async function callChosenGemini(
   const generative = createGenerativeModel(GEMINI_API_KEY.value(), model);
   const raw = await generative.generateContent({
     contents: [{ role: "user", parts: geminiParts }],
+    ...(maxTokens !== undefined ? { config: { maxOutputTokens: maxTokens } } : {}),
   });
   const response = toGeminiResponse(raw);
 
