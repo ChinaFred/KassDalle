@@ -18,6 +18,15 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-01
+
+### v0.24.71 — fonctionnel
+
+L'écran de démarrage est retiré. Au lancement, l'application ouvre directement la route
+demandée, sans le calque de 5 secondes (logo, formule d'accueil, date, phrase d'ambiance)
+introduit en v0.23.72. `SplashGreeting` et son test sont supprimés. Le fond natif d'Android
+et l'indicateur de chargement du web, affichés avant le premier rendu Flutter, restent.
+
 ## 2026-10-27
 
 ### v0.24.70 — fonctionnel
