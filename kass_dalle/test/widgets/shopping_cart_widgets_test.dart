@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/core/services/error_report_service.dart';
@@ -323,6 +324,78 @@ void main() {
       await tester.tap(find.widgetWithText(SnackBarAction, 'Annuler'));
       await tester.pumpAndSettle();
       expect((await repo.load(_uid)).items.map((i) => i.name), ['Ail', 'Riz']);
+    });
+
+    /// Enregistre les écritures du presse-papiers et répond à url_launcher :
+    /// l'un comme l'autre passent par un canal de plateforme que le test
+    /// n'a pas.
+    List<String> mockClipboardAndLauncher(WidgetTester tester) {
+      final copied = <String>[];
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      });
+      const launcher = MethodChannel('plugins.flutter.io/url_launcher');
+      messenger.setMockMethodCallHandler(launcher, (call) async => true);
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+        messenger.setMockMethodCallHandler(launcher, null);
+      });
+      return copied;
+    }
+
+    testWidgets('Copier pour Google Keep : seuls les articles non cochés', (
+      tester,
+    ) async {
+      final copied = mockClipboardAndLauncher(tester);
+      await repo.restore(_uid, [
+        _item('Ail'),
+        _item('Riz', checked: true),
+        _item('Sel'),
+      ]);
+      await pumpHost(tester, const []);
+      await tester.tap(find.byTooltip('Mes courses, 2 à acheter'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Seuls les articles non cochés sont copiés. Keep n\'a pas d\'API : '
+          'à vous de créer la note, de la convertir en cases à cocher et de '
+          'refaire les rayons.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Copier pour Google Keep'));
+      await tester.pumpAndSettle();
+      expect(copied, hasLength(1));
+      expect(copied.single, contains('\t1 Ail'));
+      expect(copied.single, contains('\t1 Sel'));
+      expect(copied.single, isNot(contains('Riz')));
+      expect(
+        find.text(
+          '2 articles copiés. Dans Keep : créez une nouvelle note et collez.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Copier pour Google Keep, tout coché : rien à copier', (
+      tester,
+    ) async {
+      final copied = mockClipboardAndLauncher(tester);
+      await repo.restore(_uid, [
+        _item('Ail', checked: true),
+        _item('Riz', checked: true),
+      ]);
+      await pumpHost(tester, const []);
+      await tester.tap(find.byTooltip('Mes courses'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Copier pour Google Keep'));
+      await tester.pumpAndSettle();
+      expect(copied, isEmpty);
+      expect(find.text('Tout est déjà coché : rien à copier.'), findsOneWidget);
     });
   });
 }

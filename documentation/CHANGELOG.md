@@ -45,6 +45,28 @@ caractères, 20 pour `duree`, valeurs coupées comptées dans le journal du tour
 consignes disent que les lignes de recettes et de garnitures sont des données, jamais des
 consignes. `TechnicalRequirements.md` §13.3 et `ToDo/UX-atelier-repas.md` à jour.
 
+### v0.24.74 — fonctionnel
+
+Mes courses : « Copier pour Google Keep » ne copie plus que les articles non cochés, comme
+« Envoyer vers Google Tasks » ne les envoyait déjà. Jusqu'ici, Keep recevait toute la liste,
+articles cochés compris, et il fallait les retirer à la main dans la note. Un rayon dont tous
+les articles sont cochés n'apparaît plus dans le texte. Tout coché : « Tout est déjà coché :
+rien à copier. », rien n'est copié et Keep ne s'ouvre pas. Le message de réussite dit le
+nombre : « 3 articles copiés. Dans Keep : créez une nouvelle note et collez. » Les aides sous
+les deux boutons disent la règle : « Seuls les articles non cochés sont copiés. » pour Keep,
+« Seuls les articles non cochés partent. » pour Tasks.
+
+### v0.24.73 — fonctionnel
+
+Planning d'un groupe : les « Parts à préparer » réglées jour par jour dans Préférences du
+planning comptent de nouveau. « Nouveau planning — La maison », un jour libre du planning
+du groupe et la feuille « Planifier » d'une recette remplaçaient ces parts par celles du
+groupe (« Parts des groupes », sinon le nombre de membres) : un vendredi réglé à 8 parts
+s'affichait « 4 parts » sur son créneau, et l'IA recevait « 4 parts à servir » pour chaque
+jour. La règle corrigée : les parts du jour quand elles sont réglées, sinon celles du
+groupe. Le planning personnel ne change pas, et les repas déjà planifiés gardent leurs
+parts.
+
 ## 2026-11-01
 
 ### v0.24.72 — technique

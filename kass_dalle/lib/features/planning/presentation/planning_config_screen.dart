@@ -688,10 +688,10 @@ class _GroupPortionsSection extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Parts prévues pour chaque nouveau repas du groupe. Elles '
-            'remplacent les « Parts à préparer » du jour. Les repas déjà '
-            'planifiés gardent leurs parts : menu du repas › « Changer les '
-            'parts » pour en modifier un.',
+            'Parts prévues pour chaque nouveau repas du groupe, les jours '
+            'sans « Parts à préparer ». Un jour réglé garde ses parts. Les '
+            'repas déjà planifiés gardent les leurs : menu du repas › '
+            '« Changer les parts » pour en modifier un.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
