@@ -2969,8 +2969,15 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               ?.where((g) => g.id == target.groupId)
               .firstOrNull
         : null;
+    // Un repas de groupe : les parts du jour si elles sont réglées, sinon
+    // celles du groupe. Un repas personnel : les parts du jour, sinon celles
+    // de la recette.
     final targetPortions = group != null
-        ? groupDefaultPortions(groupPortions: prefs.groupPortions, group: group)
+        ? groupMealPortions(
+            dayConstraint: constraint,
+            groupPortions: prefs.groupPortions,
+            group: group,
+          )
         : (constraint?.targetPortions ?? 0) > 0
         ? constraint!.targetPortions
         : recipe.portions;

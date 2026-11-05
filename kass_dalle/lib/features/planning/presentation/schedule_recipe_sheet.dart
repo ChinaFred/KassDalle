@@ -295,7 +295,8 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
       if (uid == null || repo == null) {
         throw StateError('Utilisateur non connecté.');
       }
-      // Un repas de groupe se cuisine pour le groupe : ses parts par défaut
+      // Un repas de groupe se cuisine pour le groupe : les « Parts à
+      // préparer » du jour si elles sont réglées, sinon les parts du groupe
       // (réglées, sinon le nombre de membres), comme un jour libre du
       // planning.
       final group = _target.isGroup
@@ -319,7 +320,8 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           basePortions: group == null ? null : widget.portions,
           targetPortions: group == null
               ? null
-              : groupDefaultPortions(
+              : groupMealPortions(
+                  dayConstraint: prefs.dailyConstraints[start.weekday],
                   groupPortions: prefs.groupPortions,
                   group: group,
                 ),

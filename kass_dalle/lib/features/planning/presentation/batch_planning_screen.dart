@@ -393,22 +393,23 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     _slotTimes = {
       for (int i = 0; i < dates.length; i++) i: _timeForDate(prefs, dates[i]),
     };
-    // Le planning d'un groupe se cuisine pour le groupe : ses parts par
-    // défaut (réglées, sinon le nombre de membres) remplacent celles du jour.
+    // Le planning d'un groupe se cuisine pour le groupe : un jour sans
+    // « Parts à préparer » prend les parts du groupe (réglées, sinon le
+    // nombre de membres). Un jour réglé garde ses parts (`groupMealPortions`).
     final group = _group;
-    final groupPortions = group == null
-        ? null
-        : groupDefaultPortions(
-            groupPortions: prefs.groupPortions,
-            group: group,
-          );
     _slotConstraints = {
       for (int i = 0; i < dates.length; i++)
-        i: groupPortions == null
+        i: group == null
             ? prefs.dailyConstraints[dates[i].weekday] ?? const DayConstraint()
             : (prefs.dailyConstraints[dates[i].weekday] ??
                       const DayConstraint())
-                  .copyWith(targetPortions: groupPortions),
+                  .copyWith(
+                    targetPortions: groupMealPortions(
+                      dayConstraint: prefs.dailyConstraints[dates[i].weekday],
+                      groupPortions: prefs.groupPortions,
+                      group: group,
+                    ),
+                  ),
     };
     _globalConstraintsCtrl.text = prefs.globalConstraints;
     // Les préférences arrivent parfois après les recettes : c'est alors ici que

@@ -1,4 +1,5 @@
 import '../../groups/domain/family_group.dart';
+import 'planning_preferences.dart';
 import 'planning_reach.dart';
 
 /// Le planning où l'on planifie : le sien (« Mon planning »), ou celui d'un
@@ -67,6 +68,25 @@ int groupDefaultPortions({
 }) {
   final set = groupPortions[group.id] ?? 0;
   return set > 0 ? set : groupMemberCount(group);
+}
+
+/// Parts d'un repas de groupe : les « Parts à préparer » du jour
+/// ([dayConstraint], si réglées), sinon les parts par défaut du groupe
+/// (`groupDefaultPortions`).
+///
+/// La valeur la plus précise gagne : un vendredi réglé à 8 parts se cuisine
+/// pour 8, même si le groupe compte 4 membres. Un jour sans réglage prend
+/// les parts du groupe. Les trois entrées d'un repas de groupe — « Nouveau
+/// planning », un jour libre, la feuille « Planifier » — passent ici.
+int groupMealPortions({
+  required DayConstraint? dayConstraint,
+  required Map<String, int> groupPortions,
+  required FamilyGroup group,
+}) {
+  final day = dayConstraint?.targetPortions ?? 0;
+  return day > 0
+      ? day
+      : groupDefaultPortions(groupPortions: groupPortions, group: group);
 }
 
 /// Les groupes où [myUid] planifie : ceux dont il est le propriétaire, que

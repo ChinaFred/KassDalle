@@ -4256,13 +4256,13 @@ sequenceDiagram
   W->>PM: repas du groupe ce jour-là — « Déjà prévu » / « Au planning »
   O->>W: « Planifier ce jour-là »
   alt recette lisible par Marie
-    W->>PM: add { uid: marie, group_id: gd, parts du groupe } — message et « Annuler » dans la fenêtre
+    W->>PM: add { uid: marie, group_id: gd, parts du jour, sinon du groupe } — message et « Annuler » dans la fenêtre
   else nom libre ou recette privée
     W->>S: sélecteur pré-rempli du titre, puis le même repas
   end
   O->>W: « Chercher »
   W->>S: Explorer en mode choix pré-rempli du titre, puis calendrier (jour de la suggestion par défaut)
-  S->>PM: add { uid: marie, group_id: gd, parts du groupe } — texte libre pour une idée de l'IA enregistrée en brouillon
+  S->>PM: add { uid: marie, group_id: gd, parts du jour, sinon du groupe } — texte libre pour une idée de l'IA enregistrée en brouillon
   Note over MS: la suggestion n'est pas modifiée : « Au planning » se calcule
 
   opt Léo quitte le groupe, ou Marie l'en retire
