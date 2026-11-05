@@ -1297,6 +1297,7 @@ lui-même celles qu'il retient.
 - **Chaque ligne dit d'où elle vient, et pour combien** : « Curry de poulet (400 ml) · Riz au lait de coco (250 g) ». Depuis une recette, son titre.
 - Les lignes sont rangées par rayon.
 - **Envoi vers Google Tasks** : les rayons deviennent des tâches, les articles des sous-tâches cochables. Seuls les articles non cochés partent.
+- **Copie pour Google Keep** : le texte de la liste est copié dans le presse-papiers, puis Keep s'ouvre. Un titre « Liste de courses Kass'Dalle – 5 novembre 2026 », puis chaque rayon en majuscules et un article par ligne. Seuls les articles non cochés sont copiés, comme pour Tasks ; un rayon dont tous les articles sont cochés n'y est pas. Tout coché : « Tout est déjà coché : rien à copier. », rien n'est copié et Keep ne s'ouvre pas. Réussite : « 3 articles copiés. Dans Keep : créez une nouvelle note et collez. » Keep n'a pas d'API : la note, ses cases à cocher et ses rayons se refont à la main.
 
 ### 5.11 Module Modération des images (tous les clients — revue réservée à l'Admin)
 
@@ -1905,7 +1906,7 @@ automatiques.
 - Annotations, notes personnelles
 - Planning des repas + intégration Google Calendar, conseils de conservation
 - Partage de son planning avec ses groupes, en lecture seule ; lecture des plannings partagés par le Reader
-- Liste de courses personnelle, synchronisée sur tous les appareils, remplie depuis un repas, une période ou une recette, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables)
+- Liste de courses personnelle, synchronisée sur tous les appareils, remplie depuis un repas, une période ou une recette, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables) ou copiée pour Google Keep ; les deux exports ne prennent que les articles non cochés
 - Nutrition calculée depuis un référentiel partagé, dérivée du nombre de parts choisi
 - Allergènes : les quatorze allergènes majeurs de l'UE, estimés par l'IA pour chaque ingrédient du référentiel, affichés sur la fiche recette, corrigés par l'administrateur
 - Export PDF d'une recette, partagé ou téléchargé selon la plateforme

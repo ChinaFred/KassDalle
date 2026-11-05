@@ -2129,9 +2129,10 @@ sequenceDiagram
     A->>A: écarte les articles cochés
     A->>GT: un rayon = une tâche, un article = une sous-tâche
     GT-->>U: la liste apparaît dans l'application Tasks
-  else Google Keep
-    A->>A: copie la liste dans le presse-papier, rayon par rayon
-    A-->>U: ouvre Keep, à coller dans une note
+  else Copier pour Google Keep
+    A->>A: écarte les articles cochés
+    A->>A: copie le reste dans le presse-papiers, rayon par rayon
+    A-->>U: ouvre Keep, à coller dans une note — « 3 articles copiés. »
   end
 </pre>
       </div>
@@ -2153,7 +2154,7 @@ sequenceDiagram
           qui partent hors ligne. Une case refusée reprend son état, avec un message.
         </span>
         <span class="expect">
-          <b>Seuls les articles non cochés partent vers Tasks.</b> Une recette introuvable est
+          <b>Seuls les articles non cochés partent vers Tasks ou sont copiés pour Keep.</b> Une recette introuvable est
           nommée dans un message : ses ingrédients ne sont pas comptés.
         </span>
       </figcaption>

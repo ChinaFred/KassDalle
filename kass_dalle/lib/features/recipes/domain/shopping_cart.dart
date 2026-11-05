@@ -312,3 +312,42 @@ String? _mergeSources(String? left, String? right) {
 
 /// « 1 article », « 9 articles ».
 String shoppingArticles(int n) => '$n article${n > 1 ? 's' : ''}';
+
+/// Les rayons dans l'ordre du magasin, puis les autres.
+List<String> orderedShoppingCategories(Iterable<String> present) {
+  final set = present.toSet();
+  return [
+    ...IngredientCategorizer.categoryOrder.where(set.contains),
+    ...set.where((k) => !IngredientCategorizer.categoryOrder.contains(k)),
+  ];
+}
+
+/// Le texte de « Copier pour Google Keep ».
+///
+/// Un titre « Liste de courses Kass'Dalle – [dateLabel] », puis, rayon par
+/// rayon dans l'ordre du magasin, le nom du rayon en majuscules et une ligne
+/// `\t<article>` par article. Seuls les articles **non cochés** y sont,
+/// comme pour Google Tasks : un rayon dont tous les articles sont cochés
+/// n'apparaît pas. [count] compte les articles copiés ; à 0, le texte n'a que
+/// son titre et rien ne doit être copié.
+({String text, int count}) buildKeepText({
+  required List<ShoppingItem> items,
+  required String dateLabel,
+}) {
+  final grouped = <String, List<ShoppingItem>>{};
+  var count = 0;
+  for (final item in items) {
+    if (item.checked) continue;
+    (grouped[item.category] ??= []).add(item);
+    count++;
+  }
+  final buffer = StringBuffer()
+    ..writeln("Liste de courses Kass'Dalle – $dateLabel");
+  for (final cat in orderedShoppingCategories(grouped.keys)) {
+    buffer.writeln(cat.toUpperCase());
+    for (final item in grouped[cat]!) {
+      buffer.writeln('\t${item.label}');
+    }
+  }
+  return (text: buffer.toString().trim(), count: count);
+}

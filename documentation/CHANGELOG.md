@@ -20,6 +20,17 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-05
 
+### v0.24.74 — fonctionnel
+
+Mes courses : « Copier pour Google Keep » ne copie plus que les articles non cochés, comme
+« Envoyer vers Google Tasks » ne les envoyait déjà. Jusqu'ici, Keep recevait toute la liste,
+articles cochés compris, et il fallait les retirer à la main dans la note. Un rayon dont tous
+les articles sont cochés n'apparaît plus dans le texte. Tout coché : « Tout est déjà coché :
+rien à copier. », rien n'est copié et Keep ne s'ouvre pas. Le message de réussite dit le
+nombre : « 3 articles copiés. Dans Keep : créez une nouvelle note et collez. » Les aides sous
+les deux boutons disent la règle : « Seuls les articles non cochés sont copiés. » pour Keep,
+« Seuls les articles non cochés partent. » pour Tasks.
+
 ### v0.24.73 — fonctionnel
 
 Planning d'un groupe : les « Parts à préparer » réglées jour par jour dans Préférences du

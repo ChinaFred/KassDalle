@@ -6,7 +6,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/theme/app_icon_size.dart';
 import '../../../../core/utils/context_extensions.dart';
-import '../../../../core/utils/ingredient_categorizer.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../auth/presentation/auth_providers.dart';
@@ -334,15 +333,6 @@ String _todayFr() {
   return '${n.day} ${months[n.month - 1]} ${n.year}';
 }
 
-/// Les rayons dans l'ordre du magasin, puis les autres.
-List<String> _orderedCategories(Iterable<String> present) {
-  final set = present.toSet();
-  return [
-    ...IngredientCategorizer.categoryOrder.where(set.contains),
-    ...set.where((k) => !IngredientCategorizer.categoryOrder.contains(k)),
-  ];
-}
-
 enum _CartMenu { removeChecked, clear }
 
 class _ShoppingCartPanel extends ConsumerStatefulWidget {
@@ -519,7 +509,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
       return;
     }
     final groups = <({String category, List<String> items})>[
-      for (final key in _orderedCategories(grouped.keys))
+      for (final key in orderedShoppingCategories(grouped.keys))
         (
           category: key,
           items: grouped[key]!.map((i) => i.label).toList(growable: false),
@@ -557,33 +547,27 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
     }
   }
 
-  String _buildKeepText(List<ShoppingItem> items) {
-    final buffer = StringBuffer()
-      ..writeln("Liste de courses Kass'Dalle – ${_todayFr()}");
-    final grouped = <String, List<ShoppingItem>>{};
-    for (final item in items) {
-      (grouped[item.category] ??= []).add(item);
-    }
-    for (final cat in _orderedCategories(grouped.keys)) {
-      buffer.writeln(cat.toUpperCase());
-      for (final item in grouped[cat]!) {
-        buffer.writeln('\t${item.label}');
-      }
-    }
-    return buffer.toString().trim();
-  }
-
+  /// Copie la liste pour Google Keep, puis ouvre Keep.
+  ///
+  /// Même règle que Google Tasks : seuls les articles **non cochés** sont
+  /// copiés. Tout coché : rien n'est copié, Keep ne s'ouvre pas.
   Future<void> _openKeep(List<ShoppingItem> items) async {
+    final keep = buildKeepText(items: items, dateLabel: _todayFr());
+    if (keep.count == 0) {
+      _msg.showSnackBar('Tout est déjà coché : rien à copier.');
+      return;
+    }
     setState(() => _opening = true);
     try {
-      await Clipboard.setData(ClipboardData(text: _buildKeepText(items)));
+      await Clipboard.setData(ClipboardData(text: keep.text));
       final uri = Uri.parse('https://keep.google.com/');
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
       if (mounted) {
         _msg.showSuccessSnackBar(
-          'Liste copiée ! Dans Keep : créez une nouvelle note et collez (appui long).',
+          '${shoppingArticles(keep.count)} copié${keep.count > 1 ? 's' : ''}. '
+          'Dans Keep : créez une nouvelle note et collez.',
         );
       }
     } catch (error, stackTrace) {
@@ -751,7 +735,7 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
       controller: widget.scrollController,
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
       children: [
-        for (final cat in _orderedCategories(grouped.keys)) ...[
+        for (final cat in orderedShoppingCategories(grouped.keys)) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Text(
@@ -837,8 +821,9 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
             if (!compact) const SizedBox(height: 6),
             if (!compact)
               Text(
-                'Une liste cochable, un rayon par tâche et un article '
-                'par sous-tâche. Rien à convertir à la main.',
+                'Seuls les articles non cochés partent. Une liste cochable, '
+                'un rayon par tâche et un article par sous-tâche. Rien à '
+                'convertir à la main.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
@@ -865,9 +850,9 @@ class _ShoppingCartPanelState extends ConsumerState<_ShoppingCartPanel> {
             if (!compact) const SizedBox(height: 6),
             if (!compact)
               Text(
-                'Keep n\'a pas d\'API : la liste est copiée, à vous de '
-                'créer la note, de la convertir en cases à cocher et de refaire '
-                'les rayons.',
+                'Seuls les articles non cochés sont copiés. Keep n\'a pas '
+                'd\'API : à vous de créer la note, de la convertir en cases à '
+                'cocher et de refaire les rayons.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
