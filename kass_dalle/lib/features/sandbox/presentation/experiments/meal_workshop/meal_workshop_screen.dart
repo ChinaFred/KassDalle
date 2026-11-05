@@ -12,8 +12,10 @@ import '../../../../../core/utils/platform_utils.dart';
 import '../../../../../core/widgets/app_states.dart';
 import '../../../../admin/presentation/admin_providers.dart'
     show errorReportServiceProvider;
+import '../../../../planning/domain/meal_component.dart' show MealComponentRole;
 import '../../../../planning/domain/meal_composition.dart'
     show kMaxCoursesPerMenu;
+import '../../../../planning/domain/meal_kind.dart';
 import '../../../../recipes/presentation/detail/portions_input_dialog.dart';
 import '../../../data/sandbox_functions.dart';
 import '../../../domain/meal_workshop_menu.dart';
@@ -25,8 +27,11 @@ import 'meal_workshop_widgets.dart';
 /// Expérience : l'atelier repas, palier 0.
 ///
 /// Une conversation bornée (20 tours, 1 500 caractères par message) pour
-/// composer un repas complet, et un menu structuré que le serveur contrôle
-/// et que l'écran redessine à chaque tour. Une troisième zone, « Mesures »,
+/// composer un plat et ses accompagnements (« Plat », le mode par défaut) ou
+/// un repas complet (« Menu »), et un menu structuré que le serveur contrôle
+/// et que l'écran redessine à chaque tour. Le mode est fixé pour la durée
+/// d'une conversation : le changer en cours de route en ouvre une nouvelle,
+/// après confirmation. Une troisième zone, « Mesures »,
 /// donne le choix du modèle, la taille du contexte envoyé, le coût de chaque
 /// tour et un tableau récapitulatif à copier : c'est ce que le palier 0 doit
 /// mesurer avant qu'on écrive le palier 1 (`documentation/ToDo/SPEC-atelier-repas.md`).
@@ -88,6 +93,9 @@ class _SandboxMealWorkshopScreenState
   Set<int> _changed = const {};
   bool _lastTruncated = false;
   int _portions = kWorkshopDefaultPortions;
+
+  /// Plat ou menu. Non persisté ; « Plat » à l'ouverture.
+  MealKind _kind = MealKind.plat;
   bool _sending = false;
   SandboxModelChoice? _modelChoice;
   final List<WorkshopTurnMeasure> _measures = [];
@@ -108,6 +116,10 @@ class _SandboxMealWorkshopScreenState
 
   /// « 4 parts », « 1 part ».
   String get _portionsLabel => '$_portions ${_portions > 1 ? 'parts' : 'part'}';
+  bool get _isDish => _kind == MealKind.plat;
+
+  /// « plat » ou « menu », pour les libellés qui nomment ce qu'on compose.
+  String get _thing => _isDish ? 'plat' : 'menu';
   bool get _turnsExhausted => _userTurns >= kWorkshopMaxTurns;
   bool get _hasConversation => _history.isNotEmpty;
   bool get _inputTooLong => _inputLength > kWorkshopMaxMessageChars;
@@ -168,7 +180,11 @@ class _SandboxMealWorkshopScreenState
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Quitter sans enregistrer ?'),
-        content: const Text('Le menu et la conversation seront perdus.'),
+        content: Text(
+          _isDish
+              ? 'Le plat et la conversation seront perdus.'
+              : 'Le menu et la conversation seront perdus.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -207,6 +223,7 @@ class _SandboxMealWorkshopScreenState
 
     final turn = _userTurns + 1;
     final payload = <String, dynamic>{
+      'kind': _kind.key,
       'history': [for (final t in _history) Map<String, String>.from(t)],
       'message': text,
       'recipes': workshop.summaries,
@@ -236,7 +253,11 @@ class _SandboxMealWorkshopScreenState
         _lastTruncated = result.control.truncated;
         _lastResult = result;
         _measures.add(
-          WorkshopTurnMeasure.fromResult(result, conversation: _conversation),
+          WorkshopTurnMeasure.fromResult(
+            result,
+            conversation: _conversation,
+            kind: _kind,
+          ),
         );
         _input.clear();
         _sending = false;
@@ -265,11 +286,12 @@ class _SandboxMealWorkshopScreenState
         _sending = false;
         _entries.add(_ErrorEntry(error));
         if (error.reason == kWorkshopUnreadableReason) {
-          // Facturé sans menu lisible : la ligne du tableau le dit.
+          // Facturé sans réponse lisible : la ligne du tableau le dit.
           _measures.add(
             WorkshopTurnMeasure.unreadable(
               error.details,
               conversation: _conversation,
+              kind: _kind,
               fallbackTurn: turn,
             ),
           );
@@ -323,9 +345,11 @@ class _SandboxMealWorkshopScreenState
     _revision.value++;
   }
 
-  /// Même périmètre, menu vide. Les mesures restent : elles comptent les
-  /// appels faits depuis cet écran, et le rang de conversation les distingue.
-  void _newConversation() {
+  /// Même périmètre, menu vide, parts et modèle conservés. Les mesures
+  /// restent : elles comptent les appels faits depuis cet écran, et le rang
+  /// de conversation les distingue. Le texte du champ reste : un message
+  /// tapé avant de repartir n'est pas perdu. [kind] change le mode.
+  void _newConversation({MealKind? kind}) {
     setState(() {
       _entries.clear();
       _history.clear();
@@ -333,10 +357,76 @@ class _SandboxMealWorkshopScreenState
       _changed = const {};
       _lastTruncated = false;
       _lastResult = null;
-      _input.clear();
+      if (kind != null) _kind = kind;
       _conversation++;
     });
+    _revision.value++;
     _inputFocus.requestFocus();
+  }
+
+  /// « Nouvelle conversation » : sans confirmation à 20 tours (le champ est
+  /// fermé, rien ne peut plus se perdre par un envoi), avec confirmation
+  /// avant, puisqu'une conversation en cours se perd.
+  Future<void> _newConversationRequested() async {
+    if (!_turnsExhausted) {
+      final confirmed = await _confirmDiscard(
+        title: 'Nouvelle conversation ?',
+        action: 'Nouvelle conversation',
+      );
+      if (!confirmed || !mounted) return;
+    }
+    _newConversation();
+  }
+
+  /// Le choix Plat | Menu. Sans conversation : bascule libre, la carte d'un
+  /// tour échoué disparaît. Avec une conversation : confirmation, puis
+  /// nouvelle conversation dans le nouveau mode.
+  Future<void> _selectKind(MealKind kind) async {
+    if (kind == _kind || _sending) return;
+    if (!_hasConversation) {
+      setState(() {
+        _kind = kind;
+        _entries.removeWhere((e) => e is _ErrorEntry);
+      });
+      _revision.value++;
+      return;
+    }
+    final toMenu = kind == MealKind.menu;
+    final confirmed = await _confirmDiscard(
+      title: toMenu ? 'Passer en menu ?' : 'Passer en plat ?',
+      action: toMenu ? 'Passer en menu' : 'Passer en plat',
+    );
+    if (!confirmed || !mounted) return;
+    _newConversation(kind: kind);
+  }
+
+  /// La boîte qui précède la perte d'une conversation : forme de
+  /// `planning_screen.dart` (« Repasser en plat ? »).
+  Future<bool> _confirmDiscard({
+    required String title,
+    required String action,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(
+          'La conversation et le $_thing en cours seront perdus. Rien '
+          'n\'était enregistré.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   // ── Construction ──────────────────────────────────────────────────────────
@@ -397,10 +487,41 @@ class _SandboxMealWorkshopScreenState
   }) {
     return Column(
       children: [
+        _buildKindSwitch(),
         Expanded(child: _buildMessages(asyncWorkshop, wide: wide)),
         if (!wide) _buildSummaryBanner(),
         _buildInputBar(wide: wide),
       ],
+    );
+  }
+
+  /// « Plat | Menu », en tête de la conversation. Copie des segments de
+  /// `meal_composer.dart` (`_buildKindSwitch`). Inactif pendant un tour.
+  Widget _buildKindSwitch() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SegmentedButton<MealKind>(
+          segments: const [
+            ButtonSegment(
+              value: MealKind.plat,
+              label: Text('Plat'),
+              icon: Icon(Icons.restaurant_outlined),
+              tooltip: 'Un seul plat et ses accompagnements',
+            ),
+            ButtonSegment(
+              value: MealKind.menu,
+              label: Text('Menu'),
+              icon: Icon(Icons.restaurant_menu_outlined),
+              tooltip: 'Entrée, plat, fromage, dessert…',
+            ),
+          ],
+          selected: {_kind},
+          showSelectedIcon: false,
+          onSelectionChanged: _sending ? null : (s) => _selectKind(s.first),
+        ),
+      ),
     );
   }
 
@@ -419,13 +540,14 @@ class _SandboxMealWorkshopScreenState
           Expanded(
             child: _workshop == null
                 ? const SizedBox.shrink()
-                : const AppEmptyState(
+                : AppEmptyState(
                     icon: Icons.forum_outlined,
                     title: 'Dites ce que vous voulez manger',
                     message:
                         'Pour qui, quand, avec quelles envies ou contraintes. '
-                        'L\'IA répond et pose un premier menu dans « Menu en '
-                        'cours ». Chaque message envoyé est un appel à l\'IA.',
+                        'L\'IA répond et pose un premier $_thing dans '
+                        '« ${_isDish ? 'Plat' : 'Menu'} en cours ». Chaque '
+                        'message envoyé est un appel à l\'IA.',
                   ),
           ),
         ],
@@ -446,12 +568,14 @@ class _SandboxMealWorkshopScreenState
             ) =>
               WorkshopAssistantBubble(
                 result: result,
+                kind: _kind,
                 changedCount: changedCount,
                 unchanged: unchanged,
                 onOpenMenu: wide ? null : () => _openSheet(),
               ),
             _ErrorEntry(:final error) => WorkshopErrorCard(
               error: error,
+              kind: _kind,
               onRetry: _canSend ? _send : null,
             ),
           },
@@ -494,22 +618,38 @@ class _SandboxMealWorkshopScreenState
     );
   }
 
+  /// Téléphone : « Plat · Bar rôti · 4 parts · modifié » ou « Menu · 3
+  /// services · 4 parts · modifié : Dessert ».
   Widget _buildSummaryBanner() {
     final theme = Theme.of(context);
     final menu = _menu;
-    final changedLabel = _changed.isEmpty || menu == null
-        ? ''
-        : ' · modifié : ${_changed.map((i) => menu.courses[i].typeLabel).join(', ')}';
-    final text = menu == null || menu.isEmpty
-        ? 'Menu · vide · $_portionsLabel'
-        : 'Menu · ${menu.courses.length} '
-              '${menu.courses.length > 1 ? 'services' : 'service'} · '
-              '$_portionsLabel$changedLabel';
+    final String text;
+    if (menu == null || menu.isEmpty) {
+      text = '${_isDish ? 'Plat' : 'Menu'} · vide · $_portionsLabel';
+    } else if (_isDish) {
+      final dish = menu.courses.firstWhere(
+        (c) => c.role == MealComponentRole.plat,
+        orElse: () => menu.courses.first,
+      );
+      text =
+          'Plat · ${dish.title} · $_portionsLabel'
+          '${_changed.isEmpty ? '' : ' · modifié'}';
+    } else {
+      final changedLabel = _changed.isEmpty
+          ? ''
+          : ' · modifié : ${_changed.map((i) => menu.courses[i].typeLabel).join(', ')}';
+      text =
+          'Menu · ${menu.courses.length} '
+          '${menu.courses.length > 1 ? 'services' : 'service'} · '
+          '$_portionsLabel$changedLabel';
+    }
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
       child: ListTile(
         dense: true,
-        leading: const Icon(Icons.restaurant_menu),
+        leading: Icon(
+          _isDish ? Icons.restaurant_outlined : Icons.restaurant_menu,
+        ),
         title: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => _openSheet(),
@@ -561,8 +701,9 @@ class _SandboxMealWorkshopScreenState
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _send(),
                     decoration: InputDecoration(
-                      hintText:
-                          'ex : un dîner pour 6, du poisson, un dessert aux fruits',
+                      hintText: _isDish
+                          ? 'ex : un plat de poisson pour 4 ce soir, avec un féculent'
+                          : 'ex : un dîner pour 6, du poisson, un dessert aux fruits',
                       isDense: true,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
@@ -606,9 +747,11 @@ class _SandboxMealWorkshopScreenState
                     ),
                   ),
                 ),
-                if (_turnsExhausted)
+                // Inactif pendant un tour, comme le bouton parts et le
+                // sélecteur Plat | Menu : la ligne garde sa hauteur.
+                if (_hasConversation)
                   TextButton(
-                    onPressed: _sending ? null : _newConversation,
+                    onPressed: _sending ? null : _newConversationRequested,
                     child: const Text('Nouvelle conversation'),
                   ),
               ],
@@ -648,10 +791,13 @@ class _SandboxMealWorkshopScreenState
       child: Row(
         children: [
           Expanded(
-            child: Text('Menu en cours', style: theme.textTheme.titleMedium),
+            child: Text(
+              _isDish ? 'Plat en cours' : 'Menu en cours',
+              style: theme.textTheme.titleMedium,
+            ),
           ),
           Tooltip(
-            message: 'Nombre de parts du menu',
+            message: 'Nombre de parts',
             child: OutlinedButton(
               onPressed: _sending ? null : _changePortions,
               child: Text(_portionsLabel),
@@ -665,15 +811,23 @@ class _SandboxMealWorkshopScreenState
   List<Widget> _buildMenuBody() {
     final menu = _menu;
     if (menu == null || menu.isEmpty) {
-      return const [
+      return [
         Padding(
-          padding: EdgeInsets.symmetric(vertical: 24),
-          child: AppEmptyState(
-            icon: Icons.restaurant_menu,
-            title: 'Pas encore de menu',
-            message:
-                'Le premier menu s\'affichera ici après votre premier message.',
-          ),
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: _isDish
+              ? const AppEmptyState(
+                  icon: Icons.restaurant_outlined,
+                  title: 'Pas encore de plat',
+                  message:
+                      'Le plat s\'affichera ici après votre premier message.',
+                )
+              : const AppEmptyState(
+                  icon: Icons.restaurant_menu,
+                  title: 'Pas encore de menu',
+                  message:
+                      'Le premier menu s\'affichera ici après votre premier '
+                      'message.',
+                ),
         ),
       ];
     }
@@ -695,10 +849,11 @@ class _SandboxMealWorkshopScreenState
     );
     final menu = _menu;
     final count = menu == null || menu.isEmpty
-        ? 'Le menu est vide.'
+        ? (_isDish ? 'Pas encore de plat.' : 'Le menu est vide.')
         : '${menu.toWriteCount} ${menu.toWriteCount > 1 ? 'plats' : 'plat'} à '
               'rédiger · ${menu.linkedCount} '
               '${menu.linkedCount > 1 ? 'recettes liées' : 'recette liée'}';
+    final offKind = _lastResult?.control.offKindCourses ?? 0;
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
       child: SafeArea(
@@ -711,7 +866,14 @@ class _SandboxMealWorkshopScreenState
               Text(count, style: theme.textTheme.bodyMedium),
               if (_lastTruncated)
                 Text(
-                  'Menu limité à $kMaxCoursesPerMenu services.',
+                  _isDish
+                      ? 'Plat limité à $kWorkshopMaxDishCourses services.'
+                      : 'Menu limité à $kMaxCoursesPerMenu services.',
+                  style: small,
+                ),
+              if (_isDish && offKind > 0)
+                Text(
+                  'Plat seul : $offKind ${offKind > 1 ? 'services écartés' : 'service écarté'}.',
                   style: small,
                 ),
               Text('Rien n\'est enregistré : bac à sable.', style: small),
@@ -746,6 +908,7 @@ class _SandboxMealWorkshopScreenState
       showDragHandle: true,
       builder: (_) => _WorkshopSheet(
         revision: _revision,
+        kind: () => _kind,
         header: _buildMenuHeader,
         menuBody: _buildMenuBody,
         footer: _buildMenuFooter,
@@ -755,11 +918,13 @@ class _SandboxMealWorkshopScreenState
   }
 }
 
-/// La feuille du téléphone : « Menu | Mesures ». Les constructeurs lisent
-/// l'état de l'écran au moment du rendu ; [revision] change quand les parts
-/// ou le modèle changent, et la feuille se redessine.
+/// La feuille du téléphone : « Plat | Mesures » ou « Menu | Mesures ». Les
+/// constructeurs lisent l'état de l'écran au moment du rendu ; [revision]
+/// change quand les parts, le modèle ou le mode changent, et la feuille se
+/// redessine.
 class _WorkshopSheet extends StatefulWidget {
   final ValueListenable<int> revision;
+  final MealKind Function() kind;
   final Widget Function() header;
   final List<Widget> Function() menuBody;
   final Widget Function() footer;
@@ -767,6 +932,7 @@ class _WorkshopSheet extends StatefulWidget {
 
   const _WorkshopSheet({
     required this.revision,
+    required this.kind,
     required this.header,
     required this.menuBody,
     required this.footer,
@@ -793,9 +959,9 @@ class _WorkshopSheetState extends State<_WorkshopSheet> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: false, label: Text('Menu')),
-                  ButtonSegment(value: true, label: Text('Mesures')),
+                segments: [
+                  ButtonSegment(value: false, label: Text(widget.kind().label)),
+                  const ButtonSegment(value: true, label: Text('Mesures')),
                 ],
                 selected: {_showMeasures},
                 onSelectionChanged: (selection) =>

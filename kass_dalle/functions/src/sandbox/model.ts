@@ -19,6 +19,10 @@
  * - **la comptabilité**, écrite après. Un modèle absent de la grille tarifaire
  *   sera compté sans montant, dans `total_unpriced_calls` — c'est le
  *   comportement voulu du projet : un coût manquant se voit, un coût faux non.
+ *   Le coût calculé à l'enregistrement remonte à l'appelant dans
+ *   `recordedCostUsd`, même contrat que `callModel` : jusqu'en v0.24.72, un
+ *   modèle imposé l'écrivait dans `ai_usage` (0,098 $ pour un tour Haiku 4.5)
+ *   et le rendait absent, et l'écran affichait « non chiffré ».
  *
  * Ce qui ne l'est pas : ni repli automatique sur l'autre moteur, ni retry sur
  * quota. Une expérience doit échouer visiblement, pas être secourue.
@@ -119,8 +123,11 @@ export async function askModel(args: {
       choice.provider === "anthropic"
         ? await callChosenAnthropic(args.parts, args.ctx, callId, choice.model, args.maxTokens)
         : await callChosenGemini(args.parts, args.ctx, callId, choice.model, args.maxTokens);
-    await recordModelUsage(called, args.ctx);
-    return called;
+    // Le coût calculé à l'enregistrement remonte à l'appelant, comme dans
+    // `callModel` (`ai/router.ts`) : sans lui, l'écran affiche « non chiffré »
+    // pour un appel pourtant chiffré dans `ai_usage`.
+    const recorded = await recordModelUsage(called, args.ctx);
+    return { ...called, recordedCostUsd: recorded.costUsd };
   });
   // Le choix explicite ne passe pas par `callModel` : aucun repli n'a pu se
   // produire, il n'y a donc rien à signaler.

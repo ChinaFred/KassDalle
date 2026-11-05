@@ -307,7 +307,7 @@ sur 20 · Il vous reste 27 tours aujourd'hui. ».
 | Contexte en erreur | Carte `AppErrorState(compact: true, title: 'Atelier non prêt', onRetry)` dans la liste. Pas d'envoi dégradé : un tour sans les préférences du foyer contredirait ses contraintes sans le dire. | `AppErrorState` |
 | Périmètre à 0 recette | Carte d'information en tête de liste (`secondaryContainer`, `Icons.info_outline`) : « Aucune recette de la bibliothèque dans le périmètre : l'IA ne proposera que des plats nouveaux. » Aide sous le champ : « Périmètre : aucune recette ». Envoyer reste actif (P1-4). | modèle `_PickBanner`, `search_screen.dart:997` |
 | Tour en cours | Champ inactif, texte conservé ; Envoyer inactif ; ligne « L'IA compose… » avec robot et `CircularProgressIndicator` 16 px, `Semantics(liveRegion: true)` ; panneau inchangé. Le bouton parts et « Figer » sont inactifs le temps du tour. | — |
-| Réponse illisible | Carte d'erreur dans la liste : « Réponse illisible, menu inchangé. L'IA n'a pas rendu de menu lisible. » avec « Réessayer » (renvoie le texte resté dans le champ). Menu du tour précédent conservé. Aide : le compteur de tours a décompté (le tour a été facturé). | `AppErrorState(compact: true)` |
+| Réponse illisible | Carte d'erreur dans la liste : « Réponse illisible, menu inchangé. L'IA n'a pas rendu de réponse lisible. » avec « Réessayer » (renvoie le texte resté dans le champ). Menu du tour précédent conservé. Aide : le compteur de tours a décompté (le tour a été facturé). | `AppErrorState(compact: true)` |
 | Réseau perdu pendant un tour | Carte : « Réponse non reçue. Connexion perdue. » avec « Réessayer ». Texte toujours dans le champ. Tour non compté. | `failureMessage('Réponse non reçue', e)`, `error_message.dart:237` |
 | 20 tours atteints | Champ et Envoyer inactifs ; aide : « Conversation terminée : 20 tours. Figez le repas, ou ouvrez une nouvelle conversation. » Bouton texte « Nouvelle conversation » sous l'aide. Menu et « Figer le repas » disponibles. | — |
 | 30 tours du jour atteints | Même forme ; aide : « Vous avez fait vos 30 tours d'aujourd'hui. Le compteur repart demain. » Pas de « Réessayer ». Menu et « Figer le repas » disponibles (le figement n'est pas compté dans les 30). | modèle `remainingSearchesLine`, `web_search.dart:213` |
@@ -346,7 +346,7 @@ sur 20 · Il vous reste 27 tours aujourd'hui. ».
 | Boîte de figement | titre « Figer le repas » ; « 3 plats seront rédigés par l'IA, un appel chacun. 1 recette existante reste liée telle quelle. » ; « Livre des brouillons » ; « Mes créations Kass'Dalle ✨ » / « Mes recettes libres » ; « Titres déjà dans votre bibliothèque » ; « Lier la recette existante » / « Rédiger quand même » ; « Choisissez pour chaque doublon. » ; « Annuler » / « Figer » |
 | Lignes de figement | « En attente » ; « Rédaction… » ; « Brouillon créé » + « Ouvrir » ; « Non rédigée — Réessayer » ; « Non rédigée. L'IA n'a pas rendu de recette. » ; « Non rédigée — plafond atteint » ; « Recette plus accessible » + « Rédiger à la place » / « Retirer du menu » |
 | Fin de figement | « 3 brouillons créés dans « Mes créations Kass'Dalle ✨ ». » ; « Brouillons créés » ; « Repas figé. » ; « Nouvelle conversation » |
-| Erreurs | « Réponse non reçue. Connexion perdue. » ; « Réponse illisible, menu inchangé. L'IA n'a pas rendu de menu lisible. » ; « Réponse non reçue. Limite d'utilisation de l'IA atteinte pour aujourd'hui. … » ; « Recette non rédigée. … » ; « Réessayer » |
+| Erreurs | « Réponse non reçue. Connexion perdue. » ; « Réponse illisible, menu inchangé. L'IA n'a pas rendu de réponse lisible. » ; « Réponse non reçue. Limite d'utilisation de l'IA atteinte pour aujourd'hui. … » ; « Recette non rédigée. … » ; « Réessayer » |
 | Plafonds | « Conversation terminée : 20 tours. Figez le repas, ou ouvrez une nouvelle conversation. » ; « Vous avez fait vos 30 tours d'aujourd'hui. Le compteur repart demain. » |
 | Sortie | « Quitter sans enregistrer ? » ; « Le menu et la conversation seront perdus. » ; « 2 plats ne sont pas rédigés. Quitter sans enregistrer ? » ; « Rester » / « Quitter » |
 | Reader | « Composition réservée aux éditeurs » ; « Retour à Explorer » |
@@ -378,8 +378,8 @@ Aucun mot technique (JSON, callable, feature) hors du palier 0.
   sur Envoyer ou d'Entrée dans le champ ; le figement s'annonce dans une boîte qui compte
   les appels ; le nombre de tours restants est sous le champ.
 - Travail non perdu : `LeaveGuard` + `PopScope` (`core/presentation/leave_guard.dart`,
-  câblage de `generated_recipe_screen.dart:68-84, 462-470`) ; « Retirer du menu » et
-  « Nouvelle conversation » ne demandent pas de confirmation (rien d'écrit n'est perdu) ;
+  câblage de `generated_recipe_screen.dart:68-84, 462-470`) ; « Retirer du menu » ne demande
+  pas de confirmation ; « Nouvelle conversation » en demande une tant que les 20 tours ne sont pas atteints (v0.24.75, §7) ;
   « Quitter » en demande une.
 - Données partagées : le nombre de parts vit dans le menu en mémoire et part au prompt ; une
   recette liée n'est ni copiée ni modifiée ; l'écart « recette pour 6, menu pour 4 » est
@@ -432,6 +432,54 @@ soit une réécriture à l'identique de la disposition.
    d'un appui sur le rail) ; c'est du code de production importé, pas modifié.
 8. **Documentation** : rien dans FR ni dans les cas d'utilisation au palier 0 ; le poste
    `sandbox_meal_workshop_turn` dans `TechnicalRequirements.md` et le `CHANGELOG.md`.
+
+---
+
+## 7. Choix Plat | Menu (v0.24.75)
+
+Décision de l'utilisateur après les trois premiers tours réels : la personne compose un
+**plat** et ses accompagnements, ou un **menu** complet. « Plat » par défaut, fixé pour la
+durée d'une conversation, non persisté.
+
+- **Commande** : `SegmentedButton<MealKind>` (`features/planning/domain/meal_kind.dart`),
+  copie des segments de `meal_composer.dart` (`Icons.restaurant_outlined` /
+  `Icons.restaurant_menu_outlined`, `showSelectedIcon: false`), tooltips « Un seul plat et
+  ses accompagnements » / « Entrée, plat, fromage, dessert… ». En tête de la colonne
+  conversation, avant la liste des messages, aligné à gauche, padding `fromLTRB(12, 8, 12,
+  0)`. Inactif pendant un tour.
+- **Sans conversation** : bascule libre ; le texte du champ reste ; la carte d'erreur d'un
+  tour échoué disparaît ; titres et états vides changent.
+- **Avec une conversation** : boîte « Passer en menu ? » / « Passer en plat ? », corps « La
+  conversation et le plat en cours seront perdus. Rien n'était enregistré. » (ou « …le menu
+  en cours… »), « Annuler » (`TextButton`) / « Passer en menu » (`FilledButton`), forme de
+  `planning_screen.dart` (« Repasser en plat ? »). Confirmé : nouvelle conversation dans le
+  nouveau mode, parts, modèle et mesures conservés, rang de conversation incrémenté, texte du
+  champ conservé. Annulé : rien ne bouge.
+- **« Nouvelle conversation »** : visible dès le premier tour (hors tour en cours), avec
+  confirmation « Nouvelle conversation ? » / même corps / « Annuler » / « Nouvelle
+  conversation » tant que les 20 tours ne sont pas atteints ; à 20 tours, sans confirmation.
+- **Envoi** : le payload porte `kind` (`plat` ou `menu`).
+- **Libellés en mode Plat** : panneau « Plat en cours » ; état vide de la conversation
+  « Dites ce que vous voulez manger » / « Pour qui, quand, avec quelles envies ou
+  contraintes. L'IA répond et pose un premier plat dans « Plat en cours ». Chaque message
+  envoyé est un appel à l'IA. » ; état vide du panneau `Icons.restaurant_outlined`, « Pas
+  encore de plat », « Le plat s'affichera ici après votre premier message. » ; tooltip du
+  bouton parts « Nombre de parts » (les deux modes) ; bandeau téléphone « Plat · vide · 4
+  parts » puis « Plat · [titre du plat] · 4 parts · modifié » ; sous une bulle de l'IA « Plat
+  mis à jour » / « Plat inchangé » (sans compte de services) ; pied du panneau « Pas encore
+  de plat. », « Plat limité à 2 services. » si tronqué, et « Plat seul : N services
+  écartés. » quand le contrôle serveur a écarté des services d'un autre rôle ; hint du champ
+  « ex : un plat de poisson pour 4 ce soir, avec un féculent » ; garde de sortie « Le plat et
+  la conversation seront perdus. » ; carte d'un tour illisible « Réponse illisible, plat
+  inchangé. » ; réponse vide « L'IA n'a rien écrit et le plat n'a pas changé. » / « L'IA n'a
+  rien écrit : seul le plat a changé. » ; feuille téléphone : premier segment « Plat », second
+  « Mesures ». Mode Menu : textes du §4 inchangés. Dans les deux modes, le message serveur
+  d'une réponse illisible est neutre (« L'IA n'a pas rendu de réponse lisible. »), l'écart de
+  parts sous une recette liée se lit « recette pour 6, repas pour 4 », et « Nouvelle
+  conversation » reste visible mais inactif pendant un tour.
+- **Mesures** : colonne « mode » (`plat` / `menu`) juste après « conv. », dans le tableau de
+  l'écran et dans le texte tabulé copié ; colonne « cache » (jetons relus et écrits) après
+  « jetons ».
 
 ---
 

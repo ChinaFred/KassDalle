@@ -76,6 +76,7 @@ interface SandboxRequest {
   heightPx?: number;
 
   // Atelier repas : lus et bornés par `readMealWorkshopInput`, jamais ici.
+  kind?: unknown;
   history?: unknown;
   message?: unknown;
   recipes?: unknown;

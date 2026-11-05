@@ -23,8 +23,8 @@ final List<Experiment> kExperiments = <Experiment>[
     id: 'meal-workshop',
     title: 'Atelier repas',
     subtitle:
-        'Converser pour composer un menu. Le JSON du menu et le coût de '
-        'chaque tour sont lisibles. Rien n\'est enregistré.',
+        'Converser pour composer un plat ou un menu. Le JSON du menu et le '
+        'coût de chaque tour sont lisibles. Rien n\'est enregistré.',
     icon: Icons.restaurant_menu,
     builder: (_) => const SandboxMealWorkshopScreen(),
   ),

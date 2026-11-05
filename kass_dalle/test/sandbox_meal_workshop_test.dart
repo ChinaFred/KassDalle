@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/planning/domain/meal_component.dart';
+import 'package:kass_dalle/features/planning/domain/meal_kind.dart';
 import 'package:kass_dalle/features/sandbox/domain/meal_workshop_menu.dart';
 
 /// Atelier repas (bac à sable, palier 0) : lecture du menu rendu, puce
 /// « Modifié » entre deux tours, « Menu inchangé », mise en forme des
-/// mesures. Fonctions pures, sans Firebase.
+/// mesures — mode plat ou menu, jetons de cache, services hors plat.
+/// Fonctions pures, sans Firebase.
 void main() {
   Map<String, dynamic> course(
     String role,
@@ -96,12 +98,15 @@ void main() {
           'droppedCourses': [
             {'index': 3, 'reason': 'role_inconnu', 'detail': 'accompagnement'},
           ],
+          'offKindCourses': 2,
         },
         'raw': '{}',
         'usage': {
           'costUsd': null,
           'inputTokens': 11240,
           'outputTokens': 420,
+          'cacheReadInputTokens': 95000,
+          'cacheCreationInputTokens': 2000,
           'durationMs': 4100,
           'provider': 'gemini',
           'model': 'gemini-2.5-flash',
@@ -111,13 +116,34 @@ void main() {
       });
       expect(result.reponse, 'Je vous propose…');
       expect(result.usage.costUsd, isNull);
+      expect(result.usage.cacheReadInputTokens, 95000);
+      expect(result.usage.cacheCreationInputTokens, 2000);
       expect(result.control.inventedIds, 2);
+      expect(result.control.offKindCourses, 2);
       expect(result.control.lines.first, 'inventedIds : 2');
       expect(
         result.control.lines[3],
         'services écartés : 1 (#3 role_inconnu « accompagnement »)',
       );
+      expect(result.control.lines.last, 'services hors plat (mode plat) : 2');
       expect(result.turn, 3);
+    });
+
+    test('un contrôle sans les champs du mode plat ni du cache lit 0', () {
+      final result = WorkshopTurnResult.fromJson({
+        'menu': {'portions': 4, 'courses': <Object>[]},
+        'usage': {
+          'costUsd': 0.01,
+          'inputTokens': 1,
+          'outputTokens': 1,
+          'durationMs': 1,
+          'provider': 'gemini',
+          'model': 'gemini-2.5-flash',
+        },
+      });
+      expect(result.control.offKindCourses, 0);
+      expect(result.usage.cacheReadInputTokens, 0);
+      expect(result.usage.cacheCreationInputTokens, 0);
     });
   });
 
@@ -299,24 +325,60 @@ void main() {
       );
     });
 
+    test('la ligne sous la bulle dit les jetons de cache, lus et écrits', () {
+      const read = WorkshopUsage(
+        costUsd: 0.05,
+        inputTokens: 2000,
+        outputTokens: 420,
+        cacheReadInputTokens: 95000,
+        durationMs: 4100,
+        provider: 'anthropic',
+        model: 'claude-sonnet-5',
+      );
+      expect(
+        workshopUsageLine(read),
+        '0,0500 \$ · 2 000 → 420 jetons · cache : 95 000 lus · 4,1 s · '
+        'Claude Sonnet 5',
+      );
+      const written = WorkshopUsage(
+        costUsd: 0.26,
+        inputTokens: 2000,
+        outputTokens: 420,
+        cacheCreationInputTokens: 125000,
+        durationMs: 4100,
+        provider: 'anthropic',
+        model: 'claude-sonnet-5',
+      );
+      expect(workshopUsageLine(written), contains('cache : 125 000 écrits'));
+      expect(
+        workshopCacheLabel(95000, 2000),
+        'cache : 95 000 lus, 2 000 écrits',
+      );
+      expect(workshopCacheLabel(0, 0), isNull);
+    });
+
     test(
       'le tableau tabulé : un en-tête, une ligne par tour, vide sans montant',
       () {
         final table = workshopMeasuresTable(const [
           WorkshopTurnMeasure(
             conversation: 1,
+            kind: MealKind.plat,
             turn: 1,
             costUsd: 0.0123,
             inputTokens: 11240,
             outputTokens: 420,
+            cacheReadInputTokens: 95000,
             durationMs: 4100,
             inventedIds: 1,
+            offKindCourses: 2,
             provider: 'gemini',
             model: 'gemini-2.5-flash',
             promptChars: 48200,
           ),
           WorkshopTurnMeasure(
             conversation: 2,
+            kind: MealKind.menu,
             turn: 1,
             costUsd: null,
             inputTokens: 0,
@@ -330,25 +392,62 @@ void main() {
         ]);
         final lines = table.split('\n');
         expect(lines.length, 3);
-        expect(lines[0].split('\t').take(2), ['conversation', 'tour']);
+        expect(lines[0].split('\t').take(3), ['conversation', 'mode', 'tour']);
         expect(lines[1].split('\t'), [
           '1',
+          'plat',
           '1',
           '0.012300',
           '11240',
           '420',
+          '95000',
+          '0',
           '4100',
           '1',
           '0',
+          '2',
           '0',
           '0',
           'gemini/gemini-2.5-flash',
           '48200',
         ]);
         // Deuxième conversation, premier tour, sans montant, illisible.
-        expect(lines[2].split('\t').take(2), ['2', '1']);
-        expect(lines[2].split('\t')[2], '');
-        expect(lines[2].split('\t')[9], '1');
+        expect(lines[2].split('\t').take(3), ['2', 'menu', '1']);
+        expect(lines[2].split('\t')[3], '');
+        expect(lines[2].split('\t')[13], '1');
+      },
+    );
+
+    test(
+      'une mesure lue d\'un tour porte le mode, le cache et le hors plat',
+      () {
+        final result = WorkshopTurnResult.fromJson({
+          'menu': {'portions': 4, 'courses': <Object>[]},
+          'control': {'offKindCourses': 1},
+          'usage': {
+            'costUsd': 0.098094,
+            'inputTokens': 1609,
+            'outputTokens': 900,
+            'cacheReadInputTokens': 95000,
+            'cacheCreationInputTokens': 0,
+            'durationMs': 9000,
+            'provider': 'anthropic',
+            'model': 'claude-haiku-4-5',
+          },
+          'promptChars': 261679,
+          'turn': 2,
+        });
+        final m = WorkshopTurnMeasure.fromResult(
+          result,
+          conversation: 1,
+          kind: MealKind.plat,
+        );
+        expect(m.kind, MealKind.plat);
+        expect(m.costUsd, 0.098094);
+        expect(m.cacheReadInputTokens, 95000);
+        expect(m.cacheCreationInputTokens, 0);
+        expect(m.offKindCourses, 1);
+        expect(m.promptChars, 261679);
       },
     );
 
@@ -356,6 +455,7 @@ void main() {
       final total = workshopCostTotal(const [
         WorkshopTurnMeasure(
           conversation: 1,
+          kind: MealKind.menu,
           turn: 1,
           costUsd: 0.01,
           inputTokens: 0,
@@ -367,6 +467,7 @@ void main() {
         ),
         WorkshopTurnMeasure(
           conversation: 1,
+          kind: MealKind.menu,
           turn: 2,
           costUsd: null,
           inputTokens: 0,
@@ -378,6 +479,7 @@ void main() {
         ),
         WorkshopTurnMeasure(
           conversation: 1,
+          kind: MealKind.menu,
           turn: 3,
           costUsd: 0.02,
           inputTokens: 0,
@@ -402,6 +504,7 @@ void main() {
               'costUsd': 0.004,
               'inputTokens': 100,
               'outputTokens': 50,
+              'cacheReadInputTokens': 4000,
               'durationMs': 1200,
               'provider': 'anthropic',
               'model': 'claude-haiku-4-5',
@@ -409,20 +512,25 @@ void main() {
             'promptChars': 1000,
           },
           conversation: 3,
+          kind: MealKind.plat,
           fallbackTurn: 1,
         );
         expect(m.conversation, 3);
+        expect(m.kind, MealKind.plat);
         expect(m.turn, 5);
         expect(m.unreadable, isTrue);
         expect(m.costUsd, 0.004);
+        expect(m.cacheReadInputTokens, 4000);
         expect(m.provider, 'anthropic');
         final bare = WorkshopTurnMeasure.unreadable(
           null,
           conversation: 1,
+          kind: MealKind.menu,
           fallbackTurn: 7,
         );
         expect(bare.turn, 7);
         expect(bare.costUsd, isNull);
+        expect(bare.cacheReadInputTokens, 0);
       },
     );
   });

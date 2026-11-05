@@ -14,11 +14,16 @@ library;
 import 'dart:convert';
 
 import '../../planning/domain/meal_component.dart';
+import '../../planning/domain/meal_kind.dart';
 import 'sandbox_model_choice.dart';
 
 /// Tours au plus par conversation : le 21e message est refusé par l'écran,
 /// et par le serveur (`MEAL_WORKSHOP_MAX_TURNS`).
 const int kWorkshopMaxTurns = 20;
+
+/// Services de rôle « plat » au plus en mode plat : le plat, et la recette
+/// d'un accompagnement en service secondaire (`MEAL_WORKSHOP_MAX_DISH_COURSES`).
+const int kWorkshopMaxDishCourses = 2;
 
 /// Caractères au plus par message (`MEAL_WORKSHOP_MAX_MESSAGE_CHARS`).
 const int kWorkshopMaxMessageChars = 1500;
@@ -227,6 +232,10 @@ class WorkshopControl {
   final int clampedFields;
   final bool portionsChangedByModel;
 
+  /// Mode plat : services d'un autre rôle que « plat », écartés par le
+  /// serveur et comptés à part des services écartés pour le format.
+  final int offKindCourses;
+
   const WorkshopControl({
     this.inventedIds = 0,
     this.unknownStapleIds = 0,
@@ -236,6 +245,7 @@ class WorkshopControl {
     this.sidesCleared = 0,
     this.clampedFields = 0,
     this.portionsChangedByModel = false,
+    this.offKindCourses = 0,
   });
 
   factory WorkshopControl.fromJson(Map<String, dynamic> json) =>
@@ -252,6 +262,7 @@ class WorkshopControl {
         sidesCleared: _int(json['sidesCleared']),
         clampedFields: _int(json['clampedFields']),
         portionsChangedByModel: _bool(json['portionsChangedByModel']),
+        offKindCourses: _int(json['offKindCourses']),
       );
 
   /// « inventedIds : 1 · services écartés : 1 (role_inconnu) … », une ligne
@@ -267,6 +278,7 @@ class WorkshopControl {
     'accompagnements vidés (hors plat) : $sidesCleared',
     'champs coupés : $clampedFields',
     'parts changées par le modèle : $portionsChangedByModel',
+    'services hors plat (mode plat) : $offKindCourses',
   ];
 
   static String _describeDrop(Map<String, dynamic> drop) {
@@ -281,10 +293,18 @@ class WorkshopUsage {
   /// Coût enregistré par la comptabilité ; `null` : non chiffré (grille en
   /// panne ou modèle absent de la grille). Jamais remplacé par un repli.
   final double? costUsd;
+
+  /// Jetons d'entrée hors cache : chez Anthropic, le préfixe mis en cache
+  /// n'y est pas, il est dans les deux compteurs suivants.
   final int inputTokens;
   final int outputTokens;
   final int thinkingTokens;
+
+  /// Jetons du préfixe relus depuis le cache (un dixième du tarif d'entrée).
   final int cacheReadInputTokens;
+
+  /// Jetons du préfixe écrits dans le cache (1,25 fois le tarif d'entrée).
+  final int cacheCreationInputTokens;
   final int durationMs;
   final String provider;
   final String model;
@@ -301,6 +321,7 @@ class WorkshopUsage {
     required this.outputTokens,
     this.thinkingTokens = 0,
     this.cacheReadInputTokens = 0,
+    this.cacheCreationInputTokens = 0,
     required this.durationMs,
     required this.provider,
     required this.model,
@@ -316,6 +337,7 @@ class WorkshopUsage {
     outputTokens: _int(json['outputTokens']),
     thinkingTokens: _int(json['thinkingTokens']),
     cacheReadInputTokens: _int(json['cacheReadInputTokens']),
+    cacheCreationInputTokens: _int(json['cacheCreationInputTokens']),
     durationMs: _int(json['durationMs']),
     provider: _text(json['provider']) ?? '?',
     model: _text(json['model']) ?? '?',
@@ -380,13 +402,19 @@ class WorkshopTurnMeasure {
   /// Rang de la conversation depuis l'ouverture de l'écran : « Nouvelle
   /// conversation » garde les mesures, le compte rendu les distingue.
   final int conversation;
+
+  /// Plat ou menu : le mode de la conversation, fixé pour sa durée.
+  final MealKind kind;
   final int turn;
   final double? costUsd;
   final int inputTokens;
   final int outputTokens;
+  final int cacheReadInputTokens;
+  final int cacheCreationInputTokens;
   final int durationMs;
   final int inventedIds;
   final int droppedCourses;
+  final int offKindCourses;
   final bool truncated;
 
   /// Le contrôle serveur a refusé la réponse : tour facturé, menu inchangé.
@@ -397,13 +425,17 @@ class WorkshopTurnMeasure {
 
   const WorkshopTurnMeasure({
     required this.conversation,
+    required this.kind,
     required this.turn,
     required this.costUsd,
     required this.inputTokens,
     required this.outputTokens,
+    this.cacheReadInputTokens = 0,
+    this.cacheCreationInputTokens = 0,
     required this.durationMs,
     this.inventedIds = 0,
     this.droppedCourses = 0,
+    this.offKindCourses = 0,
     this.truncated = false,
     this.unreadable = false,
     required this.provider,
@@ -414,15 +446,20 @@ class WorkshopTurnMeasure {
   factory WorkshopTurnMeasure.fromResult(
     WorkshopTurnResult result, {
     required int conversation,
+    required MealKind kind,
   }) => WorkshopTurnMeasure(
     conversation: conversation,
+    kind: kind,
     turn: result.turn,
     costUsd: result.usage.costUsd,
     inputTokens: result.usage.inputTokens,
     outputTokens: result.usage.outputTokens,
+    cacheReadInputTokens: result.usage.cacheReadInputTokens,
+    cacheCreationInputTokens: result.usage.cacheCreationInputTokens,
     durationMs: result.usage.durationMs,
     inventedIds: result.control.inventedIds,
     droppedCourses: result.control.droppedCourses.length,
+    offKindCourses: result.control.offKindCourses,
     truncated: result.control.truncated,
     provider: result.usage.provider,
     model: result.usage.model,
@@ -434,6 +471,7 @@ class WorkshopTurnMeasure {
   factory WorkshopTurnMeasure.unreadable(
     Map<String, dynamic>? details, {
     required int conversation,
+    required MealKind kind,
     required int fallbackTurn,
   }) {
     final usage = details?['usage'] is Map
@@ -441,10 +479,13 @@ class WorkshopTurnMeasure {
         : null;
     return WorkshopTurnMeasure(
       conversation: conversation,
+      kind: kind,
       turn: _int(details?['turn'], fallback: fallbackTurn),
       costUsd: usage?.costUsd,
       inputTokens: usage?.inputTokens ?? 0,
       outputTokens: usage?.outputTokens ?? 0,
+      cacheReadInputTokens: usage?.cacheReadInputTokens ?? 0,
+      cacheCreationInputTokens: usage?.cacheCreationInputTokens ?? 0,
       durationMs: usage?.durationMs ?? 0,
       unreadable: true,
       provider: usage?.provider ?? '?',
@@ -452,6 +493,18 @@ class WorkshopTurnMeasure {
       promptChars: _int(details?['promptChars']),
     );
   }
+}
+
+/// « cache : 95 000 lus », « cache : 95 000 écrits », « cache : 95 000 lus,
+/// 2 000 écrits » ; `null` quand rien n'est passé par le cache. Sans ce
+/// témoin, personne ne voit si le préfixe mis en cache sert.
+String? workshopCacheLabel(int readTokens, int creationTokens) {
+  if (readTokens <= 0 && creationTokens <= 0) return null;
+  final parts = [
+    if (readTokens > 0) '${formatWorkshopCount(readTokens)} lus',
+    if (creationTokens > 0) '${formatWorkshopCount(creationTokens)} écrits',
+  ];
+  return 'cache : ${parts.join(', ')}';
 }
 
 /// « 0,0123 $ » ; « non chiffré » sans montant. Jamais de valeur de repli.
@@ -488,13 +541,19 @@ String workshopEngineLabel(String provider, String model) {
   return '$provider/$model';
 }
 
-/// « 0,0123 $ · 11 240 → 420 jetons · 4,1 s · Gemini 2.5 Flash », la ligne
-/// sous chaque bulle de l'IA.
+/// « 0,0123 $ · 11 240 → 420 jetons · cache : 95 000 lus · 4,1 s · Gemini
+/// 2.5 Flash », la ligne sous chaque bulle de l'IA. Le segment « cache »
+/// n'apparaît que si des jetons sont passés par le cache.
 String workshopUsageLine(WorkshopUsage usage) {
+  final cache = workshopCacheLabel(
+    usage.cacheReadInputTokens,
+    usage.cacheCreationInputTokens,
+  );
   final parts = [
     formatWorkshopCost(usage.costUsd),
     '${formatWorkshopCount(usage.inputTokens)} → '
         '${formatWorkshopCount(usage.outputTokens)} jetons',
+    ?cache,
     formatWorkshopDuration(usage.durationMs),
     workshopEngineLabel(usage.provider, usage.model),
   ];
@@ -504,18 +563,23 @@ String workshopUsageLine(WorkshopUsage usage) {
 
 /// Le tableau récapitulatif des tours, en texte tabulé (une ligne d'en-tête,
 /// une ligne par tour), pour « Copier le tableau » et le compte rendu d'une
-/// page du cadrage.
+/// page du cadrage. Les colonnes de cache valent 0 quand rien n'y est passé :
+/// un export garde ses colonnes.
 String workshopMeasuresTable(List<WorkshopTurnMeasure> turns) {
   final lines = <String>[
     [
       'conversation',
+      'mode',
       'tour',
       'cout_usd',
       'jetons_entree',
       'jetons_sortie',
+      'cache_lus',
+      'cache_ecrits',
       'duree_ms',
       'ids_inventes',
       'services_ecartes',
+      'services_hors_plat',
       'tronque',
       'illisible',
       'moteur',
@@ -526,13 +590,17 @@ String workshopMeasuresTable(List<WorkshopTurnMeasure> turns) {
     lines.add(
       [
         '${t.conversation}',
+        t.kind.key,
         '${t.turn}',
         t.costUsd == null ? '' : t.costUsd!.toStringAsFixed(6),
         '${t.inputTokens}',
         '${t.outputTokens}',
+        '${t.cacheReadInputTokens}',
+        '${t.cacheCreationInputTokens}',
         '${t.durationMs}',
         '${t.inventedIds}',
         '${t.droppedCourses}',
+        '${t.offKindCourses}',
         t.truncated ? '1' : '0',
         t.unreadable ? '1' : '0',
         '${t.provider}/${t.model}',

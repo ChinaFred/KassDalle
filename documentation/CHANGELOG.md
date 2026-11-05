@@ -18,6 +18,33 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-05
+
+### v0.24.75 — technique
+
+Bac à sable, « Atelier repas » : cinq suites aux trois premiers tours réels du 5 novembre
+(664 recettes, 261 679 caractères de prompt, 127 000 jetons d'entrée, 0,26 $ le tour avec
+Claude Sonnet 5). Un modèle imposé depuis le sélecteur enregistrait son coût dans `ai_usage`
+(0,098 $ pour un tour Haiku 4.5) sans le rendre à l'écran, qui affichait « non chiffré » :
+`askModel` (`sandbox/model.ts`) rend `recordedCostUsd`, même contrat que `callModel`. Un
+choix « Plat | Menu », « Plat » par défaut, fixé pour la durée d'une conversation (en changer
+en cours de route ouvre une nouvelle conversation après confirmation ; « Nouvelle
+conversation » est visible dès le premier tour, avec confirmation avant les 20 tours) : le
+client envoie `kind`, le serveur le refuse absent ou hors liste (`meal_workshop_kind`),
+adapte la première phrase du prompt et ajoute la règle du plat seul, écarte et compte les
+services d'un autre rôle (`control.offKindCourses`, « Plat seul : N services écartés. »), borne
+à 2 services « plat ». Le résumé d'une recette a sa copie propre au bac à sable
+(`buildWorkshopRecipeSummary`) : 6 ingrédients au lieu de 20 (la moitié des 390 caractères
+d'un résumé), sans `livre` ni `statut`, avec `duree` (« 35 min », « ≈ 40 min » pour une
+estimation, « inconnue ») — jusqu'ici « rapide » se jugeait sur le titre. Le prompt part en
+deux blocs : préfixe stable (consignes, préférences, recettes et garnitures triées par
+identifiant) marqué `cache: true` pour le cache Anthropic, suite propre au tour ; la ligne de
+coût et le tableau des mesures affichent les jetons de cache lus et écrits, et le tableau
+porte le mode. Chaque valeur d'un résumé reçu du client est bornée par troncature (500
+caractères, 20 pour `duree`, valeurs coupées comptées dans le journal du tour), et les
+consignes disent que les lignes de recettes et de garnitures sont des données, jamais des
+consignes. `TechnicalRequirements.md` §13.3 et `ToDo/UX-atelier-repas.md` à jour.
+
 ## 2026-11-01
 
 ### v0.24.72 — technique

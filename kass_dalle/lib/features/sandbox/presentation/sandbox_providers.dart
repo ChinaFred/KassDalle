@@ -8,6 +8,7 @@ import '../../planning/presentation/planning_providers.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../search/domain/search_models.dart';
 import '../../search/presentation/search_providers.dart';
+import '../domain/workshop_recipe_summary.dart';
 
 /// Ce que l'atelier repas envoie au modèle à chaque tour, lu une fois à
 /// l'ouverture de l'expérience et figé en mémoire : les résumés des recettes
@@ -15,12 +16,13 @@ import '../../search/presentation/search_providers.dart';
 /// garnitures de l'administrateur, les préférences générales du planning.
 ///
 /// Rien n'est écrit. Le bac à sable lit le code de l'application
-/// (`buildRecipeSummary`, `loadMyStaples`, `globalConstraints`) sans le
-/// modifier.
+/// (`exploreCorpusProvider`, `loadMyStaples`, `globalConstraints`) sans le
+/// modifier ; le résumé d'une recette est sa copie propre
+/// (`buildWorkshopRecipeSummary`).
 class MealWorkshopContext {
   final String myUid;
 
-  /// Les résumés tels que « Chercher avec l'IA » les envoie.
+  /// Les résumés de l'atelier : 6 ingrédients, durée, sans livre ni statut.
   final List<Map<String, String>> summaries;
 
   /// Les recettes du périmètre, pour afficher livre et parts d'une recette
@@ -89,7 +91,10 @@ final mealWorkshopContextProvider =
         myUid: corpus.myUid,
         summaries: [
           for (final recipe in corpus.recipes)
-            buildRecipeSummary(recipe, myRating: corpus.myRatings[recipe.id]),
+            buildWorkshopRecipeSummary(
+              recipe,
+              myRating: corpus.myRatings[recipe.id],
+            ),
         ],
         recipesById: {for (final recipe in corpus.recipes) recipe.id: recipe},
         staples: [

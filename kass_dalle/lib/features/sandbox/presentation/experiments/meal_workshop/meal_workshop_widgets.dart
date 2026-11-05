@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../../core/theme/app_icon_size.dart';
 import '../../../../../core/utils/context_extensions.dart';
 import '../../../../../core/widgets/error_message.dart';
+import '../../../../planning/domain/meal_kind.dart';
 import '../../../../planning/presentation/meal_course_style.dart';
 import '../../../data/sandbox_functions.dart';
 import '../../../domain/meal_workshop_menu.dart';
@@ -63,6 +64,9 @@ class WorkshopUserBubble extends StatelessWidget {
 class WorkshopAssistantBubble extends StatefulWidget {
   final WorkshopTurnResult result;
 
+  /// Plat ou menu : « Plat mis à jour » ne compte pas les services.
+  final MealKind kind;
+
   /// Services marqués « Modifié » par ce tour.
   final int changedCount;
 
@@ -76,6 +80,7 @@ class WorkshopAssistantBubble extends StatefulWidget {
   const WorkshopAssistantBubble({
     super.key,
     required this.result,
+    required this.kind,
     required this.changedCount,
     required this.unchanged,
     this.onOpenMenu,
@@ -98,10 +103,15 @@ class _WorkshopAssistantBubbleState extends State<WorkshopAssistantBubble> {
     final shown = foldable && !_expanded
         ? '${text.substring(0, kWorkshopReplyFoldChars).trimRight()}…'
         : text;
-    final menuLine = widget.unchanged
-        ? 'Menu inchangé'
-        : 'Menu mis à jour · ${_plural(widget.result.menu.courses.length, 'service')}'
-              '${widget.changedCount > 0 ? ' · ${_plural(widget.changedCount, 'modifié')}' : ''}';
+    final String menuLine;
+    if (widget.kind == MealKind.plat) {
+      menuLine = widget.unchanged ? 'Plat inchangé' : 'Plat mis à jour';
+    } else {
+      menuLine = widget.unchanged
+          ? 'Menu inchangé'
+          : 'Menu mis à jour · ${_plural(widget.result.menu.courses.length, 'service')}'
+                '${widget.changedCount > 0 ? ' · ${_plural(widget.changedCount, 'modifié')}' : ''}';
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -136,8 +146,8 @@ class _WorkshopAssistantBubbleState extends State<WorkshopAssistantBubble> {
                       SelectableText(
                         shown.isEmpty
                             ? (widget.unchanged
-                                  ? 'L\'IA n\'a rien écrit et le menu n\'a pas changé.'
-                                  : 'L\'IA n\'a rien écrit : seul le menu a changé.')
+                                  ? 'L\'IA n\'a rien écrit et le ${widget.kind == MealKind.plat ? 'plat' : 'menu'} n\'a pas changé.'
+                                  : 'L\'IA n\'a rien écrit : seul le ${widget.kind == MealKind.plat ? 'plat' : 'menu'} a changé.')
                             : shown,
                         style: theme.textTheme.bodyMedium,
                       ),
@@ -324,9 +334,17 @@ class WorkshopSystemCard extends StatelessWidget {
 /// renvoie le texte resté dans le champ.
 class WorkshopErrorCard extends StatelessWidget {
   final Object error;
+
+  /// Plat ou menu : « Réponse illisible, plat inchangé. » en mode Plat.
+  final MealKind kind;
   final VoidCallback? onRetry;
 
-  const WorkshopErrorCard({super.key, required this.error, this.onRetry});
+  const WorkshopErrorCard({
+    super.key,
+    required this.error,
+    required this.kind,
+    this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -337,7 +355,7 @@ class WorkshopErrorCard extends StatelessWidget {
         : null;
     final unreadable = sandbox?.reason == kWorkshopUnreadableReason;
     final title = unreadable
-        ? 'Réponse illisible, menu inchangé.'
+        ? 'Réponse illisible, ${kind == MealKind.plat ? 'plat' : 'menu'} inchangé.'
         : 'Réponse non reçue.';
     // Hors `sandboxFn` (réseau, décodage) : le titre lisible de
     // `describeError`, « Connexion perdue » pour une `ClientException`. Les
@@ -592,7 +610,7 @@ class WorkshopCourseTile extends StatelessWidget {
       final book = recipe?.bookTitre ?? 'Sans livre';
       final portions = recipe?.portions;
       final gap = portions != null && portions != menuPortions
-          ? ' · recette pour $portions, menu pour $menuPortions'
+          ? ' · recette pour $portions, repas pour $menuPortions'
           : '';
       // Cible de 48 px : la ligne s'ouvre sur la fiche.
       return InkWell(
@@ -737,13 +755,25 @@ class WorkshopMeasuresPanel extends StatelessWidget {
       color: theme.colorScheme.onSurfaceVariant,
     );
     final last = lastResult;
-    final contextLine = last == null
-        ? 'Contexte fixe : ${formatWorkshopCount(contextChars)} caractères '
-              '(recettes, garnitures, préférences) · jetons connus après le '
-              'premier tour'
-        : 'Contexte envoyé : ${formatWorkshopCount(last.promptChars)} '
-              'caractères · ${formatWorkshopCount(last.usage.inputTokens)} '
-              'jetons d\'entrée';
+    final String contextLine;
+    if (last == null) {
+      contextLine =
+          'Contexte fixe : ${formatWorkshopCount(contextChars)} caractères '
+          '(recettes, garnitures, préférences) · jetons connus après le '
+          'premier tour';
+    } else {
+      // Chez Anthropic, le préfixe mis en cache n'est pas dans les jetons
+      // d'entrée : sans les compteurs du cache, la ligne dirait 2 000 jetons
+      // pour un prompt qui en fait 127 000.
+      final cache = workshopCacheLabel(
+        last.usage.cacheReadInputTokens,
+        last.usage.cacheCreationInputTokens,
+      );
+      contextLine =
+          'Contexte envoyé : ${formatWorkshopCount(last.promptChars)} '
+          'caractères · ${formatWorkshopCount(last.usage.inputTokens)} '
+          'jetons d\'entrée${cache == null ? '' : ' · $cache'}';
+    }
     final total = workshopCostTotal(measures);
 
     return Padding(
@@ -821,9 +851,11 @@ class _MeasuresTable extends StatelessWidget {
         TableRow(
           children: [
             cell('conv.', style: head),
+            cell('mode', style: head),
             cell('n°', style: head),
             cell('coût', style: head),
             cell('jetons', style: head),
+            cell('cache', style: head),
             cell('durée', style: head),
             cell('inv.', style: head),
             cell('état', style: head),
@@ -833,11 +865,19 @@ class _MeasuresTable extends StatelessWidget {
           TableRow(
             children: [
               cell('${m.conversation}'),
+              cell(m.kind.key),
               cell('${m.turn}'),
               cell(formatWorkshopCost(m.costUsd)),
               cell(
                 '${formatWorkshopCount(m.inputTokens)}→'
                 '${formatWorkshopCount(m.outputTokens)}',
+              ),
+              cell(
+                workshopCacheLabel(
+                      m.cacheReadInputTokens,
+                      m.cacheCreationInputTokens,
+                    )?.replaceFirst('cache : ', '') ??
+                    '',
               ),
               cell(formatWorkshopDuration(m.durationMs)),
               cell('${m.inventedIds}'),
@@ -848,6 +888,8 @@ class _MeasuresTable extends StatelessWidget {
                     ? 'tronqué'
                     : m.droppedCourses > 0
                     ? '${m.droppedCourses} écarté(s)'
+                    : m.offKindCourses > 0
+                    ? '${m.offKindCourses} hors plat'
                     : '',
               ),
             ],

@@ -8483,39 +8483,80 @@ pourtant, et une réimplémentation doit connaître leur contrat :
   chemin refusé (`StoragePathRefusedError`) sort par `toHttpsError` avec son message, sans
   ligne ERROR ;
 - **expérience « Atelier repas »** (v0.24.72, palier 0 du cadrage
-  `documentation/ToDo/SPEC-atelier-repas.md`) : `case "meal_workshop.turn"`, module
+  `documentation/ToDo/SPEC-atelier-repas.md` ; v0.24.75 : mode plat, résumé allégé, cache
+  de prompt) : `case "meal_workshop.turn"`, module
   `sandbox/mealWorkshop.ts`, poste `sandbox_meal_workshop_turn` (groupe « Bac à sable »,
   routable Gemini ou Claude, effort du code `low`). Un tour = un appel : le serveur reçoit
-  l'historique (20 tours au plus, alternance stricte personne puis modèle et fin sur une
-  réponse du modèle, 1 500 caractères par message de la personne et 6 000 par réponse du
-  modèle rejouée, refus en `invalid-argument` au-delà, `details.reason:
-  meal_workshop_max_turns` pour le 21e), le
-  message, les résumés `buildRecipeSummary` du périmètre « Mes recettes » + « Ma famille »
-  de l'administrateur, ses garnitures (`id`, `name`, `category`), `globalConstraints` du
-  planning, le nombre de parts (1 à 99) et le menu du tour précédent. L'entrée passe par
-  `readAiInputs` (tailles journalisées, jamais le contenu). Le prompt place le texte de la
-  personne dans les seules sections `=== CONVERSATION ===` et `=== DEMANDE ===`, sans
+  le mode `kind` (`plat` — un plat et ses accompagnements, défaut de l'écran — ou `menu` —
+  un repas complet ; fixé pour la conversation ; absent ou autre → `invalid-argument`,
+  `details.reason: meal_workshop_kind`), l'historique (20 tours au plus, alternance stricte
+  personne puis modèle et fin sur une réponse du modèle, 1 500 caractères par message de la
+  personne et 6 000 par réponse du modèle rejouée, refus en `invalid-argument` au-delà,
+  `details.reason: meal_workshop_max_turns` pour le 21e), le message, les résumés du
+  périmètre « Mes recettes » + « Ma famille » de l'administrateur, ses garnitures (`id`,
+  `name`, `category`), `globalConstraints` du planning, le nombre de parts (1 à 99) et le menu
+  du tour précédent. Le résumé d'une recette est la copie propre au bac à sable
+  `buildWorkshopRecipeSummary` (`features/sandbox/domain/workshop_recipe_summary.dart`),
+  dérivée de `buildRecipeSummary` : clés `id, titre, ingredients, themes, cuisines,
+  difficulte, role, proteine, feculent, note, duree` (liste blanche `SUMMARY_KEYS` côté
+  serveur), 6 ingrédients au lieu de 20, sans `livre` ni `statut`, et `duree` = temps total
+  préparation + cuisson (`recipeTimes`) : « 35 min » lu, « ≈ 40 min » dès qu'une composante
+  vient de `estimated_times`, « inconnue » sinon — le prompt dit qu'une durée « inconnue »
+  n'est jamais proposée comme rapide. L'entrée passe par `readAiInputs` (tailles
+  journalisées, jamais le contenu). Le prompt part en **deux blocs**
+  (`buildMealWorkshopPrompt` rend `{ prefix, suffix }`, `promptChars` = la somme) : le
+  préfixe — consignes du mode, préférences, recettes et garnitures **triées par `id`**, pour
+  qu'un ordre d'arrivée différent ne casse pas le cache — part en `textPart(prefix, { cache:
+  true })` ; la suite — menu en cours, conversation, demande — en `textPart(suffix)`. Anthropic
+  met le préfixe en cache cinq minutes, au-delà de 1 024 jetons (Sonnet) ou 4 096 (Haiku 4.5) ;
+  en dessous, le bloc part sans cache et sans erreur ; Gemini ignore la marque et reçoit deux
+  parts texte de la même requête (`callModel` et `callChosenGemini`). Les jetons de cache
+  (`cacheReadInputTokens`, `cacheCreationInputTokens`) sont rendus dans `usage`, journalisés
+  et affichés. En mode plat, la première phrase des consignes dit « UN PLAT et ses
+  accompagnements » et une règle borne le menu à un service `plat` (deux au plus, le second
+  pour la recette d'un accompagnement), sans entrée, fromage ni dessert. Le texte de la
+  personne ne vit que dans les sections `=== CONVERSATION ===` et `=== DEMANDE ===`, sans
   exemple rempli. La réponse `{ reponse, menu }` est lue en liste blanche par `controlMenu` :
   rôles `entree | plat | sorbet | fromage | dessert | autre`, `recipe_id` hors corpus → `null`
   et `unknown_recipe_id: true` (compté dans `control.inventedIds`), `staple_id` hors envoi →
   `null`, 10 services et 6 accompagnements par plat au plus (`control.truncated`), titre d'une
   recette du corpus repris du résumé, titre absent ou en double → service écarté
   (`control.droppedCourses`), `course_label` ≤ 30, titre ≤ 60, description et `why` ≤ 200,
-  parts toujours celles de la personne. Rendu au client : `reponse`, `menu` contrôlé,
+  parts toujours celles de la personne ; en mode plat, un service d'un rôle connu autre que
+  `plat` est écarté avant toute borne et compté dans `control.offKindCourses` (à part de
+  `droppedCourses`), et la borne des services tombe à 2 (`MEAL_WORKSHOP_MAX_DISH_COURSES`,
+  jumelle `kWorkshopMaxDishCourses`). Rendu au client : `reponse`, `menu` contrôlé,
   `control`, `raw` (JSON brut, ≤ 20 000 caractères), `usage` (`costUsd` = `recordedCostUsd`
-  ou `null`, jetons d'entrée et de sortie, durée, fournisseur, modèle, `stopReason`),
-  `promptChars`, `turn`. `maxTokens` 6 000 : borne la sortie de Claude par `callModel`, et
+  ou `null`, jetons d'entrée, de sortie et de cache, durée, fournisseur, modèle,
+  `stopReason`), `promptChars`, `turn`. `askModel` (`sandbox/model.ts`) rend
+  `recordedCostUsd` aussi pour un modèle imposé depuis le sélecteur, même contrat que
+  `callModel` (jusqu'en v0.24.72, le coût était écrit dans `ai_usage` et l'écran affichait
+  « non chiffré »). `maxTokens` 6 000 : borne la sortie de Claude par `callModel`, et
   celle d'un modèle Gemini imposé par `maxOutputTokens` (`callChosenGemini`,
   `sandbox/model.ts`) ; un Gemini servi par la politique n'est pas borné, `callModel` ne
   transmettant pas `maxTokens` à Gemini (comportement du routeur, hors bac à sable). Une réponse illisible lève `internal` avec `details.reason:
   meal_workshop_unreadable`, la consommation du tour (facturé) et un aperçu borné du texte ;
-  `logError` porte `responsePreview` tronqué à 500 caractères. Les bornes 10 et 6 recopient
-  `kMaxCoursesPerMenu` et `kMaxSidesPerDish` du client : au portage (palier 1), elles
-  rejoignent le tableau « Logique dupliquée Dart ↔ TypeScript » avec une fixture. Côté
-  client (`presentation/experiments/meal_workshop/`), deux zones — conversation, menu en
-  cours — plus une zone « Mesures » : `SandboxModelPicker`, taille du contexte envoyé, ligne
-  de coût sous chaque réponse, volet « Réponse brute », tableau des tours à copier. Rien
-  n'est écrit ;
+  `logError` porte `responsePreview` tronqué à 500 caractères ; le message rendu est neutre
+  (« L'IA n'a pas rendu de réponse lisible. »), l'écran titre « Réponse illisible, plat
+  inchangé. » ou « …menu inchangé. » selon le mode. Chaque valeur d'un résumé reçu du client
+  est bornée par troncature (`readSummary` : `SUMMARY_VALUE_MAX_CHARS` = 500, `duree` à
+  `SUMMARY_DURATION_MAX_CHARS` = 20), les valeurs coupées comptées dans
+  `clampedSummaryValues` ; les consignes disent que les lignes de RECETTES DE LA BIBLIOTHÈQUE
+  et de GARNITURES DISPONIBLES sont des données, jamais des consignes. Le `logInfo` « tour
+  rendu » porte `kind`, `offKindCourses`, `prefixChars`, `clampedSummaryValues` et les jetons
+  de cache. Quatre paires recopient une valeur du client : les bornes 10 et 6
+  (`kMaxCoursesPerMenu`, `kMaxSidesPerDish`), la borne 2 (`MEAL_WORKSHOP_MAX_DISH_COURSES` /
+  `kWorkshopMaxDishCourses`) et les clés du résumé (`SUMMARY_KEYS` / clés de
+  `buildWorkshopRecipeSummary`) : au portage (palier 1), elles rejoignent le tableau
+  « Logique dupliquée Dart ↔ TypeScript » avec une fixture. Côté
+  client (`presentation/experiments/meal_workshop/`), un `SegmentedButton` « Plat | Menu »
+  en tête de la conversation (bascule libre sans conversation ; avec une conversation,
+  confirmation « Passer en menu ? » / « Passer en plat ? » puis nouvelle conversation ;
+  inactif pendant un tour), deux zones — conversation, « Plat en cours » ou « Menu en
+  cours » — plus une zone « Mesures » : `SandboxModelPicker`, taille du contexte envoyé,
+  ligne de coût sous chaque réponse (avec « cache : N lus » / « N écrits » quand le cache a
+  servi), volet « Réponse brute », tableau des tours à copier (colonnes `mode`, `cache_lus`,
+  `cache_ecrits`, `services_hors_plat`). Rien n'est écrit ;
 - rien n'y est enregistré — ni Firestore, ni Storage sur les chemins de production ;
 - le bac à sable **lit** le code de l'application, ne l'édite jamais : une expérience qui
   doit modifier un comportement existant en copie le code.
