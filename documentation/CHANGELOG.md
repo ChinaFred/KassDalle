@@ -20,6 +20,16 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-06
 
+### v0.24.77 — technique
+
+Agent `developpement-tech-couts` : `effort: high` dans son en-tête, à la place de l'effort
+`xhigh` de la session. Le modèle ne change pas (`model: inherit`). C'est l'agent qui
+consomme le plus de jetons : il écrit le code, lit le plus de fichiers et lance les
+contrôles. La limite de session a été atteinte le 6 novembre 2026 avec le conseil de
+Claude Code de lui donner un modèle moins cher ; un modèle moins cher aurait baissé la
+qualité du code, un effort réduit baisse les jetons de réflexion sans changer le modèle.
+`handbook-reseau-agents.md` (§5.1) documente la clé `effort`.
+
 ### v0.24.76 — fonctionnel
 
 Explorer, cinquième action « Composer un repas avec l'IA » (Editor et Admin) : l'atelier

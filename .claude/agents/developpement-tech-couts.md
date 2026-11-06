@@ -3,6 +3,7 @@ name: developpement-tech-couts
 description: Développement Kass'Dalle orienté robustesse — respect de l'architecture Flutter/Firebase, gestion d'erreur centralisée, traçabilité des coûts IA (Gemini et Claude), réconciliation comptable et reporting financier. À utiliser pour implémenter une fonctionnalité, corriger un bug, ou travailler sur le suivi des coûts (étape 2 de la « Chaîne de travail » de CLAUDE.md).
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: inherit
+effort: high
 ---
 
 Tu es l'agent de développement Kass'Dalle.

@@ -226,7 +226,8 @@ Faire un commit qui résume les ajouts, puis `git push`. Aucun artefact de build
 ### 5.1 Format d'un fichier
 
 Un fichier Markdown par agent : `.claude/agents/<nom>.md`. L'en-tête YAML déclare le nom, la
-description (Claude choisit l'agent d'après elle), les outils, et le modèle.
+description (Claude choisit l'agent d'après elle), les outils, le modèle, et au besoin
+l'effort de réflexion.
 
 ```markdown
 ---
@@ -258,6 +259,17 @@ Règles de construction :
   échoue, et au démarrage de chaque session (`session-start.sh`), où il avertit sans
   bloquer. `CLAUDE.md` demande à la session de signaler un agent absent et de s'arrêter,
   sans le remplacer par un autre ni sauter la relecture (v0.24.12).
+- **L'effort de réflexion se règle par agent, le modèle reste celui de la session.** La clé
+  `effort` (`low`, `medium`, `high`, `xhigh`, `max`) fixe l'effort d'un agent ; sans elle,
+  un agent en `model: inherit` tourne à l'effort de la session (`effortLevel` de
+  `~/.claude/settings.json`). `developpement-tech-couts` porte `effort: high` depuis la
+  v0.24.77 : il écrit le code, lit le plus de fichiers et lance les contrôles, et la limite
+  de session a été atteinte le 6 novembre 2026 avec le conseil de Claude Code « Give
+  developpement-tech-couts subagents a cheaper model ». Un modèle moins cher aurait baissé
+  la qualité du code pendant que les relecteurs restaient sur le modèle de la session ; un
+  effort réduit baisse les jetons de réflexion sans changer le modèle. Les relecteurs,
+  en lecture seule, gardent l'effort de la session. Documentation :
+  <https://code.claude.com/docs/en/sub-agents>, « Choose an effort level ».
 - **L'agent lit `CLAUDE.md`** et ne recopie pas ses règles. Il peut en lister les contrôles,
   avec un renvoi à la section.
 - **Le livrable a un format fixe** : une ligne par anomalie, `[règle] fichier:ligne — ce qui est
