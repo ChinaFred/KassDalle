@@ -44,6 +44,9 @@ const EDITOR_ONLY: ReadonlyArray<[string, string, string]> = [
   ["geminiCallables.ts", "suggestPlatingFn", '"plating_coach"'],
   ["nutritionCallable.ts", "computeRecipeNutritionFn", '"calcul_nutrition"'],
   ["moderationCallables.ts", "moderateAndPromoteImagesFn", "MODERATION_FEATURE"],
+  // L'atelier repas mène à des brouillons enregistrés : éditeurs seulement.
+  ["mealWorkshopCallable.ts", "mealWorkshopTurnFn", "MEAL_WORKSHOP_TURN_FEATURE"],
+  ["mealWorkshopCallable.ts", "mealWorkshopRecipeFn", "MEAL_WORKSHOP_RECIPE_FEATURE"],
 ];
 
 describe("callables réservées aux éditeurs (tickets #162 et #163)", () => {

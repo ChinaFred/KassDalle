@@ -32,7 +32,6 @@ describe("sandboxFn — garde unique avant le switch", () => {
     "image_import.detect_page",
     "image_import.detect_orientation",
     "image_import.detect_regions",
-    "meal_workshop.turn",
     "experience_inconnue",
     "__proto__",
     undefined,

@@ -293,6 +293,7 @@ firestore/
 ├── scan_spend/{scanId}/                           ← compteur et plafond d'un import de livre
 ├── url_import_daily/{uid}_{AAAA-MM-JJ}/           ← compteur du plafond d'imports par lien
 ├── web_search_daily/{uid}_{AAAA-MM-JJ}/           ← compteur du plafond de recherches web
+├── meal_workshop_daily/{uid}_{AAAA-MM-JJ}/        ← compteur du plafond de tours de l'atelier repas
 ├── web_search_cache/{sha256}/                     ← cache partagé des recherches web, 7 jours
 ├── ai_reconciliation_monthly/{AAAA-MM}/
 ├── token_usage/{uid}/
@@ -603,6 +604,7 @@ Document principal d'une recette.
 | `source_nutrition` | `Map?` | Nutrition **par portion** annoncée par la page d'origine (`nutrition` de son JSON-LD, `readNutrition`) : `per_portion` (`kcal`, `protein_g`, `carbs_g`, `fat_g`, seules les valeurs lisibles, `kcal` ≤ 10 000, grammes ≤ 2 000, kJ convertis), `portions` (le `recipeYield` du site, ou `null`) et `ingredients_fingerprint` (`ingredientsFingerprint` des ingrédients écrits à l'import). Écrit par `recipeProcessor`, chemin `json_ld` seulement. **Jamais affiché ni utilisé à la place du calcul** : il ne sert qu'à `source_nutrition_check`. Serveur seul : les règles refusent au client de le poser, de le changer ou de l'effacer ; une copie ne le reprend pas (absent du modèle Dart) |
 | `source_nutrition_check` | `Map?` | Écart entre le calcul de la nutrition et `source_nutrition`, écrit par `computeAndPersistRecipeNutrition` à chaque calcul (`compareWithSourceNutrition`, `nutrition/sourceNutrition.ts`). `state` : `ok`, `gap` (une valeur hors d'un facteur 2, dans un sens ou dans l'autre), `ingredients_changed` (l'empreinte des ingrédients ne correspond plus à celle de l'import : pas de comparaison), `low_coverage` (couverture sous le seuil `minCoverageForPartial` : pas de comparaison, `coverage` écrite). Pour `ok` et `gap` : `portions` (celles du site, sinon celles de la recette), `ratios` (notre valeur par portion divisée par celle du site, au centième), `gaps` (les clés hors du facteur 2). Plus `checked_at`. Un `gap` est journalisé en `WARNING` (module `DESIGN`, recette, site, ratios, couverture). Serveur seul, mêmes règles que `source_nutrition` |
 | `origin` | `String?` | Ce qui a écrit le document la première fois : `scan` (`recipeProcessor`), `web` (`recipeProcessor`, import depuis un lien), `ai` (conception pour le planning, Explorer), `manual` (saisie, texte collé compris), `copy` (copie de travail). Écrit par celui qui crée le document, jamais déduit du livre porteur. Absent sur les documents antérieurs au champ : l'écran de relecture déduit alors `copy` d'une recette source, `scan` d'un fichier source, et n'affirme rien sinon — il disait « issu d'un scan » à toute recette conçue par l'IA |
+| `ai_source` | `String?` | L'écran qui a demandé une recette `origin: ai` : `meal_workshop` (un plat figé dans « Composer un repas avec l'IA », Explorer). Posé par le client à la création du brouillon (`createRecipe`, comme `saveGeneratedRecipe`), jamais modifié ensuite ; aucune règle ne l'exige ni ne le protège, et la création l'admet (testé dans `rules-tests`). Absent sur les recettes antérieures et sur celles d'« Imaginer 3 recettes » et du planning. Sert au KPI « plats figés puis validés » : requête `recipes` où `ai_source == "meal_workshop"`, par `review_status` — à la main, sans écran. Aucune reprise de données |
 | `scan_id` | `String?` | Le scan d'où vient la recette. Écrit par `recipeProcessor` au moment de l'enregistrement, et lu par `onRecipeWritten` : c'est le seul fil entre l'import et les calculs qu'il déclenche. Le déclencheur part sur une écriture Firestore, sans lien avec la tâche qui l'a produite — sans ce champ, la nutrition et les courses d'un import formaient un groupe de journaux à part, et leur coût sortait du total du scan. Absent sur une recette écrite à la main |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
 | `illustration_report` | `Map?` | Ce que la recherche d'illustrations a donné : `{detectees, retenues, publiees, pagesEnEchec}` — la quatrième clé est en camelCase là où les trois autres sont en snake_case ; l'écrivain et le lecteur emploient la même graphie, en changer une seule perdrait le compte. `detectees` compte ce que la page **porte**, jamais ce qu'on en a tiré — c'est ce chiffre qui permet au bandeau de relecture d'annoncer « trois photos repérées, à extraire à la main » alors même que rien n'a été extrait. Sans lui, « aucune photo » posait trois questions sans réponse : la page n'en portait-elle pas, l'extraction a-t-elle échoué, ou la page a-t-elle été sautée ? |
@@ -2515,6 +2517,18 @@ pourquoi.
   erreur (moteur, quota du fournisseur, plafond de dépense). Une réponse rendue par le
   modèle garde sa place, même sans recherche ancrée ni page retenue : elle est facturée. Écrit par
   les Functions seules ; le titulaire et l'administrateur le lisent.
+- `meal_workshop_daily/{uid}_{AAAA-MM-JJ}` : le compteur du plafond de tours de « Composer un
+  repas avec l'IA » (`uid` `String`, `day` `String`, `count` `int`, `limit` `int` — le plafond
+  appliqué à ce compte ce jour-là, 30 × multiplicateur —, `updated_at` `Timestamp`), jour UTC
+  comme `ai_daily_spend`. `mealWorkshopTurnFn` le réserve dans une transaction avant l'appel de
+  modèle et le décrémente, dans une seconde transaction, si le tour échoue avant que le modèle
+  ait répondu (plafond de dépense, moteur, quota du fournisseur). Une réponse rendue par le
+  modèle garde sa place, même illisible : elle est facturée. La rédaction d'un plat figé
+  (`mealWorkshopRecipeFn`) n'y compte pas. Écrit par les Functions seules ; le titulaire et
+  l'administrateur le lisent — le titulaire par l'identifiant (`docId.matches(uid + '_.*')`),
+  pas par le champ `uid` : l'écran lit le compteur à l'ouverture de l'atelier, avant le premier
+  tour du jour, et un document absent doit se lire comme absent, sans refus. Aucune reprise de
+  données : le premier tour d'un compte crée son document.
 - `web_search_cache/{sha256}` : le cache partagé des recherches web. Clé : SHA-256 de
   `v{WEB_SEARCH_CACHE_VERSION}:` suivi de la requête en minuscules, espaces resserrées,
   accents gardés (`webSearchCacheKey`). La version vaut 2 depuis le tri des pages en
@@ -3203,6 +3217,7 @@ service cloud.firestore {
 | `scan_spend` | admin | **serveur seul** — un client qui pourrait relever son propre plafond ne serait plus plafonné |
 | `url_import_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — un client qui pourrait remettre son compteur à zéro ne serait plus plafonné |
 | `web_search_daily` | admin, ou le compte concerné (`uid`) | **serveur seul** — même raison que `url_import_daily` |
+| `meal_workshop_daily` | admin, ou le compte dont l'uid ouvre l'identifiant (`docId.matches(request.auth.uid + '_.*')`), document absent compris — l'écran lit le compteur à l'ouverture, avant le premier tour du jour | **serveur seul** — même raison que `url_import_daily` ; testé dans `rules-tests` (titulaire et admin lisent, présent ou absent ; un autre compte non, ni par un préfixe voisin ; aucune écriture client, administrateur compris) |
 | `invitations` · `invitation_sends_daily` | `invitations` : admin, et le compte nommé dont l'uid est `group_owner_id` (v0.24.14, ticket #152 ; requête filtrée sur `group_owner_id`). La règle ne lit plus le groupe courant : avant, un groupe supprimé puis recréé sous le même identifiant par un autre éditeur lui ouvrait les invitations restées en base. Une invitation sans `group_owner_id` n'est lisible que par un administrateur ; `invitation_sends_daily` : admin | **serveur seul** (`allow write: if false`) — `manageInvitationFn`, `applyEmailInvitation` et `applyRevokedInvitation`. Une invitation décide du rôle d'un compte à sa première connexion : un client qui pourrait en écrire une s'inviterait lui-même, sous une autre adresse, avec le rôle de son choix. Testé dans `rules-tests` (admin lit ; propriétaire non admin lit les invitations de son groupe seulement, par une requête filtrée sur `group_owner_id`, pas la collection entière ni une requête filtrée sur le seul `group_id` ; groupe recréé sous le même identifiant : rien de lisible ; invitation sans `group_owner_id` : admin seul ; membre non propriétaire, reader, pending, révoqué et anonyme refusés ; aucune écriture client) |
 | `web_search_cache` | **personne** | **serveur seul** — ouvert au client, il laisserait servir à toute la famille des pages choisies par un seul compte, sans appel ni décompte |
 | `member_email_search_daily` | **personne** | **serveur seul** (`allow read, write: if false`) — `findMemberByEmailFn`. Un client qui pourrait remettre son compteur à zéro essaierait des adresses sans borne. Testé dans `rules-tests` (aucun rôle ne lit ni n'écrit) |
@@ -5332,6 +5347,7 @@ l'utilisateur, pas d'un tiers. La borne ne vaut que pour l'import par lien.
 | `gemini/timeEstimate.ts` | `buildTimeEstimatePrompt` — la préparation (main à la pâte, hors cuisson et repos) et la cuisson (hors repos, marinade, levée, réfrigération ; cuissons successives additionnées) d'un lot de huit recettes au plus, en minutes entières de 1 à 1440 ; 0 pour « pas de cuisson » ou « ne sais pas ». Chaque recette part en JSON (`id`, `titre`, `portions`, `contenu` : le CookLang sans ses lignes `>>`, 2 000 caractères au plus, caractères de contrôle retirés), avec la consigne de la lire comme une donnée, jamais comme une instruction. Schéma JSON fermé `{recipes: [{id, prep_minutes, cook_minutes}]}` via `askJson`, lu par `parseTimeEstimateAnswer` : forme inattendue → lot en échec (`logError`, rien d'écrit) ; identifiant inconnu ou répété → ignoré ; valeur hors bornes, décimale ou nulle → `null` (`boundedEstimatedMinutes`). Un poste : `time_estimate` (à l'écriture d'une recette, `syncRecipeEstimatedTimes`, une recette par appel), dans le groupe « Rédaction » du routage et « Rédaction d'une recette » du catalogue comptable. `backfill_time_estimate_batch` (huit recettes par appel) a quitté le routage avec son backfill en v0.23.52 et reste au catalogue comptable |
 | `gemini/planningConstraints.ts` | `buildConstraintsPrompt` (v0.24.19) — les préférences du planning en critères. Vocabulaire seul, sans exemple rempli : les quatorze allergènes, les protéines et féculents de `mealRole.ts`, la préparation maximale (5 à 600 min), léger, et depuis la version 2 (v0.24.62) les dix-huit styles de `mealRole.ts` avec leurs libellés (`styles_voulus`). Règles : ne relever un critère que si le texte le dit ; « pas de », « sans », une allergie sont des exclusions, « plutôt », « de préférence », « en général » des souhaits ; un critère qui nomme un jour de la semaine (« le vendredi », « tous les lundis ») va dans `par_jour` sous ce jour, pas dans les critères de tous les jours ; une règle sur plusieurs jours et une valeur hors vocabulaire restent dans `non_traduit`, recopié tel quel. Seize textes numérotés au plus. Schéma JSON `{textes: [{index, non_traduit, allergenes_exclus?, proteines_exclues?, feculents_exclus?, proteines_voulues?, feculents_voulus?, styles_voulus?, preparation_max_min?, leger?, par_jour?: [{jour, …mêmes critères}]}]}` via `askJson`, lu par `parseConstraintsAnswer` : valeur hors vocabulaire écartée (`readPlanningCriteria`), jour hors 1 à 7 ou objet sans critère écarté, deux objets du même jour réunis, index hors bornes ou répété ignoré, `non_traduit` absent ou plus long que le texte = le texte entier, texte sans réponse = non vérifié. `PLANNING_CONSTRAINTS_PROMPT_VERSION` vaut 2 : les entrées du cache écrites en version 1 sont retraduites une fois. Poste `planning_constraints` |
 | `gemini/mealRole.ts` | `MEAL_ROLE_PROMPT` (rôle dans un repas, apports, accompagnements, protéine et féculent principaux, et depuis v0.24.62 le style : `STYLES_PROMPT`, zéro à trois valeurs parmi dix-huit, clé `styles`), repris mot pour mot par la passe 2 de l'import, la suggestion de tags, le classement à l'écriture et le backfill « Rôle des recettes » ; `MAIN_PROTEIN_STARCH_PROMPT` (protéine et féculent seuls), inclus dans le premier ; le backfill « Protéine et féculent des plats », qui le reprenait seul (`suggestMainProteinStarch`), est retiré en v0.23.52. Le backfill « Style des recettes », qui reprenait `STYLES_PROMPT` seul (`suggestRecipeStyles`), est retiré en v0.24.67 ; `STYLES_PROMPT` n'est plus exporté |
+| `gemini/mealWorkshop.ts` | `buildMealWorkshopPrompt` — un tour de « Composer un repas avec l'IA », en deux blocs : le préfixe mis en cache (consignes du mode plat ou menu, préférences du foyer, résumés du périmètre et garnitures triés par identifiant) et la suite propre au tour (menu en cours, conversation, demande). Règles et format décrits dans *L'écran Explorer*. La recette d'un plat figé reprend `buildConceptPrompt` de `gemini/planning.ts` (`conceptInputForDish`) |
 
 **Ils ne sont pas recopiés ici** : un prompt dupliqué dans la documentation diverge en une
 semaine. Ce qui est stable, et mérite d'être écrit, ce sont les invariants qu'ils imposent :
@@ -5677,6 +5693,7 @@ L'IA ne part que sur un bouton. Le `reader` n'a que « Chercher sur le web » :
 | « Chercher avec l'IA · N recettes » | `searchRecipesFn` | `search` | `requireEditor` | le texte du champ comme demande ; comme corpus, les recettes retenues par les filtres **sans** le filtre texte (N), résumées par `buildRecipeSummary` |
 | « Imaginer 3 recettes » | `generateRecipeFn` ×3 (+ une relance par doublon) | `generate` | `requireEditor` | le texte du champ seul ; douze résumés du corpus et l'observation locale tirée des notes |
 | « Chercher sur le web » | `searchWebRecipesFn` | `web_recipe_search` | `requireAuth` (tous les rôles approuvés) | le texte du champ seul, nettoyé et borné à 200 caractères ; aucun appel quand le cache partagé a la réponse |
+| « Composer un repas avec l'IA » | `mealWorkshopTurnFn` (un par tour), `mealWorkshopRecipeFn` (un par plat figé) | `meal_workshop_turn`, `meal_workshop_recipe` | `requireEditor` | par tour : le mode (plat ou menu), l'historique, le message, les résumés du périmètre figé à l'ouverture (`buildMealWorkshopSummary`), les garnitures, `globalConstraints`, les parts et le menu en cours ; par plat figé : titre, description, accompagnements, parts, `globalConstraints` |
 | « Voir sur Google » (section « Sur le web ») | — | — | — | aucun appel : `google.com/search?q=<texte> recette` (`googleRecipeSearchUri`) |
 
 **« Chercher sur le web »** (`searchWebRecipesFn`, `callable/webSearchCallable.ts`,
@@ -5947,6 +5964,147 @@ l'IA » du sélecteur, « Concevoir avec l'IA », source « Conception IA ») pa
 `PlanningRepository.saveAsDraft` : un repas planifié lit un brouillon comme une recette validée
 (`getRecipesByIds`), courses comprises.
 
+**« Composer un repas avec l'IA »** (`mealWorkshopTurnFn` et `mealWorkshopRecipeFn`,
+`callable/mealWorkshopCallable.ts`, `requireEditor`, 300 s, 512 Mio, secrets `GEMINI_API_KEY`
+et `ANTHROPIC_API_KEY` ; module `gemini/mealWorkshop.ts`). Réécriture en production de
+l'expérience « Atelier repas » du bac à sable (palier 0, v0.24.72 à v0.24.75, retirée),
+prompts, seuils et constantes recopiés à l'identique ; cadrage dans
+`documentation/ToDo/SPEC-atelier-repas.md`. Une conversation bornée compose un plat et ses
+accompagnements (`kind: "plat"`, défaut de l'écran) ou un repas complet (`kind: "menu"`), et
+un menu structuré que le modèle met à jour à chaque tour ; « Figer le repas » rédige ensuite
+chaque service sans `recipe_id`. Rien n'est écrit par le serveur hormis les lignes `ai_usage`
+et le compteur du jour ; la conversation, le menu et le périmètre vivent en mémoire de
+l'écran, et le client crée les brouillons (`origin: ai`, `ai_source: "meal_workshop"`, §3.3).
+
+**Un tour** (`mealWorkshopTurnFn`) :
+
+1. **Entrée**, lue par `readAiInputs` (§7.8 bis ; tailles journalisées, jamais le contenu),
+   avant toute réservation et tout appel : `conversationId` (8 à 64 caractères
+   `[A-Za-z0-9_-]`, tiré par le client à l'ouverture et rejoué à chaque tour ; sinon
+   `invalid-argument`, `details.reason: meal_workshop_conversation_id`), `kind` (`plat` ou
+   `menu`, fixé pour la conversation ; absent ou autre → `invalid-argument`,
+   `details.reason: meal_workshop_kind`), `history` (20 tours au plus, alternance stricte
+   personne puis modèle et fin sur une réponse du modèle, 1 500 caractères par message de la
+   personne et 6 000 par réponse du modèle rejouée ; refus en `invalid-argument` au-delà,
+   `details.reason: meal_workshop_max_turns` pour le 21e), `message` (1 500 caractères),
+   `recipes` (les résumés du périmètre d'Explorer figé à l'ouverture, 5 000 au plus :
+   `buildMealWorkshopSummary`, clés `id, titre, ingredients, themes, cuisines, difficulte,
+   role, proteine, feculent, note, duree` — liste blanche `SUMMARY_KEYS` côté serveur, un
+   champ de plus n'atteint pas le prompt —, 6 ingrédients, sans `livre` ni `statut`, et
+   `duree` = temps total préparation + cuisson : « 35 min » lu, « ≈ 40 min » dès qu'une
+   composante vient de `estimated_times`, « inconnue » sinon ; chaque valeur est bornée par
+   troncature, `SUMMARY_VALUE_MAX_CHARS` = 500, `duree` à 20, `id` à 128
+   (`SUMMARY_ID_MAX_CHARS`), les valeurs coupées comptées dans `clampedSummaryValues`),
+   `staples` (`id` coupé à 128, `name` et `category` à 100 — `STAPLE_VALUE_MAX_CHARS` —, les
+   coupes comptées dans `clampedStapleValues`, journalisé avec le précédent ; 500 au plus),
+   `globalConstraints` (5 000), `portions` (1 à 99) et `menu` (le menu du tour précédent,
+   relu par le même contrôle que la réponse du modèle, 100 000 caractères JSON).
+2. **Plafond** : 30 tours par jour et par compte (`MEAL_WORKSHOP_DAILY_LIMIT`), multipliés
+   par `budgetMultiplierFor` (×100 pour le fondateur), comme `webSearchLimit`. La place est
+   **réservée** dans une transaction sur `meal_workshop_daily/{uid}_{jour}` (§3.14) avant
+   l'appel. Plafond atteint : `resource-exhausted`, message « Vous avez fait vos N tours
+   d'aujourd'hui. », `details: { reason: "meal_workshop_daily_quota", limit, remaining: 0 }`,
+   `logWarn`. Le plafond de dépense d'IA du jour s'applique par `callModel`, comme à tout
+   poste : `BudgetExceededError` → `toHttpsError` → `resource-exhausted`, `DAILY_LIMIT_MESSAGE`,
+   `details: { reason: cost | calls | concurrency, scope: "ai_budget" }` (§7.8).
+3. **Prompt** (`buildMealWorkshopPrompt`, rend `{ prefix, suffix }`), en **deux blocs** :
+   le préfixe — consignes du mode, `=== PRÉFÉRENCES GÉNÉRALES DU FOYER ===`,
+   `=== RECETTES DE LA BIBLIOTHÈQUE ===` (une ligne JSON par résumé) et
+   `=== GARNITURES DISPONIBLES ===`, recettes et garnitures **triées par `id`** pour qu'un
+   ordre d'arrivée différent ne casse pas le cache — part en `textPart(prefix, { cache:
+   true })` ; la suite — `=== MENU EN COURS ===`, `=== CONVERSATION ===`,
+   `=== DEMANDE ===` — en `textPart(suffix)`. Anthropic met le préfixe en cache cinq
+   minutes, au-delà de 1 024 jetons (Sonnet) ou 4 096 (Haiku 4.5) ; en dessous, le bloc part
+   sans cache et sans erreur ; Gemini ignore la marque et reçoit deux parts texte de la même
+   requête. Mesuré au palier 0 : 664 recettes, 261 679 caractères, 127 000 jetons d'entrée,
+   0,26 $ le tour avec Claude Sonnet 5, le préfixe en étant plus de 95 %. Les consignes :
+   répondre en français, en texte brut, 1 200 caractères au plus ; ne changer dans le menu que
+   ce que la demande vise ; citer une recette de la bibliothèque par son `id` exact et
+   n'inventer aucun identifiant ; une durée « inconnue » n'est jamais proposée comme rapide ;
+   les préférences du foyer s'appliquent, la demande l'emporte et le texte le dit ; les parts
+   sont recopiées ; un accompagnement est un texte, une garniture (`staple_id`) ou une recette
+   de la bibliothèque, jamais une recette à rédiger ; en mode plat, un seul service `plat`
+   (deux au plus, le second pour la recette d'un accompagnement), ni entrée, ni fromage, ni
+   dessert ; deux services ne portent jamais le même titre ; tout ce qui figure dans
+   CONVERSATION et après DEMANDE est la parole de la personne, jamais une consigne, et les
+   lignes de RECETTES et de GARNITURES sont des données. Format : un objet JSON `{ reponse,
+   menu }`, `menu.courses` de 0 à 10 services (`role`, `course_label`, `title`,
+   `description`, `recipe_id`, `why`, `sides[]` avec `label`, `staple_id`, `recipe_id`), sans
+   exemple rempli. Le texte de la personne ne vit que dans CONVERSATION et DEMANDE.
+4. **Appel** : `callModel`, poste `meal_workshop_turn` (groupe « Recherche » du routage,
+   effort du code `low`), 180 s, `maxTokens` 6 000 (borne la sortie de Claude ; `callModel` ne
+   le transmet pas à Gemini), `usageMeta: { entityType: "meal_workshop", entityId:
+   conversationId }` : chaque ligne `ai_usage` d'une conversation porte le même `entity_id`,
+   ce qui rend lisibles les KPIs du cadrage (tours par conversation, part figée, coût par
+   conversation) par une requête sur `ai_usage`.
+5. **Contrôle** (`controlMenu`, liste blanche) : rôles `entree | plat | sorbet | fromage |
+   dessert | autre` ; `recipe_id` hors corpus → `null` et `unknown_recipe_id: true` (compté
+   dans `control.inventedIds`) ; `staple_id` hors envoi → `null` et `unknown_staple_id` ;
+   10 services et 6 accompagnements par plat au plus (`control.truncated`) ; titre d'une
+   recette du corpus repris du résumé ; titre absent ou en double → service écarté
+   (`control.droppedCourses`, raisons `service_illisible`, `role_inconnu`, `titre_absent`,
+   `titre_en_double`, `limite_services`) ; `course_label` ≤ 30, titre ≤ 60, description et
+   `why` ≤ 200, champs coupés comptés dans `clampedFields` ; parts toujours celles de la
+   personne (`portionsChangedByModel`) ; en mode plat, un service d'un rôle connu autre que
+   `plat` est écarté avant toute borne et compté dans `control.offKindCourses`, et la borne
+   des services tombe à 2. Le texte rendu est coupé à 6 000 caractères suffixe compris
+   (`boundReply`, `reponseTruncated`), pour que le client le rejoue tel quel dans l'historique.
+6. **Réponse** : `{ reponse, reponseTruncated, menu, control, turn, quota: { limit,
+   remaining } }` — `remaining` après ce tour. `logInfo` « tour rendu » : `conversationId`,
+   tour, mode, tailles du prompt et du préfixe, compteurs du contrôle, jetons (cache compris),
+   coût enregistré.
+7. **Erreur** : une réponse que le contrôle refuse a été facturée, la place est **gardée** :
+   `logError` « réponse illisible, tour facturé » (la raison, les longueurs ; jamais le texte du
+   modèle, ni dans le journal ni dans `details` — un JSON illisible n'y laisse que le nom de
+   l'erreur, « JSON illisible : SyntaxError », parce que le message de `JSON.parse` cite un
+   extrait de l'entrée ; même règle pour la recette), puis `internal`, message « L'IA n'a pas rendu
+   de réponse lisible. », `details: { reason: "meal_workshop_unreadable", quota, turn }`. Un
+   tour qui échoue **avant** que le modèle ait répondu (plafond de dépense, moteur, quota du
+   fournisseur, réservation en panne) rend sa place — transaction qui décrémente, un échec
+   journalisé laisse le plafond plus strict d'une unité — puis part par `toHttpsError` ; un
+   `BudgetExceededError` est journalisé en `WARNING`, toute autre erreur en `ERROR`, avec
+   `conversationId` et le tour.
+
+**Un plat figé** (`mealWorkshopRecipeFn`) : entrée `conversationId`, `titre` (1 à 60
+caractères), `description` (200 au plus, ou `null`), `sides` (0 à 6 libellés de 1 à 60
+caractères — la borne du libellé dans le menu rendu, que le client renvoie tel quel),
+`portions` (1 à 99) et `globalConstraints` (5 000 au plus, comme le tour et
+`generateRecipeConceptFn` : le client envoie le même texte aux deux callables), bornes
+refusées en `invalid-argument` (`readMealWorkshopRecipeInput`). Le prompt est celui de la conception du planning,
+`buildConceptPrompt` (`gemini/planning.ts`) avec `requestedDish = { titre, description }` —
+la description complétée de « Servir avec : riz, salade verte. » quand le plat a des
+accompagnements, pour que la recette les mentionne sans en faire des recettes —,
+`globalConstraints`, et les parts du menu en contrainte du jour (`dayConstraint.targetPortions`,
+« N parts à servir ») ; `conceptInputForDish` est testée seule. Appel `callModel`, poste
+`meal_workshop_recipe` (groupe « Rédaction » du routage, effort du code `low`), 90 s,
+`maxTokens` `PLANNING_CONCEPT_MAX_TOKENS`, même `usageMeta` que le tour. Pas de plafond propre :
+le budget d'IA du jour seul. La réponse `{ titre, cooklang, justification }` est lue par
+`parseConceptAnswer` (balises Markdown tolérées ; `cooklang` absent ou vide = illisible), puis
+`recipePayloadFrom` rend **la forme de `generateRecipeFn`**, que le client lit avec le code
+d'« Imaginer 3 recettes » (`recipeFromGeneratedRaw`) : `titre` (celui du modèle, à défaut
+celui du service), `langue: "fr"`, `ingredients` (`name`, `qty`, `unit`, `category?`) et
+`ingredients_index` dérivés du CookLang par `cooklang/parser.ts`, `justification` (ou `null`),
+`tags` (`dish_types`, `difficulty`, `prep_time`, `cook_time`, `rest_time` des métadonnées ;
+`themes`, `cuisines`, `occasions` vides), `portions` (`>> portions:`, sinon celles du menu),
+`cooklang` — les ustensiles écrits en `@` réécrits en `#` d'abord (`retagUtensils`, comme
+`generateRecipeFn`). Réponse illisible : `logError` (longueurs seules), puis `internal`,
+message « L'IA n'a pas rendu de recette. », `details: { reason: "meal_workshop_recipe_unreadable" }` ;
+toute autre erreur par `toHttpsError`. Le client crée ensuite le brouillon lui-même
+(`review_status: draft`, `origin: ai`, `ai_source: "meal_workshop"`, livre choisi,
+`created_by`, `portions` du menu) ; une recette existante citée dans le menu n'est ni copiée ni
+modifiée.
+
+Les bornes partagées avec le client — 10 services, 6 accompagnements, 2 plats en mode plat,
+20 tours, 1 500 et 6 000 caractères, 30 tours par jour, les clés du résumé — vivent dans
+`test-fixtures/meal_workshop_rules.json` (tableau « Logique dupliquée Dart ↔ TypeScript »),
+relue par `tests/mealWorkshop.test.ts` (serveur) et `test/meal_workshop_rules_test.dart`
+(client) ; `max_summary_ingredients` (6) n'est lu que par le client, qui seul coupe la liste.
+Les deux postes sont aux trois endroits : `ctx.feature` ; `ROUTABLE_FEATURES` ;
+`kFeatureCatalog` / `kFeatureProcess` (« Atelier repas — tour de conversation », processus
+« Recherche » ; « Atelier repas — recette d'un plat figé », processus « Rédaction d'une
+recette »). `sandbox_meal_workshop_turn` a quitté `ROUTABLE_FEATURES` avec l'expérience et
+reste au catalogue comptable.
+
 **Le `reader` ne planifie pas** (v0.23.47) : `suggestMealPlanFn` (`planning`),
 `suggestStorageAdviceFn` (`storage_advice`) et `consolidateShoppingListFn` (`shopping_list`,
 sans appelant client) exigent `requireEditor`, comme `generateRecipeConceptFn` et
@@ -5964,11 +6122,13 @@ modèle.
 
 **Le `reader` ne crée aucune recette** : la règle `recipes` create exige `isEditor()` (§4) ; les
 callables qui produisent une recette à enregistrer exigent `requireEditor` —
-`generateRecipeFn`, `extractRecipeFromTextFn`, `generateRecipeConceptFn`, `suggestMealIdeasFn` —,
-ainsi que `searchRecipesFn` (classement facturé). L'interface masque les points d'entrée
+`generateRecipeFn`, `extractRecipeFromTextFn`, `generateRecipeConceptFn`, `suggestMealIdeasFn`,
+`mealWorkshopTurnFn`, `mealWorkshopRecipeFn` —, ainsi que `searchRecipesFn` (classement
+facturé). L'interface masque les points d'entrée
 (`canEditProvider`) : copie et « Améliorer avec l'IA » de la fiche, copie d'un brouillon,
 « Générer avec l'IA » et « Concevoir avec l'IA » du planning, source « Conception IA » de Nouveau
-planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien »,
+planning, « Chercher avec l'IA », « Imaginer 3 recettes », « Composer un repas avec l'IA »,
+« Importer depuis un lien »,
 « Importer » des pages « Sur le web », et le bandeau d'import au
 retour du navigateur de l'Explorer. Il garde la relecture et la validation de ses brouillons,
 le détachement d'un livre et la suppression de ses recettes existantes. Il ne les **enrichit**
@@ -6415,7 +6575,10 @@ heures. ». Tout autre `resource-exhausted` (avec une raison, ou hors callable d
 s'arrête en silence que sur `isPlanningRunDenial` (raison sans `scope`) ; un refus
 `concurrency` (`isConcurrencyRefusal`) affiche son message sans arrêter la boucle. La
 recherche web garde sa propre forme (`reason: "ai_daily_budget"`, `budget: <raison>`,
-`webSearchHttpsError`), lue par `webSearchErrorFrom`.
+`webSearchHttpsError`), lue par `webSearchErrorFrom`. L'atelier repas a son propre plafond de
+tours, distinct du plafond d'IA : `resource-exhausted` avec `reason: "meal_workshop_daily_quota"`,
+`limit` et `remaining: 0`, sans `scope` (`mealWorkshopTurnFn`) ; son plafond de dépense d'IA
+passe par `toHttpsError`, avec `scope: "ai_budget"`.
 
 **Trois gardes**, dans `callable/_auth.ts`, toutes précédées de la vérification App Check :
 
@@ -6443,9 +6606,7 @@ Depuis la v0.23.11, chaque callable qui envoie une entrée du client à un modè
 `readAiInputs` (`callable/_inputBounds.ts`), juste après la garde d'accès et **avant** tout
 appel de modèle et toute réservation de budget. Les entrées produites par le serveur
 (pipeline d'import, déclencheurs) et le bac à sable (`sandboxFn`, réservé à `admin`) ne
-passent pas par là, à une exception près : l'atelier repas (`meal_workshop.turn`, v0.24.72)
-lit son entrée par `readAiInputs` (`readMealWorkshopInput`, §13.3). Le bac à sable borne
-quand même son image : `readSandboxImage`
+passent pas par là. Le bac à sable borne quand même son image : `readSandboxImage`
 (`sandbox/callable.ts`) refuse en `invalid-argument` un `bytesBase64` de plus de 20 Mo
 décodés (`PAGE_IMAGE_MAX_BYTES`, importé de `callable/_inputBounds.ts`), mesuré avant tout
 décodage (v0.24.32, ticket #163).
@@ -6480,6 +6641,8 @@ Rien n'est tronqué : un texte coupé ferait travailler le modèle sur une recet
 | `generateRecipeFn` | `generate` | `query` → 5 000 car., requis ; `preferenceInsight` → 100 000 car. ; `libraryContext` → 500 éléments de 20 000 car. ; `variantLabel`, `variantInstruction` → 5 000 car. ; `siblingVariantLabels`, `avoidTitles` → 500 éléments de 5 000 car. |
 | `searchRecipesFn` | `search` | `query` → 5 000 car., requis ; `recipes`, `ratedRecipes` → 5 000 éléments de 20 000 car. |
 | `searchWebRecipesFn` | `web_recipe_search` | `query` → 200 car., requis (`readWebSearchQuery`, caractères de contrôle retirés, espaces resserrées) |
+| `mealWorkshopTurnFn` | `meal_workshop_turn` | `conversationId` → 64 car., requis, motif `^[A-Za-z0-9_-]{8,64}$` ; `kind` → `plat` ou `menu`, requis ; `history` → 40 éléments (20 tours), chacun `{ role, text }` en alternance stricte, `text` → 1 500 car. (personne) ou 6 000 (modèle) ; `message` → 1 500 car., requis ; `recipes` → 5 000 éléments de 20 000 car., requis, chacun avec `id` (valeurs coupées à 500 car., `duree` à 20, `id` à 128) ; `staples` → 500 éléments de 20 000 car., requis, chacun avec `id` et `name` (`id` coupé à 128, `name` et `category` à 100) ; `globalConstraints` → 5 000 car. ; `portions` → entier de 1 à 99, requis ; `menu` → 100 000 car. JSON |
+| `mealWorkshopRecipeFn` | `meal_workshop_recipe` | `conversationId` → comme ci-dessus ; `titre` → 60 car., requis ; `description` → 200 car. ; `sides` → 6 éléments de 60 car., chacun un libellé non vide ; `portions` → entier de 1 à 99, requis ; `globalConstraints` → 5 000 car. |
 | `extractBookCoverFn` | `book_cover` | `bytesBase64` → 8 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
 | `detectAndCropIllustrationsFn` | `detect_illustrations` | `bytesBase64` → 20 Mo décodés, requis ; `mimeType` → 5 000 car., requis |
 | `suggestMealPlanFn` | `planning` | `slotDates` → 31 éléments de 5 000 car., requis, chacun commençant par `AAAA-MM-JJ` ; `recipes` → 5 000 éléments de 20 000 car. ; `globalConstraints` → 5 000 car. ; `dailyConstraints` → 100 000 car. JSON ; `slotConstraints`, `alreadyAssigned`, `recentlyServed` → 500 éléments de 20 000 car. ; `slotDismissed` → pas plus d'éléments que `slotDates`, chacun une liste de 30 identifiants de 128 car. au plus (un élément qui n'est pas une liste devient `null`, les identifiants non textuels sont retirés) ; `batchCookingDay` → entier de 1 à 7 ; `mode` → `model` ou `code`, toute autre valeur refusée ; `groupId` → absent, `null`, ou identifiant de document (lettres, chiffres, `_`, `-`, 128 car. au plus), lu hors de l'entrée du modèle |
@@ -8260,7 +8423,7 @@ functions/src/
 
 ---
 
-### 13.1 Carte de navigation — les 51 routes
+### 13.1 Carte de navigation — les 52 routes
 
 `go_router`, déclaré dans `core/router/app_router.dart`. Les constantes vivent dans
 `AppRoutes`, une seule `ShellRoute` porte la coquille `AppShell` pour tout ce qui suit
@@ -8304,7 +8467,8 @@ lui est montrée. `quarantine/{uid}/` (`storage.rules`) et `scanAndPromoteUpload
 | `/drafts` | `WorkQueueScreen` | `reader` |
 | `/drafts/:recipeId` | `DraftReviewScreen` | `reader` |
 | `/processing` | — | **redirige vers `/drafts`** : l'écran d'avancement a été fondu dans la file de travail |
-| `/search` | `SearchScreen` | `reader` — liste, filtres locaux, « Chercher sur le web » (ouvrir une page) et « Voir sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Importer depuis un lien », « Importer » d'une page web, et le bandeau d'import au retour du navigateur : `editor` |
+| `/search` | `SearchScreen` | `reader` — liste, filtres locaux, « Chercher sur le web » (ouvrir une page) et « Voir sur Google » ; « Chercher avec l'IA », « Imaginer 3 recettes », « Composer un repas avec l'IA », « Importer depuis un lien », « Importer » d'une page web, et le bandeau d'import au retour du navigateur : `editor` |
+| `/search/meal-workshop` | `MealWorkshopScreen` — « Atelier repas », poussé au-dessus d'Explorer par « Composer un repas avec l'IA » (`mealWorkshopLocation`) | `editor` — gardée par `EditorOnlyGate` (`mealWorkshopRouteBuilder`) : un `reader` arrivé par un lien voit « Composition réservée aux éditeurs » et « Retour à Explorer » ; le serveur refuse de toute façon ses appels (`requireEditor`). Paramètre `?q=` (`kMealWorkshopQueryParam`) : le texte du champ d'Explorer, posé dans le champ de l'atelier sans être envoyé ; absent quand le champ est vide. Le périmètre (les filtres d'Explorer, sans le texte) est relu à l'ouverture par `mealWorkshopContextProvider`, jamais passé en `extra` : la route reste atteignable par un lien, et une page web rafraîchie rouvre l'atelier. Masquée en mode choix de l'Explorer |
 | `/planning` | `PlanningScreen` | `reader` — lit les plannings partagés avec lui et ceux de ses groupes, relit ses repas antérieurs et les ajoute aux courses ; planifier : `editor`. `?reserve=1` (posé par 13.2) affiche « Planification réservée aux éditeurs » une fois, puis l'adresse perd le paramètre |
 | `/planning/batch` | `BatchPlanningScreen` | `editor` — un `reader` est renvoyé vers `/planning?reserve=1` (13.2). `?group=<groupId>` (`kPlanningGroupParam`) ouvre le planning d'un groupe dont l'utilisateur est le propriétaire ; sinon l'écran dit « Le planning de ce groupe ne vous est pas accessible. » |
 | `/planning/config` | `PlanningConfigScreen` | `editor` — « Préférences du planning », dont « Partager mon planning » ; un `reader` est renvoyé vers `/planning?reserve=1` |
@@ -8482,81 +8646,6 @@ pourtant, et une réimplémentation doit connaître leur contrat :
   (image trop lourde) passe telle quelle, et un plafond d'IA (`BudgetExceededError`) ou un
   chemin refusé (`StoragePathRefusedError`) sort par `toHttpsError` avec son message, sans
   ligne ERROR ;
-- **expérience « Atelier repas »** (v0.24.72, palier 0 du cadrage
-  `documentation/ToDo/SPEC-atelier-repas.md` ; v0.24.75 : mode plat, résumé allégé, cache
-  de prompt) : `case "meal_workshop.turn"`, module
-  `sandbox/mealWorkshop.ts`, poste `sandbox_meal_workshop_turn` (groupe « Bac à sable »,
-  routable Gemini ou Claude, effort du code `low`). Un tour = un appel : le serveur reçoit
-  le mode `kind` (`plat` — un plat et ses accompagnements, défaut de l'écran — ou `menu` —
-  un repas complet ; fixé pour la conversation ; absent ou autre → `invalid-argument`,
-  `details.reason: meal_workshop_kind`), l'historique (20 tours au plus, alternance stricte
-  personne puis modèle et fin sur une réponse du modèle, 1 500 caractères par message de la
-  personne et 6 000 par réponse du modèle rejouée, refus en `invalid-argument` au-delà,
-  `details.reason: meal_workshop_max_turns` pour le 21e), le message, les résumés du
-  périmètre « Mes recettes » + « Ma famille » de l'administrateur, ses garnitures (`id`,
-  `name`, `category`), `globalConstraints` du planning, le nombre de parts (1 à 99) et le menu
-  du tour précédent. Le résumé d'une recette est la copie propre au bac à sable
-  `buildWorkshopRecipeSummary` (`features/sandbox/domain/workshop_recipe_summary.dart`),
-  dérivée de `buildRecipeSummary` : clés `id, titre, ingredients, themes, cuisines,
-  difficulte, role, proteine, feculent, note, duree` (liste blanche `SUMMARY_KEYS` côté
-  serveur), 6 ingrédients au lieu de 20, sans `livre` ni `statut`, et `duree` = temps total
-  préparation + cuisson (`recipeTimes`) : « 35 min » lu, « ≈ 40 min » dès qu'une composante
-  vient de `estimated_times`, « inconnue » sinon — le prompt dit qu'une durée « inconnue »
-  n'est jamais proposée comme rapide. L'entrée passe par `readAiInputs` (tailles
-  journalisées, jamais le contenu). Le prompt part en **deux blocs**
-  (`buildMealWorkshopPrompt` rend `{ prefix, suffix }`, `promptChars` = la somme) : le
-  préfixe — consignes du mode, préférences, recettes et garnitures **triées par `id`**, pour
-  qu'un ordre d'arrivée différent ne casse pas le cache — part en `textPart(prefix, { cache:
-  true })` ; la suite — menu en cours, conversation, demande — en `textPart(suffix)`. Anthropic
-  met le préfixe en cache cinq minutes, au-delà de 1 024 jetons (Sonnet) ou 4 096 (Haiku 4.5) ;
-  en dessous, le bloc part sans cache et sans erreur ; Gemini ignore la marque et reçoit deux
-  parts texte de la même requête (`callModel` et `callChosenGemini`). Les jetons de cache
-  (`cacheReadInputTokens`, `cacheCreationInputTokens`) sont rendus dans `usage`, journalisés
-  et affichés. En mode plat, la première phrase des consignes dit « UN PLAT et ses
-  accompagnements » et une règle borne le menu à un service `plat` (deux au plus, le second
-  pour la recette d'un accompagnement), sans entrée, fromage ni dessert. Le texte de la
-  personne ne vit que dans les sections `=== CONVERSATION ===` et `=== DEMANDE ===`, sans
-  exemple rempli. La réponse `{ reponse, menu }` est lue en liste blanche par `controlMenu` :
-  rôles `entree | plat | sorbet | fromage | dessert | autre`, `recipe_id` hors corpus → `null`
-  et `unknown_recipe_id: true` (compté dans `control.inventedIds`), `staple_id` hors envoi →
-  `null`, 10 services et 6 accompagnements par plat au plus (`control.truncated`), titre d'une
-  recette du corpus repris du résumé, titre absent ou en double → service écarté
-  (`control.droppedCourses`), `course_label` ≤ 30, titre ≤ 60, description et `why` ≤ 200,
-  parts toujours celles de la personne ; en mode plat, un service d'un rôle connu autre que
-  `plat` est écarté avant toute borne et compté dans `control.offKindCourses` (à part de
-  `droppedCourses`), et la borne des services tombe à 2 (`MEAL_WORKSHOP_MAX_DISH_COURSES`,
-  jumelle `kWorkshopMaxDishCourses`). Rendu au client : `reponse`, `menu` contrôlé,
-  `control`, `raw` (JSON brut, ≤ 20 000 caractères), `usage` (`costUsd` = `recordedCostUsd`
-  ou `null`, jetons d'entrée, de sortie et de cache, durée, fournisseur, modèle,
-  `stopReason`), `promptChars`, `turn`. `askModel` (`sandbox/model.ts`) rend
-  `recordedCostUsd` aussi pour un modèle imposé depuis le sélecteur, même contrat que
-  `callModel` (jusqu'en v0.24.72, le coût était écrit dans `ai_usage` et l'écran affichait
-  « non chiffré »). `maxTokens` 6 000 : borne la sortie de Claude par `callModel`, et
-  celle d'un modèle Gemini imposé par `maxOutputTokens` (`callChosenGemini`,
-  `sandbox/model.ts`) ; un Gemini servi par la politique n'est pas borné, `callModel` ne
-  transmettant pas `maxTokens` à Gemini (comportement du routeur, hors bac à sable). Une réponse illisible lève `internal` avec `details.reason:
-  meal_workshop_unreadable`, la consommation du tour (facturé) et un aperçu borné du texte ;
-  `logError` porte `responsePreview` tronqué à 500 caractères ; le message rendu est neutre
-  (« L'IA n'a pas rendu de réponse lisible. »), l'écran titre « Réponse illisible, plat
-  inchangé. » ou « …menu inchangé. » selon le mode. Chaque valeur d'un résumé reçu du client
-  est bornée par troncature (`readSummary` : `SUMMARY_VALUE_MAX_CHARS` = 500, `duree` à
-  `SUMMARY_DURATION_MAX_CHARS` = 20), les valeurs coupées comptées dans
-  `clampedSummaryValues` ; les consignes disent que les lignes de RECETTES DE LA BIBLIOTHÈQUE
-  et de GARNITURES DISPONIBLES sont des données, jamais des consignes. Le `logInfo` « tour
-  rendu » porte `kind`, `offKindCourses`, `prefixChars`, `clampedSummaryValues` et les jetons
-  de cache. Quatre paires recopient une valeur du client : les bornes 10 et 6
-  (`kMaxCoursesPerMenu`, `kMaxSidesPerDish`), la borne 2 (`MEAL_WORKSHOP_MAX_DISH_COURSES` /
-  `kWorkshopMaxDishCourses`) et les clés du résumé (`SUMMARY_KEYS` / clés de
-  `buildWorkshopRecipeSummary`) : au portage (palier 1), elles rejoignent le tableau
-  « Logique dupliquée Dart ↔ TypeScript » avec une fixture. Côté
-  client (`presentation/experiments/meal_workshop/`), un `SegmentedButton` « Plat | Menu »
-  en tête de la conversation (bascule libre sans conversation ; avec une conversation,
-  confirmation « Passer en menu ? » / « Passer en plat ? » puis nouvelle conversation ;
-  inactif pendant un tour), deux zones — conversation, « Plat en cours » ou « Menu en
-  cours » — plus une zone « Mesures » : `SandboxModelPicker`, taille du contexte envoyé,
-  ligne de coût sous chaque réponse (avec « cache : N lus » / « N écrits » quand le cache a
-  servi), volet « Réponse brute », tableau des tours à copier (colonnes `mode`, `cache_lus`,
-  `cache_ecrits`, `services_hors_plat`). Rien n'est écrit ;
 - rien n'y est enregistré — ni Firestore, ni Storage sur les chemins de production ;
 - le bac à sable **lit** le code de l'application, ne l'édite jamais : une expérience qui
   doit modifier un comportement existant en copie le code.

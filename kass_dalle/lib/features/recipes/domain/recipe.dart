@@ -858,6 +858,17 @@ class Recipe {
   /// ne l'écrit pas. `null` tant que la recette n'a pas été reprise.
   final String? titreKey;
 
+  /// Le parcours d'IA qui a rédigé ce brouillon, quand [origin] vaut
+  /// [RecipeOrigin.ai] et que ce parcours le dit : [kAiSourceMealWorkshop]
+  /// pour un plat figé depuis l'atelier repas. `null` pour les autres
+  /// recettes de l'IA (« Imaginer 3 recettes », planning) et pour toutes les
+  /// recettes antérieures au champ : aucun écran ne l'exige.
+  ///
+  /// Posé à la création, réécrit tel quel ensuite. Il sert à lire, par une
+  /// requête `recipes` où `ai_source == "meal_workshop"`, la part des plats
+  /// figés ensuite validés.
+  final String? aiSource;
+
   /// Vrai quand la recette a été traduite à l'import.
   bool get isTranslated => (langueOrigine ?? '').isNotEmpty;
 
@@ -917,6 +928,7 @@ class Recipe {
     this.sourceAuthor,
     this.duplicateOf,
     this.titreKey,
+    this.aiSource,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -994,6 +1006,9 @@ class Recipe {
       sourceAuthor: data['source_author'] as String?,
       duplicateOf: RecipeDuplicateRef.fromMap(data['duplicate_of']),
       titreKey: data['titre_key'] as String?,
+      aiSource: data['ai_source'] is String
+          ? data['ai_source'] as String
+          : null,
     );
   }
 
@@ -1027,6 +1042,9 @@ class Recipe {
       'import_version': ?importVersion,
       if (sourceRecipeId != null) 'source_recipe_id': sourceRecipeId,
       if (origin != null) 'origin': origin!.name,
+      // Posé à la création d'un brouillon de l'atelier repas, réécrit tel
+      // quel ensuite.
+      if (aiSource != null) 'ai_source': aiSource,
       // Réécrite telle qu'elle a été lue, ou recopiée sur une copie : jamais
       // posée ni changée ici (règles Firestore).
       if (sourceUrl != null) 'source_url': sourceUrl,
@@ -1121,9 +1139,14 @@ class Recipe {
       // Posée par le serveur, effacée par la validation : jamais un paramètre.
       duplicateOf: duplicateOf,
       titreKey: titreKey,
+      // Le parcours d'origine suit la recette : une édition ne le change pas.
+      aiSource: aiSource,
     );
   }
 }
+
+/// Valeur de [Recipe.aiSource] d'un plat figé depuis l'atelier repas.
+const String kAiSourceMealWorkshop = 'meal_workshop';
 
 /// La recette dont un brouillon est peut-être le doublon (`duplicate_of`).
 ///

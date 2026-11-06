@@ -1,20 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../../core/theme/app_icon_size.dart';
-import '../../../../../core/utils/context_extensions.dart';
-import '../../../../../core/widgets/error_message.dart';
-import '../../../../planning/domain/meal_kind.dart';
-import '../../../../planning/presentation/meal_course_style.dart';
-import '../../../data/sandbox_functions.dart';
-import '../../../domain/meal_workshop_menu.dart';
-import '../../../domain/sandbox_model_choice.dart';
-import '../../sandbox_providers.dart';
-import '../../widgets/sandbox_model_picker.dart';
+import '../../../../core/router/app_router.dart';
+import '../../../../core/theme/app_icon_size.dart';
+import '../../../planning/domain/meal_kind.dart';
+import '../../../planning/presentation/meal_course_style.dart';
+import '../../data/meal_workshop_functions.dart';
+import '../../domain/meal_workshop_freeze.dart';
+import '../../domain/meal_workshop_menu.dart';
+import 'meal_workshop_providers.dart';
 
-/// Les briques de l'écran « Atelier repas » du bac à sable : bulles de la
-/// conversation, lignes du menu, zone « Mesures ». Rien ici n'écrit ni
+/// Les briques de l'écran « Atelier repas » : bulles de la conversation,
+/// cartes système, lignes du menu, lignes de figement. Rien ici n'écrit ni
 /// n'appelle : l'écran tient l'état, ces widgets l'affichent.
 ///
 /// Deux icônes, deux sens : le robot (`Icons.smart_toy_outlined`) marque ce
@@ -60,7 +57,7 @@ class WorkshopUserBubble extends StatelessWidget {
 }
 
 /// La réponse de l'IA, à gauche, avec le robot ; sous elle, ce qui a changé
-/// dans le menu, la ligne de mesures du tour, et le volet « Réponse brute ».
+/// dans le menu. Le texte est brut : ni Markdown, ni lien.
 class WorkshopAssistantBubble extends StatefulWidget {
   final WorkshopTurnResult result;
 
@@ -103,6 +100,7 @@ class _WorkshopAssistantBubbleState extends State<WorkshopAssistantBubble> {
     final shown = foldable && !_expanded
         ? '${text.substring(0, kWorkshopReplyFoldChars).trimRight()}…'
         : text;
+    final thing = widget.kind == MealKind.plat ? 'plat' : 'menu';
     final String menuLine;
     if (widget.kind == MealKind.plat) {
       menuLine = widget.unchanged ? 'Plat inchangé' : 'Plat mis à jour';
@@ -146,8 +144,8 @@ class _WorkshopAssistantBubbleState extends State<WorkshopAssistantBubble> {
                       SelectableText(
                         shown.isEmpty
                             ? (widget.unchanged
-                                  ? 'L\'IA n\'a rien écrit et le ${widget.kind == MealKind.plat ? 'plat' : 'menu'} n\'a pas changé.'
-                                  : 'L\'IA n\'a rien écrit : seul le ${widget.kind == MealKind.plat ? 'plat' : 'menu'} a changé.')
+                                  ? 'L\'IA n\'a rien écrit et le $thing n\'a pas changé.'
+                                  : 'L\'IA n\'a rien écrit : seul le $thing a changé.')
                             : shown,
                         style: theme.textTheme.bodyMedium,
                       ),
@@ -166,83 +164,33 @@ class _WorkshopAssistantBubbleState extends State<WorkshopAssistantBubble> {
                   ),
                 ),
                 const SizedBox(height: 4),
+                // Téléphone : la ligne ouvre la feuille, cible de 48 px.
                 InkWell(
                   onTap: widget.onOpenMenu,
                   borderRadius: BorderRadius.circular(4),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 2,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: widget.onOpenMenu == null ? 0 : 48,
                     ),
-                    child: Text(
-                      menuLine,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          menuLine,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: SelectableText(
-                    workshopUsageLine(widget.result.usage),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontFamily: 'monospace',
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                _RawAnswerTile(result: widget.result),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// « Réponse brute » : le JSON contrôlé, puis les champs du contrôle serveur.
-class _RawAnswerTile extends StatelessWidget {
-  final WorkshopTurnResult result;
-
-  const _RawAnswerTile({required this.result});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final mono = theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace');
-    return Theme(
-      data: theme.copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-        childrenPadding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-        dense: true,
-        title: Text('Réponse brute', style: theme.textTheme.bodySmall),
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: SelectableText(
-              result.rawTruncated ? '${result.raw}\n[…coupé]' : result.raw,
-              style: mono,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text('Contrôle serveur', style: theme.textTheme.labelMedium),
-          for (final line in result.control.lines)
-            SelectableText(line, style: mono),
-          SelectableText(
-            'prompt : ${formatWorkshopCount(result.promptChars)} caractères · '
-            'tour ${result.turn}'
-            '${result.reponseTruncated ? ' · texte coupé' : ''}'
-            '${result.usage.stopReason == null ? '' : ' · arrêt : ${result.usage.stopReason}'}',
-            style: mono,
           ),
         ],
       ),
@@ -329,11 +277,17 @@ class WorkshopSystemCard extends StatelessWidget {
   }
 }
 
-/// L'échec d'un tour : le message, puis le code renvoyé par `sandboxFn` et
-/// sa raison — l'administrateur lit les codes (palier 0). « Réessayer »
-/// renvoie le texte resté dans le champ.
+/// L'échec d'un tour : un titre, une phrase, et « Réessayer » quand c'est
+/// permis — il renvoie le texte resté dans le champ.
+///
+/// Une carte dans le fil de la conversation, et non `AppErrorState(compact:
+/// true)` : elle prend la place de la réponse qui n'est pas venue, alignée
+/// comme une bulle, annoncée par `liveRegion`, et son titre dit ce qui n'a
+/// pas eu lieu (« Réponse non reçue. », « Réponse illisible, plat
+/// inchangé. »). `AppErrorState` sert à l'erreur du contexte, en tête de
+/// liste (« Atelier non prêt »).
 class WorkshopErrorCard extends StatelessWidget {
-  final Object error;
+  final WorkshopFailure failure;
 
   /// Plat ou menu : « Réponse illisible, plat inchangé. » en mode Plat.
   final MealKind kind;
@@ -341,7 +295,7 @@ class WorkshopErrorCard extends StatelessWidget {
 
   const WorkshopErrorCard({
     super.key,
-    required this.error,
+    required this.failure,
     required this.kind,
     this.onRetry,
   });
@@ -350,29 +304,10 @@ class WorkshopErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final sandbox = error is SandboxCallException
-        ? error as SandboxCallException
-        : null;
-    final unreadable = sandbox?.reason == kWorkshopUnreadableReason;
-    final title = unreadable
+    final title = failure.kind == WorkshopFailureKind.unreadable
         ? 'Réponse illisible, ${kind == MealKind.plat ? 'plat' : 'menu'} inchangé.'
         : 'Réponse non reçue.';
-    // Hors `sandboxFn` (réseau, décodage) : le titre lisible de
-    // `describeError`, « Connexion perdue » pour une `ClientException`. Les
-    // titres n'ont pas de point final ; le message serveur en a un.
-    final message = sandbox != null
-        ? sandbox.message
-        : '${describeError(error).title}.';
-    final code = sandbox == null
-        ? error.runtimeType.toString()
-        : '${sandbox.code}${sandbox.reason == null ? '' : ' · ${sandbox.reason}'}';
-    final usage = sandbox?.details?['usage'];
-    final usageLine = usage is Map
-        ? workshopUsageLine(
-            WorkshopUsage.fromJson(Map<String, dynamic>.from(usage)),
-          )
-        : null;
-    final preview = sandbox?.details?['rawPreview'];
+    final retry = failure.retryable ? onRetry : null;
 
     return Semantics(
       liveRegion: true,
@@ -401,56 +336,17 @@ class WorkshopErrorCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                message,
+                failure.message,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: scheme.onErrorContainer,
                 ),
               ),
-              const SizedBox(height: 4),
-              SelectableText(
-                code,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                  color: scheme.onErrorContainer,
-                ),
-              ),
-              if (usageLine != null)
-                SelectableText(
-                  'tour facturé · $usageLine',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace',
-                    color: scheme.onErrorContainer,
-                  ),
-                ),
-              if (preview is String && preview.isNotEmpty)
-                Theme(
-                  data: theme.copyWith(dividerColor: Colors.transparent),
-                  child: ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    dense: true,
-                    title: Text(
-                      'Texte rendu',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onErrorContainer,
-                      ),
-                    ),
-                    children: [
-                      SelectableText(
-                        preview,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                          color: scheme.onErrorContainer,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              if (onRetry != null) ...[
+              if (retry != null) ...[
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
                   child: FilledButton.tonalIcon(
-                    onPressed: onRetry,
+                    onPressed: retry,
                     icon: const Icon(Icons.refresh),
                     label: const Text('Réessayer'),
                   ),
@@ -511,12 +407,33 @@ class WorkshopPill extends StatelessWidget {
   }
 }
 
+/// Ce qu'une ligne de figement peut demander à l'écran.
+class WorkshopFreezeActions {
+  final VoidCallback? onRetry;
+  final VoidCallback? onWriteInstead;
+  final VoidCallback? onRemove;
+
+  const WorkshopFreezeActions({
+    this.onRetry,
+    this.onWriteInstead,
+    this.onRemove,
+  });
+}
+
 /// Une ligne du menu en cours : type, titre, état, raison, accompagnements.
+/// Pendant et après un figement, l'état est la ligne de figement.
 class WorkshopCourseTile extends StatelessWidget {
   final WorkshopCourse course;
   final bool changed;
   final int menuPortions;
   final MealWorkshopContext? workshop;
+
+  /// L'état de figement de ce service ; `null` hors figement.
+  final FreezeLineState? freezeState;
+  final WorkshopFreezeActions freezeActions;
+
+  /// Vrai pendant les appels du figement : les actions des lignes attendent.
+  final bool busy;
 
   const WorkshopCourseTile({
     super.key,
@@ -524,6 +441,9 @@ class WorkshopCourseTile extends StatelessWidget {
     required this.changed,
     required this.menuPortions,
     required this.workshop,
+    this.freezeState,
+    this.freezeActions = const WorkshopFreezeActions(),
+    this.busy = false,
   });
 
   @override
@@ -533,6 +453,7 @@ class WorkshopCourseTile extends StatelessWidget {
     final small = theme.textTheme.bodySmall?.copyWith(
       color: scheme.onSurfaceVariant,
     );
+    final freeze = freezeState;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -558,7 +479,7 @@ class WorkshopCourseTile extends StatelessWidget {
                   ),
                 ),
               ),
-              if (changed)
+              if (changed && freeze == null)
                 WorkshopPill(
                   text: 'Modifié',
                   background: scheme.secondaryContainer,
@@ -569,7 +490,14 @@ class WorkshopCourseTile extends StatelessWidget {
           const SizedBox(height: 2),
           Text(course.title, style: theme.textTheme.bodyLarge),
           const SizedBox(height: 4),
-          _buildStatus(context),
+          if (freeze != null)
+            WorkshopFreezeLine(
+              state: freeze,
+              actions: freezeActions,
+              busy: busy,
+            )
+          else
+            _buildStatus(context),
           if (course.description != null) ...[
             const SizedBox(height: 4),
             Text(course.description!, style: small),
@@ -612,7 +540,8 @@ class WorkshopCourseTile extends StatelessWidget {
       final gap = portions != null && portions != menuPortions
           ? ' · recette pour $portions, repas pour $menuPortions'
           : '';
-      // Cible de 48 px : la ligne s'ouvre sur la fiche.
+      // Cible de 48 px : la ligne s'ouvre sur la fiche. C'est le seul lien de
+      // l'écran : un identifiant cité dans le texte de l'IA n'en est pas un.
       return InkWell(
         onTap: () => context.push('/recipes/$recipeId'),
         borderRadius: BorderRadius.circular(4),
@@ -711,8 +640,7 @@ class WorkshopCourseTile extends StatelessWidget {
         ),
       );
     } else {
-      // Texte libre, identifiant reconnu ou non : le libellé seul. Les
-      // compteurs du contrôle sont dans « Réponse brute ».
+      // Texte libre, identifiant reconnu ou non : le libellé seul.
       row = Text(side.label, style: style);
     }
     return Padding(
@@ -722,180 +650,129 @@ class WorkshopCourseTile extends StatelessWidget {
   }
 }
 
-// ── Mesures ──────────────────────────────────────────────────────────────────
+// ── Figement ─────────────────────────────────────────────────────────────────
 
-/// La zone « Mesures » du palier 0 : choix du modèle, taille du contexte,
-/// tableau des tours et « Copier le tableau ».
-class WorkshopMeasuresPanel extends StatelessWidget {
-  final SandboxModelChoice? modelChoice;
-  final ValueChanged<SandboxModelChoice?> onModelChanged;
-  final bool enabled;
+/// L'état d'un service pendant et après le figement : « En attente »,
+/// « Rédaction… », « Brouillon créé · Ouvrir », « Non rédigée — Réessayer »…
+class WorkshopFreezeLine extends StatelessWidget {
+  final FreezeLineState state;
+  final WorkshopFreezeActions actions;
+  final bool busy;
 
-  /// Taille du contexte fixe avant le premier tour, en caractères.
-  final int contextChars;
-
-  /// Le dernier tour rendu, pour la taille exacte du prompt et ses jetons.
-  final WorkshopTurnResult? lastResult;
-  final List<WorkshopTurnMeasure> measures;
-
-  const WorkshopMeasuresPanel({
+  const WorkshopFreezeLine({
     super.key,
-    required this.modelChoice,
-    required this.onModelChanged,
-    required this.enabled,
-    required this.contextChars,
-    required this.lastResult,
-    required this.measures,
+    required this.state,
+    required this.actions,
+    required this.busy,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final small = theme.textTheme.bodySmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
+      color: scheme.onSurfaceVariant,
     );
-    final last = lastResult;
-    final String contextLine;
-    if (last == null) {
-      contextLine =
-          'Contexte fixe : ${formatWorkshopCount(contextChars)} caractères '
-          '(recettes, garnitures, préférences) · jetons connus après le '
-          'premier tour';
-    } else {
-      // Chez Anthropic, le préfixe mis en cache n'est pas dans les jetons
-      // d'entrée : sans les compteurs du cache, la ligne dirait 2 000 jetons
-      // pour un prompt qui en fait 127 000.
-      final cache = workshopCacheLabel(
-        last.usage.cacheReadInputTokens,
-        last.usage.cacheCreationInputTokens,
-      );
-      contextLine =
-          'Contexte envoyé : ${formatWorkshopCount(last.promptChars)} '
-          'caractères · ${formatWorkshopCount(last.usage.inputTokens)} '
-          'jetons d\'entrée${cache == null ? '' : ' · $cache'}';
-    }
-    final total = workshopCostTotal(measures);
+    final error = theme.textTheme.bodySmall?.copyWith(color: scheme.error);
+    final retry = busy ? null : actions.onRetry;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Mesures', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          SandboxModelPicker(
-            featureKey: kWorkshopFeature,
-            value: modelChoice,
-            onChanged: onModelChanged,
-            enabled: enabled,
-          ),
-          const SizedBox(height: 8),
-          Text(contextLine, style: small),
-          const SizedBox(height: 12),
-          if (measures.isEmpty)
-            Text('Aucun tour pour l\'instant.', style: small)
-          else ...[
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: _MeasuresTable(measures: measures),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Total : ${formatWorkshopCost(total.knownUsd)} sur '
-              '${_plural(measures.length, 'tour')}'
-              '${total.unpriced > 0 ? ' · ${_plural(total.unpriced, 'tour')} '
-                        'sans montant' : ''}',
-              style: small,
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  await Clipboard.setData(
-                    ClipboardData(text: workshopMeasuresTable(measures)),
-                  );
-                  if (!context.mounted) return;
-                  context.showSuccessSnackBar('Tableau copié.');
-                },
-                icon: const Icon(Icons.copy_all_outlined),
-                label: const Text('Copier le tableau'),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
+    Widget open(String label, String location) =>
+        TextButton(onPressed: () => context.push(location), child: Text(label));
 
-class _MeasuresTable extends StatelessWidget {
-  final List<WorkshopTurnMeasure> measures;
-
-  const _MeasuresTable({required this.measures});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final mono = theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace');
-    final head = mono?.copyWith(fontWeight: FontWeight.w600);
-
-    Widget cell(String text, {TextStyle? style}) => Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      child: Text(text, style: style ?? mono),
-    );
-
-    return Table(
-      defaultColumnWidth: const IntrinsicColumnWidth(),
-      children: [
-        TableRow(
+    return switch (state) {
+      FreezeWaiting() => Text('En attente', style: small),
+      FreezeWriting() => Semantics(
+        liveRegion: true,
+        child: Row(
           children: [
-            cell('conv.', style: head),
-            cell('mode', style: head),
-            cell('n°', style: head),
-            cell('coût', style: head),
-            cell('jetons', style: head),
-            cell('cache', style: head),
-            cell('durée', style: head),
-            cell('inv.', style: head),
-            cell('état', style: head),
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Text('Rédaction…', style: small),
           ],
         ),
-        for (final m in measures)
-          TableRow(
-            children: [
-              cell('${m.conversation}'),
-              cell(m.kind.key),
-              cell('${m.turn}'),
-              cell(formatWorkshopCost(m.costUsd)),
-              cell(
-                '${formatWorkshopCount(m.inputTokens)}→'
-                '${formatWorkshopCount(m.outputTokens)}',
-              ),
-              cell(
-                workshopCacheLabel(
-                      m.cacheReadInputTokens,
-                      m.cacheCreationInputTokens,
-                    )?.replaceFirst('cache : ', '') ??
-                    '',
-              ),
-              cell(formatWorkshopDuration(m.durationMs)),
-              cell('${m.inventedIds}'),
-              cell(
-                m.unreadable
-                    ? 'illisible'
-                    : m.truncated
-                    ? 'tronqué'
-                    : m.droppedCourses > 0
-                    ? '${m.droppedCourses} écarté(s)'
-                    : m.offKindCourses > 0
-                    ? '${m.offKindCourses} hors plat'
-                    : '',
-              ),
-            ],
+      ),
+      // En `Wrap` : à 200 % de texte, « Ouvrir » passe sous la ligne au lieu
+      // de déborder du panneau.
+      FreezeDraftCreated(:final draftId) => Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        children: [
+          Icon(
+            Icons.edit_note,
+            size: AppIconSize.inline,
+            color: scheme.onSurfaceVariant,
+            semanticLabel: 'Brouillon',
           ),
-      ],
-    );
+          Text('Brouillon créé ·', style: small),
+          open('Ouvrir', '${AppRoutes.drafts}/$draftId'),
+        ],
+      ),
+      FreezeLinked(:final recipeId) => Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        children: [
+          Icon(
+            Icons.menu_book_outlined,
+            size: AppIconSize.inline,
+            color: scheme.onSurfaceVariant,
+            semanticLabel: 'Recette de la bibliothèque',
+          ),
+          Text('Recette liée ·', style: small),
+          open('Ouvrir', '/recipes/$recipeId'),
+        ],
+      ),
+      FreezeLinkedUnreadable() => Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        children: [
+          Text('Recette plus accessible', style: error),
+          TextButton(
+            onPressed: busy ? null : actions.onWriteInstead,
+            child: const Text('Rédiger à la place'),
+          ),
+          TextButton(
+            onPressed: busy ? null : actions.onRemove,
+            child: const Text('Retirer du repas'),
+          ),
+        ],
+      ),
+      FreezeFailed() => Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        children: [
+          Text('Non rédigée —', style: error),
+          TextButton(onPressed: retry, child: const Text('Réessayer')),
+        ],
+      ),
+      FreezeNoRecipe() => Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        children: [
+          Text('Non rédigée. L\'IA n\'a pas rendu de recette.', style: error),
+          TextButton(onPressed: retry, child: const Text('Réessayer')),
+        ],
+      ),
+      FreezeBudgetStopped() => Text(
+        'Non rédigée — plafond atteint',
+        style: error,
+      ),
+      FreezePermissionDenied() => Text(
+        'Non rédigée. L\'IA est réservée aux éditeurs.',
+        style: error,
+      ),
+      FreezeSaveFailed() => Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        children: [
+          Text('Brouillon non enregistré —', style: error),
+          TextButton(onPressed: retry, child: const Text('Réessayer')),
+        ],
+      ),
+    };
   }
 }
 

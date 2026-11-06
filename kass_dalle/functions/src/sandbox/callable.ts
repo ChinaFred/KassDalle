@@ -15,12 +15,11 @@ import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { requireAdmin, type AuthContext } from "../callable/_auth";
 import { callableErrorAlreadyLogged, toHttpsError } from "../callable/_callableErrors";
-import { PAGE_IMAGE_MAX_BYTES, readAiInputs } from "../callable/_inputBounds";
+import { PAGE_IMAGE_MAX_BYTES } from "../callable/_inputBounds";
 import { logError } from "../logging";
 import { BudgetExceededError } from "../ai/budget";
 import { StoragePathRefusedError } from "../utils/storagePath";
 import { readModelChoice } from "./model";
-import { readMealWorkshopInput, runMealWorkshopTurn } from "./mealWorkshop";
 import { detectOrientation } from "./orientation";
 import { detectPageQuad } from "./page";
 import { detectPageRegions } from "./regions";
@@ -53,7 +52,9 @@ const sandboxOpts = {
 const FEATURE_DETECT_PAGE = "sandbox_detect_page";
 const FEATURE_DETECT_ORIENTATION = "sandbox_detect_orientation";
 const FEATURE_DETECT_REGIONS = "sandbox_detect_regions";
-const FEATURE_MEAL_WORKSHOP_TURN = "sandbox_meal_workshop_turn";
+// `sandbox_meal_workshop_turn` (« Atelier repas », palier 0, v0.24.72 à
+// v0.24.75) est parti avec l'expérience, réécrite dans `gemini/mealWorkshop.ts`
+// et `callable/mealWorkshopCallable.ts`.
 
 /**
  * Le poste nommé par la garde, selon l'expérience demandée. Il ne sert qu'à la
@@ -65,7 +66,6 @@ const GUARD_FEATURES: Readonly<Record<string, string>> = {
   "image_import.detect_page": FEATURE_DETECT_PAGE,
   "image_import.detect_orientation": FEATURE_DETECT_ORIENTATION,
   "image_import.detect_regions": FEATURE_DETECT_REGIONS,
-  "meal_workshop.turn": FEATURE_MEAL_WORKSHOP_TURN,
 };
 
 interface SandboxRequest {
@@ -74,16 +74,6 @@ interface SandboxRequest {
   mimeType?: string;
   widthPx?: number;
   heightPx?: number;
-
-  // Atelier repas : lus et bornés par `readMealWorkshopInput`, jamais ici.
-  kind?: unknown;
-  history?: unknown;
-  message?: unknown;
-  recipes?: unknown;
-  staples?: unknown;
-  globalConstraints?: unknown;
-  portions?: unknown;
-  menu?: unknown;
 
   // Le modèle choisi par l'expérience. Absents, l'appel suit la politique de
   // routage comme n'importe quel poste de l'application.
@@ -182,40 +172,10 @@ export const sandboxFn = onCall<SandboxRequest>(sandboxOpts, async (req) => {
       return detectPageOrientation(req, ctx);
     case "image_import.detect_regions":
       return detectRegions(req, ctx);
-    case "meal_workshop.turn":
-      return mealWorkshopTurn(req, ctx);
     default:
       throw new HttpsError("invalid-argument", `Expérience inconnue : ${experiment}`);
   }
 });
-
-/**
- * Un tour de l'atelier repas. Rien n'est écrit.
- *
- * L'entrée est lue sous ses bornes par `readAiInputs`, qui journalise les
- * tailles (jamais le contenu) : un 21e tour ou un message trop long est refusé
- * en `invalid-argument` avant tout appel de modèle et toute réservation de
- * budget, et l'erreur part telle quelle, comme celle de `readSandboxImage`.
- */
-async function mealWorkshopTurn(
-  req: CallableRequest<SandboxRequest>,
-  ctx: AuthContext,
-): Promise<unknown> {
-  const input = await readAiInputs(
-    { feature: FEATURE_MEAL_WORKSHOP_TURN, userId: ctx.userId, correlationId: ctx.correlationId },
-    (inputs) => readMealWorkshopInput(req.data, inputs),
-  );
-
-  try {
-    return await runMealWorkshopTurn({
-      input,
-      ctx: { ...ctx, feature: FEATURE_MEAL_WORKSHOP_TURN, moduleType: "SEARCH" },
-      choice: readModelChoice(req.data),
-    });
-  } catch (err) {
-    throw await sandboxFailure(err, ctx, FEATURE_MEAL_WORKSHOP_TURN);
-  }
-}
 
 async function detectPage(
   req: CallableRequest<SandboxRequest>,

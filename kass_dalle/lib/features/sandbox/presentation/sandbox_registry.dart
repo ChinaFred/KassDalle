@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../domain/experiment.dart';
 import 'experiments/image_import_screen.dart';
-import 'experiments/meal_workshop/meal_workshop_screen.dart';
 
 /// La liste des expériences du bac à sable.
 ///
@@ -19,15 +18,9 @@ final List<Experiment> kExperiments = <Experiment>[
     icon: Icons.add_photo_alternate_outlined,
     builder: (_) => const SandboxImageImportScreen(),
   ),
-  Experiment(
-    id: 'meal-workshop',
-    title: 'Atelier repas',
-    subtitle:
-        'Converser pour composer un plat ou un menu. Le JSON du menu et le '
-        'coût de chaque tour sont lisibles. Rien n\'est enregistré.',
-    icon: Icons.restaurant_menu,
-    builder: (_) => const SandboxMealWorkshopScreen(),
-  ),
+  // « Atelier repas » (`meal-workshop`, v0.24.72 à v0.24.75) : portée dans
+  // Explorer, « Composer un repas avec l'IA » (`features/search/`), et
+  // retirée d'ici en novembre 2026.
 ];
 
 /// Retrouve une expérience par son identifiant, `null` si elle n'existe pas

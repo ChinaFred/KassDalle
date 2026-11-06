@@ -1,33 +1,41 @@
 /**
- * Atelier repas — bac à sable, palier 0.
+ * Atelier repas — « Composer un repas avec l'IA » (Explorer, palier 1).
  *
  * Une conversation bornée pour composer UN PLAT et ses accompagnements
  * (`kind: "plat"`, le mode par défaut de l'écran) ou UN repas complet
  * (`kind: "menu"`), et un menu structuré que le modèle met à jour à chaque
  * tour. Le serveur lit l'entrée sous ses bornes, construit le prompt, appelle
- * le modèle choisi par l'expérience, puis contrôle le JSON rendu en liste
- * blanche avant de le rendre au client : rôles connus, identifiants vérifiés
- * contre le corpus envoyé, tailles bornées, et en mode plat les services
- * d'un autre rôle écartés (`control.offKindCourses`).
+ * le modèle par `callModel` (poste `meal_workshop_turn`), puis contrôle le
+ * JSON rendu en liste blanche avant de le rendre au client : rôles connus,
+ * identifiants vérifiés contre le corpus envoyé, tailles bornées, et en mode
+ * plat les services d'un autre rôle écartés (`control.offKindCourses`).
  *
  * Le prompt part en deux blocs : un préfixe stable — consignes, préférences,
  * recettes et garnitures triées par identifiant — marqué `cache: true`, et
  * une suite qui change à chaque tour — menu en cours, conversation, demande.
- * Mesuré le 5 novembre 2026 : 664 recettes, 261 679 caractères, 127 000
- * jetons d'entrée, 0,26 $ le tour avec Claude Sonnet 5 ; le préfixe en est
- * plus de 95 %. Anthropic garde un préfixe cinq minutes et ne met en cache
- * qu'un bloc d'au moins 1 024 jetons (Sonnet) ou 4 096 (Haiku 4.5) ; en
- * dessous, le bloc part sans cache et sans erreur. Gemini ignore la marque.
+ * Mesuré le 5 novembre 2026 dans le bac à sable : 664 recettes, 261 679
+ * caractères, 127 000 jetons d'entrée, 0,26 $ le tour avec Claude Sonnet 5 ;
+ * le préfixe en est plus de 95 %. Anthropic garde un préfixe cinq minutes et
+ * ne met en cache qu'un bloc d'au moins 1 024 jetons (Sonnet) ou 4 096
+ * (Haiku 4.5) ; en dessous, le bloc part sans cache et sans erreur. Gemini
+ * ignore la marque.
  *
- * Rien n'est écrit : ni Firestore, ni Storage. Le texte de la personne et le
+ * Le second poste, `meal_workshop_recipe`, rédige la recette d'un plat figé :
+ * le prompt de la conception du planning (`buildConceptPrompt`) avec le plat
+ * demandé, ses accompagnements dans la description et le nombre de parts du
+ * menu ; la réponse prend la forme de celle de `generateRecipeFn`, que le
+ * client lit avec le code d'« Imaginer 3 recettes ».
+ *
+ * Rien n'est écrit ici : ni Firestore, ni Storage. Les seules écritures d'un
+ * tour sont la ligne `ai_usage` (par `callModel`) et le compteur
+ * `meal_workshop_daily`, tenu par la callable. Le texte de la personne et le
  * contenu des recettes ne sont jamais journalisés — seules leurs tailles et
  * les compteurs du contrôle (`inventedIds`, services écartés).
  *
- * Portage (palier 1) : ce fichier se réécrit dans `gemini/mealWorkshop.ts`
- * avec ses prompts, seuils et constantes recopiés à l'identique. Les deux
- * bornes du menu (10 services, 6 accompagnements) existent déjà côté client
- * (`kMaxCoursesPerMenu`, `kMaxSidesPerDish`) : au portage, elles rejoignent
- * le tableau « Logique dupliquée Dart ↔ TypeScript » avec une fixture.
+ * Réécrit depuis le bac à sable (`sandbox/mealWorkshop.ts`, v0.24.72 à
+ * v0.24.75) : prompts, seuils et constantes recopiés à l'identique. Les
+ * bornes partagées avec le client vivent dans
+ * `test-fixtures/meal_workshop_rules.json` (tableau « Logique dupliquée »).
  */
 
 import { HttpsError } from "firebase-functions/v2/https";
@@ -42,9 +50,33 @@ import {
   formatCount,
 } from "../callable/_inputBounds";
 import { codeEffortFor } from "../ai/featureEfforts";
+import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext } from "../ai/types";
+import {
+  buildIngredientsIndex,
+  extractIngredientsStructured,
+  extractPortions,
+  extractTags,
+} from "../cooklang/parser";
 import { logError, logInfo } from "../logging";
-import { askModel, type SandboxModelChoice } from "./model";
+import { retagUtensils } from "../nutrition/utensils";
+import { extractJsonObject } from "./client";
+import {
+  PLANNING_CONCEPT_MAX_TOKENS,
+  buildConceptPrompt,
+  type RecipeConceptInput,
+} from "./planning";
+
+// ── Postes ───────────────────────────────────────────────────────────────────
+
+/** Un tour de conversation. Groupe « Recherche » du routage et du catalogue. */
+export const MEAL_WORKSHOP_TURN_FEATURE = "meal_workshop_turn";
+
+/** La recette d'un plat figé. Groupe « Rédaction » du routage, « Rédaction d'une recette » du catalogue. */
+export const MEAL_WORKSHOP_RECIPE_FEATURE = "meal_workshop_recipe";
+
+/** `entity_type` des lignes `ai_usage` des deux postes ; `entity_id` = `conversationId`. */
+export const MEAL_WORKSHOP_ENTITY_TYPE = "meal_workshop";
 
 // ── Bornes ───────────────────────────────────────────────────────────────────
 
@@ -56,23 +88,41 @@ export const MEAL_WORKSHOP_MAX_MESSAGE_CHARS = 1_500;
 
 /**
  * Services au plus dans un menu. Même valeur que `kMaxCoursesPerMenu`
- * (`features/planning/domain/meal_composition.dart`) : au portage, cette
- * constante rejoint le tableau « Logique dupliquée » avec une fixture.
+ * (`features/planning/domain/meal_composition.dart`) : fixture
+ * `meal_workshop_rules.json`, clé `max_courses`.
  */
 export const MEAL_WORKSHOP_MAX_COURSES = 10;
 
 /**
  * Accompagnements au plus par plat. Même valeur que `kMaxSidesPerDish`
- * (`features/planning/domain/side_chooser.dart`) : même règle de portage.
+ * (`features/planning/domain/side_chooser.dart`) : clé `max_sides`.
  */
 export const MEAL_WORKSHOP_MAX_SIDES = 6;
 
 /**
  * Services de rôle « plat » au plus en mode plat : le plat, et au besoin la
- * recette d'un accompagnement en service secondaire. Jumelle de
- * `kWorkshopMaxDishCourses` côté client.
+ * recette d'un accompagnement en service secondaire. Clé `max_dish_courses`.
  */
 export const MEAL_WORKSHOP_MAX_DISH_COURSES = 2;
+
+/**
+ * Tours par jour et par compte, avant multiplicateur (`budgetMultiplierFor` :
+ * ×100 pour le fondateur, comme la recherche web). Clé `daily_limit`.
+ */
+export const MEAL_WORKSHOP_DAILY_LIMIT = 30;
+
+/** `details.reason` d'un refus du plafond de tours du jour. */
+export const MEAL_WORKSHOP_QUOTA_REASON = "meal_workshop_daily_quota";
+
+/** Le plafond d'un compte : trente, multiplié pour le fondateur. */
+export function mealWorkshopLimit(multiplier: number): number {
+  return MEAL_WORKSHOP_DAILY_LIMIT * Math.max(1, Math.floor(multiplier));
+}
+
+/** Tours restants après `used` tours du jour. */
+export function remainingTurns(used: number, limit: number): number {
+  return Math.max(0, limit - Math.max(0, used));
+}
 
 /** Ce que la personne compose : un plat et ses accompagnements, ou un repas complet. */
 export const MEAL_WORKSHOP_KINDS = ["plat", "menu"] as const;
@@ -80,6 +130,17 @@ export type MealWorkshopKind = (typeof MEAL_WORKSHOP_KINDS)[number];
 
 /** `details.reason` d'un `kind` absent ou hors liste. */
 export const MEAL_WORKSHOP_KIND_REASON = "meal_workshop_kind";
+
+/**
+ * Identifiant de conversation, tiré par le client et rejoué à chaque tour :
+ * c'est l'`entity_id` qui relie les lignes `ai_usage` d'une même conversation.
+ * Huit à soixante-quatre caractères `[A-Za-z0-9_-]`.
+ */
+export const MEAL_WORKSHOP_CONVERSATION_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+export const MEAL_WORKSHOP_CONVERSATION_ID_MAX_CHARS = 64;
+
+/** `details.reason` d'un `conversationId` absent ou mal formé. */
+export const MEAL_WORKSHOP_CONVERSATION_ID_REASON = "meal_workshop_conversation_id";
 
 /** `course_label` d'un service « autre » (`kCourseLabelMaxChars`). */
 export const MEAL_WORKSHOP_COURSE_LABEL_MAX_CHARS = 30;
@@ -96,21 +157,39 @@ export const MEAL_WORKSHOP_REPLY_MAX_CHARS = 6_000;
 /**
  * Caractères au plus par réponse du modèle rejouée dans l'historique : le
  * client ne rejoue que `reponse`, déjà coupée à [MEAL_WORKSHOP_REPLY_MAX_CHARS].
- * Plus long : un historique forgé, refusé.
+ * Plus long : un historique forgé, refusé. Clé `max_assistant_chars`.
  */
 export const MEAL_WORKSHOP_MAX_ASSISTANT_CHARS = MEAL_WORKSHOP_REPLY_MAX_CHARS;
-
-/** JSON brut rendu au client pour le volet « Réponse brute », au plus. */
-export const MEAL_WORKSHOP_RAW_MAX_CHARS = 20_000;
 
 /** Jetons de sortie demandés au modèle : texte court plus dix services. */
 export const MEAL_WORKSHOP_MAX_TOKENS = 6_000;
 
-/** `details.reason` d'une réponse que le contrôle a refusée. */
+/** `details.reason` d'une réponse de tour que le contrôle a refusée. */
 export const MEAL_WORKSHOP_UNREADABLE_REASON = "meal_workshop_unreadable";
 
 /** `details.reason` d'un 21e tour. */
 export const MEAL_WORKSHOP_MAX_TURNS_REASON = "meal_workshop_max_turns";
+
+/** `details.reason` d'une recette que le modèle n'a pas rendue lisible. */
+export const MEAL_WORKSHOP_RECIPE_UNREADABLE_REASON = "meal_workshop_recipe_unreadable";
+
+/**
+ * Libellé d'un accompagnement transmis à la rédaction d'un plat figé, au plus :
+ * la borne du libellé dans le menu rendu. Le client renvoie les libellés tels
+ * que le contrôle les a rendus (jusqu'à 60 caractères) ; une borne plus courte
+ * ferait refuser à la rédaction un accompagnement que le serveur a lui-même
+ * laissé passer au tour précédent.
+ */
+export const MEAL_WORKSHOP_RECIPE_SIDE_MAX_CHARS = MEAL_WORKSHOP_SIDE_LABEL_MAX_CHARS;
+
+/**
+ * Préférences générales transmises à la rédaction d'un plat figé, au plus :
+ * la même borne que le tour et que `generateRecipeConceptFn`. Le client
+ * envoie le même texte aux deux callables de l'atelier, et le champ des
+ * préférences du planning n'a pas de longueur maximale : une borne plus
+ * courte ici ferait échouer la rédaction d'un plat après vingt tours passés.
+ */
+export const MEAL_WORKSHOP_RECIPE_CONSTRAINTS_MAX_CHARS = SHORT_TEXT_MAX_CHARS;
 
 /** Rôles d'un service, dans l'ordre du menu (`kCourseRoles`). */
 export const COURSE_ROLES = ["entree", "plat", "sorbet", "fromage", "dessert", "autre"] as const;
@@ -118,11 +197,12 @@ export type CourseRole = (typeof COURSE_ROLES)[number];
 
 /**
  * Clés d'un résumé de recette transmises au prompt — celles que
- * `buildWorkshopRecipeSummary` (`features/sandbox/domain/workshop_recipe_summary.dart`)
- * produit : sans `livre` ni `statut`, qui n'aident pas à composer, et avec
- * `duree` (« 35 min », « ≈ 40 min » pour une estimation, « inconnue »).
+ * `buildMealWorkshopSummary` produit côté client : sans `livre` ni
+ * `statut`, qui n'aident pas à composer, et avec `duree` (« 35 min »,
+ * « ≈ 40 min » pour une estimation, « inconnue »). Clé `summary_keys` de la
+ * fixture, dans cet ordre.
  */
-const SUMMARY_KEYS = [
+export const SUMMARY_KEYS = [
   "id",
   "titre",
   "ingredients",
@@ -147,7 +227,18 @@ export const SUMMARY_VALUE_MAX_CHARS = 500;
 /** « ≈ 150 min » tient en dix caractères ; vingt laissent de la marge. */
 export const SUMMARY_DURATION_MAX_CHARS = 20;
 
-// ── Entrée ───────────────────────────────────────────────────────────────────
+/**
+ * Identifiant d'une recette ou d'une garniture reçu du client, au plus, par
+ * troncature : un identifiant Firestore tient en vingt caractères, et la
+ * borne par élément de 20 000 caractères laissait passer un identifiant de
+ * dix mille caractères dans le prompt.
+ */
+export const SUMMARY_ID_MAX_CHARS = 128;
+
+/** Nom et famille d'une garniture reçus du client, au plus, par troncature. */
+export const STAPLE_VALUE_MAX_CHARS = 100;
+
+// ── Entrée d'un tour ─────────────────────────────────────────────────────────
 
 export interface WorkshopTurn {
   role: "user" | "assistant";
@@ -178,10 +269,35 @@ export interface MealWorkshopInput {
   turn: number;
   /** Valeurs de résumé coupées à leur borne par `readSummary` ; journalisé. */
   clampedSummaryValues: number;
+  /** Valeurs de garniture coupées à leur borne par `readStaple` ; journalisé. */
+  clampedStapleValues: number;
 }
 
 function invalid(message: string, details?: Record<string, unknown>): HttpsError {
   return new HttpsError("invalid-argument", message, details);
+}
+
+/**
+ * L'identifiant de conversation, lu sous sa forme. Absent, d'un autre type ou
+ * hors motif : refusé en `invalid-argument`, `details.reason`
+ * [MEAL_WORKSHOP_CONVERSATION_ID_REASON]. Pure, testée.
+ */
+export function readConversationId(
+  raw: unknown,
+  inputs: AiInputSizes = new AiInputSizes(),
+): string {
+  const value = inputs.text(raw, {
+    field: "conversationId",
+    max: MEAL_WORKSHOP_CONVERSATION_ID_MAX_CHARS,
+    required: true,
+  });
+  if (!MEAL_WORKSHOP_CONVERSATION_ID_PATTERN.test(value)) {
+    throw invalid(
+      "Le champ « conversationId » doit compter de 8 à 64 caractères parmi lettres, chiffres, « _ » et « - ».",
+      { reason: MEAL_WORKSHOP_CONVERSATION_ID_REASON, field: "conversationId" },
+    );
+  }
+  return value;
 }
 
 /**
@@ -220,7 +336,28 @@ function readKind(raw: unknown): MealWorkshopKind {
   });
 }
 
-function readStaple(raw: unknown, index: number): WorkshopStaple {
+/** Valeurs coupées à leur borne, comptées pour le journal du tour. */
+export interface SummaryClampCounter {
+  clamped: number;
+}
+
+/** Une valeur du client coupée à [max], et comptée dans [counter]. */
+function cutAndCount(value: string, max: number, counter: SummaryClampCounter): string {
+  if (value.length <= max) return value;
+  counter.clamped++;
+  return value.slice(0, max);
+}
+
+/**
+ * Une garniture, bornée par troncature : `id` à [SUMMARY_ID_MAX_CHARS],
+ * `name` et `category` à [STAPLE_VALUE_MAX_CHARS], les coupes comptées dans
+ * [counter]. Exportée pour être testée seule.
+ */
+export function readStaple(
+  raw: unknown,
+  index: number,
+  counter: SummaryClampCounter = { clamped: 0 },
+): WorkshopStaple {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw invalid(`Le champ « staples[${index}] » doit être un objet.`);
   }
@@ -231,19 +368,19 @@ function readStaple(raw: unknown, index: number): WorkshopStaple {
     throw invalid(`Le champ « staples[${index}] » doit porter un id et un name.`);
   }
   const category = typeof source.category === "string" ? source.category.trim() : "autre";
-  return { id, name, category };
-}
-
-/** Valeurs de résumé coupées à leur borne, comptées pour le journal du tour. */
-export interface SummaryClampCounter {
-  clamped: number;
+  return {
+    id: cutAndCount(id, SUMMARY_ID_MAX_CHARS, counter),
+    name: cutAndCount(name, STAPLE_VALUE_MAX_CHARS, counter),
+    category: cutAndCount(category, STAPLE_VALUE_MAX_CHARS, counter),
+  };
 }
 
 /**
  * Un résumé de recette, en liste blanche et borné : un champ que le client
  * ajoute n'atteint pas le prompt, une valeur trop longue est coupée à
- * [SUMMARY_VALUE_MAX_CHARS] ([SUMMARY_DURATION_MAX_CHARS] pour `duree`) et
- * comptée dans [counter]. Exportée pour être testée seule.
+ * [SUMMARY_VALUE_MAX_CHARS] ([SUMMARY_DURATION_MAX_CHARS] pour `duree`,
+ * [SUMMARY_ID_MAX_CHARS] pour `id`) et comptée dans [counter]. Exportée pour
+ * être testée seule.
  */
 export function readSummary(
   raw: unknown,
@@ -259,17 +396,13 @@ export function readSummary(
   }
   const out: Record<string, string> = {};
   for (const key of SUMMARY_KEYS) {
+    if (key === "id") continue;
     const value = source[key];
     if (typeof value !== "string") continue;
     const max = key === "duree" ? SUMMARY_DURATION_MAX_CHARS : SUMMARY_VALUE_MAX_CHARS;
-    if (value.length > max) {
-      counter.clamped++;
-      out[key] = value.slice(0, max);
-    } else {
-      out[key] = value;
-    }
+    out[key] = cutAndCount(value, max, counter);
   }
-  out.id = source.id.trim();
+  out.id = cutAndCount(source.id.trim(), SUMMARY_ID_MAX_CHARS, counter);
   if (out.titre === undefined) out.titre = "";
   return out;
 }
@@ -283,7 +416,8 @@ export function readSummary(
  * compter ce qu'il écarte : il a déjà été compté au tour qui l'a produit.
  *
  * [inputs] relève la taille de chaque champ ; `readAiInputs` les journalise
- * (tailles seules, jamais le contenu).
+ * (tailles seules, jamais le contenu). `conversationId` se lit à part, par
+ * [readConversationId].
  */
 export function readMealWorkshopInput(
   data: unknown,
@@ -335,6 +469,7 @@ export function readMealWorkshopInput(
     })
     .map((raw, index) => readSummary(raw, index, summaryClamps));
 
+  const stapleClamps: SummaryClampCounter = { clamped: 0 };
   const staples = inputs
     .list<unknown>(source.staples ?? [], {
       field: "staples",
@@ -342,7 +477,7 @@ export function readMealWorkshopInput(
       maxItemChars: STRUCTURED_ITEM_MAX_CHARS,
       required: true,
     })
-    .map(readStaple);
+    .map((raw, index) => readStaple(raw, index, stapleClamps));
 
   const globalConstraints =
     inputs.text(source.globalConstraints, {
@@ -377,10 +512,11 @@ export function readMealWorkshopInput(
     menu,
     turn,
     clampedSummaryValues: summaryClamps.clamped,
+    clampedStapleValues: stapleClamps.clamped,
   };
 }
 
-// ── Prompt ───────────────────────────────────────────────────────────────────
+// ── Prompt d'un tour ─────────────────────────────────────────────────────────
 
 /** Le rôle du modèle, selon ce que la personne compose. */
 const OPENING: Readonly<Record<MealWorkshopKind, string>> = {
@@ -578,7 +714,7 @@ export interface DroppedCourse {
   detail?: string;
 }
 
-/** Ce que le contrôle a corrigé ou écarté — la mesure du palier 0. */
+/** Ce que le contrôle a corrigé ou écarté. */
 export interface MenuControl {
   /** Identifiants de recette hors corpus, services et accompagnements confondus. */
   inventedIds: number;
@@ -819,26 +955,12 @@ export function controlMenu(raw: unknown, ctx: MenuControlContext): ControlledMe
   return { menu: { portions: ctx.portions, courses }, control };
 }
 
-// ── Lecture de la réponse ────────────────────────────────────────────────────
+// ── Lecture de la réponse d'un tour ──────────────────────────────────────────
 
 export interface WorkshopAnswer {
   reponse: string;
   /** Le menu tel que rendu, avant contrôle. */
   menu: unknown;
-  /** Le JSON extrait de la réponse, tel quel. */
-  rawJson: string;
-}
-
-/**
- * Extrait l'objet JSON d'une réponse de modèle.
- *
- * Copié de `gemini/client.ts` (`extractJsonObject`) — trois lignes, contre un
- * import qui lierait ce module au client Gemini.
- */
-function extractJsonObject(text: string): string {
-  const cleaned = text.replace(/```json?|```/g, "").trim();
-  const match = cleaned.match(/\{[\s\S]*\}/);
-  return match ? match[0] : cleaned;
 }
 
 /** La lecture d'une réponse : l'objet lu, ou la raison pour laquelle il ne se lit pas. */
@@ -850,11 +972,22 @@ function unreadable(failure: string): WorkshopAnswerReading {
 }
 
 /**
+ * La raison d'un JSON qui ne se lit pas : le **nom** de l'erreur seulement.
+ * Le message de la `SyntaxError` de `JSON.parse` cite un extrait de
+ * l'entrée (« Unexpected token 'x', "…" is not valid JSON ») : dans
+ * l'`errorDescription` d'un `logError`, quelques dizaines de caractères du
+ * texte du modèle atteindraient le journal.
+ */
+function unreadableJson(err: unknown): string {
+  return `JSON illisible : ${err instanceof Error ? err.name : typeof err}`;
+}
+
+/**
  * Lit la réponse du modèle : un objet avec « reponse » et « menu ». Pure.
  *
  * `answer` est `null`, et `failure` le dit, quand le JSON ne se lit pas (le
- * message de la `SyntaxError` y est), n'est pas un objet, ou ne porte pas de
- * « menu » objet. `runMealWorkshopTurn` pose `failure` dans
+ * nom de l'erreur, jamais son message), n'est pas un objet, ou ne porte pas
+ * de « menu » objet. `runMealWorkshopTurn` pose `failure` dans
  * l'`errorDescription` de son `logError`. Une « reponse » absente vaut un
  * texte vide : un tour peut ne changer que le menu.
  */
@@ -865,7 +998,7 @@ export function parseWorkshopAnswer(text: string): WorkshopAnswerReading {
   try {
     parsed = JSON.parse(rawJson);
   } catch (err) {
-    return unreadable(`JSON illisible : ${err instanceof Error ? err.message : String(err)}`);
+    return unreadable(unreadableJson(err));
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return unreadable("la réponse n'est pas un objet JSON");
@@ -875,7 +1008,7 @@ export function parseWorkshopAnswer(text: string): WorkshopAnswerReading {
     return unreadable("clé « menu » absente, ou pas un objet");
   }
   const reponse = typeof source.reponse === "string" ? source.reponse.trim() : "";
-  return { answer: { reponse, menu: source.menu, rawJson }, failure: null };
+  return { answer: { reponse, menu: source.menu }, failure: null };
 }
 
 /**
@@ -895,22 +1028,19 @@ export function boundReply(text: string): { reponse: string; reponseTruncated: b
 
 // ── Le tour ──────────────────────────────────────────────────────────────────
 
-export interface WorkshopUsage {
-  /** Coût enregistré par la comptabilité ; `null` quand la grille ne le chiffre pas. */
-  costUsd: number | null;
-  inputTokens: number;
-  outputTokens: number;
-  thinkingTokens: number;
-  cacheReadInputTokens: number;
-  cacheCreationInputTokens: number;
-  durationMs: number;
-  provider: string;
-  model: string;
-  /** Le moteur que la politique voulait, quand ce n'est pas celui qui a répondu. */
-  requested: string | null;
-  callId: string;
-  /** Raison d'arrêt du fournisseur (`MAX_TOKENS` : réponse coupée), quand il la donne. */
-  stopReason: string | null;
+/**
+ * Le modèle a répondu, mais le contrôle a refusé sa réponse. L'appel a été
+ * facturé : la callable garde la place du jour et rend `internal` avec
+ * [MEAL_WORKSHOP_UNREADABLE_REASON]. Le journal est déjà écrit.
+ */
+export class MealWorkshopUnreadableError extends Error {
+  constructor(
+    readonly failure: string,
+    readonly turn: number,
+  ) {
+    super("L'IA n'a pas rendu de réponse lisible.");
+    this.name = "MealWorkshopUnreadableError";
+  }
 }
 
 export interface MealWorkshopTurnResult {
@@ -919,55 +1049,47 @@ export interface MealWorkshopTurnResult {
   reponseTruncated: boolean;
   menu: MenuState;
   control: MenuControl;
-  raw: string;
-  rawTruncated: boolean;
-  usage: WorkshopUsage;
-  /** Taille du prompt envoyé, en caractères. */
-  promptChars: number;
   turn: number;
 }
 
 /**
- * Un tour de l'atelier : prompt, appel, contrôle. Rien n'est écrit.
+ * Un tour de l'atelier : prompt, appel, contrôle. Rien n'est écrit ici.
  *
- * Une réponse que le contrôle refuse lève une `HttpsError` « internal » dont
- * `details` porte la raison, la consommation du tour (facturé) et un aperçu
- * borné du texte rendu : l'administrateur lit les codes.
+ * L'appel passe par `callModel` : plafond du jour, politique de routage,
+ * ligne `ai_usage` au poste `meal_workshop_turn`, rattachée à la conversation
+ * (`entity_type: "meal_workshop"`, `entity_id` = [conversationId]). Une
+ * réponse que le contrôle refuse est journalisée — longueurs et compteurs
+ * seulement, jamais le texte du modèle — puis lève
+ * [MealWorkshopUnreadableError].
  */
 export async function runMealWorkshopTurn(args: {
   input: MealWorkshopInput;
   ctx: ModelCallContext;
-  choice: SandboxModelChoice | null;
+  conversationId: string;
 }): Promise<MealWorkshopTurnResult> {
-  const { input, ctx, choice } = args;
+  const { input, ctx, conversationId } = args;
   const { prefix, suffix } = buildMealWorkshopPrompt(input);
   const promptChars = prefix.length + suffix.length;
   const startedAt = Date.now();
   // Deux blocs, pas un seul texte : Anthropic ne met en cache qu'un bloc
-  // entier, celui marqué et tout ce qui le précède. `callModel` (chemin
-  // Gemini) et `callChosenGemini` traduisent chaque bloc texte en une part
-  // Gemini de la même requête : le balisage en envoie déjà deux.
-  const { result, requested } = await askModel({
+  // entier, celui marqué et tout ce qui le précède. Le chemin Gemini de
+  // `callModel` traduit chaque bloc texte en une part de la même requête.
+  //
+  // `maxTokens` borne la sortie de Claude ; `callModel` ne le transmet pas à
+  // Gemini (comportement du routeur), où seuls le plafond du modèle et le
+  // budget du jour s'appliquent.
+  const result = await callModel({
     parts: [textPart(prefix, { cache: true }), textPart(suffix)],
-    ctx: { ...ctx, timeoutMs: 180_000, effort: codeEffortFor(ctx.feature) },
-    choice,
+    ctx: {
+      ...ctx,
+      feature: MEAL_WORKSHOP_TURN_FEATURE,
+      timeoutMs: 180_000,
+      effort: codeEffortFor(MEAL_WORKSHOP_TURN_FEATURE),
+    },
     maxTokens: MEAL_WORKSHOP_MAX_TOKENS,
+    usageMeta: { entityType: MEAL_WORKSHOP_ENTITY_TYPE, entityId: conversationId },
   });
   const durationMs = Date.now() - startedAt;
-  const usage: WorkshopUsage = {
-    costUsd: result.recordedCostUsd ?? null,
-    inputTokens: result.usage.inputTokens,
-    outputTokens: result.usage.outputTokens,
-    thinkingTokens: result.usage.thinkingTokens ?? 0,
-    cacheReadInputTokens: result.usage.cacheReadInputTokens ?? 0,
-    cacheCreationInputTokens: result.usage.cacheCreationInputTokens ?? 0,
-    durationMs,
-    provider: result.provider,
-    model: result.model,
-    requested,
-    callId: result.callId,
-    stopReason: result.stopReason ?? null,
-  };
 
   const text = result.text.trim();
   const reading = parseWorkshopAnswer(text);
@@ -980,56 +1102,52 @@ export async function runMealWorkshopTurn(args: {
     : null;
 
   if (!answer || !controlled) {
+    const failure = reading.failure ?? "menu hors schéma : pas de tableau « courses »";
     await logError({
-      message: "Bac à sable : atelier repas — réponse illisible, tour facturé",
-      errorDescription: reading.failure ?? "menu hors schéma : pas de tableau « courses »",
+      message: "Atelier repas : réponse illisible, tour facturé",
+      errorDescription: failure,
       moduleType: ctx.moduleType,
       correlationId: ctx.correlationId,
       userId: ctx.userId,
-      feature: ctx.feature,
+      feature: MEAL_WORKSHOP_TURN_FEATURE,
       provider: result.provider,
       model: result.model,
       callId: result.callId,
       extra: {
+        conversationId,
         turn: input.turn,
         kind: input.kind,
         responseLength: text.length,
-        responsePreview: text.slice(0, 500),
         promptChars,
         corpusSize: input.recipes.length,
         durationMs,
         stopReason: result.stopReason ?? null,
       },
     });
-    throw new HttpsError("internal", "L'IA n'a pas rendu de réponse lisible.", {
-      reason: MEAL_WORKSHOP_UNREADABLE_REASON,
-      usage,
-      promptChars,
-      turn: input.turn,
-      rawPreview: text.slice(0, 2_000),
-    });
+    throw new MealWorkshopUnreadableError(failure, input.turn);
   }
 
   const { menu, control } = controlled;
   const { reponse, reponseTruncated } = boundReply(answer.reponse);
-  const rawTruncated = answer.rawJson.length > MEAL_WORKSHOP_RAW_MAX_CHARS;
 
   await logInfo({
-    message: "Bac à sable : atelier repas — tour rendu",
+    message: "Atelier repas : tour rendu",
     moduleType: ctx.moduleType,
     correlationId: ctx.correlationId,
     userId: ctx.userId,
-    feature: ctx.feature,
+    feature: MEAL_WORKSHOP_TURN_FEATURE,
     provider: result.provider,
     model: result.model,
     callId: result.callId,
     executionTimeMs: durationMs,
     extra: {
+      conversationId,
       turn: input.turn,
       kind: input.kind,
       promptChars,
       prefixChars: prefix.length,
       clampedSummaryValues: input.clampedSummaryValues,
+      clampedStapleValues: input.clampedStapleValues,
       corpusSize: input.recipes.length,
       staplesCount: input.staples.length,
       historyTurns: input.history.length,
@@ -1042,24 +1160,281 @@ export async function runMealWorkshopTurn(args: {
       offKindCourses: control.offKindCourses,
       clampedFields: control.clampedFields,
       portionsChangedByModel: control.portionsChangedByModel,
-      costUsd: usage.costUsd,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cacheReadInputTokens: usage.cacheReadInputTokens,
-      cacheCreationInputTokens: usage.cacheCreationInputTokens,
-      ...(requested ? { requested } : {}),
+      costUsd: result.recordedCostUsd ?? null,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      cacheReadInputTokens: result.usage.cacheReadInputTokens ?? 0,
+      cacheCreationInputTokens: result.usage.cacheCreationInputTokens ?? 0,
+      stopReason: result.stopReason ?? null,
     },
   });
 
+  return { reponse, reponseTruncated, menu, control, turn: input.turn };
+}
+
+// ── La recette d'un plat figé ────────────────────────────────────────────────
+
+export interface MealWorkshopRecipeInput {
+  conversationId: string;
+  /** Le titre du service, 1 à [MEAL_WORKSHOP_TITLE_MAX_CHARS] caractères. */
+  titre: string;
+  description: string | null;
+  /** Les accompagnements du plat, libellés seuls : ils entrent dans la description. */
+  sides: string[];
+  /** Les parts du menu, 1 à 99. */
+  portions: number;
+  globalConstraints: string;
+}
+
+/**
+ * Lit l'entrée de la rédaction d'un plat figé sous ses bornes. Pure, testée.
+ * Refus, jamais troncature (`invalid-argument`).
+ */
+export function readMealWorkshopRecipeInput(
+  data: unknown,
+  inputs: AiInputSizes = new AiInputSizes(),
+): MealWorkshopRecipeInput {
+  const source = (data ?? {}) as Record<string, unknown>;
+  const conversationId = readConversationId(source.conversationId, inputs);
+  const titre = inputs
+    .text(source.titre, { field: "titre", max: MEAL_WORKSHOP_TITLE_MAX_CHARS, required: true })
+    .trim();
+  if (!titre) throw invalid("Le champ « titre » est requis.");
+  const description =
+    inputs
+      .text(source.description, {
+        field: "description",
+        max: MEAL_WORKSHOP_DESCRIPTION_MAX_CHARS,
+      })
+      ?.trim() || null;
+  const sides = inputs
+    .list<unknown>(source.sides ?? [], {
+      field: "sides",
+      maxItems: MEAL_WORKSHOP_MAX_SIDES,
+      maxItemChars: MEAL_WORKSHOP_RECIPE_SIDE_MAX_CHARS,
+      required: true,
+    })
+    .map((raw, index) => {
+      const label = typeof raw === "string" ? raw.trim() : "";
+      if (!label) throw invalid(`Le champ « sides[${index}] » doit être un libellé.`);
+      return label;
+    });
+  const portions = inputs.number(source.portions, {
+    field: "portions",
+    min: MEAL_WORKSHOP_PORTIONS_MIN,
+    max: MEAL_WORKSHOP_PORTIONS_MAX,
+    integer: true,
+    required: true,
+  });
+  const globalConstraints =
+    inputs.text(source.globalConstraints, {
+      field: "globalConstraints",
+      max: MEAL_WORKSHOP_RECIPE_CONSTRAINTS_MAX_CHARS,
+    }) ?? "";
+  return { conversationId, titre, description, sides, portions, globalConstraints };
+}
+
+/**
+ * L'entrée de `buildConceptPrompt` pour un plat figé : le plat demandé
+ * (titre, description — complétée de « Servir avec : riz, salade verte. »
+ * quand le plat a des accompagnements, pour que la recette les mentionne
+ * sans en faire des recettes), les préférences générales, et les parts du
+ * menu comme contrainte du jour. Pure, testée.
+ */
+export function conceptInputForDish(input: MealWorkshopRecipeInput): RecipeConceptInput {
+  const servedWith = input.sides.length > 0 ? `Servir avec : ${input.sides.join(", ")}.` : "";
+  const description = [input.description?.trim() ?? "", servedWith].filter(Boolean).join(" ");
   return {
-    reponse,
-    reponseTruncated,
-    menu,
-    control,
-    raw: rawTruncated ? answer.rawJson.slice(0, MEAL_WORKSHOP_RAW_MAX_CHARS) : answer.rawJson,
-    rawTruncated,
-    usage,
-    promptChars,
-    turn: input.turn,
+    globalConstraints: input.globalConstraints,
+    requestedDish: { titre: input.titre, ...(description ? { description } : {}) },
+    dayConstraint: { targetPortions: input.portions },
   };
+}
+
+/** Ce que le modèle rend pour un plat figé, lu en liste blanche. */
+export interface ConceptAnswer {
+  titre: string | null;
+  cooklang: string;
+  justification: string | null;
+}
+
+export type ConceptAnswerReading =
+  { answer: ConceptAnswer; failure: null } | { answer: null; failure: string };
+
+/**
+ * Lit la réponse de la conception : un objet JSON `{ titre, cooklang,
+ * justification }`, balises Markdown tolérées. Un `cooklang` absent ou vide
+ * est une réponse illisible : un brouillon sans un seul ingrédient n'est pas
+ * une recette. Pure, testée.
+ */
+export function parseConceptAnswer(text: string): ConceptAnswerReading {
+  const rawJson = extractJsonObject(text ?? "");
+  if (!rawJson) return { answer: null, failure: "réponse vide : aucun objet JSON" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch (err) {
+    return { answer: null, failure: unreadableJson(err) };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { answer: null, failure: "la réponse n'est pas un objet JSON" };
+  }
+  const source = parsed as Record<string, unknown>;
+  const cooklang = typeof source.cooklang === "string" ? source.cooklang.trim() : "";
+  if (!cooklang) return { answer: null, failure: "clé « cooklang » absente ou vide" };
+  const titre = typeof source.titre === "string" ? source.titre.trim() : "";
+  const justification = typeof source.justification === "string" ? source.justification.trim() : "";
+  return {
+    answer: { titre: titre || null, cooklang, justification: justification || null },
+    failure: null,
+  };
+}
+
+/** La réponse de `mealWorkshopRecipeFn` : la forme de celle de `generateRecipeFn`. */
+export interface MealWorkshopRecipePayload {
+  titre: string;
+  langue: "fr";
+  ingredients: Array<{ name: string; qty: string; unit: string; category?: string }>;
+  ingredients_index: string[];
+  justification: string | null;
+  tags: {
+    themes: string[];
+    cuisines: string[];
+    occasions: string[];
+    dish_types: string[];
+    difficulty: string | null;
+    prep_time: number | null;
+    cook_time: number | null;
+    rest_time: number | null;
+  };
+  portions: number;
+  cooklang: string;
+}
+
+/**
+ * La réponse rendue au client, dérivée du CookLang par le parseur du serveur :
+ * ingrédients, index, parts (`>> portions:`, sinon celles du menu), durées et
+ * difficulté des métadonnées. Les ustensiles écrits en `@` sont réécrits en
+ * `#` d'abord (`retagUtensils`, même règle qu'à l'import et dans
+ * `generateRecipeFn`) : ils n'entrent ni dans les ingrédients ni dans
+ * l'index. Le titre est celui du modèle, à défaut celui du service figé.
+ * Pure, testée.
+ */
+export function recipePayloadFrom(
+  answer: ConceptAnswer,
+  input: Pick<MealWorkshopRecipeInput, "titre" | "portions">,
+): MealWorkshopRecipePayload {
+  const cooklang = retagUtensils(answer.cooklang);
+  const structured = extractIngredientsStructured(cooklang);
+  const tags = extractTags(cooklang);
+  return {
+    titre: answer.titre || input.titre,
+    langue: "fr",
+    ingredients: structured.map((item) => ({
+      name: item.name,
+      qty: item.qty,
+      unit: item.unit,
+      ...(item.category ? { category: item.category } : {}),
+    })),
+    ingredients_index: buildIngredientsIndex(structured),
+    justification: answer.justification,
+    tags: {
+      themes: [],
+      cuisines: [],
+      occasions: [],
+      dish_types: tags.dishTypes,
+      difficulty: tags.difficulty ?? null,
+      prep_time: tags.prepTime ?? null,
+      cook_time: tags.cookTime ?? null,
+      rest_time: tags.restTime ?? null,
+    },
+    portions: extractPortions(cooklang) ?? input.portions,
+    cooklang,
+  };
+}
+
+/**
+ * Le modèle a répondu, mais pas une recette. L'appel a été facturé ; la
+ * callable rend `internal` avec [MEAL_WORKSHOP_RECIPE_UNREADABLE_REASON]. Le
+ * journal est déjà écrit.
+ */
+export class MealWorkshopRecipeUnreadableError extends Error {
+  constructor(readonly failure: string) {
+    super("L'IA n'a pas rendu de recette.");
+    this.name = "MealWorkshopRecipeUnreadableError";
+  }
+}
+
+/**
+ * Rédige la recette d'un plat figé : le prompt de la conception du planning
+ * (`buildConceptPrompt`), un appel `callModel` au poste
+ * `meal_workshop_recipe`, rattaché à la conversation comme les tours. Pas de
+ * plafond propre : le budget d'IA du jour seul, par `callModel`.
+ */
+export async function generateMealWorkshopRecipe(
+  input: MealWorkshopRecipeInput,
+  ctx: ModelCallContext,
+): Promise<MealWorkshopRecipePayload> {
+  const prompt = buildConceptPrompt(conceptInputForDish(input));
+  const startedAt = Date.now();
+  const result = await callModel({
+    parts: [textPart(prompt)],
+    ctx: {
+      ...ctx,
+      feature: MEAL_WORKSHOP_RECIPE_FEATURE,
+      timeoutMs: 90_000,
+      effort: codeEffortFor(MEAL_WORKSHOP_RECIPE_FEATURE),
+    },
+    maxTokens: PLANNING_CONCEPT_MAX_TOKENS,
+    usageMeta: { entityType: MEAL_WORKSHOP_ENTITY_TYPE, entityId: input.conversationId },
+  });
+  const durationMs = Date.now() - startedAt;
+  const text = result.text.trim();
+  const reading = parseConceptAnswer(text);
+  if (!reading.answer) {
+    await logError({
+      message: "Atelier repas : recette illisible, appel facturé",
+      errorDescription: reading.failure,
+      moduleType: ctx.moduleType,
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      feature: MEAL_WORKSHOP_RECIPE_FEATURE,
+      provider: result.provider,
+      model: result.model,
+      callId: result.callId,
+      extra: {
+        conversationId: input.conversationId,
+        responseLength: text.length,
+        promptChars: prompt.length,
+        durationMs,
+        stopReason: result.stopReason ?? null,
+      },
+    });
+    throw new MealWorkshopRecipeUnreadableError(reading.failure);
+  }
+  const payload = recipePayloadFrom(reading.answer, input);
+  await logInfo({
+    message: "Atelier repas : recette rendue",
+    moduleType: ctx.moduleType,
+    correlationId: ctx.correlationId,
+    userId: ctx.userId,
+    feature: MEAL_WORKSHOP_RECIPE_FEATURE,
+    provider: result.provider,
+    model: result.model,
+    callId: result.callId,
+    executionTimeMs: durationMs,
+    extra: {
+      conversationId: input.conversationId,
+      promptChars: prompt.length,
+      sides: input.sides.length,
+      cooklangChars: payload.cooklang.length,
+      ingredients: payload.ingredients.length,
+      portions: payload.portions,
+      costUsd: result.recordedCostUsd ?? null,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      stopReason: result.stopReason ?? null,
+    },
+  });
+  return payload;
 }

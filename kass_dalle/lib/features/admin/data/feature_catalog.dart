@@ -82,6 +82,10 @@ const kFeatureProcess = <String, String>{
   // « Chercher sur le web » (Explorer) : recherche Google ancrée, facturée
   // à l'appel en plus des jetons.
   'web_recipe_search': 'Recherche',
+  // « Composer un repas avec l'IA » (Explorer) : un appel par tour de
+  // conversation ; la recette de chaque plat figé est une rédaction.
+  'meal_workshop_turn': 'Recherche',
+  'meal_workshop_recipe': 'Rédaction d\'une recette',
   'upload_security_scan': 'Sécurité',
   'image_moderation': 'Sécurité',
   'image_moderation_batch': 'Sécurité',
@@ -224,6 +228,22 @@ const kFeatureCatalog = <String, FeatureInfo>{
         "jusqu'à huit pages de recettes. Facturé en jetons, plus un prix par "
         'appel ancré dans la recherche Google. Une recherche servie par le '
         "cache partagé n'appelle pas le modèle.",
+  ),
+  'meal_workshop_turn': FeatureInfo(
+    label: 'Atelier repas — tour de conversation',
+    description:
+        '« Composer un repas avec l\'IA » dans Explorer : un tour de '
+        'conversation pour composer un plat ou un menu. Le modèle reçoit la '
+        'bibliothèque résumée, les garnitures et les préférences du foyer, '
+        'et rend un texte et le menu en JSON. 30 tours par jour et par '
+        'compte.',
+  ),
+  'meal_workshop_recipe': FeatureInfo(
+    label: 'Atelier repas — recette d\'un plat figé',
+    description:
+        '« Figer le repas » dans l\'atelier : la recette CookLang d\'un plat '
+        'du menu sans recette liée, pour les parts du menu. Un appel par '
+        'plat ; le brouillon est créé par l\'application.',
   ),
   'book_cover': FeatureInfo(
     label: 'Couverture de livre',
@@ -630,13 +650,15 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'Expérimental : repère les photos, dessins, schémas et blocs '
         'manuscrits d\'une page redressée, et rend leurs quatre coins.',
   ),
+  // L'atelier repas a quitté le bac à sable pour Explorer en novembre 2026
+  // (`meal_workshop_turn`). Le poste reste : les tours du palier 0 sont
+  // comptabilisés sous lui.
   'sandbox_meal_workshop_turn': FeatureInfo(
-    label: 'Atelier repas — tour de conversation',
+    label: 'Atelier repas — tour de conversation (bac à sable)',
     description:
-        'Expérimental : un tour de conversation pour composer un menu '
-        'complet. Le modèle reçoit la bibliothèque résumée, les garnitures '
-        'et les préférences du foyer, et rend un texte et le menu en JSON. '
-        'Rien n\'est enregistré.',
+        'Expérimental, palier 0 de l\'atelier repas : un tour de conversation '
+        'pour composer un plat ou un menu, avec le choix du modèle. Rien '
+        'n\'était enregistré. Porté dans Explorer sous `meal_workshop_turn`.',
   ),
 
   // L'extraction des illustrations d'une page importée, sortie du bac à sable.

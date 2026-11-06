@@ -174,6 +174,7 @@
           <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur le web : jusqu'à 8 pages de recettes trouvées par Google, pages en français d'abord, à ouvrir dans le navigateur intégré sur téléphone ou dans le navigateur (50 recherches par jour)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Imaginer 3 recettes dans Explorer, générer une recette depuis le planning — enregistrées en brouillon dans « Mes créations Kass'Dalle ✨ »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Composer un repas avec l'IA dans Explorer — une conversation sur un plat ou un menu complet, 20 tours, 30 par jour et par compte ; « Figer le repas » enregistre un brouillon par plat nouveau dans le livre choisi (« Mes créations Kass'Dalle ✨ » ou « Mes recettes libres ») et laisse les recettes existantes liées telles quelles ; un lecteur qui ouvre la route lit « Composition réservée aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Créer une recette — saisie manuelle, copie de la recette d'un proche, recette conçue par l'IA, import — rangée dans ses propres livres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Relire et valider ses brouillons, détacher ses recettes d'un livre, les supprimer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Enrichir <b>sa</b> recette — la modifier dans l'éditeur, y ajouter une photo, une illustration ou une couverture « Recette libre », y lancer une action d'IA (corriger, améliorer, « Suggérer les tags », cadrer depuis le scan) ; masqué au lecteur, même propriétaire ; <span class="path">/recipes/{id}/edit</span> ouvert par un lien lui dit « Modification réservée aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -215,7 +216,8 @@
       import. Ses recettes existantes restent à lui : il valide ses brouillons, les détache
       d'un livre et les supprime, sans les modifier. Ses anciens repas aussi : il les lit et les supprime. Ce que le rôle
       <code>editor</code> ouvre en plus, c'est le planning et son partage, la création de
-      recettes, l'import, « Chercher avec l'IA » et « Imaginer 3 recettes » dans Explorer, la
+      recettes, l'import, « Chercher avec l'IA », « Imaginer 3 recettes » et « Composer un
+      repas avec l'IA » dans Explorer, la
       création de livres, la relecture des brouillons partagés, et depuis la v0.23.54 la
       création et la gestion d'un groupe familial : le <code>reader</code> rejoint un groupe
       sur invitation d'un proche. Il n'ouvre <b>pas</b> le contenu des autres : depuis la v0.23.8, chacun ne
@@ -263,7 +265,8 @@
       Le parcours quotidien : ouvrir un livre, lire une recette, l'adapter au nombre de convives,
       la noter, composer les repas de la semaine et faire les courses. Tout compte nommé y a
       accès, sauf au planning et à ce qui crée une recette ou demande à l'IA de choisir dans
-      Explorer : « Chercher avec l'IA », « Imaginer 3 recettes ». Planifier, partager son
+      Explorer : « Chercher avec l'IA », « Imaginer 3 recettes », « Composer un repas avec
+      l'IA ». Planifier, partager son
       planning, et dans le planning les idées de repas et la conception d'une recette par l'IA,
       sont réservés à l'éditeur et à l'administrateur. Le lecteur consulte les plannings
       partagés avec ses groupes. Les courses sont ouvertes à tous : chacun remplit sa propre
@@ -294,6 +297,8 @@ flowchart LR
     a35(["Ouvrir une page trouvée&lt;br/&gt;dans le navigateur"])
     a33(["Chercher avec l'IA"])
     a34(["Imaginer 3 recettes"])
+    a48(["Composer un repas avec l'IA&lt;br/&gt;Plat ou Menu, 20 tours"])
+    a49(["Figer le repas&lt;br/&gt;livre choisi, un brouillon par plat"])
     a9(["Planifier un repas&lt;br/&gt;avec sa ligne « Accompagnement »"])
     a10(["Exporter en PDF&lt;br/&gt;une recette, un livre ou tous mes livres"])
     a11(["Demander un dressage sur mesure"])
@@ -347,6 +352,8 @@ flowchart LR
     i18(["Supprimer les suggestions&lt;br/&gt;d'un membre sorti ou d'un groupe supprimé"])
     i19(["Traduire les textes modifiés&lt;br/&gt;en critères vérifiés"])
     i20(["Écarter ce qu'une exclusion interdit&lt;br/&gt;relâcher une préférence, le dire"])
+    i21(["Tenir le menu en cours&lt;br/&gt;un appel par tour, 30 par jour"])
+    i22(["Rédiger la recette d'un plat figé&lt;br/&gt;un appel par plat"])
   end
 
   LEC --- a1
@@ -365,6 +372,12 @@ flowchart LR
   a8 -.->|"les recettes filtrées, sans le texte"| a33
   a34 -.->|"inclut"| i13
   a34 -.->|"proposition retenue"| i14
+  EDI --- a48
+  a8 -.->|"les recettes filtrées, sans le texte, figées à l'ouverture"| a48
+  a48 -.->|"inclut"| i21
+  a49 -.->|"étend : dès qu'un plat est à rédiger"| a48
+  a49 -.->|"inclut, un plat à la fois"| i22
+  i22 -.->|"inclut ; ou « Mes recettes libres »"| i14
   EDI --- a9
   LEC --- a10
   EDI --- a12
@@ -459,10 +472,12 @@ flowchart LR
   i8 --- GEM
   i13 --- GEM
   i15 --- GEM
+  i21 --- GEM
+  i22 --- GEM
 </pre>
       </div>
       <figcaption>
-        Neuf cas de droite consomment des jetons d'IA dans ce parcours. Huit ne nomment pas de
+        Douze cas de droite consomment des jetons d'IA dans ce parcours. Onze ne nomment pas de
         fournisseur : le poste est routé vers Gemini ou Claude par la politique lue dans
         Firestore. « Trouver des pages de recettes sur Google » est servi par Gemini seul, le
         seul moteur qui cherche dans Google ; il est facturé en jetons plus un prix par appel
@@ -520,7 +535,20 @@ flowchart LR
         rejoué. Une proposition retenue est enregistrée en brouillon dans « Mes créations
         Kass'Dalle ✨ » ; quitter l'Explorer ou l'écran d'une proposition avec des propositions non
         enregistrées demande confirmation.
-        Ces deux cas sont réservés à l'éditeur et à l'administrateur.
+        <b>« Composer un repas avec l'IA »</b> ouvre l'atelier repas, un écran dédié : une
+        conversation bornée — 20 tours, 1 500 caractères par message, 30 tours par jour et par
+        compte — et un « Menu en cours » que le moteur redessine à chaque tour, à partir des
+        recettes que retiennent les filtres, figées à l'ouverture. « Plat » par défaut, un plat
+        et ses accompagnements ; ou « Menu », le repas complet, dix services au plus. Un appel
+        par tour ; plafond atteint, le menu reste et se fige encore. <b>« Figer le repas »</b>
+        demande le livre — « Mes créations Kass'Dalle ✨ » par défaut, ou « Mes recettes
+        libres » —, fait trancher chaque doublon de titre (« Lier la recette existante » ou
+        « Rédiger quand même », rien de présélectionné), puis rédige un brouillon par plat
+        nouveau, un appel chacun, pour les parts du menu ; une recette existante reste liée, ni
+        copiée ni modifiée, et un échec ne défait pas les brouillons déjà créés. Rien n'est
+        écrit avant le figement ; la conversation disparaît avec l'écran. Quitter avec une
+        conversation en cours et rien de figé demande confirmation.
+        Ces trois cas sont réservés à l'éditeur et à l'administrateur.
         <b>Le planning présélectionne sans IA</b> : le serveur filtre les recettes (rôle, temps
         de préparation, repos, écartées, déjà au cycle, notées 3/10 ou moins par le lecteur),
         les classe par fraîcheur sur 90 jours et par la note du lecteur, puis tire 5 plats par
@@ -827,8 +855,10 @@ flowchart LR
       <figcaption>
         <b>Seuls l'<code>editor</code> et l'<code>admin</code> créent une recette</b> : saisie
         manuelle, copie de la recette d'un proche, recette conçue par l'IA (Explorer « Imaginer 3
-        recettes », planning « Générer avec l'IA »), import d'une page, d'un livre entier ou d'un
-        lien. Une recette conçue par l'IA arrive en brouillon dans « Mes créations Kass'Dalle ✨ ».
+        recettes » et « Composer un repas avec l'IA », planning « Générer avec l'IA »), import
+        d'une page, d'un livre entier ou d'un lien. Une recette conçue par l'IA arrive en
+        brouillon dans « Mes créations Kass'Dalle ✨ » ; un plat figé dans l'atelier repas, dans
+        ce livre ou dans « Mes recettes libres », au choix.
         Le <code>reader</code> garde ses recettes existantes : il reprend ses brouillons et les
         valide, sans IA ni photo ; il ne modifie plus ses recettes validées, n'y ajoute ni photo
         ni couverture, et n'y lance aucune action d'IA (tickets #162 et #163). Ces gestes

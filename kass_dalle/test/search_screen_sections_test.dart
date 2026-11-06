@@ -108,6 +108,11 @@ Future<void> _pump(
 
 void main() {
   testWidgets('« coréen » : deux sections, total des deux', (tester) async {
+    // Assez large et haut pour que la rangée des cinq actions laisse la
+    // liste visible en entier.
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await _pump(tester);
     await tester.enterText(find.byType(TextField), 'coréen');
     await tester.pumpAndSettle();
@@ -121,6 +126,11 @@ void main() {
   testWidgets(
     'section ingrédients repliée sous le titre, comptée, ouverte au clic',
     (tester) async {
+      // Assez large et haut pour que la rangée des cinq actions laisse la
+      // liste visible en entier.
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await _pump(tester);
       await tester.enterText(find.byType(TextField), 'poulet');
       await tester.pumpAndSettle();
@@ -192,7 +202,7 @@ void main() {
       String leave = 'Voir sur Google',
     }) async {
       // Grand écran assez haut pour que le bandeau tienne sous la liste.
-      tester.view.physicalSize = const Size(1000, 900);
+      tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpAndSettle();
@@ -317,7 +327,9 @@ void main() {
 
     for (final (label, size, sentence) in [
       ('téléphone', const Size(400, 800), importBannerShortSentence),
-      ('grand écran', const Size(1000, 800), importBannerSentence),
+      // 900 px de haut : avec les cinq actions sur trois lignes, la liste
+      // garde la place de la carte ouverte sous le bandeau.
+      ('grand écran', const Size(1000, 900), importBannerSentence),
     ]) {
       testWidgets(
         '$label : le bandeau se pose sous la liste, la carte visible ne bouge pas',
@@ -548,9 +560,12 @@ void main() {
         final full = find.text(importBannerSentence).hitTestable();
         final compact = find.text(importBannerShortSentence).hitTestable();
 
+        // À 1 000 px de large, la rangée des cinq actions tient sur trois
+        // lignes : le bandeau complet tient jusqu'à 700 px de haut, le
+        // compact de 690 à 620, rien en dessous.
         for (final (height, fullShown, compactShown) in [
           (800.0, true, false),
-          (600.0, false, true),
+          (650.0, false, true),
           (520.0, false, false),
         ]) {
           tester.view.physicalSize = Size(1000, height);

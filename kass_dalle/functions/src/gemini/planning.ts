@@ -39,7 +39,12 @@ import {
 import type { TextUnderstanding } from "./planningConstraints";
 
 export interface RecipeConceptInput {
-  slotDate: string;
+  /**
+   * Le créneau du planning, journalisé si la réponse est illisible. Absent
+   * pour l'atelier repas (`gemini/mealWorkshop.ts`), qui rédige un plat figé
+   * sans créneau ; `buildConceptPrompt` ne le lit pas.
+   */
+  slotDate?: string;
   globalConstraints: string;
   dayConstraint?: DayConstraint;
 

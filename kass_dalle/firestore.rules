@@ -1298,6 +1298,19 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Tours de l'atelier repas du jour, par compte — le compteur du plafond
+    // quotidien de `mealWorkshopTurnFn` (trente tours). Écrit par les Cloud
+    // Functions, lu par son titulaire : l'uid ouvre l'identifiant
+    // (`{uid}_{AAAA-MM-JJ}`), ce qui laisse lire un compteur **absent** —
+    // l'écran le lit à l'ouverture, avant le premier tour du jour, et un refus
+    // partirait en rapport d'erreur. Un uid Firebase ne contient pas de « _ » :
+    // le préfixe suivi de « _ » ne désigne qu'un compte.
+    match /meal_workshop_daily/{docId} {
+      allow read: if isAdmin()
+        || (isAuthenticated() && docId.matches(request.auth.uid + '_.*'));
+      allow write: if false;
+    }
+
     // Invitations par e-mail. Elles portent l'adresse d'une personne qui n'a
     // pas encore de compte, et décident du rôle qu'elle recevra à sa première
     // connexion : seul un administrateur les lit, et seules les Cloud

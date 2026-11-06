@@ -38,6 +38,7 @@ const Map<String, String> kTicketScreenNames = {
   '/drafts/:recipeId': 'Relecture d\'un brouillon',
   '/processing': 'Traitements',
   '/search': 'Explorer',
+  '/search/meal-workshop': 'Atelier repas',
   '/planning': 'Planning',
   '/planning/batch': 'Nouveau planning',
   '/planning/config': 'Configuration du planning',

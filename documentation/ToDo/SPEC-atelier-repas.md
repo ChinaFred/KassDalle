@@ -1,10 +1,12 @@
 # Kass'Dalle — Spec : atelier repas conversationnel dans Explorer
 
-> Statut : cadrage à valider · Auteur : business-analyst-culinaire · 1er novembre 2026
+> Statut : palier 0 livré dans le bac à sable (v0.24.72, v0.24.75) ; palier 1 validé le
+> 6 novembre 2026 avec la proposition d'écran, en cours d'implémentation ; palier 2 à venir ·
+> Auteur : business-analyst-culinaire · 1er novembre 2026, mis à jour le 6 novembre 2026
 > Ce document décrit le **quoi** et le **pourquoi**. Le parcours et la disposition des écrans
 > reviennent à `ux-designer` ; l'implémentation à `developpement-tech-couts`.
-> Le palier 0 vit dans le bac à sable : rien de ce qui suit n'entre dans
-> `FunctionalRequirements.md` ni dans `cas-d-utilisation.html` avant le palier 1.
+> Le palier 0 vit dans le bac à sable et n'entre ni dans `FunctionalRequirements.md` ni dans
+> `cas-d-utilisation.html`. Le palier 1 y est décrit depuis le 6 novembre 2026 (§10).
 
 Les décisions du 1er novembre 2026 (cinquième action d'Explorer, écran en deux zones, JSON du
 menu à chaque tour, une recette par plat figé, choix du livre, 30 tours par jour, trois
@@ -113,7 +115,7 @@ Rien à porter.
 | P0-1 | L'expérience n'est accessible qu'au rôle `admin` ; `sandboxFn` refuse tout autre compte avant l'aiguillage. | test existant de `requireAdmin` en tête du handler ; essai avec un compte Editor |
 | P0-2 | Un poste `sandbox_meal_workshop_turn` est inscrit aux trois endroits (`ctx.feature`, `ROUTABLE_FEATURES`, `kFeatureCatalog` et `kFeatureProcess`), groupe « Bac à sable ». | `test/feature_catalog_test.dart` ; le poste apparaît dans Admin → Moteur d'IA et dans la comptabilité |
 | P0-3 | L'écran a deux zones : la conversation, et le menu en cours redessiné depuis le JSON du dernier tour. Le JSON brut est lisible dans un volet « Réponse brute ». | revue d'écran |
-| P0-4 | Le contexte envoyé est celui du palier 1 : résumés de recettes par `buildRecipeSummary` (`search_providers.dart`), garnitures de l'utilisateur, `globalConstraints` des préférences du planning. Le périmètre est « Mes recettes » + « Ma famille » de l'administrateur, sans filtres. Note v0.24.75 : copie `buildWorkshopRecipeSummary` (`features/sandbox/domain/workshop_recipe_summary.dart` : 6 ingrédients, `duree`, sans `livre` ni `statut`). | lecture du code ; nombre de recettes affiché sous le champ |
+| P0-4 | Le contexte envoyé est celui du palier 1 : résumés de recettes par `buildRecipeSummary` (`search_providers.dart`), garnitures de l'utilisateur, `globalConstraints` des préférences du planning. Le périmètre est « Mes recettes » + « Ma famille » de l'administrateur, sans filtres. Note v0.24.75 : copie `buildMealWorkshopSummary` (`features/sandbox/domain/workshop_recipe_summary.dart` : 6 ingrédients, `duree`, sans `livre` ni `statut`). | lecture du code ; nombre de recettes affiché sous le champ |
 | P0-5 | Historique borné : 20 tours au plus, 1 500 caractères par message. Le 21e message est refusé par l'écran ; un message plus long est refusé par l'écran et par le serveur. | test unitaire côté serveur sur la lecture de l'entrée ; essai à l'écran |
 | P0-6 | Le serveur contrôle le JSON rendu (§5) : rôle hors liste, identifiant hors corpus, plus de 10 services, plus de 6 accompagnements par plat → corrigé ou refusé, et compté. | tests unitaires sur `parseMenuState` (nom indicatif) avec des réponses forgées |
 | P0-7 | Rien n'est écrit : ni Firestore, ni Storage. Seules les lignes `ai_usage` du poste existent. | relecture du diff ; aucune écriture dans `functions/src/sandbox/` |
@@ -143,6 +145,13 @@ modifications du prompt qu'elles ont demandées.
 
 ### Palier 1 — Explorer : conversation, figer, choix du livre
 
+> **Validé le 6 nov. 2026 avec la proposition d'écran (UX §8).** Les réponses du §9 (parts par
+> défaut, périmètre à 0 recette, corpus non plafonné, doublon jamais lié d'office) font partie
+> de la validation. Trois critères sont amendés par elle : P1-3 (résumé
+> `buildMealWorkshopSummary`), P1-8 (compteur lu dès l'ouverture) et P1-16 (garde de sortie
+> pendant et après un figement). Deux critères s'ajoutent : P1-20 (choix Plat | Menu, arrivé au
+> palier 0 en v0.24.75) et P1-21 (parts par défaut du menu, §9.1).
+
 Le code du bac à sable n'est pas branché : il est **réécrit** dans
 `features/search/` (écran) et dans un module serveur dédié (nom indicatif
 `functions/src/gemini/mealWorkshop.ts`, callables dans `functions/src/callable/`). Les
@@ -153,23 +162,25 @@ expérimental est supprimé de `sandbox_registry.dart` et de `sandboxFn`.
 |---|---|---|
 | P1-1 | Explorer porte une cinquième action, « Composer un repas avec l'IA », visible de l'Editor et de l'Admin, absente pour le Reader sur téléphone et sur grand écran. Le tableau des actions de FR §5.5 reçoit sa ligne : « Editor, Admin · un appel par tour, un par plat figé ». | test de widget par rôle ; FR mis à jour |
 | P1-2 | L'action ouvre un écran dédié (route go_router à ajouter au §13.1 de `TechnicalRequirements.md`). Ouverte par un lien, la route refuse le Reader : « Composition réservée aux éditeurs », « Retour à Explorer ». | test de route |
-| P1-3 | Le périmètre est figé à l'ouverture : les recettes que retiennent les filtres d'Explorer à ce moment, résumées par `buildRecipeSummary`, gardées en mémoire pour la conversation. L'écran affiche « Périmètre : N recettes ». Changer de filtres demande de quitter l'atelier. | essai : filtre changé dans Explorer après ouverture, N inchangé |
+| P1-3 | Le périmètre est figé à l'ouverture : les recettes que retiennent les filtres d'Explorer à ce moment, sans le filtre du texte, résumées par `buildMealWorkshopSummary` (6 ingrédients, durée « 35 min » / « ≈ 40 min » estimée / « inconnue », sans livre ni statut ; réécrit depuis `features/sandbox/domain/workshop_recipe_summary.dart`, pas `buildRecipeSummary`), gardées en mémoire pour la conversation. Le texte du champ d'Explorer arrive dans l'atelier sans être envoyé. L'écran affiche « Périmètre : N recettes ». Changer de filtres demande de quitter l'atelier. Une recette à durée inconnue n'est jamais proposée comme rapide. | essai : filtre changé dans Explorer après ouverture, N inchangé ; lecture du résumé envoyé |
 | P1-4 | Avec 0 recette dans le périmètre, l'action reste active ; l'écran dit « Aucune recette de la bibliothèque dans le périmètre : l'IA ne proposera que des plats nouveaux. » (différence assumée avec « Chercher avec l'IA », inactif à 0 recette : l'atelier peut inventer, le classement ne peut pas). | essai |
 | P1-5 | Deux postes nouveaux, inscrits aux trois endroits dans le même commit : `meal_workshop_turn` (groupe « Recherche », libellé « Atelier repas — tour de conversation ») et `meal_workshop_recipe` (groupe « Rédaction d'une recette », libellé « Atelier repas — recette d'un plat figé »). | `test/feature_catalog_test.dart` |
 | P1-6 | Un tour = un appel. Le serveur reçoit l'historique (≤ 20 tours, ≤ 1 500 caractères par message de l'utilisateur), le menu en cours, les résumés du périmètre, les garnitures, `globalConstraints`, le nombre de parts du menu. Il rend le texte et le menu contrôlé (§5). Un message trop long ou un historique trop long est refusé en `invalid-argument`, sans appel de modèle. | tests unitaires sur la lecture de l'entrée ; `_inputBounds.ts` |
 | P1-7 | Plafond : 30 tours par jour et par compte, multipliés par `budgetMultiplierFor` comme `webSearchLimit`. La place est réservée dans une transaction sur `meal_workshop_daily/{uid}_{AAAA-MM-JJ}` avant l'appel. Un tour qui échoue avant que le modèle ait répondu n'est pas compté ; un tour dont la réponse est illisible a été facturé : il compte. Refus : `resource-exhausted`, `reason: "meal_workshop_daily_quota"`, `limit`, `remaining: 0`. | tests de la callable ; `rules-tests` pour la collection (lecture : admin ou le compte ; écriture : serveur seul) |
-| P1-8 | Sous le champ : « Il vous reste N tours aujourd'hui. » dès la première réponse. À 0 : « Vous avez fait vos 30 tours d'aujourd'hui. Le compteur repart demain. » Le menu reste affiché, « Figer le repas » reste disponible. | essai avec plafond abaissé en test |
+| P1-8 | Sous le champ : « Il vous reste N tours aujourd'hui. » dès l'ouverture (6 nov. 2026 : le compteur est lu à l'ouverture, pas à la première réponse). À 0, le champ est fermé : « Vous avez fait vos 30 tours d'aujourd'hui. Le compteur repart demain. » Le menu reste affiché, « Figer le repas » reste disponible. | essai avec plafond abaissé en test |
 | P1-9 | Le budget d'IA du jour (`ai/budget.ts`) s'applique à chaque appel, tour et recette. Refus : `resource-exhausted`, `reason: "ai_daily_budget"`, message `DAILY_LIMIT_MESSAGE`. L'écran préfixe par ce qui n'a pas eu lieu : « Réponse non reçue. » ou « Recette non rédigée. ». | essai avec plafond abaissé |
 | P1-10 | « Figer le repas » est actif dès qu'au moins un service porte un titre sans `recipe_id`. Sinon, une ligne explique : « Le menu est vide. » ou « Rien à rédiger : toutes les recettes existent déjà. » | test de widget |
 | P1-11 | Au figement, une boîte demande le livre : « Mes créations Kass'Dalle ✨ » coché par défaut, « Mes recettes libres ». Le choix vaut pour tous les brouillons de ce figement. Les deux livres système sont trouvés ou créés pour le compte par `findOrCreateKassDalleBook` et `findOrCreateLibresBook` (`features/books/data/book_repository.dart`, tous deux existants). | essai ; FR §6, lignes « Toute recette a un livre » et « Recette conçue par l'IA en brouillon », amendées |
 | P1-12 | Pour chaque service à rédiger, un appel `meal_workshop_recipe` rédige le CookLang comme `generateRecipeConcept` (`buildConceptPrompt` avec `requestedDish` = titre + description du service, `globalConstraints`, `targetPortions` = parts du menu), puis le client crée le brouillon comme `saveGeneratedRecipe` : `review_status: draft`, `origin: ai`, `book_id` choisi, `created_by: uid`, `portions` du menu. Les accompagnements du plat sont passés dans la description du plat demandé (« Servir avec : riz, salade verte ») pour que la recette les mentionne ; ils ne deviennent pas des recettes. | test unitaire sur la construction de l'entrée ; brouillon ouvert et relu |
 | P1-13 | Les appels de figement s'enchaînent service par service. Un échec n'annule pas les brouillons déjà créés ; la ligne du service dit « Brouillon créé », « Non rédigée — Réessayer » ou « Non rédigée. L'IA n'a pas rendu de recette. ». Un refus de plafond arrête la suite : les services restants passent « Non rédigée — plafond atteint ». | essai avec échec forcé |
-| P1-14 | Une recette existante citée dans le menu n'est ni copiée ni modifiée. Au figement, elle est relue ; si elle n'est plus lisible (supprimée, devenue privée), la ligne dit « Recette plus accessible » et propose « Rédiger à la place » (un appel) ou « Retirer du menu ». | essai : recette passée en livre privé pendant la conversation |
+| P1-14 | Une recette existante citée dans le menu n'est ni copiée ni modifiée. Au figement, elle est relue ; si elle n'est plus lisible (supprimée, devenue privée), la ligne dit « Recette plus accessible » et propose « Rédiger à la place » (un appel) ou « Retirer du repas ». | essai : recette passée en livre privé pendant la conversation |
 | P1-15 | Doublon de titre : avant l'appel, si un service à rédiger porte le même titre (sans casse ni accents) qu'une recette du périmètre, la ligne propose « Lier la recette existante » ou « Rédiger quand même ». Aucun appel ne part avant la réponse. | test unitaire de la comparaison ; essai |
-| P1-16 | Garde de sortie : avec au moins un tour et aucun brouillon créé, quitter (retour, menu latéral, barre du bas, déconnexion) pose « Quitter sans enregistrer ? », « Rester » / « Quitter » (`leave_guard.dart`). Une fois au moins un brouillon créé, l'écran se quitte librement ; les services non rédigés sont nommés dans la question : « 2 plats ne sont pas rédigés. Quitter sans enregistrer ? ». | essai sur les quatre sorties |
+| P1-16 | Garde de sortie (amendé le 6 nov. 2026) : avec au moins un tour et rien de figé, quitter (retour, menu latéral, barre du bas, déconnexion) pose « Quitter sans enregistrer ? », « Rester » / « Quitter » (`leave_guard.dart`). Pendant un figement : « Figement en cours. Quitter ? » ; les brouillons déjà créés restent. Après un figement complet, l'écran se quitte librement. Après un figement partiel, les services non rédigés sont comptés dans la question : « 1 plat n'est pas rédigé. Quitter sans enregistrer ? ». | essai sur les quatre sorties, dans les quatre états |
 | P1-17 | Rien n'est écrit en base avant le figement : aucun document de conversation, aucun brouillon. Les seules écritures d'un tour sont la ligne `ai_usage` et le compteur `meal_workshop_daily`. | relecture du diff ; `rules-tests` |
 | P1-18 | Le texte de l'utilisateur n'est jamais journalisé : seule sa longueur part dans les journaux, comme `readWebSearchQuery`. Le texte du modèle s'affiche en texte brut ; un identifiant cité dans le texte n'est pas un lien. Seul le JSON contrôlé fait un lien vers une recette. | relecture ; `securite` |
-| P1-19 | Fenêtre de sortie : après figement, la liste des brouillons créés avec « Ouvrir » pour chacun ; la conversation reste affichée jusqu'à la sortie de l'écran, puis disparaît. | essai |
+| P1-19 | Fenêtre de sortie : après figement, on reste dans l'atelier, champ fermé, « Repas figé. », « Nouvelle conversation » ; chaque brouillon créé s'ouvre depuis sa ligne (« Brouillon créé · Ouvrir ») ; la conversation reste affichée jusqu'à la sortie de l'écran, puis disparaît. | essai |
+| P1-20 | Choix « Plat \| Menu » en tête de la conversation, « Plat » par défaut, fixé pour une conversation : changer de mode en cours ouvre une nouvelle conversation après confirmation. Mode Plat : un seul service de rôle `plat` avec ses accompagnements (deux services `plat` au plus). Mode Menu : le repas complet, 10 services au plus (§5). « Figer le repas » est le seul libellé dans les deux modes. | test de widget ; test serveur sur le mode reçu |
+| P1-21 | Parts par défaut du menu : celles du premier groupe familial actif de l'auteur (le plus ancien par date de création, groupes en pause exclus) — son réglage « Parts des groupes » s'il existe, sinon son nombre de membres ; sans groupe, 4. Modifiables par le bouton des parts (1 à 99). La boîte de figement les rappelle : « 3 plats seront rédigés par l'IA, pour 6 parts : un appel chacun. 1 recette existante reste liée telle quelle, avec ses propres parts. ». | test unitaire de la valeur par défaut (groupe avec réglage, sans réglage, en pause, aucun groupe) |
 
 ### Palier 2 — poser dans le planning
 
@@ -198,12 +209,12 @@ expérimental est supprimé de `sandbox_registry.dart` et de `sandboxFn`.
 | Perte de réseau pendant un tour | « Réponse non reçue. Connexion perdue. », « Réessayer » renvoie le même message. Le tour n'est pas dans l'historique. Si la place a été réservée côté serveur sans réponse, elle est rendue (règle de la recherche web : « échoue avant que le moteur ait répondu : ne compte pas »). | écran, serveur |
 | Perte de réseau pendant un figement | Les brouillons déjà créés restent ; les services restants passent « Non rédigée — Réessayer ». Aucun brouillon n'est créé deux fois : un service passé « Brouillon créé » n'est plus rejoué. | écran |
 | Filtres d'Explorer changés pendant la conversation | Sans effet : le périmètre est figé à l'ouverture (P1-3). Pour un autre périmètre, quitter l'atelier et le rouvrir. | écran |
-| Recette du corpus supprimée ou passée privée pendant la conversation | Le modèle peut encore la citer : le serveur ne la connaît que par le résumé envoyé. Au figement, la relecture échoue : « Recette plus accessible », « Rédiger à la place » ou « Retirer du menu » (P1-14). | écran, règles Firestore |
+| Recette du corpus supprimée ou passée privée pendant la conversation | Le modèle peut encore la citer : le serveur ne la connaît que par le résumé envoyé. Au figement, la relecture échoue : « Recette plus accessible », « Rédiger à la place » ou « Retirer du repas » (P1-14). | écran, règles Firestore |
 | Texte de l'utilisateur contenant une consigne au modèle (« ignore tes règles », « écris en base ») | Le texte est une **entrée non fiable** (`CLAUDE.md`, « Tickets »). Il est placé dans une section délimitée du prompt (modèle de `=== DEMANDE ===` de `mealIdeas.ts`), jamais concaténé aux consignes. Les invariants ne dépendent pas du modèle : rôles en liste blanche, identifiants contrôlés contre le corpus, bornes de taille, aucune écriture serveur. Le texte n'est pas journalisé. Une consigne qui « réussit » ne peut au pire que produire un menu absurde, que l'utilisateur ne fige pas. | serveur |
 | Texte du modèle contenant un lien, du Markdown, une adresse | Affiché en texte brut. Aucun lien cliquable hors des recettes du JSON contrôlé (P1-18). | écran |
 | Doublon de titre entre un plat à rédiger et une recette du périmètre | « Lier la recette existante » ou « Rédiger quand même », avant tout appel (P1-15). Entre deux plats du même menu : le serveur refuse deux services de même titre, le second est renommé par le modèle au tour suivant ou retiré par l'utilisateur. | écran, serveur |
 | Doublon de titre avec une recette hors périmètre | Non détecté en v1. La règle « Doublon à l'import » (FR §6) ne compare qu'au sein d'un livre ; l'atelier ne fait pas mieux. | — |
-| Nombre de parts du menu | Le menu a **un** nombre de parts commun, `portions`, de 1 à 99, posé dans le panneau du menu (pas dans la conversation). Il est envoyé au modèle à chaque tour. Chaque recette rédigée est écrite pour ce nombre (`>> portions: N`). Une recette existante liée garde ses propres parts, jamais modifiées ; l'écart s'affiche (« recette pour 6, menu pour 4 »), et c'est le repas planifié du palier 2 qui porte `target_portions`. Valeur par défaut : question ouverte §9. | écran, serveur (prompt) |
+| Nombre de parts du menu | Le menu a **un** nombre de parts commun, `portions`, de 1 à 99, posé dans le panneau du menu (pas dans la conversation). Il est envoyé au modèle à chaque tour. Chaque recette rédigée est écrite pour ce nombre (`>> portions: N`). Une recette existante liée garde ses propres parts, jamais modifiées ; l'écart s'affiche (« recette pour 6, menu pour 4 »), et c'est le repas planifié du palier 2 qui porte `target_portions`. Valeur par défaut : §9.1, tranchée le 6 nov. 2026 (P1-21). | écran, serveur (prompt) |
 | Plus de 10 services ou plus de 6 accompagnements rendus | Le serveur tronque à `kMaxCoursesPerMenu` (10) et `kMaxSidesPerDish` (6), dans l'ordre rendu, et le signale dans la réponse (`truncated: true`). L'écran dit « Menu limité à 10 services. ». | serveur |
 | Deux services `plat` | Admis : le planning connaît un plat principal et des plats secondaires (`MealComposition`, identifiants `p2`, `p3`…). Le premier `plat` est le principal ; au palier 2, c'est lui qui porte `recipe_id`. | serveur, écran |
 | Un accompagnement qui mériterait une recette (« gratin dauphinois ») | En v1, un accompagnement est un texte, une garniture ou une recette existante ; jamais une recette à rédiger. L'utilisateur demande au modèle d'en faire un service `plat` secondaire s'il veut sa recette. Le prompt le dit. | prompt, serveur |
@@ -272,9 +283,9 @@ instruction pour l'écran : le menu seul fait foi.
 
 1. consignes fixes (rôle de cuisinier de famille, format, règles ci-dessus) ;
 2. `=== PRÉFÉRENCES GÉNÉRALES DU FOYER ===` : `globalConstraints` (`planning_preferences.dart`) ;
-3. `=== RECETTES DE LA BIBLIOTHÈQUE ===` : les résumés `buildRecipeSummary` du périmètre
-   (identifiant, titre, livre, 20 ingrédients, thèmes, cuisines, difficulté, rôle,
-   protéine, féculent, statut, note) ;
+3. `=== RECETTES DE LA BIBLIOTHÈQUE ===` : les résumés `buildMealWorkshopSummary` du
+   périmètre (identifiant, titre, 6 ingrédients, thèmes, cuisines, difficulté, rôle,
+   protéine, féculent, note, durée ; sans livre ni statut — P1-3) ;
 4. `=== GARNITURES DISPONIBLES ===` : identifiant, nom, famille (`StapleCategory`) ;
 5. `=== MENU EN COURS ===` : le JSON du tour précédent, ou vide ;
 6. `=== CONVERSATION ===` : les tours précédents, chacun marqué de son auteur ;
@@ -283,7 +294,8 @@ instruction pour l'écran : le menu seul fait foi.
 Les sections 3 et 4 sont les plus coûteuses et ne changent pas d'un tour à l'autre. Si le
 palier 0 mesure un coût par tour trop élevé, deux options, à trancher sur chiffres : plafonner
 le corpus envoyé (par exemple 200 recettes, les mieux notées d'abord), ou activer la mise en
-cache du préfixe du prompt chez le fournisseur qui l'offre. Aucune n'est décidée ici.
+cache du préfixe du prompt chez le fournisseur qui l'offre. Tranché le 6 nov. 2026 (§9.3) :
+pas de plafond du corpus au palier 1, le cache de prompt (v0.24.75) répond au coût.
 
 ---
 
@@ -389,21 +401,41 @@ Hors périmètre, à confirmer :
 
 ---
 
-## 9. Questions ouvertes
+## 9. Questions ouvertes — réponses du 6 novembre 2026
+
+Les cinq questions posées le 1er novembre ont reçu leur réponse de l'utilisateur le
+6 novembre 2026, avec la validation du palier 1. La question d'origine est gardée, suivie de
+la réponse.
 
 1. **Parts par défaut du menu.** 4 ? Ou les parts du jour de semaine courant dans les
    préférences du planning (« parts prévues ce jour-là », FR §5.8) ? La seconde demande de
    lire les préférences à l'ouverture ; la première est une constante.
+   **Réponse (6 nov. 2026)** : ni l'une ni l'autre. Les parts par défaut sont celles du
+   premier groupe familial actif de l'auteur — le plus ancien par date de création, groupes
+   en pause exclus — : le réglage « Parts des groupes » de ce groupe s'il existe, sinon son
+   nombre de membres. Sans groupe, 4. Modifiables par le bouton des parts. Critère P1-21.
 2. **Périmètre à 0 recette.** L'action reste active avec un avertissement (P1-4) : d'accord,
    ou inactive comme « Chercher avec l'IA » ?
+   **Réponse (6 nov. 2026)** : l'action reste active. L'écran dit « Aucune recette de la
+   bibliothèque dans le périmètre : l'IA ne proposera que des plats nouveaux. ». P1-4
+   inchangé.
 3. **Plafond du corpus envoyé.** Faut-il décider dès maintenant un maximum de recettes
    envoyées par tour (par exemple 200, les mieux notées d'abord), ou attendre la mesure du
    palier 0 ? Proposition : attendre la mesure.
+   **Réponse (6 nov. 2026)** : aucun plafond du corpus au palier 1. Le cache de prompt
+   (v0.24.75) répond au coût des sections fixes ; le résumé est déjà réduit à 6 ingrédients
+   (P1-3). Un plafond se rediscutera sur une mesure du coût par tour en production.
 4. **Doublon de titre** (P1-15) : la question « Lier ou rédiger » convient-elle, ou faut-il
    lier d'office quand le titre est identique ?
+   **Réponse (6 nov. 2026)** : jamais lier d'office. Pour chaque titre déjà présent dans la
+   bibliothèque de l'utilisateur, la boîte de figement propose « Lier la recette existante »
+   ou « Rédiger quand même », rien n'est présélectionné, et « Figer » reste inactif tant
+   qu'un doublon est sans réponse. P1-15 inchangé.
 5. **Palier 2 et planning de groupe.** Un propriétaire de groupe peut-il poser le repas dans
    le planning du groupe, ou seulement dans le sien ? Proposition : le sien seul en palier 2,
    le groupe plus tard s'il est demandé.
+   **Réponse (6 nov. 2026)** : non tranché. La question reste ouverte pour le cadrage du
+   palier 2 ; elle ne bloque pas le palier 1. P2-6 inchangé.
 
 ---
 
@@ -414,6 +446,6 @@ Mini-plan, à valider avec le cadrage. Rien n'est modifié avant le « oui ».
 | Palier | Documents | Ce qui change |
 |---|---|---|
 | 0 | `TechnicalRequirements.md` (poste d'IA, routage) ; `CHANGELOG.md` | le poste `sandbox_meal_workshop_turn` ; §13.3 ne change pas (le contrat du bac à sable est inchangé) |
-| 1 | `FunctionalRequirements.md` §3.2 (ligne Editor et Reader), §5.5 (tableau des actions, paragraphe « Composer un repas avec l'IA », disposition), §6 (lignes « Création de recette réservée », « Recette conçue par l'IA en brouillon », « Toute recette a un livre » : deux livres au choix pour l'atelier), §7 Livré ; `cas-d-utilisation.html` (cas Editor/Admin « Composer un repas avec l'IA », « Figer le repas ») | business-analyst-culinaire, avec le livrable validé |
+| 1 | `FunctionalRequirements.md` §3.2 (ligne Editor et Reader), §5.5 (tableau des actions, paragraphe « Composer un repas avec l'IA », disposition), §6 (lignes « Création de recette réservée », « Recette conçue par l'IA en brouillon », « Explorer filtre sans IA », « Toute recette a un livre » : deux livres au choix pour l'atelier), §7 Livré et « Reste à faire » (« Poser le repas de l'atelier dans le planning ») ; `cas-d-utilisation.html` (tableau des rôles, cas Editor/Admin « Composer un repas avec l'IA », « Figer le repas », légende de « Constituer la bibliothèque ») | business-analyst-culinaire, avec le livrable validé — **fait le 6 nov. 2026** |
 | 1 | `TechnicalRequirements.md` §3 (champ `ai_source`, collection `meal_workshop_daily`), §4 (règles de la collection), §13.1 (route), callables et prompts ; `architecture.html` (tableau des fonctions, des collections) ; `diagramme-de-classes.html` ; `diagrammes-de-sequence.html` (tour, figement) ; `CHANGELOG.md` | developpement-tech-couts, avec le code |
 | 2 | `FunctionalRequirements.md` §5.8 (« Poser dans le planning » depuis l'atelier) ; `cas-d-utilisation.html` ; `diagrammes-de-sequence.html` ; `CHANGELOG.md` | idem |

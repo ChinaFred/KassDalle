@@ -108,6 +108,9 @@ Tout rédigé, ou aucun tour : sortie libre. Retour sur Explorer tel qu'on l'a l
 
 ### Palier 0, depuis Admin → Bac à sable
 
+Retiré en v0.24.76 : l'atelier est porté dans Explorer (palier 1, §1). Cette section
+décrit l'état du palier 0 tel qu'il a existé dans le bac à sable (v0.24.72 à v0.24.75).
+
 Administration → Bac à sable (`sandbox_hub_screen.dart`) → carte « Atelier repas » (entrée
 dans `sandbox_registry.dart:10`, icône `Icons.restaurant_menu`, sous-titre « Converser pour
 composer un menu. Le JSON du menu et le coût de chaque tour sont lisibles. Rien n'est
@@ -316,7 +319,7 @@ sur 20 · Il vous reste 27 tours aujourd'hui. ».
 | Menu vide au figement | « Figer le repas » inactif + « Le menu est vide. » | — |
 | Rien à rédiger | Inactif + « Rien à rédiger : toutes les recettes existent déjà. » (palier 2 : « Poser dans le planning » prend la place) | — |
 | Figement en cours | Champ fermé : « Figement en cours… » ; ligne par service : « Rédaction… » (indicateur), puis « Brouillon créé · Ouvrir » ; les autres services attendent avec « En attente ». La feuille Menu (téléphone) ne se ferme pas d'un appui hors d'elle. | — |
-| Échec partiel | « Non rédigée — Réessayer » (réseau, serveur) ; « Non rédigée. L'IA n'a pas rendu de recette. » avec « Réessayer » ; « Recette plus accessible » + « Rédiger à la place » / « Retirer du menu ». Un service « Brouillon créé » n'est jamais rejoué. | — |
+| Échec partiel | « Non rédigée — Réessayer » (réseau, serveur) ; « Non rédigée. L'IA n'a pas rendu de recette. » avec « Réessayer » ; « Recette plus accessible » + « Rédiger à la place » / « Retirer du repas ». Un service « Brouillon créé » n'est jamais rejoué. | — |
 | Figement terminé | `showSuccessSnackBar('3 brouillons créés dans « Mes créations Kass'Dalle ✨ ».')` ; carte « Brouillons créés » dans le pied du panneau, une ligne par brouillon (`Icons.edit_note`, titre, « Ouvrir ») ; ligne « Repas figé. » à la place du champ + « Nouvelle conversation ». | `context_extensions.dart` |
 | Quitter | « Quitter sans enregistrer ? » / « Le menu et la conversation seront perdus. » / « Rester » (TextButton) « Quitter » (FilledButton). Variante : « 2 plats ne sont pas rédigés. Quitter sans enregistrer ? ». | `leave_guard.dart`, `generated_recipe_screen.dart:159-179` |
 | Reader par un lien | « Composition réservée aux éditeurs » / « Composer un repas avec l'IA est réservé aux éditeurs et aux administrateurs. Demandez à un administrateur de vous nommer éditeur. » / « Retour à Explorer ». | `EditorOnlyGate` |
@@ -344,7 +347,7 @@ sur 20 · Il vous reste 27 tours aujourd'hui. ».
 | Recette liée | « Le Grand Livre · recette pour 6, menu pour 4 » |
 | Pied du panneau | « 2 plats à rédiger · 1 recette liée » ; « Menu limité à 10 services. » ; « Figer le repas » ; « Le menu est vide. » ; « Rien à rédiger : toutes les recettes existent déjà. » |
 | Boîte de figement | titre « Figer le repas » ; « 3 plats seront rédigés par l'IA, un appel chacun. 1 recette existante reste liée telle quelle. » ; « Livre des brouillons » ; « Mes créations Kass'Dalle ✨ » / « Mes recettes libres » ; « Titres déjà dans votre bibliothèque » ; « Lier la recette existante » / « Rédiger quand même » ; « Choisissez pour chaque doublon. » ; « Annuler » / « Figer » |
-| Lignes de figement | « En attente » ; « Rédaction… » ; « Brouillon créé » + « Ouvrir » ; « Non rédigée — Réessayer » ; « Non rédigée. L'IA n'a pas rendu de recette. » ; « Non rédigée — plafond atteint » ; « Recette plus accessible » + « Rédiger à la place » / « Retirer du menu » |
+| Lignes de figement | « En attente » ; « Rédaction… » ; « Brouillon créé » + « Ouvrir » ; « Non rédigée — Réessayer » ; « Non rédigée. L'IA n'a pas rendu de recette. » ; « Non rédigée — plafond atteint » ; « Recette plus accessible » + « Rédiger à la place » / « Retirer du repas » |
 | Fin de figement | « 3 brouillons créés dans « Mes créations Kass'Dalle ✨ ». » ; « Brouillons créés » ; « Repas figé. » ; « Nouvelle conversation » |
 | Erreurs | « Réponse non reçue. Connexion perdue. » ; « Réponse illisible, menu inchangé. L'IA n'a pas rendu de réponse lisible. » ; « Réponse non reçue. Limite d'utilisation de l'IA atteinte pour aujourd'hui. … » ; « Recette non rédigée. … » ; « Réessayer » |
 | Plafonds | « Conversation terminée : 20 tours. Figez le repas, ou ouvrez une nouvelle conversation. » ; « Vous avez fait vos 30 tours d'aujourd'hui. Le compteur repart demain. » |
@@ -378,7 +381,7 @@ Aucun mot technique (JSON, callable, feature) hors du palier 0.
   sur Envoyer ou d'Entrée dans le champ ; le figement s'annonce dans une boîte qui compte
   les appels ; le nombre de tours restants est sous le champ.
 - Travail non perdu : `LeaveGuard` + `PopScope` (`core/presentation/leave_guard.dart`,
-  câblage de `generated_recipe_screen.dart:68-84, 462-470`) ; « Retirer du menu » ne demande
+  câblage de `generated_recipe_screen.dart:68-84, 462-470`) ; « Retirer du repas » ne demande
   pas de confirmation ; « Nouvelle conversation » en demande une tant que les 20 tours ne sont pas atteints (v0.24.75, §7) ;
   « Quitter » en demande une.
 - Données partagées : le nombre de parts vit dans le menu en mémoire et part au prompt ; une

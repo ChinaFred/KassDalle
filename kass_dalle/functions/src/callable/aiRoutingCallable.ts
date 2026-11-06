@@ -242,6 +242,13 @@ export const ROUTABLE_FEATURES: Array<{
 
   // ── Rédaction ─────────────────────────────────────────────────────────────
   { id: "generate", label: "Génération d'une recette", group: "Rédaction" },
+  // « Figer le repas » de l'atelier repas : un appel par plat à rédiger, le
+  // prompt de la conception du planning avec le plat demandé.
+  {
+    id: "meal_workshop_recipe",
+    label: "Atelier repas — recette d'un plat figé",
+    group: "Rédaction",
+  },
   { id: "refine", label: "Modification d'une recette", group: "Rédaction" },
   { id: "polish_cooklang", label: "Relecture d'un CookLang", group: "Rédaction" },
   { id: "polish_markdown", label: "Relecture d'un document Markdown", group: "Rédaction" },
@@ -292,6 +299,14 @@ export const ROUTABLE_FEATURES: Array<{
   // `web_search_query` (« Formulation d'une requête web ») est parti avec la
   // refonte de l'écran Explorer (lot 2) : « Chercher sur Google » envoie le
   // texte tel quel, sans appel d'IA. Le poste reste au catalogue comptable.
+  // « Composer un repas avec l'IA » (Explorer) : un appel par tour. Le prompt
+  // part en deux blocs, le préfixe (consignes, recettes, garnitures) mis en
+  // cache chez Anthropic.
+  {
+    id: "meal_workshop_turn",
+    label: "Atelier repas — tour de conversation",
+    group: "Recherche",
+  },
 
   // ── Planning ──────────────────────────────────────────────────────────────
   { id: "planning", label: "Suggestion de planning", group: "Planning" },
@@ -437,11 +452,10 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Détection des zones d'une page",
     group: "Bac à sable",
   },
-  {
-    id: "sandbox_meal_workshop_turn",
-    label: "Atelier repas — tour de conversation",
-    group: "Bac à sable",
-  },
+  // `sandbox_meal_workshop_turn` (« Atelier repas — tour de conversation »,
+  // palier 0, v0.24.72 à v0.24.75) est parti avec l'expérience, réécrite en
+  // production sous `meal_workshop_turn` et `meal_workshop_recipe`. Le poste
+  // reste au catalogue comptable.
 ];
 
 /**

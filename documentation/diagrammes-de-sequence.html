@@ -193,6 +193,7 @@
       <li value="49"><a href="#ticket-clore">Clore un ticket depuis l'application</a></li>
       <li value="50"><a href="#rapport-csp">Rapporter une violation de la politique de sécurité du web</a></li>
       <li value="51"><a href="#criteres-verifies">Critères vérifiés : traduire les préférences, tenir les exclusions</a></li>
+      <li value="52"><a href="#atelier-repas">Atelier repas : un tour, figer un plat</a></li>
     </ol>
   </nav>
 
@@ -5019,6 +5020,139 @@ sequenceDiagram
           lardons passe « sans porc » ; un ingrédient précis et la cuisine restent transmis à
           l'IA, non vérifiés.
         </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="atelier-repas"><span class="n">52</span>Atelier repas : un tour, figer un plat</h2>
+    <p class="sec-note">
+      « Composer un repas avec l'IA » (Explorer, éditeur ou administrateur) : une conversation
+      bornée compose un plat et ses accompagnements, ou un repas complet, et le modèle rend à
+      chaque tour un menu structuré que le serveur contrôle. « Figer le repas » rédige ensuite
+      chaque plat sans recette, un appel par plat, et le client crée les brouillons. Rien n'est
+      écrit par le serveur hormis les lignes <code>ai_usage</code> et le compteur du jour.
+      <span class="path">search_screen.dart → écran de l'atelier (features/search) →
+      GeminiService → callable/mealWorkshopCallable.ts (mealWorkshopTurnFn,
+      mealWorkshopRecipeFn) → gemini/mealWorkshop.ts (readMealWorkshopInput,
+      buildMealWorkshopPrompt, controlMenu, conceptInputForDish, recipePayloadFrom) ·
+      gemini/planning.ts (buildConceptPrompt) · meal_workshop_daily · fixture
+      meal_workshop_rules.json</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Éditeur
+  participant S as Atelier repas (écran)
+  participant CF as mealWorkshopTurnFn
+  participant D as meal_workshop_daily
+  participant M as callModel (Gemini ou Claude)
+  participant UU as recordUsage
+
+  U->>S: « Composer un repas avec l'IA » depuis Explorer
+  Note over S: périmètre figé : résumés des recettes retenues par les filtres (buildMealWorkshopSummary),<br/>garnitures, préférences du foyer, parts ; conversationId tiré ; mode Plat (défaut) ou Menu
+  U->>S: écrit sa demande (1 500 caractères au plus)
+  S->>CF: conversationId, kind, history, message, recipes, staples, globalConstraints, portions, menu
+  Note over CF: requireEditor ; readAiInputs : bornes refusées en invalid-argument<br/>(21e tour : meal_workshop_max_turns ; kind : meal_workshop_kind ;<br/>conversationId : meal_workshop_conversation_id) — tailles journalisées, jamais le contenu
+  CF->>D: transaction : count < 30 × multiplicateur ? count + 1 (uid, day, limit)
+  alt plafond du jour atteint
+    CF-->>S: resource-exhausted, reason meal_workshop_daily_quota, limit, remaining 0
+    S-->>U: « Vous avez fait vos 30 tours d'aujourd'hui. » — menu conservé, « Figer le repas » disponible
+  else place réservée
+    CF->>CF: buildMealWorkshopPrompt : préfixe (consignes du mode, préférences, recettes et garnitures triées par id)<br/>+ suite (menu en cours, conversation, demande)
+    CF->>M: textPart(prefix, cache: true) + textPart(suffix), poste meal_workshop_turn, 180 s, maxTokens 6 000
+    Note over M: plafond d'IA du jour réservé ; politique de routage ; Anthropic lit le préfixe en cache (5 min, ≥ 1 024 jetons)
+    alt le modèle lève une erreur (plafond de dépense, moteur, quota du fournisseur)
+      CF->>D: transaction : count − 1 (place rendue)
+      CF-->>S: resource-exhausted (scope ai_budget) ou texte fixe de toHttpsError
+      S-->>U: « Réponse non reçue. » + message du serveur
+    else le modèle répond
+      M->>UU: jetons (cache lus et écrits compris), entity_type meal_workshop, entity_id conversationId
+      CF->>CF: parseWorkshopAnswer puis controlMenu : rôles, recipe_id et staple_id vérifiés contre l'envoi,<br/>10 services, 6 accompagnements, titres uniques, champs coupés ; mode plat : services hors rôle écartés
+      alt JSON illisible ou sans tableau courses
+        Note over CF: facturé : la place reste prise ; logError (longueurs seules)
+        CF-->>S: internal, reason meal_workshop_unreadable, quota, turn
+        S-->>U: « Réponse illisible, plat inchangé. »
+      else menu contrôlé
+        CF-->>S: reponse (6 000 caractères au plus), menu, control, turn, quota { limit, remaining }
+        S-->>U: texte brut (aucun lien hors du JSON contrôlé), menu redessiné, « Il vous reste N tours aujourd'hui. »
+      end
+    end
+  end
+  loop jusqu'à 20 tours
+    U->>S: précise, remplace, demande un accord
+    S->>CF: même périmètre, historique rejoué (texte du modèle tel que rendu), menu du tour précédent
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>La place du jour se réserve avant l'appel et ne se rend que si le modèle n'a pas
+        répondu</b> : une réponse illisible a été facturée et compte parmi les trente. Le menu
+        est reconstruit depuis l'envoi du client — un identifiant inventé par le modèle devient
+        un plat à rédiger (<code>unknown_recipe_id</code>), jamais un lien vers une recette qui
+        n'existe pas. Le préfixe du prompt est identique d'un tour à l'autre, octet pour octet :
+        c'est la condition du cache d'Anthropic, qui porte plus de 95 % des jetons d'un tour.
+      </figcaption>
+    </figure>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Éditeur
+  participant S as Atelier repas (écran)
+  participant R as recipes
+  participant CF as mealWorkshopRecipeFn
+  participant PL as gemini/planning.ts (buildConceptPrompt)
+  participant M as callModel (Gemini ou Claude)
+  participant UU as recordUsage
+
+  U->>S: « Figer le repas »
+  S-->>U: choix du livre : « Mes créations Kass'Dalle ✨ » (défaut) ou « Mes recettes libres »
+  loop chaque service du menu
+    alt service avec recipe_id
+      S->>R: relecture de la recette existante
+      alt lisible
+        Note over S: ni copiée ni modifiée (« Redimensionner ne modifie jamais l'originale »)
+      else supprimée ou devenue privée
+        S-->>U: « Recette plus accessible » — « Rédiger à la place » ou « Retirer du repas »
+      end
+    else service à rédiger (titre sans recipe_id)
+      opt même titre qu'une recette du périmètre
+        S-->>U: « Lier la recette existante » ou « Rédiger quand même » (aucun appel avant la réponse)
+      end
+      S->>CF: conversationId, titre, description, sides (libellés), portions, globalConstraints
+      Note over CF: requireEditor ; readAiInputs (titre ≤ 60, description ≤ 200, 6 accompagnements ≤ 60, parts 1 à 99)
+      CF->>PL: conceptInputForDish : requestedDish { titre, description + « Servir avec : riz, salade verte. » },<br/>dayConstraint.targetPortions = parts du menu, globalConstraints
+      CF->>M: prompt de la conception, poste meal_workshop_recipe, 90 s, PLANNING_CONCEPT_MAX_TOKENS
+      alt plafond de dépense ou moteur en erreur
+        CF-->>S: resource-exhausted (scope ai_budget) ou texte fixe de toHttpsError
+        S-->>U: « Non rédigée — Réessayer » ; plafond : les services restants passent « Non rédigée — plafond atteint »
+      else le modèle répond
+        M->>UU: jetons, entity_type meal_workshop, entity_id conversationId
+        CF->>CF: parseConceptAnswer { titre, cooklang, justification } ; recipePayloadFrom : retagUtensils,<br/>ingrédients, index, parts (>> portions:, sinon celles du menu), durées, difficulté
+        alt cooklang absent ou vide, JSON illisible
+          CF-->>S: internal, reason meal_workshop_recipe_unreadable (facturé, longueurs journalisées)
+          S-->>U: « Non rédigée. L'IA n'a pas rendu de recette. »
+        else recette rendue
+          CF-->>S: titre, langue, ingredients, ingredients_index, justification, tags, portions, cooklang (forme de generateRecipeFn)
+          S->>R: createRecipe : review_status draft, origin ai, ai_source meal_workshop, book_id choisi, created_by, portions du menu
+          S-->>U: « Brouillon créé »
+        end
+      end
+    end
+  end
+  S-->>U: liste des brouillons créés, « Ouvrir » pour chacun ; la conversation reste affichée jusqu'à la sortie
+</pre>
+      </div>
+      <figcaption>
+        <b>Un appel par plat, aucun pour une recette existante.</b> Les accompagnements entrent
+        dans la description du plat demandé : la recette les mentionne, ils ne deviennent pas
+        des recettes. Le serveur ne crée rien : la réponse prend la forme de celle d'« Imaginer
+        3 recettes », et le client enregistre le brouillon avec le même code, plus
+        <code>ai_source</code>, qui permettra de lire la part des plats figés ensuite validés.
       </figcaption>
     </figure>
   </section>

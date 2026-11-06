@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kass_dalle/features/recipes/domain/estimated_times.dart';
 import 'package:kass_dalle/features/recipes/domain/recipe.dart';
-import 'package:kass_dalle/features/sandbox/domain/workshop_recipe_summary.dart';
+import 'package:kass_dalle/features/search/domain/meal_workshop_summary.dart';
 
-/// Le résumé d'une recette envoyé par l'atelier repas (bac à sable) : les
-/// trois écritures de `duree`, le plafond de 6 ingrédients, et les clés —
-/// celles de `SUMMARY_KEYS` côté serveur, sans `livre` ni `statut`.
+/// Le résumé d'une recette envoyé par l'atelier repas : les trois écritures
+/// de `duree`, le plafond de 6 ingrédients, et les clés — celles de
+/// `SUMMARY_KEYS` côté serveur, sans `livre` ni `statut`.
 void main() {
   Recipe recipe({
     int? prep,
@@ -38,25 +38,10 @@ void main() {
     estimatedTimes: estimated,
   );
 
-  /// Les clés de `SUMMARY_KEYS` (`functions/src/sandbox/mealWorkshop.ts`).
-  const serverKeys = {
-    'id',
-    'titre',
-    'ingredients',
-    'themes',
-    'cuisines',
-    'difficulte',
-    'role',
-    'proteine',
-    'feculent',
-    'note',
-    'duree',
-  };
-
   group('duree', () {
     test('une durée lue : « 35 min »', () {
       expect(workshopRecipeDuration(recipe(prep: 15, cook: 20)), '35 min');
-      expect(buildWorkshopRecipeSummary(recipe(prep: 35))['duree'], '35 min');
+      expect(buildMealWorkshopSummary(recipe(prep: 35))['duree'], '35 min');
     });
 
     test('une durée lue dans les métadonnées CookLang compte comme lue', () {
@@ -86,19 +71,16 @@ void main() {
 
     test('sans aucune durée : « inconnue »', () {
       expect(workshopRecipeDuration(recipe()), 'inconnue');
-      expect(buildWorkshopRecipeSummary(recipe())['duree'], 'inconnue');
+      expect(buildMealWorkshopSummary(recipe())['duree'], 'inconnue');
     });
   });
 
   group('résumé', () {
     test(
-      'les clés sont celles du serveur : ni livre, ni statut, duree en plus',
+      'les clés sont celles du serveur, dans son ordre : ni livre, ni statut',
       () {
-        final summary = buildWorkshopRecipeSummary(
-          recipe(prep: 10),
-          myRating: 8,
-        );
-        expect(summary.keys.toSet(), serverKeys);
+        final summary = buildMealWorkshopSummary(recipe(prep: 10), myRating: 8);
+        expect(summary.keys.toList(), kWorkshopSummaryKeys);
         expect(summary.containsKey('livre'), isFalse);
         expect(summary.containsKey('statut'), isFalse);
         expect(summary['id'], 'r1');
@@ -115,24 +97,24 @@ void main() {
     );
 
     test('sans note : « non notee », comme « Chercher avec l\'IA »', () {
-      expect(buildWorkshopRecipeSummary(recipe())['note'], 'non notee');
+      expect(buildMealWorkshopSummary(recipe())['note'], 'non notee');
     });
 
     test(
       'les ingrédients sont plafonnés à $kWorkshopSummaryMaxIngredients',
       () {
         final many = [for (var i = 1; i <= 20; i++) 'ingredient$i'];
-        final summary = buildWorkshopRecipeSummary(recipe(ingredients: many));
+        final summary = buildMealWorkshopSummary(recipe(ingredients: many));
         expect(
           summary['ingredients'],
           'ingredient1, ingredient2, ingredient3, ingredient4, ingredient5, '
           'ingredient6',
         );
-        final few = buildWorkshopRecipeSummary(
+        final few = buildMealWorkshopSummary(
           recipe(ingredients: const ['veau', 'carotte']),
         );
         expect(few['ingredients'], 'veau, carotte');
-        expect(buildWorkshopRecipeSummary(recipe())['ingredients'], '');
+        expect(buildMealWorkshopSummary(recipe())['ingredients'], '');
       },
     );
   });

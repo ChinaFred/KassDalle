@@ -18,6 +18,45 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-06
+
+### v0.24.76 — fonctionnel
+
+Explorer, cinquième action « Composer un repas avec l'IA » (Editor et Admin) : l'atelier
+repas conversationnel sort du bac à sable. On choisit « Plat » ou « Menu » (Plat par défaut),
+on discute avec l'IA, et le plat ou le menu se construit à côté : les recettes de la
+bibliothèque retenues par les filtres d'Explorer sont proposées par leur fiche, les plats
+nouveaux sont décrits. « Figer le repas » rédige une recette par plat nouveau, en brouillon
+dans « Mes créations Kass'Dalle ✨ » ou « Mes recettes libres » (choix dans la boîte, avec
+le nombre d'appels d'IA) ; une recette existante est liée telle quelle, jamais copiée ; un
+titre déjà dans la bibliothèque demande « Lier la recette existante » ou « Rédiger quand
+même ». Les parts par défaut sont celles du premier groupe familial actif (réglage « Parts
+des groupes », sinon le nombre de membres), 4 sans groupe. Plafonds : 20 tours par
+conversation, 30 tours par jour et par compte (« Il vous reste N tours aujourd'hui. »). Rien
+n'est enregistré avant « Figer » ; la conversation disparaît avec l'écran. Le Reader ne voit
+pas l'action et un lien direct lui répond « Composition réservée aux éditeurs ».
+
+### v0.24.76 — technique
+
+Palier 1 du cadrage `ToDo/SPEC-atelier-repas.md`, réécrit dans `features/search/` et
+`functions/src/gemini/mealWorkshop.ts` ; le bloc du bac à sable (écrans, domaine, `case
+"meal_workshop.turn"`, `sandbox/mealWorkshop.ts`) est supprimé. Deux callables :
+`mealWorkshopTurnFn` (poste `meal_workshop_turn`, groupe Recherche ; prompt en deux blocs,
+préfixe en cache Anthropic, contrôle du menu rendu, quota de 30 tours par jour réservé en
+transaction sur `meal_workshop_daily/{uid}_{jour}` avant l'appel, place rendue si le modèle
+n'a pas répondu) et `mealWorkshopRecipeFn` (poste `meal_workshop_recipe`, groupe Rédaction ;
+`buildConceptPrompt` avec le plat, ses accompagnements et les parts, même réponse que
+`generateRecipeFn`). Les deux postes sont aux trois endroits et routables depuis Admin →
+Moteur d'IA ; `sandbox_meal_workshop_turn` reste au catalogue et quitte le routage. Règles
+Firestore : `meal_workshop_daily` lisible par le titulaire ou un admin, aucune écriture
+client, testées dans `rules-tests` ; nouveau champ `ai_source: "meal_workshop"` sur les
+brouillons de l'atelier. Logique dupliquée : fixture `meal_workshop_rules.json` (bornes et
+clés du résumé) rejouée par `test/meal_workshop_rules_test.dart` et
+`functions/src/tests/mealWorkshop.test.ts`, ligne ajoutée au tableau de `CLAUDE.md`. Route
+`/search/meal-workshop?q=` derrière `EditorOnlyGate`. Documentation : `FunctionalRequirements.md`
+(§3.2, §5.5, §6, §7), cas d'utilisation, `TechnicalRequirements.md` (§3, §4, §13.1, §13.3,
+callables, prompts, routage), architecture, diagramme de classes, diagrammes de séquence.
+
 ## 2026-11-05
 
 ### v0.24.75 — technique

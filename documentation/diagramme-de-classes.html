@@ -175,6 +175,7 @@ classDiagram
     +List~FidelityFinding~ fidelityFindings
     +IllustrationReport? illustrationReport
     +RecipeDuplicateRef? duplicateOf
+    +String? aiSource
     +String createdBy
     +DateTime createdAt
     +DateTime updatedAt
@@ -2029,6 +2030,125 @@ classDiagram
     +semanticLabel String
   }
 
+  class MealWorkshopContext {
+    +String myUid
+    +String displayName
+    +List~Map~ summaries
+    +Map~String,Recipe~ recipesById
+    +List~UserStaple~ staples
+    +String globalConstraints
+    +int defaultPortions
+    +WorkshopQuota? quota
+    +staplePayload List~Map~
+  }
+
+  class WorkshopMenu {
+    +int portions
+    +List~WorkshopCourse~ courses
+    +int toWriteCount
+    +int linkedCount
+    +bool canFreeze
+    +fromJson(json) WorkshopMenu$
+    +toJson() Map
+    +withCourse(index, course) WorkshopMenu
+    +withoutCourse(index) WorkshopMenu
+  }
+
+  class WorkshopCourse {
+    +MealComponentRole role
+    +String? courseLabel
+    +String title
+    +String? description
+    +String? recipeId
+    +String? why
+    +List~WorkshopSide~ sides
+    +bool unknownRecipeId
+    +bool isLinked
+    +bool isToWrite
+    +String typeLabel
+    +linkedTo(recipeId, title) WorkshopCourse
+    +unlinked() WorkshopCourse
+  }
+
+  class WorkshopSide {
+    +String label
+    +String? stapleId
+    +String? recipeId
+    +bool unknownRecipeId
+    +bool unknownStapleId
+  }
+
+  class WorkshopTurnResult {
+    +String reponse
+    +bool reponseTruncated
+    +WorkshopMenu menu
+    +WorkshopControl control
+    +int turn
+    +WorkshopQuota? quota
+    +fromJson(json) WorkshopTurnResult$
+  }
+
+  class WorkshopControl {
+    +bool truncated
+    +int offKindCourses
+  }
+
+  class WorkshopQuota {
+    +int limit
+    +int remaining
+    +bool exhausted
+    +fromJson(raw) WorkshopQuota?$
+    +fromDaily(data) WorkshopQuota?$
+  }
+
+  class WorkshopFailure {
+    +WorkshopFailureKind kind
+    +String message
+    +bool retryable
+    +WorkshopQuota? quota
+    +int? limit
+  }
+
+  class WorkshopFailureKind {
+    &lt;&lt;enumeration&gt;&gt;
+    dailyQuota
+    aiBudget
+    unreadable
+    permissionDenied
+    refused
+    other
+  }
+
+  class WorkshopTitleDuplicate {
+    +int courseIndex
+    +Recipe recipe
+    +String line
+  }
+
+  class MealWorkshopBook {
+    &lt;&lt;enumeration&gt;&gt;
+    kassDalle
+    libres
+    +String label
+  }
+
+  class FreezeLineState {
+    &lt;&lt;abstract&gt;&gt;
+  }
+  class FreezeDraftCreated {
+    +String draftId
+  }
+  class FreezeLinked {
+    +String recipeId
+  }
+  class FreezeBudgetStopped {
+    +String message
+  }
+  class FreezeSaveFailed {
+    +Recipe recipe
+    +Object error
+  }
+
   ExplorePreferences --> SearchParams
   ExplorePreferences --> RecipeFilter
   ExplorePreferences --> RecipeSort
@@ -2059,6 +2179,25 @@ classDiagram
   WebSearchState &lt;|-- WebSearchBudgetReached
   WebSearchSuccess --> WebSearchResponse
   WebSearchResponse "1" --> "0..8" WebRecipeResult
+  MealWorkshopContext "1" --> "0..*" Recipe : recipesById
+  MealWorkshopContext --> WorkshopQuota
+  WorkshopTurnResult --> WorkshopMenu
+  WorkshopTurnResult --> WorkshopControl
+  WorkshopTurnResult --> WorkshopQuota
+  WorkshopMenu "1" --> "0..10" WorkshopCourse
+  WorkshopCourse "1" --> "0..6" WorkshopSide
+  WorkshopFailure --> WorkshopFailureKind
+  WorkshopTitleDuplicate --> Recipe
+  FreezeLineState &lt;|-- FreezeWaiting
+  FreezeLineState &lt;|-- FreezeWriting
+  FreezeLineState &lt;|-- FreezeDraftCreated
+  FreezeLineState &lt;|-- FreezeLinked
+  FreezeLineState &lt;|-- FreezeLinkedUnreadable
+  FreezeLineState &lt;|-- FreezeFailed
+  FreezeLineState &lt;|-- FreezeNoRecipe
+  FreezeLineState &lt;|-- FreezeBudgetStopped
+  FreezeLineState &lt;|-- FreezePermissionDenied
+  FreezeLineState &lt;|-- FreezeSaveFailed
 </pre>
       </div>
       <figcaption>
@@ -2091,6 +2230,26 @@ classDiagram
         (<code>WebSearchQuotaReached</code>). Elle n'existe qu'en mémoire, comme tout l'état de la section ;
         le cache partagé (<code>web_search_cache</code>) vit côté serveur et le client ne le lit
         pas. <code>remaining</code> est nul tant que le serveur n'a pas répondu une fois.
+        <span class="expect">
+          <b>L'atelier repas ne possède rien avant « Figer le repas ».</b>
+          <code>MealWorkshopContext</code> (<code>meal_workshop_providers.dart</code>) est lu une
+          fois à l'ouverture et figé en mémoire : les résumés du périmètre
+          (<code>buildMealWorkshopSummary</code>, 6 ingrédients, durée), les garnitures, les
+          préférences du foyer, les parts par défaut (<code>defaultMealWorkshopPortions</code> :
+          le premier groupe familial actif, sinon 4) et le compteur du jour lu dans
+          <code>meal_workshop_daily</code> (<code>WorkshopQuota.fromDaily</code>). Chaque tour
+          rend un <code>WorkshopTurnResult</code> (<code>features/search/domain/meal_workshop_menu.dart</code>) :
+          le texte, le <code>WorkshopMenu</code> contrôlé par le serveur, et le compteur après
+          ce tour. Un service sans <code>recipeId</code> est un plat à rédiger
+          (<code>isToWrite</code>) ; un service lié garde sa recette telle quelle. Un échec
+          d'appel se lit par <code>describeWorkshopFailure</code> en <code>WorkshopFailure</code>
+          : le plafond du jour, le budget d'IA, une réponse illisible (facturée et comptée, avec
+          le compteur), le rôle retiré. Au figement, <code>workshopTitleDuplicates</code>
+          rapproche les titres à rédiger de ceux du périmètre avant tout appel, et chaque
+          service porte un <code>FreezeLineState</code> (<code>meal_workshop_freeze.dart</code>)
+          jusqu'à « Brouillon créé » ; le brouillon est une <code>Recipe</code> ordinaire,
+          <code>origin: ai</code>, <code>aiSource: meal_workshop</code>.
+        </span>
       </figcaption>
     </figure>
   </section>

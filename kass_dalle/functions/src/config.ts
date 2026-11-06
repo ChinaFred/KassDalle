@@ -298,6 +298,15 @@ export const COLL_URL_IMPORT_DAILY = "url_import_daily";
 export const COLL_WEB_SEARCH_DAILY = "web_search_daily";
 
 /**
+ * Tours de l'atelier repas du jour, par compte — `{uid}_{AAAA-MM-JJ}` (jour UTC).
+ *
+ * Compteur du plafond quotidien de `mealWorkshopTurnFn` (30 tours, ×100 pour
+ * le fondateur), sur le modèle de `web_search_daily`. Écrit par les Functions
+ * seulement ; le titulaire et l'administrateur le lisent.
+ */
+export const COLL_MEAL_WORKSHOP_DAILY = "meal_workshop_daily";
+
+/**
  * Cache partagé des recherches web — `{sha256 de la requête normalisée}`.
  *
  * Sept jours. Ne porte rien de propre à un compte : la requête, les pages

@@ -363,6 +363,12 @@ beforeEach(async () => {
       day: "2026-10-12",
       count: 4,
     },
+    "meal_workshop_daily/editor_2026-10-12": {
+      uid: EDITOR,
+      day: "2026-10-12",
+      count: 4,
+      limit: 30,
+    },
     "web_search_cache/abc": {
       query: "quiche",
       results: [],
@@ -1665,6 +1671,24 @@ describe("recipes — écriture", () => {
           title: "x",
           created_by: PERSONAS.admin.uid,
           review_status: "draft",
+        }),
+    );
+  });
+
+  // Un plat figé dans l'atelier repas : le client crée le brouillon avec
+  // `origin: ai` et `ai_source: "meal_workshop"` (le KPI « plats figés puis
+  // validés » se lit sur ce champ). Aucune liste de clés ne le bloque.
+  it("un éditeur crée un brouillon de l'atelier repas, avec ai_source", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc("recipes/new")
+        .set({
+          title: "Bar rôti au fenouil",
+          created_by: EDITOR,
+          review_status: "draft",
+          origin: "ai",
+          ai_source: "meal_workshop",
+          portions: 4,
         }),
     );
   });
@@ -3757,6 +3781,62 @@ describe("web_search_daily", () => {
       db("admin")
         .doc("web_search_daily/admin_2026-10-12")
         .set({ uid: "admin", count: 0 }),
+    );
+  });
+});
+
+// ── meal_workshop_daily ──────────────────────────────────────────────────
+
+describe("meal_workshop_daily", () => {
+  it("le titulaire lit son compteur", async () => {
+    await assertSucceeds(
+      db("editor").doc("meal_workshop_daily/editor_2026-10-12").get(),
+    );
+  });
+
+  it("un administrateur lit le compteur d'un autre", async () => {
+    await assertSucceeds(
+      db("admin").doc("meal_workshop_daily/editor_2026-10-12").get(),
+    );
+  });
+
+  it("un autre compte ne le lit pas", async () => {
+    await assertFails(
+      db("reader").doc("meal_workshop_daily/editor_2026-10-12").get(),
+    );
+  });
+
+  // L'écran lit le compteur à l'ouverture, avant le premier tour du jour :
+  // un document absent se lit comme absent, sans refus.
+  it("le titulaire lit son compteur encore absent", async () => {
+    await assertSucceeds(
+      db("editor").doc("meal_workshop_daily/editor_2026-10-13").get(),
+    );
+  });
+
+  it("un autre compte ne lit pas un compteur absent sous un autre uid", async () => {
+    await assertFails(
+      db("reader").doc("meal_workshop_daily/editor_2026-10-13").get(),
+    );
+    // Un préfixe qui ne fait que commencer comme l'uid n'ouvre rien.
+    await assertFails(
+      db("reader").doc("meal_workshop_daily/reader-x_2026-10-13").get(),
+    );
+  });
+
+  it("le titulaire ne remet pas son compteur à zéro", async () => {
+    await assertFails(
+      db("editor")
+        .doc("meal_workshop_daily/editor_2026-10-12")
+        .update({ count: 0 }),
+    );
+  });
+
+  it("personne ne crée de compteur depuis le client, administrateur compris", async () => {
+    await assertFails(
+      db("admin")
+        .doc("meal_workshop_daily/admin_2026-10-12")
+        .set({ uid: "admin", day: "2026-10-12", count: 0, limit: 30 }),
     );
   });
 });

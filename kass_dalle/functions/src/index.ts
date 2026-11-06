@@ -77,6 +77,10 @@ export {
 // plafond du jour et cache partagé. Tous les rôles approuvés.
 export { searchWebRecipesFn } from "./callable/webSearchCallable";
 
+// « Composer un repas avec l'IA » (Explorer) : un tour de conversation sous
+// plafond du jour, et la recette d'un plat figé. Éditeurs et administrateurs.
+export { mealWorkshopTurnFn, mealWorkshopRecipeFn } from "./callable/mealWorkshopCallable";
+
 // Analyse d'un livre entier avant son import : pages, tranches, coût estimé.
 export { analyzeBookFileFn } from "./callable/bookImportCallable";
 

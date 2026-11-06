@@ -313,6 +313,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     _scrollToTop();
   }
 
+  /// « Composer un repas avec l'IA » : l'atelier repas, au-dessus de
+  /// l'Explorer. Le texte du champ arrive dans le champ de l'atelier, non
+  /// envoyé ; rien ne part tout seul. Le périmètre est relu par l'atelier
+  /// lui-même : les filtres, sans le texte.
+  void _openMealWorkshop() {
+    FocusScope.of(context).unfocus();
+    context.push(mealWorkshopLocation(_query));
+  }
+
   /// « Voir sur Google » : la recherche de la section « Sur le web » ([query])
   /// ou, à défaut, le texte du champ, ouverte dans Google.
   Future<void> _searchGoogle({String? query}) async {
@@ -644,6 +653,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   _imagine(corpus);
                 },
               ),
+            if (canEdit && !_picking)
+              ListTile(
+                leading: const Icon(Icons.restaurant_menu),
+                title: const Text('Composer un repas avec l\'IA'),
+                subtitle: const Text(
+                  'Discutez d\'un plat ou d\'un menu complet. Les plats '
+                  'retenus deviennent des brouillons à relire.',
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openMealWorkshop();
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.public),
               title: const Text('Chercher sur le web'),
@@ -921,6 +943,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                             size: AppIconSize.small,
                           ),
                           label: const Text('Imaginer 3 recettes'),
+                        ),
+                      // Les deux actions de création de l'IA côte à côte ;
+                      // masquée en mode choix, qui rend une recette et non un
+                      // repas.
+                      if (canEdit && !_picking)
+                        OutlinedButton.icon(
+                          onPressed: _openMealWorkshop,
+                          icon: const Icon(
+                            Icons.restaurant_menu,
+                            size: AppIconSize.small,
+                          ),
+                          label: const Text('Composer un repas avec l\'IA'),
                         ),
                       OutlinedButton.icon(
                         onPressed: searchWeb,

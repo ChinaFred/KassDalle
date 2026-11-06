@@ -30,14 +30,10 @@ class SandboxCallException implements Exception {
   final String message;
 
   /// Les `details` de la `HttpsError`, quand la fonction en a posé : la
-  /// raison d'un refus, la consommation d'un tour facturé mais illisible.
+  /// raison d'un refus.
   final Map<String, dynamic>? details;
 
   const SandboxCallException(this.code, this.message, {this.details});
-
-  /// `details.reason`, quand il existe.
-  String? get reason =>
-      details?['reason'] is String ? details!['reason'] as String : null;
 
   @override
   String toString() => 'SandboxCallException($code): $message';

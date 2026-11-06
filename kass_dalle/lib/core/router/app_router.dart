@@ -41,6 +41,7 @@ import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
 import '../../features/recipes/presentation/detail/book_page_detail_screen.dart';
 import '../../features/recipes/presentation/detail/book_reader_navigation.dart';
+import '../../features/search/presentation/meal_workshop/meal_workshop_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
 import '../../features/auth/presentation/editor_only_gate.dart';
 import '../../features/planning/domain/meal_prep_context.dart';
@@ -105,6 +106,7 @@ class AppRoutes {
   static String groupMembersPath(String groupId) =>
       '/groups/${Uri.encodeComponent(groupId)}';
   static const search = '/search';
+  static const mealWorkshop = '/search/meal-workshop';
   static const errorReports = '/error-reports';
   static const deadLetters = '/dead-letters';
   static const logs = '/logs';
@@ -144,6 +146,41 @@ const kPlanningReservedParam = 'reserve';
 /// Paramètre de `/planning/batch` : le groupe dont on génère le planning.
 /// Absent, l'écran planifie « Mon planning ».
 const kPlanningGroupParam = 'group';
+
+/// Paramètre de `/search/meal-workshop` : le texte du champ d'Explorer, posé
+/// dans le champ de l'atelier repas sans être envoyé.
+const kMealWorkshopQueryParam = 'q';
+
+/// L'adresse de l'atelier repas pour le texte [query] du champ d'Explorer ;
+/// sans paramètre quand le champ est vide.
+String mealWorkshopLocation(String query) {
+  final trimmed = query.trim();
+  if (trimmed.isEmpty) return AppRoutes.mealWorkshop;
+  return Uri(
+    path: AppRoutes.mealWorkshop,
+    queryParameters: {kMealWorkshopQueryParam: trimmed},
+  ).toString();
+}
+
+/// L'écran de `/search/meal-workshop`, derrière `EditorOnlyGate` : le droit
+/// n'est pas porté par le routeur, un lecteur arrivé par un lien lit pourquoi
+/// et retourne à Explorer. Le texte du champ d'Explorer arrive par `?q=`.
+@visibleForTesting
+Widget mealWorkshopRouteBuilder(BuildContext context, GoRouterState state) =>
+    EditorOnlyGate(
+      appBarTitle: 'Atelier repas',
+      lockedTitle: 'Composition réservée aux éditeurs',
+      lockedMessage:
+          'Composer un repas avec l\'IA est réservé aux éditeurs et aux '
+          'administrateurs. Demandez à un administrateur de vous nommer '
+          'éditeur.',
+      fallbackLocation: AppRoutes.search,
+      fallbackLabel: 'Retour à Explorer',
+      builder: (_) => MealWorkshopScreen(
+        initialMessage:
+            state.uri.queryParameters[kMealWorkshopQueryParam] ?? '',
+      ),
+    );
 
 /// Paramètre de `/login` qui porte l'adresse demandée avant la connexion.
 const kNextQueryParam = 'next';
@@ -541,6 +578,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.search,
             builder: (context, state) => const SearchScreen(),
+            routes: [
+              GoRoute(path: 'meal-workshop', builder: mealWorkshopRouteBuilder),
+            ],
           ),
           GoRoute(
             path: AppRoutes.changelog,

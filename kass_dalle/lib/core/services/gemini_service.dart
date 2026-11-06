@@ -635,6 +635,27 @@ class GeminiService {
     return Map<String, dynamic>.from(data as Map);
   }
 
+  // ── Atelier repas ───────────────────────────────────────────────────────────
+
+  /// Un tour de l'atelier repas (`mealWorkshopTurnFn`). Le payload est
+  /// construit par `MealWorkshopFunctions` (`features/search/data/`), qui
+  /// lit aussi la réponse.
+  Future<Map<String, dynamic>> mealWorkshopTurn(
+    Map<String, dynamic> payload,
+  ) async {
+    final data = await _call('mealWorkshopTurnFn', payload);
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  /// La recette d'un plat figé (`mealWorkshopRecipeFn`), rendue dans la
+  /// forme de `generateRecipeFn`.
+  Future<Map<String, dynamic>> mealWorkshopRecipe(
+    Map<String, dynamic> payload,
+  ) async {
+    final data = await _call('mealWorkshopRecipeFn', payload);
+    return Map<String, dynamic>.from(data as Map);
+  }
+
   // ── Refine ──────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> refineRecipe({
