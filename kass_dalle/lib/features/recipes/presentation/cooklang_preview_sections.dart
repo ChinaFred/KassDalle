@@ -24,6 +24,10 @@ class CooklangSectionHeader extends StatelessWidget {
   final VoidCallback onTap;
   final Widget? action;
 
+  /// Résumé d'une ligne affiché à côté du titre, tronqué par des points de
+  /// suspension. Sans valeur, le titre est suivi d'un espace libre.
+  final String? summary;
+
   const CooklangSectionHeader({
     super.key,
     required this.icon,
@@ -31,32 +35,54 @@ class CooklangSectionHeader extends StatelessWidget {
     required this.expanded,
     required this.onTap,
     this.action,
+    this.summary,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: AppIconSize.small,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(width: 8),
-            Text(title, style: theme.textTheme.titleMedium),
-            const Spacer(),
-            ?action,
-            Icon(
-              expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ],
+    final summaryText = summary;
+    return Semantics(
+      button: true,
+      expanded: expanded,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: AppIconSize.small,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Text(title, style: theme.textTheme.titleMedium),
+              if (summaryText != null && summaryText.isNotEmpty)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Text(
+                      summaryText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                const Spacer(),
+              ?action,
+              Icon(
+                expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -441,6 +467,17 @@ class CooklangEstimatedTimeChip extends StatelessWidget {
 }
 
 // ── Catégorisation ───────────────────────────────────────────────────────────
+
+/// Résumé d'une ligne du bloc replié : les valeurs de « Cuisine » et de
+/// « Type de plat », que la liste des recettes montre déjà. Sans l'une ni
+/// l'autre, les valeurs de la première section disponible.
+String categorizationSummary(List<RecipeTagSection> sections) {
+  final preferred = sections
+      .where((s) => s.label == 'Cuisine' || s.label == 'Type de plat')
+      .toList();
+  final source = preferred.isNotEmpty ? preferred : sections.take(1).toList();
+  return source.map((s) => s.values.join(', ')).join(' · ');
+}
 
 class CooklangTagSections extends StatelessWidget {
   final List<RecipeTagSection> sections;

@@ -111,7 +111,7 @@ class CooklangPreview extends StatefulWidget {
 }
 
 class _CooklangPreviewState extends State<CooklangPreview> {
-  bool _categorizationExpanded = true;
+  bool _categorizationExpanded = false;
   bool _ingredientsExpanded = true;
   bool _preparationExpanded = true;
 
@@ -208,6 +208,9 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               icon: Icons.category_outlined,
               title: 'Catégorisation',
               expanded: _categorizationExpanded,
+              summary: _categorizationExpanded
+                  ? null
+                  : categorizationSummary(tagSections),
               onTap: () => setState(
                 () => _categorizationExpanded = !_categorizationExpanded,
               ),
