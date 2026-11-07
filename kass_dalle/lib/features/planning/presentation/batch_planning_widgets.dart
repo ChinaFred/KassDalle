@@ -1785,7 +1785,9 @@ class MealOriginLine extends StatelessWidget {
   }
 
   static IconData iconFor(MealChoiceSource? source) => switch (source) {
-    MealChoiceSource.ai || MealChoiceSource.concept => Icons.smart_toy_outlined,
+    MealChoiceSource.ai ||
+    MealChoiceSource.concept ||
+    MealChoiceSource.workshop => Icons.smart_toy_outlined,
     MealChoiceSource.rules => Icons.rule_outlined,
     MealChoiceSource.manual => Icons.person_outline,
     null => Icons.info_outline,

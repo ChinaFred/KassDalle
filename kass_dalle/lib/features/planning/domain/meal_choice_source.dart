@@ -14,7 +14,15 @@ enum MealChoiceSource {
   concept('concept', 'Conçue par l\'IA'),
 
   /// L'utilisateur l'a choisie lui-même.
-  manual('manual', 'Choisie par vous');
+  manual('manual', 'Choisie par vous'),
+
+  /// Le repas vient de l'atelier repas (Explorer › « Composer un repas avec
+  /// l'IA ») : composé en conversation, puis posé dans le planning. Le plat
+  /// principal peut être un brouillon rédigé par l'IA ou une recette de la
+  /// bibliothèque liée telle quelle : ni « conçue », ni « choisie parmi des
+  /// candidats » (v0.24.78). Écarter sa recette compte comme un refus
+  /// (`countsAsRefusal`).
+  workshop('workshop', 'Composée avec l\'IA');
 
   const MealChoiceSource(this.value, this.label);
 
@@ -23,9 +31,6 @@ enum MealChoiceSource {
 
   /// Ligne d'origine affichée sous le repas.
   final String label;
-
-  /// Vrai quand une IA a produit le choix : modèle ou conception.
-  bool get byAi => this == ai || this == concept;
 
   /// Lecture tolérante : une valeur inconnue ou absente rend `null`.
   static MealChoiceSource? fromValue(Object? value) {

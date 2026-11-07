@@ -193,7 +193,7 @@
       <li value="49"><a href="#ticket-clore">Clore un ticket depuis l'application</a></li>
       <li value="50"><a href="#rapport-csp">Rapporter une violation de la politique de sécurité du web</a></li>
       <li value="51"><a href="#criteres-verifies">Critères vérifiés : traduire les préférences, tenir les exclusions</a></li>
-      <li value="52"><a href="#atelier-repas">Atelier repas : un tour, figer un plat</a></li>
+      <li value="52"><a href="#atelier-repas">Atelier repas : un tour, figer un plat, poser dans le planning</a></li>
     </ol>
   </nav>
 
@@ -5025,19 +5025,22 @@ sequenceDiagram
   </section>
 
   <section>
-    <h2 id="atelier-repas"><span class="n">52</span>Atelier repas : un tour, figer un plat</h2>
+    <h2 id="atelier-repas"><span class="n">52</span>Atelier repas : un tour, figer un plat, poser dans le planning</h2>
     <p class="sec-note">
       « Composer un repas avec l'IA » (Explorer, éditeur ou administrateur) : une conversation
       bornée compose un plat et ses accompagnements, ou un repas complet, et le modèle rend à
       chaque tour un menu structuré que le serveur contrôle. « Figer le repas » rédige ensuite
       chaque plat sans recette, un appel par plat, et le client crée les brouillons. Rien n'est
       écrit par le serveur hormis les lignes <code>ai_usage</code> et le compteur du jour.
+      « Poser dans le planning » (palier 2) fait enfin du repas figé un repas planifié : client
+      seul, deux lectures puis une écriture, aucun appel d'IA.
       <span class="path">search_screen.dart → écran de l'atelier (features/search) →
       GeminiService → callable/mealWorkshopCallable.ts (mealWorkshopTurnFn,
       mealWorkshopRecipeFn) → gemini/mealWorkshop.ts (readMealWorkshopInput,
       buildMealWorkshopPrompt, controlMenu, conceptInputForDish, recipePayloadFrom) ·
       gemini/planning.ts (buildConceptPrompt) · meal_workshop_daily · fixture
-      meal_workshop_rules.json</span>
+      meal_workshop_rules.json · meal_workshop_pose.dart (buildWorkshopMeal) ·
+      meal_workshop_pose_sheet.dart → PlanningRepository (getMealsBetween, addMeal)</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -5153,6 +5156,62 @@ sequenceDiagram
         des recettes. Le serveur ne crée rien : la réponse prend la forme de celle d'« Imaginer
         3 recettes », et le client enregistre le brouillon avec le même code, plus
         <code>ai_source</code>, qui permettra de lire la part des plats figés ensuite validés.
+      </figcaption>
+    </figure>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Éditeur
+  participant S as Atelier repas (écran)
+  participant B as Boîte « Poser dans le planning »
+  participant R as recipes
+  participant P as planned_meals (PlanningRepository)
+
+  U->>S: « Poser dans le planning » (figement fini, un service plat, aucune « Recette plus accessible » sans réponse)
+  opt rien à rédiger (recettes liées seules, aucun figement)
+    S->>R: relecture de chaque recette liée, comme un figement sans plat à rédiger (aucun appel, aucun livre)
+    Note over S: une recette plus lisible : bouton inactif, « Rédiger à la place » ou « Retirer du repas »
+  end
+  S->>B: menu, lignes de figement, contexte (uid, garnitures, recettes du périmètre)
+  Note over B: planning (« Mon planning » ou un groupe possédé, ligne affichée à qui possède un groupe), date (aujourd'hui à + 730 j),<br/>heure de début (mealTimeFor du jour de semaine tant qu'elle n'est pas changée), parts du menu
+  B->>R: readForPose : la recette du plat principal, par son identifiant
+  alt lisible
+    Note over B: parts et durées du repas ; recette liée pour 6, menu pour 4 : « Recette pour 6 : les quantités seront recalculées… »
+  else introuvable ou refusée
+    Note over B: « Le plat principal n'a pas de recette : le repas sera posé par son titre, sans courses ni nutrition. »
+  else erreur réseau
+    B-->>U: « La recette du plat n'a pas pu être lue. » + « Réessayer » ; « Poser » inactif
+  end
+  B->>P: getMealsBetween(jour, jour, groupId de la cible)
+  alt jour occupé
+    B-->>U: « Mar. 12 nov. a déjà un repas : Blanquette de veau, 19:30. » — « Choisir une autre date » / « Ajouter quand même »
+  else jour libre
+    B-->>U: « Poser »
+  end
+  U->>B: change le planning ou la date (la lecture du jour est relancée), l'heure
+  U->>B: « Poser » / « Ajouter quand même » (bouton inactif pendant l'écriture, boîte non fermable)
+  B->>P: getMealsBetween rejoué : un repas apparu depuis l'affichage est montré, rien n'est doublé
+  B->>B: buildWorkshopMeal : uid, group_id (null compris), recipe_id du premier plat, recipe_titre, planned_at, durées,<br/>base_portions, target_portions = parts du menu, justification = why du plat, choice_source workshop,<br/>meal_kind, components (MealComposition.toComponents : recette, garniture figée ou texte libre, p2 pour un second plat)
+  B->>P: addMeal
+  alt écrit
+    B-->>S: date et planning de la pose
+    S-->>U: « Posé le mar. 12 nov. dans Mon planning. » ; pied : « Voir le planning » (/planning?date=AAAA-MM-JJ), « Poser à une autre date » ;<br/>lignes sans action (« Non rédigée · posée en texte ») ; sortie libre
+  else refusé (réseau, règles)
+    Note over B: rapport mealWorkshop.pose (group_id) ; boîte ouverte
+    B-->>U: « Repas non posé. Réessayez. » / « … La planification est réservée aux éditeurs. » / « … Ce groupe ne vous est plus accessible. »
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Aucun appel d'IA, aucune écriture dans <code>recipes</code>.</b> Une pose est une
+        écriture <code>planned_meals</code> par le dépôt du planning, précédée de deux lectures :
+        la recette du plat principal, pour ses parts et ses durées, et les repas du jour visé,
+        pour prévenir avant d'ajouter un second repas. Les parts du menu vivent sur le repas
+        (<code>target_portions</code>) : une recette liée écrite pour 6 et posée pour 4 s'affiche
+        pour 4 depuis le repas et pour 6 depuis sa fiche. Chaque pose crée un repas de plus qui
+        pointe les mêmes brouillons ; après la première, le panneau ne crée plus de brouillon.
       </figcaption>
     </figure>
   </section>

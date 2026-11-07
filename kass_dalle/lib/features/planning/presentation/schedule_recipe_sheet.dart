@@ -18,8 +18,10 @@ import '../../groups/presentation/group_providers.dart';
 import 'meal_composer.dart';
 import 'meal_staples_providers.dart';
 import 'planning_providers.dart';
+import 'schedule_rows.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/duration_format.dart';
+import '../../../core/utils/short_date_format.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/theme/app_icon_size.dart';
 import '../../../core/theme/app_icons.dart';
@@ -402,7 +404,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         stackTrace: staples.stackTrace,
       );
     }
-    return _PickerRow(
+    return SchedulePickerRow(
       icon: Icons.rice_bowl_outlined,
       label: 'Accompagnement',
       value: unavailable
@@ -444,25 +446,6 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           : recipeLocationFor(recipeId: recipeId),
       details: lines,
     );
-  }
-
-  String _formatDate(DateTime d) {
-    const days = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
-    const months = [
-      'jan.',
-      'fév.',
-      'mars',
-      'avr.',
-      'mai',
-      'juin',
-      'juil.',
-      'août',
-      'sep.',
-      'oct.',
-      'nov.',
-      'déc.',
-    ];
-    return '${days[d.weekday - 1]} ${d.day} ${months[d.month - 1]} ${d.year}';
   }
 
   // ── Build ────────────────────────────────────────────────────────────────────
@@ -507,53 +490,25 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           const SizedBox(height: 8),
 
           if (ownedGroups.isNotEmpty) ...[
-            PopupMenuButton<PlanningTarget>(
-              tooltip: 'Choisir le planning',
-              initialValue: _target,
+            PlanningTargetRow(
+              target: _target,
+              ownedGroups: ownedGroups,
               onSelected: (target) => setState(() => _target = target),
-              itemBuilder: (_) => [
-                for (final target in [
-                  const PlanningTarget.personal(),
-                  for (final g in ownedGroups) PlanningTarget.ofGroup(g),
-                ])
-                  PopupMenuItem(
-                    value: target,
-                    child: ListTile(
-                      leading: Icon(
-                        target.isGroup
-                            ? Icons.groups_outlined
-                            : Icons.calendar_today_outlined,
-                      ),
-                      title: Text(target.title),
-                      subtitle: target.subtitle == null
-                          ? null
-                          : Text(target.subtitle!),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-              ],
-              child: _PickerRow(
-                icon: _target.isGroup
-                    ? Icons.groups_outlined
-                    : Icons.calendar_today_outlined,
-                label: 'Planning',
-                value: _target.title,
-              ),
             ),
             const SizedBox(height: 4),
           ],
 
           // Date
-          _PickerRow(
+          SchedulePickerRow(
             icon: Icons.event_outlined,
             label: 'Date',
-            value: _formatDate(_selectedDate),
+            value: formatShortDate(_selectedDate),
             onTap: _pickDate,
           ),
           const SizedBox(height: 4),
 
           // Heure
-          _PickerRow(
+          SchedulePickerRow(
             icon: Icons.schedule_outlined,
             label: 'Heure de début',
             value: _effectiveTime.format(context),
@@ -566,7 +521,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
 
           // Durée (informative)
           if (_totalDurationMin > 0) ...[
-            _InfoRow(
+            ScheduleInfoRow(
               icon: Icons.timer_outlined,
               label: 'Durée estimée',
               value: formatDurationMinutes(_totalDurationMin),
@@ -626,121 +581,6 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
                     )
                   : const Icon(AppIcons.calendarExport),
               label: const Text('Ajouter au planning et à l\'agenda'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Helpers de layout ──────────────────────────────────────────────────────────
-
-class _PickerRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  /// Null quand un menu englobant reçoit l'appui (ligne « Planning »).
-  final VoidCallback? onTap;
-
-  /// Libellé en bout de ligne à la place du chevron : « Changer ».
-  final String? actionLabel;
-
-  const _PickerRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.onTap,
-    this.actionLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: AppIconSize.small,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 12),
-          Text(label, style: theme.textTheme.bodyMedium),
-          const SizedBox(width: 12),
-          // Un nom de groupe long se coupe au lieu de déborder.
-          Expanded(
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.end,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          if (actionLabel != null)
-            Text(
-              actionLabel!,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: onTap == null
-                    ? theme.colorScheme.onSurfaceVariant
-                    : theme.colorScheme.primary,
-              ),
-            )
-          else
-            Icon(
-              Icons.chevron_right,
-              size: AppIconSize.small,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-        ],
-      ),
-    );
-    if (onTap == null) return row;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: row,
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  const _InfoRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: AppIconSize.small,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 12),
-          Text(label, style: theme.textTheme.bodyMedium),
-          const Spacer(),
-          Text(
-            value,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],

@@ -1642,6 +1642,7 @@ classDiagram
     rules
     concept
     manual
+    workshop
     +String value
     +String label
   }
@@ -1729,7 +1730,7 @@ classDiagram
   PlanningPolicy ..> SlotRanking : têtes et profondeur des listes
   PlanningPolicy ..> PlanningRun : conceptsMax, plafond en euros
   PlanningRefusals "1" *-- "0..300" PlanningRefusal : entries, par recipeId
-  MealChoiceSource ..> PlanningRefusals : ai, rules, concept écartées = refus
+  MealChoiceSource ..> PlanningRefusals : ai, rules, concept, workshop écartées = refus
   PlanningRefusals ..> SlotRanking : poids x0,5 sur 21 jours, x0,25 dès 3 refus
   MealComponent ..> MealStaple : garniture figée au choix
   MealComponent ..> Recipe : recette d'accompagnement

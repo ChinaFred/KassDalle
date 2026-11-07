@@ -1,8 +1,9 @@
 # Kass'Dalle — Spec : atelier repas conversationnel dans Explorer
 
 > Statut : palier 0 livré dans le bac à sable (v0.24.72, v0.24.75) ; palier 1 validé le
-> 6 novembre 2026 avec la proposition d'écran, en cours d'implémentation ; palier 2 à venir ·
-> Auteur : business-analyst-culinaire · 1er novembre 2026, mis à jour le 6 novembre 2026
+> 6 novembre 2026 et livré en v0.24.76 ; palier 2 cadré et validé le 7 novembre 2026, en
+> cours d'implémentation ·
+> Auteur : business-analyst-culinaire · 1er novembre 2026, mis à jour le 7 novembre 2026
 > Ce document décrit le **quoi** et le **pourquoi**. Le parcours et la disposition des écrans
 > reviennent à `ux-designer` ; l'implémentation à `developpement-tech-couts`.
 > Le palier 0 vit dans le bac à sable et n'entre ni dans `FunctionalRequirements.md` ni dans
@@ -63,8 +64,10 @@ entière). Il s'arrête à **un repas**.
   Kass'Dalle ✨ » (par défaut) ou « Mes recettes libres ». Chaque plat à rédiger devient un
   brouillon à relire ; chaque recette existante reste liée, sans copie. Je vois la liste des
   brouillons créés et je peux ouvrir chacun.
-- **US-6 Poser dans le planning** (palier 2). Après avoir figé, je pose le repas à une date :
-  un repas planifié naît avec ses services, pour le nombre de parts du menu.
+- **US-6 Poser dans le planning** (palier 2). Après avoir figé, je pose le repas à une date,
+  dans mon planning ou dans celui d'un groupe que je possède (§9.5) : un repas planifié naît
+  avec ses services, pour le nombre de parts du menu, sans appel d'IA. Je peux le poser à
+  une seconde date ; chaque pose est un repas de plus, qui pointe les mêmes brouillons.
 - **US-7 Savoir ce que ça coûte.** Sous le champ, je lis le nombre de tours qu'il me reste
   aujourd'hui. Plafond atteint, je garde le menu et je peux encore le figer.
 - **US-8 Quitter sans perdre par surprise.** Si je quitte avec une conversation en cours et
@@ -184,14 +187,40 @@ expérimental est supprimé de `sandbox_registry.dart` et de `sandboxFn`.
 
 ### Palier 2 — poser dans le planning
 
+> **Cadré et validé le 7 nov. 2026.** Les critères P2-1 à P2-6 du 1er novembre sont
+> remplacés par cette version. Les six décisions du jour sont au §9.5 à §9.9 : planning d'un
+> groupe possédé admis, parts du menu sur le repas, plat principal sans recette posé par son
+> titre, `choice_source: workshop`, pas d'agenda Google à la pose, « Voir le planning » par
+> `/planning?date=AAAA-MM-JJ`.
+
+Ce que « poser » fait : un repas planifié naît dans `planned_meals`, par le dépôt du planning
+existant (`PlanningRepository.addMeal`, `planning_providers.dart`). Son plat principal est le
+premier service `plat` du menu ; les autres services deviennent ses `components`, que le
+planning lit comme un menu (`MealComposition`, `meal_composition.dart`). **Aucun appel d'IA**,
+aucune écriture dans `recipes`. Le planning sait déjà lire un repas dont la recette est un
+brouillon (`planning_screen.dart`, « un repas peut pointer sur un brouillon ») : ouverture de
+la fiche, courses, « Changer les parts » et nutrition par portion marchent sans changement,
+puisque les déclencheurs nutrition et allergènes tournent sur un brouillon comme sur une
+recette validée. Un brouillon porte en plus, sur sa fiche, son état « à relire » ; le repas,
+lui, ne le dit pas, comme pour une conception depuis le planning.
+
 | # | Critère | Vérification |
 |---|---|---|
-| P2-1 | Après un figement, « Poser dans le planning » apparaît. Il exige un service `plat` dans le menu : sans plat, le bouton est inactif et une ligne dit « Un repas planifié a besoin d'un plat. ». | test de widget |
-| P2-2 | Le bouton ouvre le choix d'une date (calendrier de « Replanifier » : date du jour à deux ans). L'heure est celle du jour de semaine dans les préférences du planning. | essai |
-| P2-3 | Le repas créé est le repas de l'utilisateur (planning personnel), `recipe_id` = le plat principal (brouillon créé ou recette existante liée), `recipe_titre`, `target_portions` = parts du menu, `base_portions` = parts de la recette principale, `meal_kind: menu` dès qu'un autre service existe, `components` écrits par `MealComposition.toComponents` : entrée, accompagnements du plat (`MealComponent.staple` pour une garniture, `MealComponent.free` pour un texte, `MealComponent.recipe` pour une recette), sorbet, fromage, dessert, services « Autre » avec `course_label`. | test unitaire sur la conversion menu → `components` ; repas ouvert dans le planning |
-| P2-4 | La recette d'origine n'est jamais modifiée : les parts du menu vivent sur le repas planifié (`target_portions`), les quantités sont recalculées à l'affichage (`planningScaleRecipeForMeal`). | relecture ; règle « Redimensionner ne modifie jamais l'originale » |
-| P2-5 | Un repas déjà présent à cette date n'est pas écrasé : la boîte le dit et propose une autre date ou « Ajouter quand même » (deux repas le même jour sont admis par le planning). | essai |
-| P2-6 | Le planning d'un groupe n'est pas une cible en palier 2 (question ouverte §9). | — |
+| P2-1 | **Quand le bouton apparaît.** Dans le pied du panneau « Menu en cours », « Poser dans le planning » remplace « Figer le repas » dès qu'un figement est terminé (lignes de figement présentes, aucun appel en cours), complet ou partiel. Sans plat à rédiger et menu non vide (aujourd'hui « Rien à rédiger : toutes les recettes existent déjà. », `canFreeze` faux), « Poser dans le planning » prend la place de « Figer » dès le tour : l'appui relit d'abord chaque recette liée comme un figement sans plat à rédiger (P1-14, aucun appel), puis ouvre la boîte. Avant un figement, avec au moins un plat à rédiger, le bouton n'existe pas : on fige d'abord. | test de widget sur les trois états (avant figement, après, rien à rédiger) |
+| P2-2 | **Ce qu'il exige.** Un service `plat` dans le menu : sans plat (mode Menu, entrée et dessert seuls, ou plat retiré par « Retirer du repas »), bouton inactif et ligne « Un repas planifié a besoin d'un plat. ». Aucune ligne « Recette plus accessible » sans réponse : bouton inactif et ligne « 1 recette plus accessible : rédigez à la place ou retirez-la du repas. » (accordée). | test de widget |
+| P2-3 | **La boîte « Poser dans le planning ».** Une ligne « Planning » (« Mon planning » par défaut, ou un groupe possédé), affichée seulement si l'utilisateur possède un groupe, mêmes règles et même source que la feuille « Planifier » (`ownedPlanningGroups`, `planning_target.dart` ; §9.5). « Date » : calendrier d'aujourd'hui à deux ans, bornes de « Replanifier » (`planning_screen.dart`, `_rescheduleMeal`). « Heure de début » (même libellé que la feuille « Planifier ») : pré-remplie par l'heure du jour de semaine choisi (`PlanningPreferences.mealTimeFor`, comme un jour libre du planning), modifiable ; elle suit la date tant qu'elle n'a pas été changée à la main. « Parts : 6, parts du menu ». Un récapitulatif nomme les services posés et ce qui part en texte libre (P2-6). Bouton « Poser ». Disposition et libellés définitifs : `ux-designer`. | essai ; test unitaire de l'heure pré-remplie (jour réglé, jour sans réglage, heure changée à la main puis date changée) |
+| P2-4 | **Le repas créé.** `uid` = moi ; `group_id` = le groupe choisi, sinon `null` (toujours écrit) ; `recipe_id` = la recette du premier service `plat` : le brouillon créé (`FreezeDraftCreated.draftId`) ou la recette liée relue (`FreezeLinked.recipeId`) ; `recipe_titre` = son titre ; `planned_at` = date et heure choisies ; `prep_minutes`, `cook_minutes`, `duration_minutes` lus des tags de cette recette, relue par identifiant à la pose (le figement ne garde que l'identifiant du brouillon) ; `base_portions` = les parts de cette recette (les parts du menu pour un brouillon, les siennes pour une recette liée) ; `target_portions` = les parts du menu, planning personnel comme planning de groupe (§9.6) ; `justification` = le `why` du plat principal (texte du modèle, 200 caractères au plus, contrôlé par le serveur au tour : même statut que la justification d'une conception) ; `choice_source` = `workshop` (§9.8) ; `meal_kind` = `effectiveMealKind(components)` : `plat` en mode Plat avec un seul service, `menu` dès qu'un autre service existe, second plat compris ; `created_at` = maintenant. Absents : `prep_date`, `dismissed_recipe_ids`, `relaxed_criteria`, `unmet_criteria` (l'atelier ne vérifie aucun critère du planning et ne prétend pas l'avoir fait). | test unitaire d'une fonction pure `WorkshopMenu` + lignes de figement → `PlannedMeal` (`features/search/domain/`, nom indicatif `meal_workshop_pose.dart`) ; repas ouvert dans le planning |
+| P2-5 | **Les `components`**, écrits par `MealComposition.toComponents(mainTitle: recipe_titre)` : les services dans l'ordre du menu ; le plat principal par son marqueur (`{role: plat, id: 'main', label: titre}`) suivi de ses accompagnements ; chaque autre service en `MealComponent.recipe` (recette liée ou brouillon créé : `recipe_id`, `label` = titre) ou `MealComponent.free` (titre), avec le `role` du service, `course_label` pour un « Autre », `justification` = son `why` ; un second service `plat` devient un plat secondaire (`id` `p2`…) avec ses accompagnements (`side_of`). Accompagnements : `staple_id` connu du contexte (`stapleById`) → `MealComponent.staple` (garniture figée : part par personne, unité, produit de courses) ; `recipe_id` → `MealComponent.recipe` ; sinon `MealComponent.free(label)`. 70 composants au plus (10 services × 6 accompagnements), sous les 100 des règles. | test unitaire sur un menu complet (entrée liée, plat brouillon avec une garniture et un texte, plat secondaire avec un accompagnement, fromage texte, dessert brouillon, « Autre » avec libellé) ; `MealComposition.ofMeal` du repas écrit rend les mêmes services dans le même ordre |
+| P2-6 | **Services sans recette.** Une ligne `FreezeFailed`, `FreezeNoRecipe`, `FreezeBudgetStopped`, `FreezeSaveFailed` ou `FreezePermissionDenied`, ou un brouillon créé puis introuvable à la relecture, est posée en **texte libre** sous son titre (`MealComponent.free`, `justification` = `why`), jamais exclue ni bloquante ; la boîte le dit : « 1 plat sans recette sera posé par son titre : Tarte aux poires. Vous pourrez lui choisir une recette depuis le planning (« Composer le menu »). ». Si c'est le plat principal (§9.7) : `recipe_id` `null`, `recipe_titre` = titre, `base_portions` absent, et la boîte dit « Le plat principal n'a pas de recette : le repas sera posé par son titre, sans courses ni nutrition. Vous pourrez le concevoir depuis le planning (« Concevoir avec l'IA »). ». | essai avec échec forcé ; test unitaire |
+| P2-7 | **Jour déjà occupé.** Avant d'écrire, lecture des repas du planning visé ce jour-là (`getMealsBetween`, journée entière, `groupId` de la cible : un repas de groupe n'occupe pas le jour du planning personnel, ni l'inverse). S'il y en a : « Mar. 12 nov. a déjà un repas : Blanquette de veau, 19:30. » (heure en `HH:mm`, comme le planning et la feuille « Planifier ») avec « Choisir une autre date » et « Ajouter quand même » (deux repas le même jour sont admis par le planning). Rien n'est remplacé. | essai ; test unitaire sur la détection |
+| P2-8 | **La recette d'origine n'est jamais modifiée.** Aucune écriture dans `recipes` ; les parts du menu vivent sur le repas (`target_portions`) ; quantités, nutrition par portion et courses sont recalculées à l'affichage (`planningScaleRecipeForMeal`, `portionsForComponents`). Une recette liée écrite pour 6, posée pour 4, s'affiche pour 4 depuis le repas et pour 6 depuis sa fiche. | relecture ; règle « Redimensionner ne modifie jamais l'originale » ; essai |
+| P2-9 | **Planning de groupe** (§9.5, tranché). Cible possible seulement pour un groupe dont je suis le propriétaire et que je peux planifier (`ownedPlanningGroups`, `canPlan`) ; `uid` = moi, `group_id` = le groupe ; les règles `ownsMealGroup` refusent le reste (`rules-tests` existants). Parts = parts du menu (§9.6) ; quand `groupMealPortions` du jour choisi en dit un autre, la boîte ajoute « Famille Dupont cuisine d'habitude pour 4 ce jour-là. ». Ce que voient les membres du groupe : le titre de chaque service ; un brouillon d'un livre non privé s'ouvre pour un membre Editor ou Admin (relecture d'un brouillon partagé, `canReadRecipe`, `firestore.rules`), et s'affiche par son titre avec « Recette non partagée » pour un membre Reader, jusqu'à la validation du brouillon ; un brouillon d'un livre privé est « Recette non partagée » pour tous. `justification` et `choice_source` ne s'affichent pas sur un repas d'autrui (règle existante, FR §5.8). Le récapitulatif de la boîte le dit : « Les brouillons ne s'ouvrent pour les membres qu'une fois validés. ». | `rules-tests` existants ; essai avec un compte Reader et un compte Editor membres du groupe |
+| P2-10 | **Après la pose.** Le pied du panneau dit « Posé le mar. 12 nov. dans Mon planning » (ou « dans Famille Dupont ») avec « Voir le planning », qui ouvre `/planning?date=AAAA-MM-JJ` — paramètre de route nouveau, proposé par `ux-designer` et retenu le 7 nov. 2026 : le planning s'ouvre sur la période qui contient ce jour, pour qu'un repas posé dans trois semaines soit visible à l'ouverture (carte de navigation §13.1 de `TechnicalRequirements.md`, par `developpement-tech-couts`) ; le bouton devient « Poser à une autre date » et reste actif : chaque pose crée un repas de plus, qui pointe les mêmes brouillons, sans appel d'IA ni nouveau brouillon. « Nouvelle conversation » inchangé. Après une pose, les lignes du panneau perdent « Réessayer », « Rédiger à la place » et « Retirer du repas » : aucun brouillon ne se crée plus après une pose, et une ligne non rédigée se lit « Non rédigée · posée en texte » (alignement `ux-designer`, 7 nov. 2026). Après une pose, l'écran se quitte librement, même après un figement partiel : ce qui compte est enregistré. | essai ; test de widget (actions des lignes et garde de sortie après pose) |
+| P2-11 | **Erreurs.** Écriture refusée ou réseau perdu : « Repas non posé. Réessayez. », état inchangé, rapport d'erreurs (`mealWorkshop.pose`, contexte `group_id`), jamais de `catch` silencieux. Rôle retiré en cours de session : « Repas non posé. La planification est réservée aux éditeurs. ». Groupe plus possédé, en pause ou supprimé : « Repas non posé. Ce groupe ne vous est plus accessible. ». Un « Réessayer » rejoue la détection de P2-7, qui montre un repas écrit côté serveur malgré la coupure. Le bouton est inactif pendant l'écriture : pas de double pose par double appui. | essai avec règles refusées (émulateur) |
+| P2-12 | **Agenda Google** (§9.9, tranché : non). La pose n'écrit que le planning. L'événement se pose ensuite depuis le repas, « Exporter vers Calendar », qui décrit déjà un menu (`mealCalendarDescription`). | — |
+| P2-13 | **Coût.** Aucun appel d'IA, aucune ligne `ai_usage`, aucun compteur, aucun poste à inscrire. Une pose = une écriture `planned_meals`, plus deux lectures (les repas du jour pour P2-7, la recette principale pour P2-4). | relecture du diff |
+| P2-14 | **`choice_source: workshop`** (§9.8) : valeur nouvelle de `MealChoiceSource` (`meal_choice_source.dart`), libellé « Composée avec l'IA », icône robot (`MealOriginLine.iconFor`), `countsAsRefusal` vrai comme `ai` et `concept` ; `fromValue` est déjà tolérant : une version antérieure lit `null`, n'affiche pas de ligne d'origine, et perd le champ si elle réécrit le document entier (comme à l'arrivée de `concept`). Le serveur ne lit pas `choice_source` : aucune fixture, aucune logique dupliquée. | test unitaire de `MealChoiceSource` ; test de `countsAsRefusal` |
+| P2-15 | **KPI.** Repas posés = nombre de `planned_meals` où `choice_source == 'workshop'` sur la période, par planning personnel ou de groupe (`group_id`), rapporté aux conversations figées (§7). Requête à la main en v1 ; aucun champ de plus que la valeur de P2-14. | requête |
 
 ---
 
@@ -221,6 +250,28 @@ expérimental est supprimé de `sandbox_registry.dart` et de `sandboxFn`.
 | Garniture citée hors du référentiel de l'utilisateur (`staple_id` inconnu) | `staple_id` mis à `null`, le libellé reste en texte libre. | serveur |
 | Fermeture de l'application en pleine conversation | La conversation est perdue : rien n'est conservé entre deux sessions (§6). | — |
 | Le même compte ouvre l'atelier sur deux appareils | Deux conversations indépendantes, un seul compteur de tours. Aucun conflit : rien n'est écrit avant le figement. | — |
+
+**Cas limites du palier 2** (7 nov. 2026) :
+
+| Situation | Comportement attendu | Qui décide |
+|---|---|---|
+| Menu sans service `plat` au moment de poser (mode Menu : entrée et dessert seuls ; plat retiré par « Retirer du repas ») | « Poser » inactif, ligne « Un repas planifié a besoin d'un plat. » (P2-2). | écran |
+| Plat principal sans recette (non rédigé, plafond, brouillon non enregistré, brouillon supprimé avant la pose) | Posé par son titre : `recipe_id` `null`, `recipe_titre` = titre, sans `base_portions`. La boîte le dit. Depuis le planning, « Concevoir avec l'IA » ou « Changer la recette » lui donnent une recette ensuite (§9.7). | écran |
+| Service non rédigé, hors plat principal | Texte libre sous son titre, avec son `why` en `justification`. Remplaçable ensuite par « Composer le menu » du planning (P2-6). | écran |
+| Recette liée devenue illisible (« Recette plus accessible ») | « Poser » inactif tant que la ligne n'a pas de réponse : « Rédiger à la place » (un appel) ou « Retirer du repas » (P2-2). Un `recipe_id` que son propre auteur ne peut pas lire n'entre pas dans un repas. | écran |
+| Garniture citée (`staple_id`) retirée du référentiel entre le tour et la pose | `stapleById` ne la trouve plus : texte libre sous son libellé, sans quantité ni produit de courses. | écran |
+| Recette liée dont les parts diffèrent du menu | `base_portions` = parts de la recette, `target_portions` = parts du menu ; recalcul à l'affichage ; la recette ne change pas (P2-8). | écran |
+| Mode Plat, un seul service | `meal_kind: plat`, `components` = accompagnements seuls : la même forme qu'un repas posé depuis la feuille « Planifier ». | écran |
+| Deux services `plat` | Le premier est le plat principal (`recipe_id`), le second un plat secondaire (`id` `p2`, accompagnements en `side_of: p2`) ; le repas est un menu, même en mode Plat. | écran |
+| Même menu posé deux fois | Deux repas qui pointent les mêmes brouillons. Le même jour, P2-7 prévient d'abord. | écran |
+| Pose pendant une coupure réseau | « Repas non posé. Réessayez. » ; le retry rejoue P2-7 : un repas écrit côté serveur malgré la coupure apparaît comme « déjà présent » au lieu d'être doublé en silence. | écran |
+| Double appui sur « Poser » | Bouton inactif pendant l'écriture (P2-11). | écran |
+| Rôle retiré en cours de session | Les règles refusent (`isEditor`) : « Repas non posé. La planification est réservée aux éditeurs. ». | règles Firestore, écran |
+| Groupe choisi devenu inaccessible entre l'ouverture de la boîte et la pose (rétrogradé, groupe supprimé) | Les règles refusent (`ownsMealGroup`) : « Repas non posé. Ce groupe ne vous est plus accessible. ». | règles Firestore, écran |
+| Repas de groupe et brouillons | Un membre Editor ou Admin ouvre le brouillon d'un livre non privé (relecture d'un brouillon partagé) ; un membre Reader voit le titre et « Recette non partagée » jusqu'à la validation ; un livre privé ferme le brouillon à tous les membres (P2-9). | règles Firestore |
+| Brouillon validé ou modifié après la pose | Le repas pointe toujours le même identifiant : la fiche ouverte depuis le repas montre la recette telle qu'elle est maintenant, pour les parts du repas. Rien à faire. | — |
+| Brouillon supprimé après la pose | Comme toute recette supprimée d'un repas : titre gardé sur le repas, fiche introuvable, courses sans ses ingrédients (comportement existant du planning). | — |
+| Parts du menu changées après le figement, avant la pose | Impossible : le bouton des parts est inactif dès qu'un figement a eu lieu (`meal_workshop_screen.dart`, `_frozen`). Les parts du repas sont celles du figement, pour lesquelles les brouillons ont été écrits. « Changer les parts » reste possible sur le repas posé. | écran |
 
 ---
 
@@ -308,7 +359,7 @@ pas de plafond du corpus au palier 1, le cache de prompt (v0.24.75) répond au c
 | Figement, par plat | `ai_usage/{auto}` : poste `meal_workshop_recipe`, même `entity_id` | serveur | admin | idem |
 | Figement, par plat | `recipes/{id}` : brouillon, `review_status: draft`, `origin: ai`, `book_id` du livre choisi, `created_by: uid`, `portions` du menu, `ai_source: "meal_workshop"` (champ nouveau, voir §7) | client (`createRecipe`, comme `saveGeneratedRecipe`) | le propriétaire ; les membres de ses groupes si le livre n'est pas privé, comme tout brouillon | « Toute recette a un livre » (assouplie : deux livres au choix) ; « Recette conçue par l'IA en brouillon » |
 | Figement | la recette existante liée | **personne** : ni copie, ni champ | — | « Redimensionner ne modifie jamais l'originale » |
-| Palier 2 | `planned_meals/{id}` : `uid`, `recipe_id`, `recipe_titre`, `base_portions`, `target_portions`, `meal_kind`, `components` | client (dépôt du planning, existant) | le propriétaire ; ses groupes en lecture seule selon ses partages | l'état propre à une personne vit sur le repas planifié, le couple (personne, date) |
+| Palier 2, chaque pose | `planned_meals/{id}` : `uid`, `group_id` (`null` ou le groupe possédé choisi), `recipe_id`, `recipe_titre`, `planned_at`, durées, `base_portions`, `target_portions`, `justification` (`why` du plat principal), `choice_source: workshop`, `meal_kind`, `components` (P2-4, P2-5) | client (`PlanningRepository.addMeal`, existant) | le propriétaire ; les membres de ses groupes en lecture seule selon ses partages, ou les membres du groupe pour un repas de groupe | l'état propre à une personne vit sur le repas planifié, le couple (personne, date) ; aucune écriture dans `recipes` |
 
 Ce qui ne s'écrit **jamais** : la conversation, le menu en cours, le périmètre figé, les
 réponses du modèle. Ils vivent en mémoire de l'écran et disparaissent avec lui.
@@ -366,6 +417,7 @@ Un figement de 10 services à rédiger, cas extrême, fait 10 appels `meal_works
 | Conversations abandonnées | dérivé : conversations sans ligne `meal_workshop_recipe` | rien ; c'est le chiffre qui rouvrira ou non la conservation (§6) |
 | Part des plats figés ensuite validés (brouillon → recette) | **non** : `ai_usage` ne sait pas ce que devient le brouillon | un champ `ai_source: "meal_workshop"` sur la recette (schéma §3 de `TechnicalRequirements.md`, `diagramme-de-classes.html`) ; le KPI se lit alors par une requête `recipes` où `ai_source == "meal_workshop"`, par `review_status`. Sans écran dédié en v1 : requête à la main ou ligne dans Admin → Qualité des données, à décider |
 | Coût moyen par conversation | oui : somme de `estimated_cost_usd` des deux postes par `entity_id` | rien ; les appels sans montant (`total_unpriced_calls`) sont comptés à part, jamais estimés |
+| Repas posés dans le planning (palier 2) | **non** : poser n'appelle pas l'IA, aucune ligne `ai_usage` | la valeur `workshop` de `choice_source` (P2-14) ; le KPI se lit par une requête `planned_meals` où `choice_source == "workshop"`, par mois et par `group_id`, rapportée aux conversations figées. Sans cette valeur, les repas de l'atelier se confondraient avec les conceptions du planning (`concept`) ou les choix à la main (`manual`) |
 | Identifiants inventés par le modèle | non | un compteur dans le journal (`logInfo`, `inventedIds`) ; au palier 0, il suffit ; en production, une ligne agrégée par jour si le chiffre inquiète |
 | Tours refusés (JSON illisible, plafond, budget) | partiellement : un refus de plafond ou de budget n'a pas de ligne `ai_usage` | les journaux `logError` / `logInfo` existants, filtrés par poste |
 
@@ -383,7 +435,7 @@ v1.
 |---|---|---|
 | **0 — bac à sable** | conversation, panneau du menu, JSON contrôlé par le serveur, un poste `sandbox_meal_workshop_turn`, aucune écriture, mesures du §3 | le prompt et la tenue de l'état du menu sont le risque principal ; on le lève avant d'écrire un écran de production |
 | **1 — Explorer** | cinquième action, écran dédié, périmètre figé, plafond 30 tours, budget, deux postes de production, « Figer le repas », choix du livre, doublon de titre, garde de sortie, champ `ai_source` | c'est la valeur promise : le repas devient des recettes Kass'Dalle |
-| **2 — planning** | « Poser dans le planning », repas personnel avec `components`, parts du menu sur le repas | dépend du palier 1 et de `MealComposition`, déjà en place ; faible effort une fois les brouillons créés |
+| **2 — planning** | « Poser dans le planning », repas personnel ou de groupe possédé (§9.5) avec `components`, parts du menu sur le repas, `choice_source: workshop`, aucun appel d'IA | dépend du palier 1 et de `MealComposition`, déjà en place ; faible effort une fois les brouillons créés : une fonction pure menu → repas, une boîte, une écriture par le dépôt existant |
 
 Hors périmètre, à confirmer :
 
@@ -394,18 +446,22 @@ Hors périmètre, à confirmer :
   du planning ; rien de plus) ;
 - conversation à plusieurs (plusieurs membres dans le même atelier) ;
 - conservation de la conversation (§6) ;
-- planning d'un groupe comme cible du palier 2 (question ouverte) ;
+- planning d'un groupe comme cible du palier 2 : **dans** le périmètre depuis le 7 nov. 2026
+  (§9.5, P2-9) ;
+- agenda Google à la pose (§9.9, tranché : non, l'export existe sur le repas) ;
 - accompagnement rédigé en recette (§4 : un accompagnement reste texte, garniture ou
   recette existante) ;
 - doublon de titre hors du périmètre figé.
 
 ---
 
-## 9. Questions ouvertes — réponses du 6 novembre 2026
+## 9. Questions ouvertes — réponses des 6 et 7 novembre 2026
 
 Les cinq questions posées le 1er novembre ont reçu leur réponse de l'utilisateur le
-6 novembre 2026, avec la validation du palier 1. La question d'origine est gardée, suivie de
-la réponse.
+6 novembre 2026, avec la validation du palier 1 ; la cinquième, restée ouverte, a reçu la
+sienne le 7 novembre avec le palier 2. Les questions 6 à 9 sont celles du palier 2, posées
+et tranchées le 7 novembre 2026. La question d'origine est gardée, suivie de la proposition
+et de la réponse.
 
 1. **Parts par défaut du menu.** 4 ? Ou les parts du jour de semaine courant dans les
    préférences du planning (« parts prévues ce jour-là », FR §5.8) ? La seconde demande de
@@ -436,6 +492,73 @@ la réponse.
    le groupe plus tard s'il est demandé.
    **Réponse (6 nov. 2026)** : non tranché. La question reste ouverte pour le cadrage du
    palier 2 ; elle ne bloque pas le palier 1. P2-6 inchangé.
+   **Proposition (7 nov. 2026)** : admettre le planning d'un groupe possédé, par la même
+   ligne « Planning » que la feuille « Planifier » d'une recette (`schedule_recipe_sheet.dart`,
+   `ownedPlanningGroups`), affichée seulement à qui possède un groupe. Trois raisons. Le
+   planning de groupe existe déjà avec ses règles (`ownsMealGroup`), ses tests et ses trois
+   entrées (FR §5.8, « Planning d'un groupe ») : l'atelier en devient la quatrième, sans
+   règle nouvelle. Les parts par défaut du menu sont déjà celles du premier groupe actif
+   (P1-21) : un repas composé « pour la famille » qui ne pourrait pas aller dans le planning
+   de la famille serait une promesse à moitié tenue. Le coût est une ligne de plus dans la
+   boîte. Ce qui change pour les membres est dit dans P2-9 : un brouillon ne s'ouvre pour un
+   membre Reader qu'une fois validé (« Recette non partagée » avant), un membre Editor le
+   relit. Si l'utilisateur préfère le planning personnel seul, P2-9 tombe et la ligne
+   « Planning » n'apparaît pas ; rien d'autre ne change.
+   **Réponse (7 nov. 2026)** : oui. Le planning personnel et le planning d'un groupe possédé
+   sont les deux cibles, par la ligne « Planning » conditionnelle. P2-3 et P2-9 s'appliquent.
+
+   Les questions 6 à 9 sont celles du palier 2, posées et tranchées le 7 novembre 2026.
+
+6. **Parts d'un repas de groupe posé depuis l'atelier.** Les parts du menu (choisies dans
+   l'atelier, et pour lesquelles les brouillons ont été écrits), ou la règle du planning de
+   groupe, `groupMealPortions` (« Parts à préparer » du jour, sinon parts du groupe) ?
+   **Proposition (7 nov. 2026)** : les parts du menu, pour le planning personnel comme pour
+   un groupe. C'est la valeur la plus précise, posée par la personne pour ce repas-là, et la
+   règle du planning de groupe dit elle-même que « la valeur la plus précise gagne »
+   (`planning_target.dart`). Les brouillons ont été écrits pour ce nombre ; une recette liée
+   est recalculée à l'affichage. Quand la règle du jour en dit un autre, la boîte l'affiche
+   (« Famille Dupont cuisine d'habitude pour 4 ce jour-là. »), et « Changer les parts » reste
+   possible sur le repas. FR §5.8 dira que l'atelier est l'exception à « Les trois entrées
+   d'un repas de groupe ».
+   **Réponse (7 nov. 2026)** : les parts du menu, avec la phrase quand `groupMealPortions` du
+   jour diffère. P2-4 et P2-9 inchangés.
+7. **Plat principal sans recette.** Quand le premier service `plat` n'a pas de brouillon
+   (rédaction échouée, plafond atteint), « Poser » est-il bloqué, ou le repas est-il posé par
+   son titre ?
+   **Proposition (7 nov. 2026)** : posé par son titre, `recipe_id` `null`, et la boîte le dit
+   (P2-6). Bloquer forcerait un « Réessayer » qui peut échouer encore (budget du jour), et la
+   conversation n'est pas conservée : le menu serait perdu. Posé par son titre, il garde sa
+   structure dans le planning, où « Concevoir avec l'IA » et « Changer la recette » existent
+   déjà pour lui donner une recette le lendemain. Un repas sans recette n'apporte ni courses
+   ni nutrition tant qu'il n'en a pas : la boîte le dit en une phrase.
+   **Réponse (7 nov. 2026)** : posé par son titre, `recipe_id` nul, la boîte prévient. P2-6
+   inchangé.
+8. **Valeur de `choice_source`.** Réutiliser `concept` (« Conçue par l'IA ») ou `ai`
+   (« Choisie par l'IA »), ou ajouter `workshop` ?
+   **Proposition (7 nov. 2026)** : ajouter `workshop`, libellé « Composée avec l'IA ». Les
+   valeurs existantes mentent dans un cas sur deux : un plat principal lié à une recette de
+   la bibliothèque n'est pas « conçu » par l'IA, et un brouillon rédigé n'est pas « choisi
+   parmi des candidats ». La valeur nouvelle est aussi le seul KPI possible sans champ de
+   plus (§7). Coût : une entrée d'enum et son libellé côté client, une ligne au §3.7 du
+   `TechnicalRequirements.md` et au diagramme de classes ; le serveur ne lit pas ce champ.
+   Lecture tolérante déjà en place : une version antérieure n'affiche pas de ligne d'origine
+   sur ce repas, et perd le champ si elle réécrit le document entier (même comportement qu'à
+   l'arrivée de `concept`). Écarter une recette posée par l'atelier compte comme un refus
+   (`countsAsRefusal`), comme pour `ai` et `concept`.
+   **Réponse (7 nov. 2026)** : `workshop`, libellé « Composée avec l'IA ». P2-14 inchangé.
+9. **Agenda Google à la pose.** Comme la feuille « Planifier » (« Ajouter au planning et à
+   l'agenda »), ou le planning seul ?
+   **Proposition (7 nov. 2026)** : le planning seul. L'atelier est déjà un écran à états
+   (tours, figement, lignes à réessayer) ; une demande d'autorisation Google et un second
+   message d'échec au milieu de la pose ajoutent un cas de panne pour un geste que le repas
+   offre déjà (« Exporter vers Calendar », avec la description d'un menu). Un jour libre du
+   planning fait de même : il pose sans agenda. Si l'utilisateur tient à la parité avec la
+   feuille « Planifier », P2-12 reprend sa séquence : planning d'abord, agenda ensuite,
+   message en deux phrases en cas d'échec de l'agenda.
+   **Réponse (7 nov. 2026)** : pas d'agenda Google à la pose ; P2-12 confirmé. Décidé dans
+   la même validation, sur proposition de `ux-designer` : « Voir le planning » ouvre
+   `/planning?date=AAAA-MM-JJ`, paramètre de route nouveau, pour que le repas posé soit
+   visible à l'ouverture quelle que soit sa date (P2-10).
 
 ---
 
@@ -448,4 +571,5 @@ Mini-plan, à valider avec le cadrage. Rien n'est modifié avant le « oui ».
 | 0 | `TechnicalRequirements.md` (poste d'IA, routage) ; `CHANGELOG.md` | le poste `sandbox_meal_workshop_turn` ; §13.3 ne change pas (le contrat du bac à sable est inchangé) |
 | 1 | `FunctionalRequirements.md` §3.2 (ligne Editor et Reader), §5.5 (tableau des actions, paragraphe « Composer un repas avec l'IA », disposition), §6 (lignes « Création de recette réservée », « Recette conçue par l'IA en brouillon », « Explorer filtre sans IA », « Toute recette a un livre » : deux livres au choix pour l'atelier), §7 Livré et « Reste à faire » (« Poser le repas de l'atelier dans le planning ») ; `cas-d-utilisation.html` (tableau des rôles, cas Editor/Admin « Composer un repas avec l'IA », « Figer le repas », légende de « Constituer la bibliothèque ») | business-analyst-culinaire, avec le livrable validé — **fait le 6 nov. 2026** |
 | 1 | `TechnicalRequirements.md` §3 (champ `ai_source`, collection `meal_workshop_daily`), §4 (règles de la collection), §13.1 (route), callables et prompts ; `architecture.html` (tableau des fonctions, des collections) ; `diagramme-de-classes.html` ; `diagrammes-de-sequence.html` (tour, figement) ; `CHANGELOG.md` | developpement-tech-couts, avec le code |
-| 2 | `FunctionalRequirements.md` §5.8 (« Poser dans le planning » depuis l'atelier) ; `cas-d-utilisation.html` ; `diagrammes-de-sequence.html` ; `CHANGELOG.md` | idem |
+| 2 | `FunctionalRequirements.md` §3.2 (ligne Editor : « pose le repas de l'atelier dans son planning ou celui d'un groupe possédé »), §5.5 (paragraphe « Composer un repas avec l'IA » : puce « Poser dans le planning » — quand le bouton apparaît, la boîte, texte libre pour un service sans recette, « Poser à une autre date », « Voir le planning »), §5.8 (« Planning d'un groupe » : quatrième entrée et exception des parts, §9.6 ; « Chaque plat dit d'où il vient » : « Composée avec l'IA » ; « Une recette privée planifiée pour un groupe » : le brouillon, même règle), §7 (ligne « Poser le repas de l'atelier dans le planning » retirée du « Reste à faire », puce « Atelier repas » du « Livré » complétée) ; `cas-d-utilisation.html` (nœud « Poser dans le planning » sous « Figer le repas », relié au planning du groupe ; lignes du tableau des rôles ; légendes d'Explorer et de « Planifier pour mon groupe ») | business-analyst-culinaire, avec le livrable validé — **fait le 7 nov. 2026** |
+| 2 | `TechnicalRequirements.md` §3.7 (valeur `workshop` de `choice_source` ; `justification` = `why` du plat principal, texte du modèle contrôlé au tour, comme une conception ; `components[].justification` = `why` des services ; aucune règle Firestore ne change), §13.1 (paramètre `date` de la route `/planning`) ; `diagramme-de-classes.html` (`MealChoiceSource.workshop`) ; `diagrammes-de-sequence.html` §52 (troisième partie : la pose, client seul, `getMealsBetween` puis `addMeal`) ; `CHANGELOG.md`. Rien dans `architecture.html` (aucune fonction, aucune collection nouvelle) ni dans le tableau « Logique dupliquée » (le serveur ne lit pas `choice_source`) ; `meal_workshop_rules.json` inchangée | developpement-tech-couts, avec le code |

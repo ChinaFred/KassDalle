@@ -166,7 +166,7 @@
           <tr><td>Remplir et lire sa propre liste de courses (repas, période, fiche recette ; jamais celle d'un autre)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les plannings partagés avec un groupe dont on est membre, en lecture seule — un invité ne lit rien ; une recette qu'on ne peut pas lire s'affiche par son titre, « Recette non partagée »</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Planifier pour un groupe dont on est le propriétaire (« Nouveau planning » › « Planifier pour… », jour libre, feuille « Planifier ») — le planning du groupe</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Planifier pour un groupe dont on est le propriétaire (« Nouveau planning » › « Planifier pour… », jour libre, feuille « Planifier », « Poser dans le planning » de l'atelier repas) — le planning du groupe</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le planning d'un groupe dont on est membre, en lecture seule — un invité ne le lit pas ; un groupe dont le propriétaire n'est plus éditeur est en pause : son planning est masqué à tous, sans rien effacer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Suggérer un plat (recette ou nom libre, un mot facultatif) pour un jour à venir du planning d'un groupe actif dont on est membre sans en être le propriétaire ; retirer sa suggestion — une recette privée suggérée se lit chez le propriétaire par son seul titre ; les titres des recettes validées des livres privés des membres de ses groupes sont proposés dans le sélecteur ; recherche avancée dans un écran dédié (titre, étiquettes, ingrédients principaux, filtres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les suggestions reçues pour un groupe actif dont on est le propriétaire, et planifier soi-même celle qu'on retient (« Planifier ce jour-là », ou « Chercher » : Explorer en mode choix, puis le jour au calendrier) — un autre membre ne lit pas les suggestions des autres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -174,7 +174,7 @@
           <tr><td>Filtrer la bibliothèque dans Explorer — texte, filtres, tri, sur l'appareil et sans IA — et chercher sur le web : jusqu'à 8 pages de recettes trouvées par Google, pages en français d'abord, à ouvrir dans le navigateur intégré sur téléphone ou dans le navigateur (50 recherches par jour)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Chercher avec l'IA dans Explorer — les recettes filtrées partent avec la demande</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Imaginer 3 recettes dans Explorer, générer une recette depuis le planning — enregistrées en brouillon dans « Mes créations Kass'Dalle ✨ »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Composer un repas avec l'IA dans Explorer — une conversation sur un plat ou un menu complet, 20 tours, 30 par jour et par compte ; « Figer le repas » enregistre un brouillon par plat nouveau dans le livre choisi (« Mes créations Kass'Dalle ✨ » ou « Mes recettes libres ») et laisse les recettes existantes liées telles quelles ; un lecteur qui ouvre la route lit « Composition réservée aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Composer un repas avec l'IA dans Explorer — une conversation sur un plat ou un menu complet, 20 tours, 30 par jour et par compte ; « Figer le repas » enregistre un brouillon par plat nouveau dans le livre choisi (« Mes créations Kass'Dalle ✨ » ou « Mes recettes libres ») et laisse les recettes existantes liées telles quelles ; « Poser dans le planning » pose ensuite le repas figé à une date, dans son planning ou dans celui d'un groupe possédé, avec ses services et pour les parts du menu, sans appel d'IA ; un lecteur qui ouvre la route lit « Composition réservée aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Créer une recette — saisie manuelle, copie de la recette d'un proche, recette conçue par l'IA, import — rangée dans ses propres livres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Relire et valider ses brouillons, détacher ses recettes d'un livre, les supprimer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Enrichir <b>sa</b> recette — la modifier dans l'éditeur, y ajouter une photo, une illustration ou une couverture « Recette libre », y lancer une action d'IA (corriger, améliorer, « Suggérer les tags », cadrer depuis le scan) ; masqué au lecteur, même propriétaire ; <span class="path">/recipes/{id}/edit</span> ouvert par un lien lui dit « Modification réservée aux éditeurs »</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -299,6 +299,7 @@ flowchart LR
     a34(["Imaginer 3 recettes"])
     a48(["Composer un repas avec l'IA&lt;br/&gt;Plat ou Menu, 20 tours"])
     a49(["Figer le repas&lt;br/&gt;livre choisi, un brouillon par plat"])
+    a50(["Poser dans le planning&lt;br/&gt;repas avec ses services, sans IA"])
     a9(["Planifier un repas&lt;br/&gt;avec sa ligne « Accompagnement »"])
     a10(["Exporter en PDF&lt;br/&gt;une recette, un livre ou tous mes livres"])
     a11(["Demander un dressage sur mesure"])
@@ -378,6 +379,8 @@ flowchart LR
   a49 -.->|"étend : dès qu'un plat est à rédiger"| a48
   a49 -.->|"inclut, un plat à la fois"| i22
   i22 -.->|"inclut ; ou « Mes recettes libres »"| i14
+  a50 -.->|"étend : après un figement, ou sans plat à rédiger"| a49
+  a50 -.->|"ligne « Planning » : un groupe possédé"| a40
   EDI --- a9
   LEC --- a10
   EDI --- a12
@@ -548,6 +551,13 @@ flowchart LR
         copiée ni modifiée, et un échec ne défait pas les brouillons déjà créés. Rien n'est
         écrit avant le figement ; la conversation disparaît avec l'écran. Quitter avec une
         conversation en cours et rien de figé demande confirmation.
+        <b>« Poser dans le planning »</b> remplace « Figer » dès qu'un figement est terminé — ou
+        dès le tour quand rien n'est à rédiger — et pose le repas à une date, dans « Mon
+        planning » ou dans celui d'un groupe possédé : le premier plat est le plat du repas, les
+        autres services son menu, chacun avec la raison de l'accord ; un service sans recette est
+        posé en texte libre sous son titre, plat compris ; les parts sont celles du menu, sur le
+        repas seul ; un jour déjà occupé est annoncé, rien n'est remplacé ; aucun appel d'IA,
+        rien dans l'agenda. L'origine du repas dit « Composée avec l'IA ».
         Ces trois cas sont réservés à l'éditeur et à l'administrateur.
         <b>Le planning présélectionne sans IA</b> : le serveur filtre les recettes (rôle, temps
         de préparation, repos, écartées, déjà au cycle, notées 3/10 ou moins par le lecteur),
@@ -667,8 +677,9 @@ flowchart LR
         <b>Planifier pour mon groupe</b> : un planning est personnel, ou celui d'un groupe.
         Le propriétaire du groupe, éditeur ou administrateur, y planifie seul — « Nouveau
         planning » demande « Planifier pour… » dès qu'il possède un groupe, un jour libre
-        propose « Rien de prévu pour Famille Dupont », la feuille « Planifier » d'une recette
-        porte une ligne « Planning ». Les repas du groupe portent <code>group_id</code> ; le
+        propose « Rien de prévu pour Famille Dupont », la feuille « Planifier » d'une recette et
+        la boîte « Poser dans le planning » de l'atelier repas portent une ligne « Planning » ;
+        un repas posé depuis l'atelier prend les parts du menu composé. Les repas du groupe portent <code>group_id</code> ; le
         serveur vérifie à la génération que l'appelant est propriétaire du groupe, et sa
         mémoire des refus, son historique et ses préférences servent, sans poste d'IA de plus.
         <b>Consulter le planning de mon groupe</b> ouvre à chaque membre, lecteur compris, les

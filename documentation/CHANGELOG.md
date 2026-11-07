@@ -18,6 +18,45 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-07
+
+### v0.24.78 — fonctionnel
+
+Atelier repas, palier 2 : « Poser dans le planning ». Après un figement, complet ou partiel,
+le pied du panneau « Menu en cours » remplace « Figer le repas » par « Poser dans le
+planning » ; sans plat à rédiger, le bouton est là dès le tour et relit d'abord les recettes
+liées. La boîte demande le planning (« Mon planning », ou un groupe possédé quand on en
+possède un), la date (aujourd'hui à deux ans), l'heure de début (celle du jour de semaine,
+modifiable), rappelle les parts du menu, nomme chaque service (« · brouillon », « · Le Grand
+Livre », « · sans recette ») et prévient quand le jour a déjà un repas (« Mar. 12 nov. a déjà
+un repas : Blanquette de veau, 19:30. », « Ajouter quand même »). « Poser » crée un repas
+planifié avec ses services, pour les parts du menu, sans appel d'IA : un plat principal sans
+recette est posé par son titre, un service non rédigé en texte libre. Le repas porte « Composée
+avec l'IA » et la raison du plat. Après la pose : « Posé le mar. 12 nov. dans Mon planning »,
+« Voir le planning » (ouvert sur la semaine du repas), « Poser à une autre date ». Une pose
+refusée le dit en message et dans la boîte. Après la pose, les lignes du panneau n'ont plus
+d'action (« Non rédigée · posée en texte ») et l'écran se quitte librement. Pas d'agenda Google à la pose : « Exporter vers Calendar » existe sur le repas.
+
+### v0.24.78 — technique
+
+`MealChoiceSource.workshop` (« Composée avec l'IA », icône robot, compte comme un refus) ;
+le serveur ne lit pas `choice_source` : aucune fixture. Route `/planning?date=AAAA-MM-JJ`
+(`kPlanningDateParam`, `parsePlanningDateParam`, `planningLocation`) : `PlanningScreen.initialDate`
+ouvre la période qui contient ce jour. Domaine pur `features/search/domain/meal_workshop_pose.dart`
+(`buildWorkshopMeal` : `PlannedMeal` depuis `WorkshopMenu` et les lignes de figement,
+`components` par `MealComposition.toComponents`, `workshopPoseBlocker`, phrases) ; boîte
+`meal_workshop_pose_sheet.dart` (`showAdaptiveSheet`, deux lectures — `readForPose`,
+`getMealsBetween` — puis `addMeal`, lecture du jour rejouée avant l'écriture, rapport
+`mealWorkshop.pose`). Lignes de la feuille « Planifier » extraites dans
+`planning/presentation/schedule_rows.dart` (`SchedulePickerRow`, `ScheduleInfoRow`,
+`PlanningTargetRow`), feuille inchangée ; dates courtes dans `core/utils/short_date_format.dart`.
+Le figement implicite d'une pose sans plat à rédiger (`_startFreeze(report: false)`)
+n'affiche aucun compte rendu ; il garde le livre par défaut « Mes créations Kass'Dalle ✨ »,
+que `freezeDoneMessage` nomme si « Rédiger à la place » rédige ensuite un plat. Getter
+`MealChoiceSource.byAi` retiré : aucun lecteur. Aucune Cloud Function, règle, collection
+ni dépendance nouvelle. Tests : `meal_choice_source_test`, `planning_date_param_test`,
+`meal_workshop_pose_test`, `meal_workshop_pose_screen_test`.
+
 ## 2026-11-06
 
 ### v0.24.77 — technique

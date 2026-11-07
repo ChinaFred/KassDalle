@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/presentation/leave_guard.dart';
+import '../../../../core/router/app_router.dart' show planningLocation;
 import '../../../../core/presentation/stylus_pad_text_field.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/theme/app_icons.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/widgets/app_states.dart';
@@ -20,6 +23,8 @@ import '../../../recipes/presentation/detail/portions_input_dialog.dart';
 import '../../data/meal_workshop_functions.dart';
 import '../../domain/meal_workshop_freeze.dart';
 import '../../domain/meal_workshop_menu.dart';
+import '../../domain/meal_workshop_pose.dart';
+import 'meal_workshop_pose_sheet.dart';
 import 'meal_workshop_providers.dart';
 import 'meal_workshop_widgets.dart';
 
@@ -38,6 +43,12 @@ import 'meal_workshop_widgets.dart';
 /// un brouillon dans le livre choisi ; une recette existante liée n'est ni
 /// copiée ni modifiée. Le périmètre est celui des filtres d'Explorer à
 /// l'ouverture, sans le texte, figé pour la conversation.
+///
+/// « Poser dans le planning » (palier 2) : après un figement, le repas
+/// devient un repas planifié avec ses services, pour les parts du menu, dans
+/// « Mon planning » ou le planning d'un groupe possédé — par le dépôt du
+/// planning, sans appel d'IA. Chaque pose crée un repas de plus qui pointe
+/// les mêmes brouillons.
 class MealWorkshopScreen extends ConsumerStatefulWidget {
   /// Le texte du champ d'Explorer, posé dans le champ de l'atelier, non
   /// envoyé.
@@ -80,6 +91,10 @@ class _FreezeChoice {
 
 /// Pourquoi le figement n'appelle plus l'IA pour les services restants.
 enum _FreezeStop { budget, permission }
+
+/// Le bouton du pied du panneau : « Figer le repas » ou « Poser dans le
+/// planning ».
+enum _FooterButton { freeze, pose }
 
 class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
   late final TextEditingController _input = TextEditingController(
@@ -141,6 +156,20 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
   /// Le compte rendu d'un figement fini pendant que la feuille était
   /// ouverte : montré à sa fermeture, sinon il passerait sous elle.
   ({bool success, String message})? _pendingReport;
+
+  // ── Poser dans le planning ────────────────────────────────────────────────
+
+  /// Les poses faites depuis ce figement, dans l'ordre : chacune a créé un
+  /// repas planifié qui pointe les mêmes brouillons.
+  final List<WorkshopPoseResult> _poses = [];
+
+  /// Vrai entre l'appui sur « Poser » et la fermeture de la boîte (relecture
+  /// des recettes liées comprise) : pas de double pose.
+  bool _posing = false;
+
+  /// Le repas a été posé au moins une fois : le panneau est figé pour de
+  /// bon, l'écran se quitte librement.
+  bool get _posed => _poses.isNotEmpty;
 
   /// Incrémenté quand l'état du panneau change : la feuille du téléphone,
   /// route modale au-dessus de l'écran, se redessine en l'écoutant.
@@ -222,10 +251,12 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
 
   // ── Garde de sortie ───────────────────────────────────────────────────────
 
-  /// Vrai quand l'écran peut être quitté librement : sans tour, ou après un
-  /// figement dont tous les plats ont un brouillon.
+  /// Vrai quand l'écran peut être quitté librement : sans tour, après un
+  /// figement dont tous les plats ont un brouillon, ou après une pose dans
+  /// le planning (ce qui compte est enregistré).
   bool get _canLeaveFreely {
     if (_freezing) return false;
+    if (_posed) return true;
     if (_freezeLines != null) return _notWritten == 0;
     return !_hasConversation;
   }
@@ -426,6 +457,7 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
       _frozen = false;
       _book = null;
       _bookChoice = null;
+      _poses.clear();
       _conversationId = newWorkshopConversationId();
       if (kind != null) _kind = kind;
     });
@@ -442,6 +474,8 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
     required String title,
     required String action,
   }) async {
+    // Après une pose, rien ne se perd plus : le repas est dans le planning.
+    if (_posed) return true;
     if (_freezeLines != null) {
       final notWritten = _notWritten;
       if (notWritten == 0) return true;
@@ -551,10 +585,14 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
     await _startFreeze(choice, duplicates);
   }
 
+  /// [report] faux : le figement implicite de « Poser dans le planning »
+  /// (rien à rédiger), qui n'annonce rien — la boîte suit, ou la ligne
+  /// « Recette plus accessible » dit ce qui bloque.
   Future<void> _startFreeze(
     _FreezeChoice choice,
-    List<WorkshopTitleDuplicate> duplicates,
-  ) async {
+    List<WorkshopTitleDuplicate> duplicates, {
+    bool report = true,
+  }) async {
     final workshop = _workshop;
     var menu = _menu;
     if (workshop == null || menu == null) return;
@@ -623,7 +661,7 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
       stop = await _runLine(i);
     }
     if (!mounted) return;
-    _finishFreeze();
+    _finishFreeze(report: report);
   }
 
   String? _budgetMessage;
@@ -765,8 +803,9 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
 
   /// Fin d'un passage de figement : le champ se ferme, le compte rendu
   /// s'affiche — à la fermeture de la feuille sur téléphone, où le snack du
-  /// Scaffold passerait sous elle et expirerait avant qu'on le voie.
-  void _finishFreeze() {
+  /// Scaffold passerait sous elle et expirerait avant qu'on le voie. Sans
+  /// [report] (figement implicite d'une pose), aucun compte rendu.
+  void _finishFreeze({bool report = true}) {
     final menu = _menu;
     final lines = _freezeLines;
     if (menu == null || lines == null) return;
@@ -775,16 +814,17 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
       _frozen = true;
     });
     _revision.value++;
+    if (!report) return;
     final created = freezeCreatedCount(lines);
     final notWritten = freezeNotWrittenCount(menu, lines);
-    final ({bool success, String message}) report;
+    final ({bool success, String message}) outcome;
     if (menu.toWriteCount == 0) {
-      report = (
+      outcome = (
         success: true,
         message: freezeLinkedOnlyMessage(freezeLinkedCount(lines)),
       );
     } else if (notWritten == 0) {
-      report = (
+      outcome = (
         success: true,
         message: freezeDoneMessage(
           created: created,
@@ -795,15 +835,15 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
         ),
       );
     } else {
-      report = (
+      outcome = (
         success: false,
         message: freezePartialMessage(notWritten: notWritten, created: created),
       );
     }
     if (_sheetOpen) {
-      _pendingReport = report;
+      _pendingReport = outcome;
     } else {
-      _showReport(report);
+      _showReport(outcome);
     }
   }
 
@@ -818,7 +858,7 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
   /// « Réessayer » sur une ligne : rejoue ce service seul. Une recette
   /// rédigée mais non enregistrée est seulement réenregistrée.
   Future<void> _retryLine(int index) async {
-    if (_freezing || _sending) return;
+    if (_freezing || _sending || _posed) return;
     final lines = _freezeLines;
     if (lines == null || index >= lines.length) return;
     setState(() => _freezing = true);
@@ -837,7 +877,7 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
   /// remplacée par un plat à rédiger, sous le même titre, puis rédigée.
   Future<void> _writeInstead(int index) async {
     final menu = _menu;
-    if (menu == null || _freezing) return;
+    if (menu == null || _freezing || _posed) return;
     setState(
       () => _menu = menu.withCourse(index, menu.courses[index].unlinked()),
     );
@@ -848,12 +888,83 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
   void _removeCourse(int index) {
     final menu = _menu;
     final lines = _freezeLines;
-    if (menu == null || lines == null || _freezing) return;
+    if (menu == null || lines == null || _freezing || _posed) return;
     setState(() {
       _menu = menu.withoutCourse(index);
       lines.removeAt(index);
     });
     _revision.value++;
+  }
+
+  // ── Poser dans le planning ────────────────────────────────────────────────
+
+  /// « Poser dans le planning » / « Poser à une autre date ». Sans figement
+  /// (rien à rédiger), chaque recette liée est d'abord relue comme un
+  /// figement sans plat à rédiger : aucun appel, aucun livre ; une recette
+  /// plus lisible laisse le bouton inactif avec sa raison. Puis la boîte.
+  /// Depuis la feuille du téléphone ([fromSheet]), la feuille se ferme
+  /// d'abord : la boîte s'ouvre sur l'écran.
+  Future<void> _requestPose({required bool fromSheet}) async {
+    final workshop = _workshop;
+    final menu = _menu;
+    if (workshop == null ||
+        menu == null ||
+        menu.isEmpty ||
+        _sending ||
+        _freezing ||
+        _posing) {
+      return;
+    }
+    if (fromSheet) {
+      // Le compte rendu du figement, retenu pendant que la feuille était
+      // ouverte, ne passe pas devant « Posé le … » : la pose le remplace.
+      _pendingReport = null;
+      Navigator.of(context).pop();
+    }
+    setState(() => _posing = true);
+    _revision.value++;
+    try {
+      if (_freezeLines == null) {
+        // Le livre par défaut, « Mes créations Kass'Dalle ✨ », reste choisi :
+        // il ne sert que si « Rédiger à la place » rédige ensuite un plat, et
+        // le compte rendu de cette rédaction le nomme (`freezeDoneMessage`).
+        await _startFreeze(
+          const _FreezeChoice(book: MealWorkshopBook.kassDalle, decisions: {}),
+          const [],
+          report: false,
+        );
+        if (!mounted) return;
+      }
+      final lines = _freezeLines;
+      final frozenMenu = _menu;
+      if (lines == null ||
+          frozenMenu == null ||
+          workshopPoseBlocker(frozenMenu, lines) != null) {
+        return;
+      }
+      final result = await showWorkshopPoseSheet(
+        context,
+        menu: frozenMenu,
+        lines: List.unmodifiable(lines),
+        workshop: workshop,
+      );
+      if (result == null || !mounted) return;
+      setState(() => _poses.add(result));
+      context.showSuccessSnackBar(
+        posedMessage(result.plannedAt, result.target),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _posing = false);
+        _revision.value++;
+      }
+    }
+  }
+
+  /// « Voir le planning » : le planning ouvert sur la période qui contient
+  /// le jour de la pose.
+  void _openPlanning(WorkshopPoseResult pose) {
+    context.push(planningLocation(date: pose.plannedAt));
   }
 
   // ── Construction ──────────────────────────────────────────────────────────
@@ -1068,6 +1179,8 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
     final String text;
     final suffix = _freezing
         ? ' · figement en cours'
+        : _posed
+        ? ' · posé'
         : _freezeLines != null
         ? ' · figé'
         : _changed.isEmpty
@@ -1348,7 +1461,8 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
             onWriteInstead: () => _writeInstead(index),
             onRemove: () => _removeCourse(index),
           ),
-          busy: _freezing,
+          busy: _freezing || _posing,
+          posed: _posed,
         ),
     ];
   }
@@ -1363,8 +1477,13 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
     // Le compte en tête du pied ; sous un bouton inactif, la raison.
     String? count;
     String? reason;
+    // Le bouton : « Figer le repas », ou « Poser dans le planning » dès
+    // qu'un figement est fini ou qu'il n'y a rien à rédiger ; aucun pendant
+    // un figement.
+    _FooterButton? button;
     if (menu == null || menu.isEmpty) {
       reason = _isDish ? 'Pas encore de plat.' : 'Le menu est vide.';
+      button = _FooterButton.freeze;
     } else if (lines != null) {
       final created = freezeCreatedCount(lines);
       final linked = freezeLinkedCount(lines);
@@ -1373,16 +1492,33 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
       count = menu.toWriteCount == 0 && created == 0
           ? linkedOnlyLine(linked)
           : freezeFooterLine(created: created, linked: linked);
+      if (!_freezing) {
+        button = _FooterButton.pose;
+        reason = workshopPoseBlocker(menu, lines);
+      }
     } else {
       count = menuFooterLine(
         toWrite: menu.toWriteCount,
         linked: menu.linkedCount,
       );
-      if (!menu.canFreeze) {
-        reason = 'Rien à rédiger : toutes les recettes existent déjà.';
+      if (menu.canFreeze) {
+        button = _FooterButton.freeze;
+      } else {
+        // Rien à rédiger : la pose relit les recettes liées, puis la boîte.
+        button = _FooterButton.pose;
+        reason = workshopPoseBlocker(menu, const []) ?? kNothingToWritePoseLine;
       }
     }
     final canFreeze = _canFreeze;
+    final canPose =
+        button == _FooterButton.pose &&
+        !_sending &&
+        !_freezing &&
+        !_posing &&
+        _workshop != null &&
+        menu != null &&
+        !menu.isEmpty &&
+        workshopPoseBlocker(menu, lines ?? const []) == null;
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
       child: SafeArea(
@@ -1405,10 +1541,29 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
                   'Plat seul : $_lastOffKind ${_lastOffKind > 1 ? 'services écartés' : 'service écarté'}.',
                   style: small,
                 ),
-              if (lines == null) ...[
+              for (final pose in _poses)
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    posedLine(pose.plannedAt, pose.target),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+              if (_posed)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FocusTraversalOrder(
+                    order: const NumericFocusOrder(6),
+                    child: TextButton(
+                      onPressed: () => _openPlanning(_poses.last),
+                      child: const Text('Voir le planning'),
+                    ),
+                  ),
+                ),
+              if (button == _FooterButton.freeze) ...[
                 const SizedBox(height: 8),
                 FocusTraversalOrder(
-                  order: const NumericFocusOrder(6),
+                  order: const NumericFocusOrder(7),
                   child: FilledButton.icon(
                     onPressed: canFreeze
                         ? () => _requestFreeze(fromSheet: fromSheet)
@@ -1417,12 +1572,32 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
                     label: const Text('Figer le repas'),
                   ),
                 ),
-                if (reason != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(reason, style: small),
-                  ),
+              ] else if (button == _FooterButton.pose) ...[
+                const SizedBox(height: 8),
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(7),
+                  child: _posed
+                      ? OutlinedButton.icon(
+                          onPressed: canPose
+                              ? () => _requestPose(fromSheet: fromSheet)
+                              : null,
+                          icon: const Icon(AppIcons.calendarExport),
+                          label: const Text('Poser à une autre date'),
+                        )
+                      : FilledButton.icon(
+                          onPressed: canPose
+                              ? () => _requestPose(fromSheet: fromSheet)
+                              : null,
+                          icon: const Icon(AppIcons.calendarExport),
+                          label: const Text('Poser dans le planning'),
+                        ),
+                ),
               ],
+              if (button != null && reason != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(reason, style: small),
+                ),
             ],
           ),
         ),

@@ -311,9 +311,8 @@ void main() {
     expect(find.text('Nouvelle conversation'), findsOneWidget);
   });
 
-  testWidgets('recettes liées seules : « Figer » inactif, la raison', (
-    tester,
-  ) async {
+  testWidgets('recettes liées seules : « Poser dans le planning » prend la '
+      'place de « Figer », la raison', (tester) async {
     final fakes = await _pump(tester);
     fakes.functions.turns.add(
       _turnResult([_course('Blanquette de veau', recipeId: 'r1')]),
@@ -323,12 +322,15 @@ void main() {
       find.text('Le Grand Livre · recette pour 6, repas pour 4'),
       findsOneWidget,
     );
-    final freeze = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Figer le repas'),
+    // Palier 2 (v0.24.78) : rien à rédiger, « Poser » relit les recettes
+    // liées puis ouvre la boîte (`meal_workshop_pose_screen_test.dart`).
+    expect(find.text('Figer le repas'), findsNothing);
+    final pose = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Poser dans le planning'),
     );
-    expect(freeze.onPressed, isNull);
+    expect(pose.onPressed, isNotNull);
     expect(
-      find.text('Rien à rédiger : toutes les recettes existent déjà.'),
+      find.text('Rien à rédiger : les recettes seront liées telles quelles.'),
       findsOneWidget,
     );
   });

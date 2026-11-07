@@ -17,9 +17,10 @@ const kRefusalMaxEntries = 300;
 const kRefusalFutureToleranceDays = 1;
 
 /// Vrai quand écarter la recette d'un repas compte comme un refus : elle
-/// avait été proposée par l'IA, par les règles de Kass'Dalle, ou conçue par
-/// l'IA. Une recette choisie à la main, ou d'origine inconnue (repas
-/// antérieur au champ `choice_source`), ne compte pas.
+/// avait été proposée par l'IA, par les règles de Kass'Dalle, conçue par
+/// l'IA, ou posée depuis l'atelier repas (`workshop`). Une recette choisie à
+/// la main, ou d'origine inconnue (repas antérieur au champ
+/// `choice_source`), ne compte pas.
 bool countsAsRefusal(MealChoiceSource? source) =>
     source != null && source != MealChoiceSource.manual;
 

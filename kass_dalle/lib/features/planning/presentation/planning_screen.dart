@@ -83,7 +83,17 @@ class PlanningScreen extends ConsumerStatefulWidget {
   /// lui dit pourquoi.
   final bool showReservedNotice;
 
-  const PlanningScreen({super.key, this.showReservedNotice = false});
+  /// Le jour sur lequel ouvrir le planning (`?date=AAAA-MM-JJ`) : la période
+  /// lue à l'ouverture est celle qui le contient. `null` : la semaine en
+  /// cours. Posé par « Voir le planning » de l'atelier repas, pour qu'un
+  /// repas posé dans trois semaines soit visible sans naviguer.
+  final DateTime? initialDate;
+
+  const PlanningScreen({
+    super.key,
+    this.showReservedNotice = false,
+    this.initialDate,
+  });
 
   @override
   ConsumerState<PlanningScreen> createState() => _PlanningScreenState();
@@ -131,8 +141,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   /// « Annuler ».
   bool _expandedBeforeRange = false;
 
-  /// Mois affiché quand le calendrier est déplié.
-  DateTime _visibleMonth = PlanningPeriodCalendar.monthOf(DateTime.now());
+  /// Mois affiché quand le calendrier est déplié : celui du jour demandé à
+  /// l'ouverture ([PlanningScreen.initialDate]), sinon celui d'aujourd'hui.
+  late DateTime _visibleMonth = PlanningPeriodCalendar.monthOf(
+    widget.initialDate ?? DateTime.now(),
+  );
 
   /// Calendrier déplié sur un téléphone. Il s'ouvre replié : la liste des
   /// repas est ce qu'on lit, le mois sert à aller ailleurs.
@@ -1033,13 +1046,20 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     }
   }
 
-  /// La période lue : celle choisie, ou la semaine du cycle qui contient
-  /// aujourd'hui.
+  /// La période lue : celle choisie, ou la semaine du cycle qui contient le
+  /// jour demandé à l'ouverture ([PlanningScreen.initialDate]), sinon
+  /// aujourd'hui. Recalculée à chaque construction tant que rien n'est
+  /// choisi : le jour de démarrage du cycle peut arriver après le premier
+  /// affichage.
   PlanningPeriod _period(DateTime today) {
     final cycleStartDay =
         ref.read(planningPreferencesProvider).value?.cycleStartDay ??
         DateTime.friday;
-    return _chosenPeriod ?? planningWeekOf(today, cycleStartDay: cycleStartDay);
+    return _chosenPeriod ??
+        planningWeekOf(
+          widget.initialDate ?? today,
+          cycleStartDay: cycleStartDay,
+        );
   }
 
   /// Un repas compte-t-il pour les courses ? Il lui faut une recette ou un

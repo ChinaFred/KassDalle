@@ -435,6 +435,11 @@ class WorkshopCourseTile extends StatelessWidget {
   /// Vrai pendant les appels du figement : les actions des lignes attendent.
   final bool busy;
 
+  /// Vrai dès que le repas a été posé dans le planning : les lignes perdent
+  /// « Réessayer », « Rédiger à la place » et « Retirer du repas », et une
+  /// ligne non rédigée se lit « Non rédigée · posée en texte ».
+  final bool posed;
+
   const WorkshopCourseTile({
     super.key,
     required this.course,
@@ -444,6 +449,7 @@ class WorkshopCourseTile extends StatelessWidget {
     this.freezeState,
     this.freezeActions = const WorkshopFreezeActions(),
     this.busy = false,
+    this.posed = false,
   });
 
   @override
@@ -495,6 +501,7 @@ class WorkshopCourseTile extends StatelessWidget {
               state: freeze,
               actions: freezeActions,
               busy: busy,
+              posed: posed,
             )
           else
             _buildStatus(context),
@@ -659,11 +666,16 @@ class WorkshopFreezeLine extends StatelessWidget {
   final WorkshopFreezeActions actions;
   final bool busy;
 
+  /// Après une pose dans le planning : plus aucune action, un brouillon ne
+  /// se crée plus (le repas posé ne le référencerait pas).
+  final bool posed;
+
   const WorkshopFreezeLine({
     super.key,
     required this.state,
     required this.actions,
     required this.busy,
+    this.posed = false,
   });
 
   @override
@@ -678,6 +690,18 @@ class WorkshopFreezeLine extends StatelessWidget {
 
     Widget open(String label, String location) =>
         TextButton(onPressed: () => context.push(location), child: Text(label));
+
+    // Posé : une ligne sans recette ne se rejoue plus, elle est partie en
+    // texte libre dans le repas.
+    final withoutRecipe =
+        freezeLineRetryable(state) ||
+        state is FreezeBudgetStopped ||
+        state is FreezePermissionDenied;
+    // « Recette plus accessible » n'arrive pas ici posée : `workshopPoseBlocker`
+    // empêche la pose tant qu'elle n'a pas de réponse.
+    if (posed && withoutRecipe) {
+      return Text('Non rédigée · posée en texte', style: small);
+    }
 
     return switch (state) {
       FreezeWaiting() => Text('En attente', style: small),

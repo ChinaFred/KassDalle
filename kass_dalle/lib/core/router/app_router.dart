@@ -147,6 +147,40 @@ const kPlanningReservedParam = 'reserve';
 /// Absent, l'écran planifie « Mon planning ».
 const kPlanningGroupParam = 'group';
 
+/// Paramètre de `/planning` : un jour `AAAA-MM-JJ`. Le planning s'ouvre sur
+/// la période qui le contient — « Voir le planning » après une pose depuis
+/// l'atelier repas, pour qu'un repas posé dans trois semaines soit visible à
+/// l'ouverture. Absent ou illisible : la semaine en cours, comme avant.
+const kPlanningDateParam = 'date';
+
+/// Le jour lu dans `?date=AAAA-MM-JJ`, à minuit heure locale ; `null` si le
+/// paramètre manque ou n'a pas cette forme (une heure, un mois 13, un texte).
+DateTime? parsePlanningDateParam(String? raw) {
+  if (raw == null) return null;
+  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(raw.trim());
+  if (match == null) return null;
+  final year = int.parse(match.group(1)!);
+  final month = int.parse(match.group(2)!);
+  final day = int.parse(match.group(3)!);
+  final date = DateTime(year, month, day);
+  // `DateTime` reporte un 31 février au mois suivant : le jour relu doit être
+  // celui écrit.
+  if (date.year != year || date.month != month || date.day != day) return null;
+  return date;
+}
+
+/// L'adresse du planning ouvert sur la période qui contient [date] :
+/// `/planning?date=AAAA-MM-JJ`.
+String planningLocation({required DateTime date}) {
+  String two(int n) => n < 10 ? '0$n' : '$n';
+  return Uri(
+    path: AppRoutes.planning,
+    queryParameters: {
+      kPlanningDateParam: '${date.year}-${two(date.month)}-${two(date.day)}',
+    },
+  ).toString();
+}
+
 /// Paramètre de `/search/meal-workshop` : le texte du champ d'Explorer, posé
 /// dans le champ de l'atelier repas sans être envoyé.
 const kMealWorkshopQueryParam = 'q';
@@ -623,6 +657,9 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => PlanningScreen(
               showReservedNotice:
                   state.uri.queryParameters[kPlanningReservedParam] == '1',
+              initialDate: parsePlanningDateParam(
+                state.uri.queryParameters[kPlanningDateParam],
+              ),
             ),
             routes: [
               GoRoute(

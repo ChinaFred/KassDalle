@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart' show FirebaseException;
+
 import '../../../core/services/error_report_service.dart';
 import '../../books/data/book_repository.dart';
 import '../../recipes/data/recipe_repository.dart';
@@ -64,6 +66,28 @@ class MealWorkshopDraftRepository {
       aiSource: kAiSourceMealWorkshop,
     );
     return _recipes.createRecipe(toSave);
+  }
+
+  /// Relit la recette du plat principal avant de poser le repas dans le
+  /// planning : ses parts et ses durées vont sur le repas. `null` si elle
+  /// est introuvable (brouillon supprimé) ou refusée (recette liée devenue
+  /// privée) : le repas est alors posé par son titre, sans recette. Une
+  /// autre erreur (réseau) est relancée : la boîte propose « Réessayer ».
+  Future<Recipe?> readForPose(String recipeId) async {
+    try {
+      return await _recipes.getById(recipeId);
+    } on FirebaseException catch (e, st) {
+      if (e.code != 'permission-denied') rethrow;
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'mealWorkshop.pose.readMain',
+          error: e,
+          stackTrace: st,
+          context: {'recipe_id': recipeId},
+        ),
+      );
+      return null;
+    }
   }
 
   /// Relit une recette liée au moment de figer : `null` si elle n'est plus
