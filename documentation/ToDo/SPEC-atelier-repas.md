@@ -1,8 +1,11 @@
 # Kass'Dalle — Spec : atelier repas conversationnel dans Explorer
 
 > Statut : palier 0 livré dans le bac à sable (v0.24.72, v0.24.75) ; palier 1 validé le
-> 6 novembre 2026 et livré en v0.24.76 ; palier 2 cadré et validé le 7 novembre 2026, en
-> cours d'implémentation ·
+> 6 novembre 2026 et livré en v0.24.76 ; palier 2 cadré et validé le 7 novembre 2026, livré
+> en v0.24.78. Sur grand écran, « Composer un repas » est rangé dans le menu « Créer avec
+> l'IA » d'Explorer depuis la v0.24.80 ; l'écran sur téléphone (clavier ouvert, grand texte)
+> est corrigé en v0.24.81. Première mesure des coûts en production le 7 novembre 2026 (§3,
+> « Mesures en production ») ·
 > Auteur : business-analyst-culinaire · 1er novembre 2026, mis à jour le 7 novembre 2026
 > Ce document décrit le **quoi** et le **pourquoi**. Le parcours et la disposition des écrans
 > reviennent à `ux-designer` ; l'implémentation à `developpement-tech-couts`.
@@ -221,6 +224,50 @@ lui, ne le dit pas, comme pour une conception depuis le planning.
 | P2-13 | **Coût.** Aucun appel d'IA, aucune ligne `ai_usage`, aucun compteur, aucun poste à inscrire. Une pose = une écriture `planned_meals`, plus deux lectures (les repas du jour pour P2-7, la recette principale pour P2-4). | relecture du diff |
 | P2-14 | **`choice_source: workshop`** (§9.8) : valeur nouvelle de `MealChoiceSource` (`meal_choice_source.dart`), libellé « Composée avec l'IA », icône robot (`MealOriginLine.iconFor`), `countsAsRefusal` vrai comme `ai` et `concept` ; `fromValue` est déjà tolérant : une version antérieure lit `null`, n'affiche pas de ligne d'origine, et perd le champ si elle réécrit le document entier (comme à l'arrivée de `concept`). Le serveur ne lit pas `choice_source` : aucune fixture, aucune logique dupliquée. | test unitaire de `MealChoiceSource` ; test de `countsAsRefusal` |
 | P2-15 | **KPI.** Repas posés = nombre de `planned_meals` où `choice_source == 'workshop'` sur la période, par planning personnel ou de groupe (`group_id`), rapporté aux conversations figées (§7). Requête à la main en v1 ; aucun champ de plus que la valeur de P2-14. | requête |
+
+### Mesures en production
+
+Le relevé se fait sur demande (« relevé atelier »), en lecture seule, depuis la racine du
+dépôt :
+
+```bash
+node tools/workshop-cost-report.mjs                     # tout l'historique
+node tools/workshop-cost-report.mjs --since 2026-11-07  # à partir d'un jour (UTC)
+node tools/workshop-cost-report.mjs --sandbox           # ajoute sandbox_meal_workshop_turn
+```
+
+Prérequis : le CLI Firebase installé globalement et connecté (`firebase login`). Le script
+lit les lignes `ai_usage` des postes `meal_workshop_turn` et `meal_workshop_recipe`, et écrit
+un relevé Markdown : coût par poste et modèle, premiers tours et tours suivants, conversations,
+plats rédigés. Il n'écrit rien et n'affiche ni uid, ni texte, ni titre. Détail :
+`TechnicalRequirements.md`, « Relevé des coûts de l'Atelier repas ». Chaque relevé ajoute une
+ligne au tableau, la plus récente en bas. Un « premier tour » écrit le cache de prompt ; un
+« tour suivant » le relit.
+
+| Relevé | Période | Modèle | Tours | Coût des tours | Premiers tours | Tours suivants | Part des premiers tours | Préfixe en cache | Conversations | Plats rédigés |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 7 nov. 2026 | 6-7 nov. 2026 | Claude Sonnet 5 | 22 | 1,48 $ | 4, à 0,254 $ | 18, à 0,026 $ en moyenne (0,024 à 0,030 $) | 69 % (1,02 $) | 99 921 jetons | 5 ; 4,4 tours en moyenne (2 à 9) ; 0,296 $ en moyenne, 0,468 $ au plus | 0 |
+
+Constats du 7 novembre 2026 :
+
+- Le cache fonctionne. Un tour suivant lit 99 921 jetons en cache et coûte 0,026 $ en
+  moyenne, pour un ordre de grandeur attendu d'environ 0,02 $. Un premier tour écrit ces
+  99 921 jetons et coûte 0,254 $, autant qu'un tour sans cache du bac à sable (0,26 $,
+  v0.24.75).
+- Les premiers tours font 69 % du coût des tours : 1,02 $ sur 1,48 $, pour 4 tours sur 22.
+- L'historique pèse peu. Dans la conversation de 9 tours, l'entrée hors cache passe de
+  103 jetons au tour 1 à 1 602 au tour 9 ; le tour coûte 0,026 à 0,030 $ de bout en bout. Sur
+  toutes les conversations, l'entrée hors cache du premier tour va de 84 à 141 jetons.
+- Un cache d'une heure n'aurait rien changé. Les 3 premiers tours précédés d'un autre tour
+  l'étaient de 1 h 16 au moins. La seule conversation ouverte moins de 5 min après une autre
+  (6 nov., 2 min après la précédente) a relu son cache dès son premier tour : 5 conversations pour
+  4 écritures du cache. Aucune conversation n'a réécrit le cache en cours de route.
+- Aucun plat rédigé (`meal_workshop_recipe`) à cette date : le coût d'un figement reste à
+  mesurer.
+- Le nombre de recettes envoyées n'est pas enregistré dans `ai_usage`. Le préfixe en cache
+  (99 921 jetons) en tient lieu ; le périmètre Explorer comptait 664 recettes ce jour-là.
+
+Décision du 7 novembre 2026, sur ce relevé : aucun plafond du corpus (§9, question 3).
 
 ---
 
@@ -481,6 +528,8 @@ et de la réponse.
    **Réponse (6 nov. 2026)** : aucun plafond du corpus au palier 1. Le cache de prompt
    (v0.24.75) répond au coût des sections fixes ; le résumé est déjà réduit à 6 ingrédients
    (P1-3). Un plafond se rediscutera sur une mesure du coût par tour en production.
+   **Réponse (7 nov. 2026)** : aucun plafond, toutes les recettes du périmètre. Décidé sur la
+   mesure en production du §3 (« Mesures en production »).
 4. **Doublon de titre** (P1-15) : la question « Lier ou rédiger » convient-elle, ou faut-il
    lier d'office quand le titre est identique ?
    **Réponse (6 nov. 2026)** : jamais lier d'office. Pour chaque titre déjà présent dans la

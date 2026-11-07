@@ -83,7 +83,7 @@ Trois principes portent tout le reste :
 | Node 22, npm | Functions et hooks | même version que la CI |
 | SDK du langage du projet (ici Flutter 3.44.6) | analyse, tests | même version que la CI |
 | Java 21 | émulateurs Firebase des tests de règles | |
-| `firebase-tools` 15.x, `gcloud` | secrets, déploiement de secours | sur le PC, installé à la main (`npm install -g firebase-tools@15.32.1`, même version que `kass_dalle/deploy-tools/`) ; le workflow « Déploiement » n'utilise pas d'installation globale |
+| `firebase-tools` 15.x, `gcloud` | secrets, déploiement de secours, relevés de production en lecture seule (`tools/workshop-cost-report.mjs`, après `firebase login`) | sur le PC, installé à la main (`npm install -g firebase-tools@15.32.1`, même version que `kass_dalle/deploy-tools/`) ; le workflow « Déploiement » n'utilise pas d'installation globale |
 | VS Code + extension Claude Code | travail quotidien | |
 
 ---

@@ -20,6 +20,18 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-07
 
+### v0.24.82 — technique
+
+Relevé des coûts de l'Atelier repas, en lecture seule : `node tools/workshop-cost-report.mjs` lit
+les lignes `ai_usage` des postes `meal_workshop_turn` et `meal_workshop_recipe` et rend un tableau
+Markdown (premier tour et tours suivants, conversations, plats rédigés). Il prend le jeton du CLI
+Firebase et le client OAuth du paquet firebase-tools installé, sans secret dans le dépôt ; il ne
+publie ni uid, ni identifiant de conversation, ni heure d'usage, et ses messages d'erreur ne
+recopient aucun contenu de fichier ni de réponse. Premier relevé (6-7 nov. 2026) : 22 tours,
+1,48 $, 0,254 $ le premier tour d'une conversation et 0,026 $ les suivants ; il est consigné dans
+`SPEC-atelier-repas.md`, qui enregistre aussi la décision de ne pas plafonner le corpus et le
+palier 2 livré. 15 tests (`node --test tools/workshop-cost-report.test.mjs`), hors CI.
+
 ### v0.24.81 — fonctionnel
 
 Atelier repas, sur téléphone. Clavier ouvert, le texte d'accueil « Dites ce que vous voulez

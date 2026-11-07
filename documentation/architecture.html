@@ -720,6 +720,10 @@ flowchart TB
         ou supprimées. La base refuse d'être supprimée (protection activée). Ces réglages se font dans Google Cloud, et non par ce workflow :
         <span class="path">TechnicalRequirements.md</span>, « Sauvegardes de Firestore » et
         « Versions des fichiers de Storage ».
+        Hors CI et hors déploiement, <code>tools/workshop-cost-report.mjs</code> relève sur le PC
+        les coûts de l'Atelier repas : lecture seule de <code>ai_usage</code>, avec le jeton du
+        CLI Firebase connecté (<span class="path">TechnicalRequirements.md</span>, « Relevé des
+        coûts de l'Atelier repas »).
       </figcaption>
     </figure>
   </section>

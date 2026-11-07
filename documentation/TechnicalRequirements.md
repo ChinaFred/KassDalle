@@ -7664,6 +7664,39 @@ n'y a rien à restaurer. La paire se restaure **ensemble** — associer un manif
 binaire qui n'est pas le sien annoncerait une version fausse. Le script nomme en fin de
 course la version d'APK réellement en ligne dès qu'elle diffère de celle du web.
 
+### Relevé des coûts de l'Atelier repas (`tools/workshop-cost-report.mjs`)
+
+Script Node sans dépendance, lancé à la main sur le PC (`node tools/workshop-cost-report.mjs`,
+options `--since AAAA-MM-JJ` et `--sandbox`). Il lit les lignes `ai_usage` des postes
+`meal_workshop_turn` et `meal_workshop_recipe` (et `sandbox_meal_workshop_turn` avec
+`--sandbox`) du projet `kassdale-6d948`, et écrit un relevé Markdown : coût par poste et
+modèle, premiers tours (écriture du cache de prompt) et tours suivants (lecture du cache),
+conversations regroupées par `entity_id`, plats rédigés. Le relevé se colle dans le §3 de
+`documentation/ToDo/SPEC-atelier-repas.md`, « Mesures en production ».
+
+- **Lecture seule** : seules des requêtes `documents:runQuery` partent, avec un filtre
+  d'égalité sur `feature` (pas d'index composite). Le filtre `--since` s'applique après
+  lecture.
+- **Aucune donnée privée en sortie** : la requête ne lit que les quatorze champs de
+  `SELECTED_FIELDS` (poste, fournisseur, modèle, jetons, coût, `pricing_unavailable`, statut,
+  date, `entity_type` et `entity_id`). `entity_id` sert au regroupement et ne s'affiche
+  pas. `uid` n'est pas lu. Le relevé se colle dans un dépôt public : il ne donne que des
+  jours (AAAA-MM-JJ, UTC) et des durées, jamais l'heure d'un tour.
+- **Prérequis** : `firebase-tools` installé globalement et connecté (`firebase login`). Le
+  script échange le jeton de rafraîchissement du CLI contre un jeton d'accès, avec le client
+  OAuth exporté par le paquet installé (`lib/api.js`). Le paquet se cherche d'abord sans
+  lancer de processus (`%APPDATA%\npm\node_modules` sous Windows,
+  `<préfixe de node>/lib/node_modules` ailleurs), puis par `npm root -g` lancé depuis le
+  dossier personnel : lancé depuis le dépôt, `cmd.exe` exécuterait un `npm.cmd` posé à sa
+  racine. Aucun identifiant n'est écrit dans le dépôt ; `FIREBASE_CLIENT_ID` et
+  `FIREBASE_CLIENT_SECRET`, `FIREBASE_TOOLS_DIR` et `FIREBASE_TOOLS_CONFIG` le surchargent.
+- Une erreur s'écrit sur la sortie d'erreur avec son contexte ; le code de sortie vaut 1.
+  Une erreur de lecture de `firebase-tools.json` ne cite que le chemin et le type d'erreur
+  (`JSON invalide (SyntaxError)`, `ENOENT`) : le message d'un `JSON.parse` citerait un
+  extrait du fichier, donc du jeton.
+- Tests : `node --test tools/workshop-cost-report.test.mjs`, sur les fonctions d'agrégation.
+  La CI ne les lance pas.
+
 ### Intégration continue (`ci.yml`)
 
 `.github/workflows/ci.yml` part à chaque push sur `master`, à chaque pull request et à la
