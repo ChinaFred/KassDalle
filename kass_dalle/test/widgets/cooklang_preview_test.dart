@@ -212,8 +212,31 @@ void main() {
       );
 
       expect(find.text('Catégorisation'), findsOneWidget);
-      expect(find.text('belge'), findsOneWidget);
-      expect(find.text('dessert'), findsOneWidget);
+      // Replié à l'ouverture : résumé d'une ligne, aucune pastille.
+      expect(find.text('belge, dessert'), findsNothing);
+      expect(find.text('belge · dessert'), findsOneWidget);
+      expect(find.widgetWithText(Chip, 'belge'), findsNothing);
+
+      await tester.tap(find.text('Catégorisation'));
+      await tester.pump();
+      expect(find.widgetWithText(Chip, 'belge'), findsOneWidget);
+      expect(find.widgetWithText(Chip, 'dessert'), findsOneWidget);
+      expect(find.text('belge · dessert'), findsNothing);
+
+      await tester.tap(find.text('Catégorisation'));
+      await tester.pump();
+      expect(find.widgetWithText(Chip, 'belge'), findsNothing);
+    });
+
+    testWidgets('sans cuisine ni type, le résumé prend la première section', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        'Mélanger.',
+        tags: const RecipeTags(themes: ['été', 'léger'], occasions: ['fête']),
+      );
+      expect(find.text('été, léger'), findsOneWidget);
     });
 
     testWidgets('sans tags, pas de section Catégorisation', (tester) async {

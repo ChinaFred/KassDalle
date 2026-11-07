@@ -20,6 +20,14 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-07
 
+### v0.24.83 — fonctionnel
+
+La catégorisation d'une fiche recette s'ouvre repliée (ticket #234). Elle occupait plusieurs
+écrans de téléphone avant le premier ingrédient. L'en-tête replié montre un résumé d'une ligne
+(cuisine et type de plat, à défaut la première section) ; un appui déplie les sections. Le même
+composant sert la vue mobile, l'onglet « Préparer » et l'aperçu de l'éditeur. L'en-tête de
+section annonce son état (replié ou déplié) aux lecteurs d'écran. Aucune donnée n'est touchée.
+
 ### v0.24.82 — technique
 
 Relevé des coûts de l'Atelier repas, en lecture seule : `node tools/workshop-cost-report.mjs` lit
