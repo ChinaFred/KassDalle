@@ -20,6 +20,20 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-07
 
+### v0.24.80 — fonctionnel
+
+Explorer, sur grand écran : la rangée sous le champ de recherche passe de cinq boutons à
+trois. « Chercher avec l'IA » reste le bouton principal ; le nombre de recettes sur
+lesquelles l'IA travaille quitte son libellé pour une info-bulle, car il répétait la ligne
+d'état juste dessous. « Créer avec l'IA » ouvre un menu avec « Imaginer 3 recettes » et
+« Composer un repas » ; « Ailleurs » ouvre un menu avec « Chercher sur le web » et
+« Importer depuis un lien », chaque entrée avec le sous-titre de la feuille du téléphone.
+Un menu qui n'aurait qu'une entrée devient un bouton direct : le lecteur ne voit que
+« Chercher sur le web », et le mode choix montre « Imaginer 3 recettes ». Pendant un appel,
+seule l'entrée concernée est grisée. Pour l'éditeur, la phrase des recherches web épuisées
+passe dans le sous-titre de « Chercher sur le web ». Au clavier, Tab parcourt le panneau de
+filtres, puis le champ et les trois actions, puis la liste. Le téléphone ne change pas.
+
 ### v0.24.79 — fonctionnel
 
 Planning : la ligne « 4 parts » d'un de mes repas ouvre « Changer les parts » d'un appui
