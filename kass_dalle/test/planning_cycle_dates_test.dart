@@ -37,4 +37,82 @@ void main() {
       ]);
     });
   });
+
+  // « Nouveau planning » depuis le planning (v0.24.79) : le cycle commence au
+  // premier jour de la période affichée, s'il est aujourd'hui ou plus tard.
+  group('cycleDatesForStart', () {
+    // Mardi 27 octobre 2026, cycle du vendredi.
+    final now = DateTime(2026, 10, 27, 14, 30);
+
+    test('un jour à venir : le cycle commence ce jour-là, même longueur', () {
+      final dates = cycleDatesForStart(
+        now: now,
+        startDay: DateTime(2026, 11, 20),
+        cycleStartDay: DateTime.friday,
+        count: 7,
+      );
+
+      expect(dates.first, DateTime(2026, 11, 20));
+      expect(dates.map((d) => d.day), [20, 21, 22, 23, 24, 25, 26]);
+    });
+
+    test('un jour de semaine autre que celui du cycle est gardé', () {
+      // Lundi 9 novembre, cycle du vendredi : départ le lundi.
+      final dates = cycleDatesForStart(
+        now: now,
+        startDay: DateTime(2026, 11, 9, 18),
+        cycleStartDay: DateTime.friday,
+        count: 3,
+      );
+
+      expect(dates, [
+        DateTime(2026, 11, 9),
+        DateTime(2026, 11, 10),
+        DateTime(2026, 11, 11),
+      ]);
+    });
+
+    test('aujourd\'hui : le cycle commence aujourd\'hui', () {
+      final dates = cycleDatesForStart(
+        now: now,
+        startDay: DateTime(2026, 10, 27),
+        cycleStartDay: DateTime.friday,
+        count: 2,
+      );
+
+      expect(dates, [DateTime(2026, 10, 27), DateTime(2026, 10, 28)]);
+    });
+
+    test('un jour passé : le prochain cycle, comme sans jour', () {
+      final past = cycleDatesForStart(
+        now: now,
+        startDay: DateTime(2026, 10, 23),
+        cycleStartDay: DateTime.friday,
+        count: 4,
+      );
+      final none = cycleDatesForStart(
+        now: now,
+        startDay: null,
+        cycleStartDay: DateTime.friday,
+        count: 4,
+      );
+
+      expect(past, cycleDatesFrom(now, DateTime.friday, 4));
+      expect(none, past);
+      expect(past.first, DateTime(2026, 10, 30));
+    });
+
+    test('un cycle demandé qui franchit le changement d\'heure', () {
+      // Samedi 24 octobre 2026 ; l'heure d'hiver arrive le dimanche 25.
+      final dates = cycleDatesForStart(
+        now: DateTime(2026, 10, 20),
+        startDay: DateTime(2026, 10, 24),
+        cycleStartDay: DateTime.friday,
+        count: 3,
+      );
+
+      expect(dates.map((d) => d.day), [24, 25, 26]);
+      expect(dates.every((d) => d.hour == 0), isTrue);
+    });
+  });
 }

@@ -370,8 +370,36 @@ class PlanningPreferences {
   /// Le cycle commence au prochain [cycleStartDay], aujourd'hui compris :
   /// ouvrir l'écran un vendredi quand le cycle démarre le vendredi doit
   /// proposer ce vendredi-ci, pas le suivant.
-  List<DateTime> nextCycleDates() =>
-      cycleDatesFrom(DateTime.now(), cycleStartDay, mealsPerCycle);
+  ///
+  /// [startDay] : le premier jour de la période affichée par le planning,
+  /// passé par « Nouveau planning ». Le cycle commence alors ce jour-là, s'il
+  /// est aujourd'hui ou plus tard ([cycleDatesForStart]).
+  List<DateTime> nextCycleDates({DateTime? startDay}) => cycleDatesForStart(
+    now: DateTime.now(),
+    startDay: startDay,
+    cycleStartDay: cycleStartDay,
+    count: mealsPerCycle,
+  );
+}
+
+/// Dates du cycle de « Nouveau planning » : [count] jours consécutifs à
+/// partir de [startDay] quand ce jour est aujourd'hui ou plus tard ; sinon —
+/// pas de jour demandé, ou un jour passé — à partir du prochain
+/// [cycleStartDay] ([cycleDatesFrom]). Seul le premier jour change : le
+/// nombre de jours reste [count].
+List<DateTime> cycleDatesForStart({
+  required DateTime now,
+  required DateTime? startDay,
+  required int cycleStartDay,
+  required int count,
+}) {
+  final today = DateTime(now.year, now.month, now.day);
+  if (startDay == null) return cycleDatesFrom(now, cycleStartDay, count);
+  final first = DateTime(startDay.year, startDay.month, startDay.day);
+  if (first.isBefore(today)) return cycleDatesFrom(now, cycleStartDay, count);
+  // `first.weekday` comme jour de cycle : `cycleDatesFrom` part alors de
+  // [first] lui-même, avec le même constructeur calendaire.
+  return cycleDatesFrom(first, first.weekday, count);
 }
 
 /// Dates de [count] jours consécutifs à partir du prochain [cycleStartDay]

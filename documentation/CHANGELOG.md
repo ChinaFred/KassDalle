@@ -20,6 +20,32 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-07
 
+### v0.24.79 — fonctionnel
+
+Planning : la ligne « 4 parts » d'un de mes repas ouvre « Changer les parts » d'un appui
+(icône des personnes du menu, texte souligné, cible de 48 px, infobulle « Changer les
+parts ») ; quand la place manque, « 4 parts » passe sous les temps. L'action n'était que dans
+le menu ⋮, et elle n'y était pas trouvée ; l'entrée du menu reste. Sur un repas d'autrui, en
+lecture seule ou sans recette ni accompagnement, la ligne reste un texte.
+
+« Nouveau planning » commence au premier jour de la période affichée par le planning, s'il
+est aujourd'hui ou plus tard : avec la période du ven. 20 au jeu. 26 nov. à l'écran, le cycle
+commence le ven. 20. Il commençait toujours au prochain jour de démarrage du cycle, quelle
+que soit la période regardée. Le nombre de repas et les heures par jour de semaine ne
+changent pas. Une période déjà commencée ou passée, ou une ouverture par un autre chemin,
+garde le prochain cycle. « Planifier pour… » transmet le même jour.
+
+### v0.24.79 — technique
+
+`/planning/batch` lit `?start=AAAA-MM-JJ` (`kPlanningStartParam`) par
+`parsePlanningStartParam`, qui reprend `parsePlanningDateParam` et refuse un jour antérieur à
+aujourd'hui. `BatchPlanningScreen.startDay` passe à `PlanningPreferences.nextCycleDates`,
+qui délègue à la fonction pure `cycleDatesForStart` (horloge passée en argument) : un jour
+demandé à venir devient le premier du cycle, sinon `cycleDatesFrom` comme avant.
+`openNewPlanning` reçoit `start` et `batchPlanningLocation` l'écrit à côté de `?group=` ;
+`planningDayParam` écrit le jour pour `?date=` et `?start=`. Client seul, aucune donnée ni
+Cloud Function touchée.
+
 ### v0.24.78 — fonctionnel
 
 Atelier repas, palier 2 : « Poser dans le planning ». Après un figement, complet ou partiel,
