@@ -20,6 +20,17 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-07
 
+### v0.24.81 — fonctionnel
+
+Atelier repas, sur téléphone. Clavier ouvert, le texte d'accueil « Dites ce que vous voulez
+manger » n'avait plus de place et se dessinait par-dessus le champ, son compteur et la ligne
+d'aide. Il est maintenant masqué tant que le clavier est ouvert ; la carte « Périmètre »
+reste. Clavier fermé, la carte et l'accueil défilent au lieu de déborder. La ligne d'aide
+sous le champ ne répète plus le périmètre, déjà dit par la carte. Avec un grand texte
+(réglage « Taille de police »), « Nouvelle conversation » passe sous la ligne d'aide quand
+les deux ne tiennent pas côte à côte, au lieu de réduire l'aide à quelques pixels de large
+et la liste des messages à rien ; l'exemple dans le champ tient sur deux lignes au plus.
+
 ### v0.24.80 — fonctionnel
 
 Explorer, sur grand écran : la rangée sous le champ de recherche passe de cinq boutons à

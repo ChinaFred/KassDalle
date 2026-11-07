@@ -259,14 +259,18 @@ erreur, plafond) est une carte pleine largeur, jamais une bulle.
 celui des autres champs libres), `minLines: 1`, `maxLines: 5`, `maxLength: 1500` avec le
 compteur Flutter « 123/1500 » (convention du formulaire de ticket,
 `ticket_form_screen.dart:507`), `hintText` « ex : un dîner pour 6, du poisson, un dessert
-aux fruits ». Bouton `IconButton.filled` `Icons.send_rounded`, tooltip « Envoyer », 48 px,
+aux fruits », sur deux lignes au plus (`hintMaxLines: 2`). Bouton `IconButton.filled` `Icons.send_rounded`, tooltip « Envoyer », 48 px,
 inactif si le champ est vide, pendant un tour, à 20 tours, à 0 tour restant, pendant le
 chargement du contexte. Clavier : `TextInputAction.send`, Entrée envoie, Maj+Entrée saute
 une ligne (même barre que « Modifier la recette », `generated_recipe_screen.dart:568-601`).
 Point n° 4. Autofocus sur grand écran ; sur téléphone seulement si le champ est vide (règle
 de `advanced_dish_search_screen.dart:232`). Sous le champ, `helperText` : avant le premier
-tour « Périmètre : 124 recettes · 20 tours au plus par conversation. » ; ensuite « Tour 3
-sur 20 · Il vous reste 27 tours aujourd'hui. ».
+tour « 20 tours au plus par conversation · Il vous reste 30 tours aujourd'hui. » (le
+périmètre est dit par la carte de tête, pas répété ici) ; ensuite « Tour 3 sur 20 · Il vous
+reste 27 tours aujourd'hui. ». Dès le premier tour, l'aide et « Nouvelle conversation »
+partagent une `OverflowBar` : côte à côte quand les deux tiennent sur la ligne, sinon le bouton
+passe sous l'aide, à gauche ; une aide trop longue pour une ligne prend toute la largeur. L'aide n'est ni coupée
+par une ellipse ni réduite : elle porte le nombre de tours restants.
 
 **Panneau « Menu en cours ».**
 
@@ -310,10 +314,10 @@ sur 20 · Il vous reste 27 tours aujourd'hui. ».
 
 | Situation | Ce que voit l'utilisateur | Composant |
 |---|---|---|
-| Ouverture, menu vide | Conversation : première carte « Périmètre : 124 recettes » ; liste vide avec `AppEmptyState(icon: Icons.forum_outlined, title: 'Dites ce que vous voulez manger', message: 'Pour qui, quand, avec quelles envies ou contraintes. L'IA répond et pose un premier menu dans « Menu en cours ». Chaque message envoyé est un appel à l'IA.')`. Champ pré-rempli du texte d'Explorer, non envoyé. Panneau : `AppEmptyState(icon: Icons.restaurant_menu, title: 'Pas encore de menu', message: 'Le premier menu s'affichera ici après votre premier message.')`. Pas de message d'accueil de l'IA : il coûterait un tour. | `app_states.dart` |
+| Ouverture, menu vide | Conversation : première carte « Périmètre : 124 recettes » ; liste vide avec `AppEmptyState(icon: Icons.forum_outlined, title: 'Dites ce que vous voulez manger', message: 'Pour qui, quand, avec quelles envies ou contraintes. L'IA répond et pose un premier menu dans « Menu en cours ». Chaque message envoyé est un appel à l'IA.')`. La carte et l'accueil sont dans une zone qui défile : un petit écran ou un grand facteur de texte ne les fait pas déborder. Sur téléphone, clavier ouvert, l'accueil est masqué et la carte reste ; il revient à la fermeture du clavier. Champ pré-rempli du texte d'Explorer, non envoyé. Panneau : `AppEmptyState(icon: Icons.restaurant_menu, title: 'Pas encore de menu', message: 'Le premier menu s'affichera ici après votre premier message.')`. Pas de message d'accueil de l'IA : il coûterait un tour. | `app_states.dart` |
 | Contexte en chargement (préférences, garnitures) | Champ actif ; Envoyer inactif ; aide « Préparation de l'atelier… ». Durée attendue : moins de deux secondes. | — |
 | Contexte en erreur | Carte `AppErrorState(compact: true, title: 'Atelier non prêt', onRetry)` dans la liste. Pas d'envoi dégradé : un tour sans les préférences du foyer contredirait ses contraintes sans le dire. | `AppErrorState` |
-| Périmètre à 0 recette | Carte d'information en tête de liste (`secondaryContainer`, `Icons.info_outline`) : « Aucune recette de la bibliothèque dans le périmètre : l'IA ne proposera que des plats nouveaux. » Aide sous le champ : « Périmètre : aucune recette ». Envoyer reste actif (P1-4). | modèle `_PickBanner`, `search_screen.dart:997` |
+| Périmètre à 0 recette | Carte d'information en tête de liste (`secondaryContainer`, `Icons.info_outline`) : « Aucune recette de la bibliothèque dans le périmètre : l'IA ne proposera que des plats nouveaux. » L'aide sous le champ ne le répète pas. Envoyer reste actif (P1-4). | modèle `_PickBanner`, `search_screen.dart:997` |
 | Tour en cours | Champ inactif, texte conservé ; Envoyer inactif ; ligne « L'IA compose… » avec robot et `CircularProgressIndicator` 16 px, `Semantics(liveRegion: true)` ; panneau inchangé. Le bouton parts et « Figer » sont inactifs le temps du tour. | — |
 | Réponse illisible | Carte d'erreur dans la liste : « Réponse illisible, menu inchangé. L'IA n'a pas rendu de réponse lisible. » avec « Réessayer » (renvoie le texte resté dans le champ). Menu du tour précédent conservé. Aide : le compteur de tours a décompté (le tour a été facturé). | `AppErrorState(compact: true)` |
 | Réseau perdu pendant un tour | Carte : « Réponse non reçue. Connexion perdue. » avec « Réessayer ». Texte toujours dans le champ. Tour non compté. | `failureMessage('Réponse non reçue', e)`, `error_message.dart:237` |
@@ -343,7 +347,7 @@ sur 20 · Il vous reste 27 tours aujourd'hui. ».
 | État vide conversation | « Dites ce que vous voulez manger » + message ci-dessus |
 | Hint du champ | « ex : un dîner pour 6, du poisson, un dessert aux fruits » |
 | Bouton | « Envoyer » (tooltip) |
-| Aide sous le champ | « Périmètre : 124 recettes · 20 tours au plus par conversation. » puis « Tour 3 sur 20 · Il vous reste 27 tours aujourd'hui. » ; « Il vous reste 1 tour aujourd'hui. » au singulier |
+| Aide sous le champ | « 20 tours au plus par conversation · Il vous reste 30 tours aujourd'hui. » puis « Tour 3 sur 20 · Il vous reste 27 tours aujourd'hui. » ; « Il vous reste 1 tour aujourd'hui. » au singulier |
 | Pendant un tour | « L'IA compose… » |
 | Sous une bulle IA | « Menu mis à jour · 3 services » / « Menu inchangé » ; « Lire la suite » / « Réduire » |
 | Panneau | « Menu en cours » ; « 6 parts » ; dialogue « Nombre de parts » ; « Pas encore de menu » |

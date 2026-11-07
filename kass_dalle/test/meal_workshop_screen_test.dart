@@ -177,12 +177,21 @@ Future<({_FakeFunctions functions, _FakeDrafts drafts})> _pump(
   WorkshopQuota? quota = const WorkshopQuota(limit: 30, remaining: 30),
   String initialMessage = '',
   bool phone = false,
+  Size? size,
+  double keyboard = 0,
+  double textScale = 1,
+  bool emptyScope = false,
 }) async {
-  tester.view.physicalSize = phone
-      ? const Size(400, 1200)
-      : const Size(1100, 1400);
+  tester.view.physicalSize =
+      size ?? (phone ? const Size(400, 1200) : const Size(1100, 1400));
   tester.view.devicePixelRatio = 1;
+  // Le clavier, lu par l'écran sur la vue elle-même.
+  tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
   addTearDown(tester.view.reset);
+  if (textScale != 1) {
+    tester.platformDispatcher.textScaleFactorTestValue = textScale;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+  }
   final functions = _FakeFunctions();
   final drafts = _FakeDrafts();
   final router = GoRouter(
@@ -210,10 +219,12 @@ Future<({_FakeFunctions functions, _FakeDrafts drafts})> _pump(
           (ref) async => MealWorkshopContext(
             myUid: 'u1',
             displayName: 'Utilisateur',
-            summaries: const [
-              {'id': 'r1', 'titre': 'Blanquette de veau'},
-              {'id': 'r2', 'titre': 'Tarte aux poires'},
-            ],
+            summaries: emptyScope
+                ? const []
+                : const [
+                    {'id': 'r1', 'titre': 'Blanquette de veau'},
+                    {'id': 'r2', 'titre': 'Tarte aux poires'},
+                  ],
             recipesById: {
               'r1': _recipe(
                 'r1',
@@ -264,11 +275,13 @@ void main() {
     expect(find.text('Pas encore de plat'), findsOneWidget);
     expect(
       find.text(
-        'Périmètre : 2 recettes · 20 tours au plus par conversation · Il vous '
-        'reste 30 tours aujourd\'hui.',
+        '20 tours au plus par conversation · Il vous reste 30 tours '
+        'aujourd\'hui.',
       ),
       findsOneWidget,
     );
+    // Le périmètre n'est dit qu'une fois : par la carte, pas par l'aide.
+    expect(find.textContaining('Périmètre'), findsOneWidget);
     final freeze = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Figer le repas'),
     );
@@ -279,6 +292,148 @@ void main() {
       find.widgetWithIcon(IconButton, Icons.send_rounded),
     );
     expect(send.onPressed, isNull);
+  });
+
+  group('conversation vide, téléphone', () {
+    const welcome = 'Dites ce que vous voulez manger';
+
+    testWidgets('clavier ouvert : la carte du périmètre, sans accueil ni '
+        'débordement', (tester) async {
+      await _pump(tester, size: const Size(400, 800), keyboard: 350);
+      expect(tester.takeException(), isNull);
+      expect(find.text(welcome), findsNothing);
+      expect(find.byIcon(Icons.forum_outlined), findsNothing);
+      expect(find.text('Périmètre : 2 recettes · 0 garniture'), findsOneWidget);
+      expect(find.text('Plat · vide · 4 parts'), findsOneWidget);
+      expect(
+        find.text(
+          '20 tours au plus par conversation · Il vous reste 30 tours '
+          'aujourd\'hui.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('le clavier se ferme : l\'accueil revient', (tester) async {
+      await _pump(tester, size: const Size(400, 800), keyboard: 350);
+      expect(find.text(welcome), findsNothing);
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(find.text(welcome), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    /// La zone de l'accueil défile : son contenu dépasse la place laissée.
+    double welcomeOverflow(WidgetTester tester) => tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.ancestor(
+              of: find.text(welcome),
+              matching: find.byType(SingleChildScrollView),
+            ),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position
+        .maxScrollExtent;
+
+    testWidgets('clavier fermé, petit écran : l\'accueil défile, sans '
+        'débordement', (tester) async {
+      await _pump(tester, size: const Size(360, 560), textScale: 1.3);
+      expect(tester.takeException(), isNull);
+      expect(find.text(welcome), findsOneWidget);
+      expect(find.text('Périmètre : 2 recettes · 0 garniture'), findsOneWidget);
+      expect(welcomeOverflow(tester), greaterThan(0));
+    });
+
+    testWidgets('clavier fermé, petit écran et texte à 200 % : l\'accueil '
+        'défile, sans débordement', (tester) async {
+      // L'exemple du champ tient sur deux lignes (`hintMaxLines`) : sur
+      // cinq, la barre de saisie dépassait seule la hauteur de la colonne.
+      await _pump(tester, size: const Size(360, 560), textScale: 2);
+      expect(tester.takeException(), isNull);
+      expect(find.text(welcome), findsOneWidget);
+      expect(welcomeOverflow(tester), greaterThan(0));
+    });
+
+    testWidgets('aucune recette : la carte le dit, l\'aide ne le répète pas', (
+      tester,
+    ) async {
+      await _pump(tester, phone: true, emptyScope: true);
+      expect(
+        find.text(
+          'Aucune recette de la bibliothèque dans le périmètre : l\'IA ne '
+          'proposera que des plats nouveaux.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Périmètre'), findsNothing);
+      expect(find.textContaining('aucune recette'), findsNothing);
+    });
+  });
+
+  group('barre de saisie, téléphone, conversation commencée', () {
+    const helper = 'Tour 1 sur 20 · Il vous reste 29 tours aujourd\'hui.';
+
+    Future<void> playTurn(
+      WidgetTester tester,
+      ({_FakeFunctions functions, _FakeDrafts drafts}) fakes,
+    ) async {
+      fakes.functions.turns.add(_turnResult([_course('Bar rôti')]));
+      await _send(tester, 'un plat de poisson');
+    }
+
+    for (final width in [360.0, 400.0]) {
+      testWidgets('à 100 %, ${width.toInt()} px : l\'aide et « Nouvelle '
+          'conversation »', (tester) async {
+        await playTurn(tester, await _pump(tester, size: Size(width, 800)));
+        expect(tester.takeException(), isNull);
+        expect(find.text(helper), findsOneWidget);
+        expect(find.text('Nouvelle conversation'), findsOneWidget);
+        // Dans la police des tests, l'aide et le bouton ne tiennent pas côte
+        // à côte, ni à 360 ni à 400 px : l'aide prend la largeur de la
+        // barre, le bouton passe dessous, à gauche.
+        final text = tester.getRect(find.text(helper));
+        final button = tester.getRect(
+          find.widgetWithText(TextButton, 'Nouvelle conversation'),
+        );
+        expect(text.left, 12);
+        expect(text.right, width - 12);
+        expect(button.top, greaterThanOrEqualTo(text.bottom));
+        expect(button.left, 12);
+      });
+    }
+
+    testWidgets('à 100 %, 700 px : l\'aide tient sur une ligne mais pas à côté '
+        'du bouton, les deux à gauche', (tester) async {
+      await playTurn(tester, await _pump(tester, size: const Size(700, 900)));
+      expect(tester.takeException(), isNull);
+      final text = tester.getRect(find.text(helper));
+      final button = tester.getRect(
+        find.widgetWithText(TextButton, 'Nouvelle conversation'),
+      );
+      // Une ligne, plus courte que la barre : l'aide n'est pas poussée à
+      // droite par l'empilement.
+      expect(text.left, 12);
+      expect(text.right, lessThan(700 - 12));
+      expect(button.top, greaterThanOrEqualTo(text.bottom));
+      expect(button.left, 12);
+    });
+
+    testWidgets('à 200 %, 360×720 : sans débordement, la liste garde de la '
+        'hauteur', (tester) async {
+      await playTurn(
+        tester,
+        await _pump(tester, size: const Size(360, 720), textScale: 2),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.text(helper), findsOneWidget);
+      expect(find.text('Nouvelle conversation'), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(ListView).first).height,
+        greaterThan(0),
+      );
+    });
   });
 
   testWidgets('un tour : bulles, panneau, compteur, « Figer » actif', (

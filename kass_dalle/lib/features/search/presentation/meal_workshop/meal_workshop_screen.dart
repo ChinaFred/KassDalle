@@ -96,7 +96,8 @@ enum _FreezeStop { budget, permission }
 /// planning ».
 enum _FooterButton { freeze, pose }
 
-class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
+class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen>
+    with WidgetsBindingObserver {
   late final TextEditingController _input = TextEditingController(
     text: widget.initialMessage,
   );
@@ -126,6 +127,11 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
   /// Le compteur du jour ; `null` tant qu'il est inconnu.
   WorkshopQuota? _quota;
   int _inputLength = 0;
+
+  /// Clavier ouvert, lu sur la vue elle-même : le `Scaffold` du shell, qui
+  /// porte l'écran dans son corps, retire `viewInsets` du `MediaQuery`
+  /// (même procédé que `search_screen.dart`).
+  bool _keyboardOpen = false;
 
   // ── Figement ──────────────────────────────────────────────────────────────
 
@@ -222,10 +228,28 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
     _input.addListener(_onInputChanged);
     _leaveGuardNotifier = ref.read(leaveGuardProvider.notifier);
     _previousGuard = ref.read(leaveGuardProvider);
+    WidgetsBinding.instance.addObserver(this);
     // Après le rendu : un provider ne se modifie pas pendant la construction.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _leaveGuardNotifier.set(_leaveGuard);
     });
+  }
+
+  bool _viewKeyboardOpen() => View.of(context).viewInsets.bottom > 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _keyboardOpen = _viewKeyboardOpen();
+  }
+
+  /// Le clavier s'ouvre ou se ferme : sur téléphone, l'accueil de la
+  /// conversation vide se masque ou revient.
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    final open = _viewKeyboardOpen();
+    if (open != _keyboardOpen) setState(() => _keyboardOpen = open);
   }
 
   @override
@@ -235,6 +259,7 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
     final guard = _leaveGuard;
     final previous = _previousGuard;
     Future.microtask(() => notifier.restoreIf(guard, previous));
+    WidgetsBinding.instance.removeObserver(this);
     _input
       ..removeListener(_onInputChanged)
       ..dispose();
@@ -1083,16 +1108,27 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
   }) {
     final head = _buildHeadCard(asyncWorkshop);
     if (_entries.isEmpty && !_sending) {
-      return Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-            child: head,
-          ),
-          Expanded(
-            child: _workshop == null
-                ? const SizedBox.shrink()
-                : AppEmptyState(
+      // Téléphone, clavier ouvert : la place laissée au-dessus du champ ne
+      // tient pas l'accueil, qui se dessinait sur la barre de saisie. La
+      // carte du périmètre reste.
+      final showWelcome = _workshop != null && (wide || !_keyboardOpen);
+      // Une zone qui défile : un petit écran ou un grand facteur de texte ne
+      // fait pas déborder l'accueil. La hauteur minimale garde la carte en
+      // haut et l'accueil centré dans la place restante (`spaceBetween` et
+      // un dernier enfant vide : autant d'espace au-dessus qu'en dessous).
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  child: head,
+                ),
+                if (showWelcome)
+                  AppEmptyState(
                     icon: Icons.forum_outlined,
                     title: 'Dites ce que vous voulez manger',
                     message:
@@ -1101,8 +1137,11 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
                         '« ${_isDish ? 'Plat' : 'Menu'} en cours ». Chaque '
                         'message envoyé est un appel à l\'IA.',
                   ),
+                const SizedBox.shrink(),
+              ],
+            ),
           ),
-        ],
+        ),
       );
     }
     return ListView(
@@ -1220,7 +1259,7 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
   /// L'aide sous le champ, selon l'état.
   String _helperText(MealWorkshopContext? workshop) {
     // Contexte en chargement : la carte en tête de liste le dit déjà ; le
-    // périmètre et le compteur s'ajoutent dès qu'ils sont connus.
+    // compteur du jour s'ajoute dès qu'il est connu.
     if (workshop == null) {
       return '$kWorkshopMaxTurns tours au plus par conversation';
     }
@@ -1233,10 +1272,10 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
       return 'Conversation terminée : $kWorkshopMaxTurns tours. Figez le '
           'repas, ou ouvrez une nouvelle conversation.';
     }
+    // Avant le premier tour. Le périmètre, « aucune recette » compris, est
+    // dit par la carte en tête de la conversation : il n'est pas répété ici.
     if (!_hasConversation) {
-      final n = workshop.summaries.length;
       return [
-        'Périmètre : ${n == 0 ? 'aucune recette' : '$n ${n > 1 ? 'recettes' : 'recette'}'}',
         '$kWorkshopMaxTurns tours au plus par conversation',
         ?remaining,
       ].join(' · ');
@@ -1312,6 +1351,7 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
                         hintText: _isDish
                             ? 'ex : un plat de poisson pour 4 ce soir, avec un féculent'
                             : 'ex : un dîner pour 6, du poisson, un dessert aux fruits',
+                        hintMaxLines: 2,
                         isDense: true,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(20),
@@ -1348,9 +1388,16 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen> {
                 ),
               ],
             ),
-            Row(
+            // Côte à côte quand l'aide et le bouton tiennent sur la ligne ;
+            // sinon le bouton passe sous l'aide, à gauche ; une aide trop
+            // longue pour une ligne prend toute la largeur. Une `Row` laissait à l'aide la largeur restante :
+            // à 200 % le bouton remplit la ligne, l'aide se cassait sur des
+            // dizaines de lignes et la liste des messages tombait à 0 px.
+            OverflowBar(
+              alignment: MainAxisAlignment.spaceBetween,
+              overflowAlignment: OverflowBarAlignment.start,
               children: [
-                Expanded(child: Text(_helperText(workshop), style: small)),
+                Text(_helperText(workshop), style: small),
                 // Inactif pendant un tour, comme le bouton parts et le
                 // sélecteur Plat | Menu : la ligne garde sa hauteur.
                 if (_hasConversation)
