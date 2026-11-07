@@ -14,7 +14,7 @@ import 'package:kass_dalle/features/search/presentation/search_providers.dart';
 import 'package:kass_dalle/features/search/presentation/search_screen.dart';
 
 /// « Composer un repas avec l'IA » dans Explorer : visible de l'éditeur sur
-/// grand écran (rangée des actions) et sur téléphone (« Aller plus loin »),
+/// grand écran (menu « Créer avec l'IA ») et sur téléphone (« Aller plus loin »),
 /// absente pour le lecteur, et l'adresse ouverte porte le texte du champ.
 class _FakeService extends GeminiService {
   @override
@@ -83,26 +83,32 @@ Future<void> _pump(
 
 void main() {
   group('grand écran', () {
-    testWidgets('éditeur : après « Imaginer 3 recettes », avant le web', (
+    // Dans le menu « Créer avec l'IA », sans « avec l'IA » : le menu le dit.
+    const wideLabel = 'Composer un repas';
+
+    Future<void> openCreateMenu(WidgetTester tester) async {
+      await tester.tap(find.text('Créer avec l\'IA'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('éditeur : dans « Créer avec l\'IA », après « Imaginer »', (
       tester,
     ) async {
       await _pump(tester);
-      final imagine = tester.getTopLeft(find.text('Imaginer 3 recettes'));
-      final workshop = tester.getTopLeft(find.text(_label));
-      final web = tester.getTopLeft(find.text('Chercher sur le web'));
-      expect(find.text(_label), findsOneWidget);
+      expect(find.text(wideLabel), findsNothing);
+      await openCreateMenu(tester);
+      expect(find.text(wideLabel), findsOneWidget);
+      expect(find.text(_label), findsNothing);
       expect(find.byIcon(Icons.restaurant_menu), findsOneWidget);
-      // L'ordre de lecture d'un `Wrap` : la ligne, puis la position sur la
-      // ligne. La rangée peut passer sur deux lignes à cette largeur.
-      bool after(Offset a, Offset b) =>
-          a.dy > b.dy || (a.dy == b.dy && a.dx > b.dx);
-      expect(after(workshop, imagine), isTrue);
-      expect(after(web, workshop), isTrue);
+      final imagine = tester.getTopLeft(find.text('Imaginer 3 recettes'));
+      final workshop = tester.getTopLeft(find.text(wideLabel));
+      expect(workshop.dy, greaterThan(imagine.dy));
     });
 
-    testWidgets('lecteur : ni bouton ni icône', (tester) async {
+    testWidgets('lecteur : ni menu ni icône', (tester) async {
       await _pump(tester, canEdit: false);
-      expect(find.text(_label), findsNothing);
+      expect(find.text('Créer avec l\'IA'), findsNothing);
+      expect(find.text(wideLabel), findsNothing);
       expect(find.byIcon(Icons.restaurant_menu), findsNothing);
     });
 
@@ -112,14 +118,16 @@ void main() {
       await _pump(tester);
       await tester.enterText(find.byType(TextField), 'bar rôti pour 4');
       await tester.pumpAndSettle();
-      await tester.tap(find.text(_label));
+      await openCreateMenu(tester);
+      await tester.tap(find.text(wideLabel));
       await tester.pumpAndSettle();
       expect(find.text('atelier:bar rôti pour 4'), findsOneWidget);
     });
 
     testWidgets('toujours actif, même sans texte', (tester) async {
       await _pump(tester);
-      await tester.tap(find.text(_label));
+      await openCreateMenu(tester);
+      await tester.tap(find.text(wideLabel));
       await tester.pumpAndSettle();
       expect(find.text('atelier:'), findsOneWidget);
     });

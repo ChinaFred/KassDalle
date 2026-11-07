@@ -17,6 +17,10 @@ nouveaux deviennent des brouillons dans mon livre ».
 
 **Où se place le cinquième bouton.**
 
+> Note : la rangée du grand écran a été refaite depuis (trois boutons, menus « Créer avec
+> l'IA » et « Ailleurs ») ; la disposition en vigueur est celle de `FunctionalRequirements.md`
+> §5.5, « Disposition ».
+
 - Grand écran : dans la rangée `Wrap` des actions (`search_screen.dart:899-940`), en
   `OutlinedButton.icon`, juste après « Imaginer 3 recettes » et avant « Chercher sur le
   web ». Les deux actions de création de l'IA sont côte à côte ; le web et l'import restent

@@ -55,9 +55,10 @@ class ExploreChoice {
 /// À l'ouverture, la liste des recettes des sources choisies. Le champ filtre
 /// cette liste à chaque frappe, sur l'appareil, sans IA, et la range en
 /// sections : dans le titre, par cuisine, type ou thème, dans les ingrédients
-/// principaux. L'IA ne part que sur un bouton : « Chercher avec l'IA »
-/// (classement, éditeurs et administrateurs) et « Imaginer 3 recettes »
-/// (création, mêmes rôles). « Chercher sur le web » (tous les rôles) affiche
+/// principaux. L'IA ne part que sur un bouton ou une entrée de menu :
+/// « Chercher avec l'IA » (classement, éditeurs et administrateurs) et
+/// « Imaginer 3 recettes » (création, mêmes rôles). « Chercher sur le web »
+/// (tous les rôles) affiche
 /// jusqu'à huit pages de recettes trouvées par Google, à ouvrir ou à
 /// importer ; « Voir sur Google » ouvre le texte tel quel. Au retour du
 /// navigateur, un éditeur voit un bandeau qui propose d'importer la recette.
@@ -630,7 +631,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   /// « Aller plus loin » : trois chemins hors de la bibliothèque.
   Future<void> _openGoFurther(ExploreCorpus corpus, bool canEdit) {
     final webState = ref.read(webSearchProvider);
-    final remainingLine = remainingSearchesLine(webState.remaining);
     return showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -643,10 +643,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               ListTile(
                 leading: const Icon(Icons.auto_awesome),
                 title: const Text('Imaginer 3 recettes'),
-                subtitle: const Text(
-                  'L\'IA rédige trois recettes sur votre envie, à relire avant '
-                  'de les enregistrer en brouillon.',
-                ),
+                subtitle: const Text(_imagineSubtitle),
                 enabled: ref.read(aiIdeasProvider) is! AiIdeasLoading,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -657,10 +654,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               ListTile(
                 leading: const Icon(Icons.restaurant_menu),
                 title: const Text('Composer un repas avec l\'IA'),
-                subtitle: const Text(
-                  'Discutez d\'un plat ou d\'un menu complet. Les plats '
-                  'retenus deviennent des brouillons à relire.',
-                ),
+                subtitle: const Text(_mealWorkshopSubtitle),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openMealWorkshop();
@@ -669,12 +663,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             ListTile(
               leading: const Icon(Icons.public),
               title: const Text('Chercher sur le web'),
-              subtitle: Text(
-                [
-                  'Jusqu\'à 8 pages de recettes, affichées ici.',
-                  ?remainingLine,
-                ].join(' '),
-              ),
+              subtitle: Text(_webSearchSubtitle(webState.remaining)),
               enabled: webState is! WebSearchLoading,
               onTap: () {
                 Navigator.pop(ctx);
@@ -685,9 +674,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               ListTile(
                 leading: const Icon(Icons.link),
                 title: const Text('Importer depuis un lien'),
-                subtitle: const Text(
-                  'Une recette d\'une page web arrive dans vos brouillons.',
-                ),
+                subtitle: const Text(_importSubtitle),
                 onTap: () {
                   Navigator.pop(ctx);
                   unawaited(showUrlImportDialog(context));
@@ -902,14 +889,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Un groupe de tabulation : Tab parcourt tout le panneau, puis le
+          // champ et les actions, puis la liste, sans les mélanger.
           SizedBox(
             width: 300,
-            child: ExploreFilterPanel(
-              prefs: prefs,
-              facets: facets,
-              myUid: corpus.myUid,
-              showDrafts: canEdit,
-              onChanged: _updatePrefs,
+            child: FocusTraversalGroup(
+              child: ExploreFilterPanel(
+                prefs: prefs,
+                facets: facets,
+                myUid: corpus.myUid,
+                showDrafts: canEdit,
+                onChanged: _updatePrefs,
+              ),
             ),
           ),
           const VerticalDivider(width: 1),
@@ -917,62 +908,31 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                field,
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                // Un seul groupe de tabulation : du champ, Tab passe aux
+                // trois actions, puis à la liste.
+                FocusTraversalGroup(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (canEdit)
-                        FilledButton.icon(
-                          onPressed: askAi,
-                          icon: const Icon(
-                            Icons.smart_toy_outlined,
-                            size: AppIconSize.small,
-                          ),
-                          label: Text(
-                            'Chercher avec l\'IA · ${recipeCountLabel(aiCorpusSize).toLowerCase()}',
-                          ),
-                        ),
-                      if (canEdit)
-                        OutlinedButton.icon(
-                          onPressed: imagine,
-                          icon: const Icon(
-                            Icons.auto_awesome,
-                            size: AppIconSize.small,
-                          ),
-                          label: const Text('Imaginer 3 recettes'),
-                        ),
-                      // Les deux actions de création de l'IA côte à côte ;
-                      // masquée en mode choix, qui rend une recette et non un
-                      // repas.
-                      if (canEdit && !_picking)
-                        OutlinedButton.icon(
-                          onPressed: _openMealWorkshop,
-                          icon: const Icon(
-                            Icons.restaurant_menu,
-                            size: AppIconSize.small,
-                          ),
-                          label: const Text('Composer un repas avec l\'IA'),
-                        ),
-                      OutlinedButton.icon(
-                        onPressed: searchWeb,
-                        icon: const Icon(Icons.public, size: AppIconSize.small),
-                        label: const Text('Chercher sur le web'),
+                      field,
+                      _WideActions(
+                        canEdit: canEdit,
+                        // Le mode choix rend une recette, pas un repas.
+                        canComposeMeal: !_picking,
+                        aiCorpusSize: aiCorpusSize,
+                        onAskAi: askAi,
+                        onImagine: imagine,
+                        onComposeMeal: _openMealWorkshop,
+                        onSearchWeb: searchWeb,
+                        onImport: () => unawaited(showUrlImportDialog(context)),
+                        webRemaining: webState.remaining,
                       ),
-                      // En fin de rangée, en bouton texte : un import n'est
-                      // pas une recherche.
-                      if (canEdit)
-                        TextButton.icon(
-                          onPressed: () => showUrlImportDialog(context),
-                          icon: const Icon(Icons.link, size: AppIconSize.small),
-                          label: const Text('Importer depuis un lien'),
-                        ),
                     ],
                   ),
                 ),
-                if (webExhaustedLine != null)
+                // L'éditeur lit la phrase dans le menu « Ailleurs ».
+                if (!canEdit && webExhaustedLine != null)
                   _WebExhaustedLine(text: webExhaustedLine),
                 _StatusLine(
                   outcome: outcome,
@@ -1362,6 +1322,255 @@ class _FilterSheet extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Actions hors de la bibliothèque ──────────────────────────────────────────
+
+// Sous-titres partagés par la feuille « Aller plus loin » du téléphone et les
+// menus du grand écran.
+const _imagineSubtitle =
+    'L\'IA rédige trois recettes sur votre envie, à relire avant de les '
+    'enregistrer en brouillon.';
+const _mealWorkshopSubtitle =
+    'Discutez d\'un plat ou d\'un menu complet. Les plats retenus deviennent '
+    'des brouillons à relire.';
+const _importSubtitle =
+    'Une recette d\'une page web arrive dans vos brouillons.';
+
+/// « Jusqu'à 8 pages… », suivi du nombre de recherches restantes s'il est
+/// connu.
+String _webSearchSubtitle(int? remaining) => [
+  'Jusqu\'à 8 pages de recettes, affichées ici.',
+  ?remainingSearchesLine(remaining),
+].join(' ');
+
+/// L'info-bulle de « Chercher avec l'IA » sur grand écran : le nombre de
+/// recettes que l'IA classera, accordé.
+String askAiTooltip(int count) => switch (count) {
+  0 => 'Aucune recette retenue par les filtres : l\'IA n\'a rien à classer.',
+  1 => 'L\'IA classe la recette retenue par les filtres.',
+  _ => 'L\'IA classe les ${recipeCountLabel(count)} retenues par les filtres.',
+};
+
+/// La rangée du grand écran, sous le champ : « Chercher avec l'IA », puis
+/// les menus « Créer avec l'IA » et « Ailleurs ». Un menu qui n'aurait
+/// qu'une entrée devient un bouton direct ; le lecteur n'a que « Chercher
+/// sur le web ».
+class _WideActions extends StatelessWidget {
+  final bool canEdit;
+  final bool canComposeMeal;
+  final int aiCorpusSize;
+
+  /// Nul pendant un classement en cours ou sans recette à classer.
+  final VoidCallback? onAskAi;
+
+  /// Nul pendant une rédaction en cours.
+  final VoidCallback? onImagine;
+  final VoidCallback onComposeMeal;
+
+  /// Nul pendant une recherche web en cours.
+  final VoidCallback? onSearchWeb;
+  final VoidCallback onImport;
+
+  /// Recherches web restantes aujourd'hui ; nul tant que c'est inconnu.
+  final int? webRemaining;
+
+  const _WideActions({
+    required this.canEdit,
+    required this.canComposeMeal,
+    required this.aiCorpusSize,
+    required this.onAskAi,
+    required this.onImagine,
+    required this.onComposeMeal,
+    required this.onSearchWeb,
+    required this.onImport,
+    required this.webRemaining,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Widget> children;
+    if (!canEdit) {
+      children = [
+        FilledButton.icon(
+          onPressed: onSearchWeb,
+          icon: const Icon(Icons.public, size: AppIconSize.small),
+          label: const Text('Chercher sur le web'),
+        ),
+      ];
+    } else {
+      children = [
+        Tooltip(
+          message: askAiTooltip(aiCorpusSize),
+          child: FilledButton.icon(
+            onPressed: onAskAi,
+            icon: const Icon(Icons.smart_toy_outlined, size: AppIconSize.small),
+            label: const Text('Chercher avec l\'IA'),
+          ),
+        ),
+        // Les deux menus passent ensemble à la ligne : aucun ne reste seul.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _ActionMenu(
+              label: 'Créer avec l\'IA',
+              icon: Icons.auto_awesome,
+              entries: [
+                _MenuEntry(
+                  label: 'Imaginer 3 recettes',
+                  subtitle: _imagineSubtitle,
+                  icon: Icons.auto_awesome,
+                  onPressed: onImagine,
+                ),
+                if (canComposeMeal)
+                  _MenuEntry(
+                    label: 'Composer un repas',
+                    subtitle: _mealWorkshopSubtitle,
+                    icon: Icons.restaurant_menu,
+                    onPressed: onComposeMeal,
+                  ),
+              ],
+            ),
+            _ActionMenu(
+              label: 'Ailleurs',
+              icon: Icons.public,
+              entries: [
+                _MenuEntry(
+                  label: 'Chercher sur le web',
+                  subtitle: _webSearchSubtitle(webRemaining),
+                  icon: Icons.public,
+                  onPressed: onSearchWeb,
+                ),
+                _MenuEntry(
+                  label: 'Importer depuis un lien',
+                  subtitle: _importSubtitle,
+                  icon: Icons.link,
+                  onPressed: onImport,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ];
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: children,
+      ),
+    );
+  }
+}
+
+/// Une entrée d'un menu d'actions : titre, sous-titre, icône.
+class _MenuEntry {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+
+  /// Nul pendant un appel en cours : l'entrée est désactivée, pas le menu.
+  final VoidCallback? onPressed;
+
+  const _MenuEntry({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.onPressed,
+  });
+}
+
+/// Un bouton qui ouvre un menu d'[entries]. Avec une seule entrée, le bouton
+/// la lance directement, sous son libellé et son icône.
+class _ActionMenu extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final List<_MenuEntry> entries;
+
+  const _ActionMenu({
+    required this.label,
+    required this.icon,
+    required this.entries,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.length == 1) {
+      final only = entries.single;
+      return OutlinedButton.icon(
+        onPressed: only.onPressed,
+        icon: Icon(only.icon, size: AppIconSize.small),
+        label: Text(only.label),
+      );
+    }
+    // `MenuItemButton` lance l'action après la fermeture du menu et le
+    // retour du focus sur ce bouton : une action qui demande le champ
+    // (texte manquant) y pose donc le focus en dernier.
+    return MenuAnchor(
+      menuChildren: [for (final entry in entries) _MenuEntryButton(entry)],
+      builder: (context, controller, _) => MergeSemantics(
+        child: Semantics(
+          hint: 'Ouvre un menu',
+          expanded: controller.isOpen,
+          child: OutlinedButton.icon(
+            onPressed: () =>
+                controller.isOpen ? controller.close() : controller.open(),
+            icon: Icon(icon, size: AppIconSize.small),
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label),
+                const ExcludeSemantics(
+                  child: Icon(Icons.arrow_drop_down, size: AppIconSize.small),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Une entrée de menu : le titre, puis le sous-titre qui passe à la ligne.
+class _MenuEntryButton extends StatelessWidget {
+  final _MenuEntry entry;
+  const _MenuEntryButton(this.entry);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final enabled = entry.onPressed != null;
+    return MenuItemButton(
+      onPressed: entry.onPressed,
+      leadingIcon: Icon(entry.icon),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(entry.label),
+              Text(
+                entry.subtitle,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: enabled
+                      ? theme.colorScheme.onSurfaceVariant
+                      : theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

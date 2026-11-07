@@ -5686,11 +5686,12 @@ sélecteur du planning) :
   (`recipe_ratings` filtrées sur son uid), pas une moyenne familiale.
 - **Préférence** : sources, filtres et tri sous `users/{uid}/preferences/explore_filters` (§3).
 
-L'IA ne part que sur un bouton. Le `reader` n'a que « Chercher sur le web » :
+L'IA ne part que sur un bouton ou une entrée de menu. Le `reader` n'a que « Chercher sur le
+web » :
 
-| Bouton | Callable | Poste | Garde | Ce qui part |
+| Action | Callable | Poste | Garde | Ce qui part |
 |---|---|---|---|---|
-| « Chercher avec l'IA · N recettes » | `searchRecipesFn` | `search` | `requireEditor` | le texte du champ comme demande ; comme corpus, les recettes retenues par les filtres **sans** le filtre texte (N), résumées par `buildRecipeSummary` |
+| « Chercher avec l'IA » (téléphone : « · N recettes » dans le libellé ; grand écran : N dans l'info-bulle `askAiTooltip`) | `searchRecipesFn` | `search` | `requireEditor` | le texte du champ comme demande ; comme corpus, les recettes retenues par les filtres **sans** le filtre texte (N), résumées par `buildRecipeSummary` |
 | « Imaginer 3 recettes » | `generateRecipeFn` ×3 (+ une relance par doublon) | `generate` | `requireEditor` | le texte du champ seul ; douze résumés du corpus et l'observation locale tirée des notes |
 | « Chercher sur le web » | `searchWebRecipesFn` | `web_recipe_search` | `requireAuth` (tous les rôles approuvés) | le texte du champ seul, nettoyé et borné à 200 caractères ; aucun appel quand le cache partagé a la réponse |
 | « Composer un repas avec l'IA » | `mealWorkshopTurnFn` (un par tour), `mealWorkshopRecipeFn` (un par plat figé) | `meal_workshop_turn`, `meal_workshop_recipe` | `requireEditor` | par tour : le mode (plat ou menu), l'historique, le message, les résumés du périmètre figé à l'ouverture (`buildMealWorkshopSummary`), les garnitures, `globalConstraints`, les parts et le menu en cours ; par plat figé : titre, description, accompagnements, parts, `globalConstraints` |
@@ -5802,10 +5803,12 @@ le moteur, message sans « Réessayer » pour un refus, et `describeError` sinon
 aussi `GeminiCallableException.code` (hors ligne : « Connexion perdue »). Le pied
 « Vidéos et réseaux sociaux exclus. » + « Voir sur Google » suit les cartes, l'état vide
 (un encart resserré, `_WebEmptyNotice`, sans icône) et l'erreur. Quand `remaining` vaut 0,
-« Il ne vous reste aucune recherche aujourd'hui. » s'affiche sous le bouton du lecteur et
-sous la rangée de boutons du grand écran ; le bouton reste actif. Une
-recherche en cours ne repart pas ; une réponse arrivée après une nouvelle demande est
-ignorée ; `remaining` survit à « Effacer » pour la feuille « Aller plus loin ».
+« Il ne vous reste aucune recherche aujourd'hui. » s'affiche sous le bouton du lecteur, sur
+téléphone comme sur grand écran ; l'éditeur la lit dans le sous-titre de « Chercher sur le
+web », dans la feuille « Aller plus loin » ou le menu « Ailleurs » (`_WideActions`). Le
+bouton et l'entrée restent actifs. Une recherche en cours ne repart pas ; une réponse arrivée
+après une nouvelle demande est ignorée ; `remaining` survit à « Effacer » pour la feuille
+« Aller plus loin » et le menu « Ailleurs ».
 `WebRecipeResult.fromMap` revérifie que chaque adresse est en https. La carte
 (`WebResultTile`, `search_widgets.dart`) : `WebResultThumbnail`, l'icône `Icons.public`
 64 × 64 sur `surfaceContainerHighest`, toujours ; libellé sémantique unique « titre,

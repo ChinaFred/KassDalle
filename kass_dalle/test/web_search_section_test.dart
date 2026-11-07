@@ -143,9 +143,18 @@ Future<_FakeService> _pump(
   return service;
 }
 
+/// Ouvre le menu « Ailleurs » de l'éditeur sur grand écran ; ailleurs, le
+/// bouton « Chercher sur le web » est déjà visible.
+Future<void> _openElsewhere(WidgetTester tester) async {
+  if (find.text('Ailleurs').evaluate().isEmpty) return;
+  await tester.tap(find.text('Ailleurs'));
+  await tester.pumpAndSettle();
+}
+
 Future<void> _search(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(TextField), text);
   await tester.pumpAndSettle();
+  await _openElsewhere(tester);
   await tester.tap(find.text('Chercher sur le web'));
   await tester.pumpAndSettle();
 }
@@ -194,15 +203,34 @@ void main() {
       );
     });
 
-    testWidgets('grand écran : à la place de « Chercher sur Google »', (
+    testWidgets('éditeur sur grand écran : dans le menu « Ailleurs »', (
       tester,
     ) async {
       await _pump(tester);
+      expect(find.text('Chercher sur le web'), findsNothing);
+      await _openElsewhere(tester);
       expect(
-        find.widgetWithText(OutlinedButton, 'Chercher sur le web'),
+        find.widgetWithText(MenuItemButton, 'Chercher sur le web'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Jusqu\'à 8 pages de recettes, affichées ici.'),
         findsOneWidget,
       );
       expect(find.text('Chercher sur Google'), findsNothing);
+    });
+
+    testWidgets('lecteur sur grand écran : un seul bouton plein', (
+      tester,
+    ) async {
+      await _pump(tester, canEdit: false);
+      expect(
+        find.widgetWithText(FilledButton, 'Chercher sur le web'),
+        findsOneWidget,
+      );
+      expect(find.text('Ailleurs'), findsNothing);
+      expect(find.text('Créer avec l\'IA'), findsNothing);
+      expect(find.textContaining('Chercher avec l\'IA'), findsNothing);
     });
   });
 
@@ -386,11 +414,12 @@ void main() {
       expect(service.queries, hasLength(2));
     });
 
-    testWidgets('grand écran, plafond atteint : la phrase sous les boutons', (
+    testWidgets('lecteur sur grand écran, plafond : la phrase sous le bouton', (
       tester,
     ) async {
       await _pump(
         tester,
+        canEdit: false,
         answer: (_) async => throw const WebSearchQuotaExceeded(limit: 50),
       );
       await _search(tester, 'blanquette');
@@ -398,6 +427,33 @@ void main() {
         find.text('Il ne vous reste aucune recherche aujourd\'hui.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('éditeur sur grand écran, plafond : la phrase dans le menu', (
+      tester,
+    ) async {
+      final service = await _pump(
+        tester,
+        answer: (_) async => throw const WebSearchQuotaExceeded(limit: 50),
+      );
+      await _search(tester, 'blanquette');
+      // Plus de ligne sous la rangée.
+      expect(
+        find.text('Il ne vous reste aucune recherche aujourd\'hui.'),
+        findsNothing,
+      );
+      await _openElsewhere(tester);
+      expect(
+        find.text(
+          'Jusqu\'à 8 pages de recettes, affichées ici. Il ne vous reste '
+          'aucune recherche aujourd\'hui.',
+        ),
+        findsOneWidget,
+      );
+      // L'entrée reste active : une recherche en cache sert encore.
+      await tester.tap(find.text('Chercher sur le web'));
+      await tester.pumpAndSettle();
+      expect(service.queries, hasLength(2));
     });
 
     testWidgets('plafond du jour : carte dédiée, sans « Réessayer »', (

@@ -581,7 +581,8 @@ privait le titre de la place dont il manquait.
 ### 5.5 Module Explorer (tous les clients)
 
 Écran dédié `/search`, intitulé **Explorer**. Il sert d'abord à parcourir et filtrer la
-bibliothèque, sur l'appareil, sans IA. Cinq actions vont plus loin, chacune sur un bouton :
+bibliothèque, sur l'appareil, sans IA. Cinq actions vont plus loin, sur un bouton ou une
+entrée de menu :
 « Chercher avec l'IA », « Imaginer 3 recettes », « Composer un repas avec l'IA », « Chercher
 sur le web » et « Importer depuis un lien » (4.6). Aucune ne part toute seule : ni à la
 frappe, ni sur Entrée.
@@ -720,7 +721,8 @@ et féculent principaux, statut, note du lecteur — et le lot part dans un seul
   le bandeau « Recherche ou filtres modifiés depuis la demande. », avec l'action « Relancer ».
   Rien ne repart sans appui.
 
-**Imaginer 3 recettes** (Editor, Admin). Le bouton demande trois propositions à partir du
+**Imaginer 3 recettes** (Editor, Admin). Le bouton ou l'entrée de menu demande trois
+propositions à partir du
 texte du champ, chacune par un angle différent, en parallèle. Chaque proposition porte son
 libellé de variante et sa justification. Une proposition en double est rejouée une fois, en
 lui interdisant les titres déjà rendus ; si le doublon persiste, elle est abandonnée.
@@ -733,7 +735,9 @@ lui interdisant les titres déjà rendus ; si le doublon persiste, elle est aban
   demande confirmation : « Quitter sans enregistrer ? », « Rester » ou « Quitter ». La
   question est posée au retour comme à un changement d'écran par la navigation.
 
-**Composer un repas avec l'IA** (Editor, Admin). Le bouton ouvre l'atelier repas, un écran
+**Composer un repas avec l'IA** (Editor, Admin). L'action (une ligne d'« Aller plus
+loin » sur téléphone, l'entrée « Composer un repas » du menu « Créer avec l'IA » sur grand
+écran) ouvre l'atelier repas, un écran
 dédié hors d'Explorer, en deux zones : la conversation, et le « Menu en cours » que le moteur
 met à jour à chaque tour. Le texte du champ d'Explorer arrive dans l'atelier sans être envoyé.
 Le périmètre est l'ensemble des recettes que retiennent les filtres, sans le filtre du texte,
@@ -836,15 +840,16 @@ comme rapide.
   disparaît avec l'écran et n'est pas reprise à la prochaine ouverture ; ce que le lecteur
   veut garder, il le fige, puis le pose au besoin. Le texte qu'il écrit n'est pas journalisé.
 
-**Chercher sur le web** (tous les rôles). Le bouton cherche sur Google des pages de recettes
+**Chercher sur le web** (tous les rôles). Le bouton ou l'entrée de menu cherche sur Google
+des pages de recettes
 pour le texte du champ, et les affiche dans Explorer, section **« Sur le web »**, sous les
 sections de l'IA et au-dessus des recettes de la bibliothèque. La liste défile jusqu'à la
 section.
 - Sans texte, rien ne part : le champ prend le focus et dit « Écrivez ce que vous cherchez
   sur le web. ». Au-delà de 200 caractères, la recherche est refusée : la section « Sur le
   web » affiche « La recherche dépasse 200 caractères. », sans « Réessayer ». Le filtre de
-  la bibliothèque, qui lit le même champ, n'a pas de limite. Le bouton n'est inactif que
-  pendant une recherche en cours.
+  la bibliothèque, qui lit le même champ, n'a pas de limite. Le bouton ou l'entrée n'est
+  inactif que pendant une recherche en cours.
 - Jusqu'à **8 pages**, chacune sur une carte : l'icône d'un globe, titre, site réel de la
   page, extrait. **Les recettes en français passent d'abord** : Google est interrogé en
   français, sur des sites francophones (France, Belgique, Suisse, Québec…), et une page en
@@ -883,7 +888,8 @@ section.
   50 recherches web d'aujourd'hui. Le compteur repart demain. », avec « Voir sur Google ».
   Quand il ne reste aucune recherche, « Il ne vous reste aucune recherche aujourd'hui. »
   s'affiche aussi sous le bouton — pour le Reader sur téléphone et sur grand écran ;
-  l'Editor sur téléphone la lit dans « Aller plus loin ». Le bouton reste actif : une
+  l'Editor la lit dans « Aller plus loin » sur téléphone, et dans le menu « Ailleurs » sur
+  grand écran, sous « Chercher sur le web ». Le bouton et l'entrée restent actifs : une
   recherche déjà faite par un membre peut encore être servie.
 - **Budget d'IA du jour atteint** (plafonds quotidiens de dépense, 5.6) : une carte du même genre,
   « Le budget d'IA du jour est atteint. La recherche web revient demain. », avec « Voir sur
@@ -936,15 +942,44 @@ la liste des résultats, hors d'elle.
 **Disposition.** Sur téléphone, une barre en bas porte « Chercher avec l'IA » et « Aller plus
 loin », qui ouvre les autres actions, dont « Composer un repas avec l'IA » (une ligne de la
 feuille) et « Chercher sur le web » (« Jusqu'à 8 pages de recettes, affichées ici. », suivi
-du nombre de recherches restantes quand il est connu). Sur grand écran, les filtres occupent
-un panneau à gauche et la liste le reste de la largeur ; « Composer un repas avec l'IA » est
-un bouton à côté d'« Imaginer 3 recettes », « Chercher sur le web » est dans la rangée des
-actions, « Importer depuis un lien » est un bouton texte en fin de rangée. Un Reader ne voit
-ni « Chercher avec l'IA », ni « Imaginer 3 recettes », ni « Composer un repas avec l'IA »,
-ni « Importer depuis un lien », ni la source « Mes brouillons » : sa barre du bas porte
-directement « Chercher sur le web ». « Chercher avec l'IA » est inactif
-pendant un classement en cours et quand les filtres ne retiennent aucune recette ;
-« Imaginer 3 recettes » l'est pendant une rédaction en cours.
+du nombre de recherches restantes quand il est connu).
+
+Sur grand écran, les filtres occupent un panneau à gauche et la liste le reste de la
+largeur. Sous le champ, une rangée porte trois boutons :
+
+- **Chercher avec l'IA**, bouton plein. Le nombre de recettes n'est pas dans le libellé :
+  une info-bulle le donne, « L'IA classe les N recettes retenues par les filtres. »
+  (« L'IA classe la recette retenue par les filtres. » pour une seule), ou « Aucune recette
+  retenue par les filtres : l'IA n'a rien à classer. » quand le bouton est inactif faute de
+  recette.
+- **Créer avec l'IA**, un menu de deux entrées : « Imaginer 3 recettes » (« L'IA rédige
+  trois recettes sur votre envie, à relire avant de les enregistrer en brouillon. ») et
+  « Composer un repas » (« Discutez d'un plat ou d'un menu complet. Les plats retenus
+  deviennent des brouillons à relire. »), qui ouvre l'atelier repas.
+- **Ailleurs**, un menu de deux entrées : « Chercher sur le web » (« Jusqu'à 8 pages de
+  recettes, affichées ici. », suivi du nombre de recherches restantes quand il est connu) et
+  « Importer depuis un lien » (« Une recette d'une page web arrive dans vos brouillons. »).
+
+Dans une fenêtre étroite, les deux menus passent ensemble à la ligne. Au clavier, Tab
+parcourt tout le panneau des filtres, puis va du champ à « Chercher avec l'IA », « Créer avec
+l'IA » et « Ailleurs », puis à la liste. Une entrée
+choisie avec un champ vide n'envoie rien : le message s'affiche sous le champ, qui reprend
+le focus.
+
+Un menu qui n'aurait qu'une entrée devient un bouton direct, sous le libellé et l'icône de
+cette entrée ; rien n'est grisé pour un rôle. En mode choix, « Composer un repas » n'est
+pas proposé : « Créer avec l'IA » laisse la place à un bouton « Imaginer 3 recettes », et
+« Ailleurs » garde ses deux entrées.
+
+Un Reader ne voit ni « Chercher avec l'IA », ni « Imaginer 3 recettes », ni « Composer un
+repas avec l'IA », ni « Importer depuis un lien », ni la source « Mes brouillons ». Sa barre
+du bas sur téléphone, et sa rangée sur grand écran, portent un seul bouton plein « Chercher
+sur le web ».
+
+Un appel en cours désactive son action, jamais un menu entier. « Chercher avec l'IA » est
+inactif pendant un classement en cours et quand les filtres ne retiennent aucune recette.
+« Imaginer 3 recettes » l'est pendant une rédaction en cours, et « Chercher sur le web »
+pendant une recherche web en cours ; les autres entrées du même menu restent actives.
 
 **Les autres listes de recettes ne filtrent pas.** Ni la bibliothèque, ni la liste d'un
 livre, ni la vue « toutes les recettes » ne portent de champ de recherche ou de filtre :

@@ -1005,7 +1005,7 @@ sequenceDiagram
     end
   end
 
-  opt éditeur ou admin : « Chercher avec l'IA · N recettes », actif si N > 0 et aucun classement en cours
+  opt éditeur ou admin : « Chercher avec l'IA » (N dans le libellé sur téléphone, dans l'info-bulle sur grand écran), actif si N > 0 et aucun classement en cours
     alt champ vide
       S-->>U: focus, « Écrivez votre envie pour que l'IA cherche. »
     else texte présent
@@ -1137,7 +1137,7 @@ sequenceDiagram
   <section>
     <h2 id="generer"><span class="n">08</span>Génération d'une recette par IA</h2>
     <p class="sec-note">
-      « Imaginer 3 recettes », sur ce bouton seulement, pour un éditeur ou un administrateur : la
+      « Imaginer 3 recettes », sur cette action seulement, pour un éditeur ou un administrateur : la
       consigne est le texte du champ. Trois variantes sont demandées d'un coup ; le vrai travail
       est ensuite de les empêcher de se ressembler.
       <span class="path">search_providers.dart:AiIdeasNotifier (imagine, saveGeneratedRecipe),

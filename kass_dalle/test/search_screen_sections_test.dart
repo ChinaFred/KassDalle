@@ -108,7 +108,7 @@ Future<void> _pump(
 
 void main() {
   testWidgets('« coréen » : deux sections, total des deux', (tester) async {
-    // Assez large et haut pour que la rangée des cinq actions laisse la
+    // Assez large et haut pour que la rangée des actions laisse la
     // liste visible en entier.
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1;
@@ -126,7 +126,7 @@ void main() {
   testWidgets(
     'section ingrédients repliée sous le titre, comptée, ouverte au clic',
     (tester) async {
-      // Assez large et haut pour que la rangée des cinq actions laisse la
+      // Assez large et haut pour que la rangée des actions laisse la
       // liste visible en entier.
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1;
@@ -208,6 +208,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'blanquette');
       await tester.pumpAndSettle();
+      // Sur grand écran, l'éditeur la trouve dans le menu « Ailleurs » ; le
+      // lecteur a un bouton direct.
+      if (find.text('Ailleurs').evaluate().isNotEmpty) {
+        await tester.tap(find.text('Ailleurs'));
+        await tester.pumpAndSettle();
+      }
       await tester.tap(find.text('Chercher sur le web'));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
@@ -306,8 +312,8 @@ void main() {
       }
     }
 
-    /// Recherche web lancée sur grand écran (le bouton y est dans la
-    /// rangée), puis écran ramené à [size].
+    /// Recherche web lancée sur grand écran (l'entrée y est dans le menu
+    /// « Ailleurs »), puis écran ramené à [size].
     Future<void> searchOn(
       WidgetTester tester,
       Size size, {
@@ -319,6 +325,8 @@ void main() {
       await _pump(tester, shell: shell);
       await tester.enterText(find.byType(TextField), 'blanquette');
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Ailleurs'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Chercher sur le web'));
       await tester.pumpAndSettle();
       tester.view.physicalSize = size;
@@ -327,7 +335,7 @@ void main() {
 
     for (final (label, size, sentence) in [
       ('téléphone', const Size(400, 800), importBannerShortSentence),
-      // 900 px de haut : avec les cinq actions sur trois lignes, la liste
+      // 900 px de haut : sous la rangée des actions, la liste
       // garde la place de la carte ouverte sous le bandeau.
       ('grand écran', const Size(1000, 900), importBannerSentence),
     ]) {
@@ -560,13 +568,14 @@ void main() {
         final full = find.text(importBannerSentence).hitTestable();
         final compact = find.text(importBannerShortSentence).hitTestable();
 
-        // À 1 000 px de large, la rangée des cinq actions tient sur trois
-        // lignes : le bandeau complet tient jusqu'à 700 px de haut, le
-        // compact de 690 à 620, rien en dessous.
+        // À 1 000 px de large, avec la police des tests, la rangée des trois
+        // actions tient sur deux lignes, les deux menus sur la seconde : le
+        // bandeau complet tient jusqu'à 530 px de haut, le compact de 520 à
+        // 450, rien en dessous.
         for (final (height, fullShown, compactShown) in [
           (800.0, true, false),
-          (650.0, false, true),
-          (520.0, false, false),
+          (480.0, false, true),
+          (400.0, false, false),
         ]) {
           tester.view.physicalSize = Size(1000, height);
           await tester.pumpAndSettle();
@@ -600,7 +609,7 @@ void main() {
       expect(await tabReaches(tester, importBannerSentence), isTrue);
 
       // Fenêtre trop basse : aucune variante, aucun arrêt de focus.
-      tester.view.physicalSize = const Size(1000, 520);
+      tester.view.physicalSize = const Size(1000, 400);
       await tester.pumpAndSettle();
       expect(find.text(importBannerSentence).hitTestable(), findsNothing);
       expect(await tabReaches(tester, importBannerSentence), isFalse);
