@@ -15,25 +15,37 @@ import 'planning_providers.dart';
 /// Sans groupe dont l'utilisateur est le propriétaire, l'écran s'ouvre sur
 /// « Mon planning », comme avant. Sinon, ou tant que ses groupes ne sont pas
 /// lus, la liste « Planifier pour… » demande lequel.
-Future<void> openNewPlanning(BuildContext context, WidgetRef ref) async {
+///
+/// [start] : le premier jour de la période affichée, transmis dans les deux
+/// cas ; le cycle commence ce jour-là (`?start=`). Null : le prochain cycle.
+Future<void> openNewPlanning(
+  BuildContext context,
+  WidgetRef ref, {
+  DateTime? start,
+}) async {
   final owned = ref.read(ownedPlanningGroupsProvider);
   if (owned.hasValue && owned.value!.isEmpty) {
-    await context.push(AppRoutes.batchPlanning);
+    await context.push(batchPlanningLocation(start: start));
     return;
   }
   final target = await showPlanningTargetSheet(context);
   if (target == null || !context.mounted) return;
-  await context.push(batchPlanningLocation(groupId: target.groupId));
+  await context.push(
+    batchPlanningLocation(groupId: target.groupId, start: start),
+  );
 }
 
 /// L'adresse de « Nouveau planning » pour un planning : `/planning/batch`,
-/// suivie de `?group=<id>` pour celui d'un groupe.
-String batchPlanningLocation({String? groupId}) => groupId == null
-    ? AppRoutes.batchPlanning
-    : Uri(
-        path: AppRoutes.batchPlanning,
-        queryParameters: {kPlanningGroupParam: groupId},
-      ).toString();
+/// suivie de `?group=<id>` pour celui d'un groupe, et de `start=AAAA-MM-JJ`
+/// pour un cycle qui commence ce jour-là.
+String batchPlanningLocation({String? groupId, DateTime? start}) {
+  final query = {
+    kPlanningGroupParam: ?groupId,
+    if (start != null) kPlanningStartParam: planningDayParam(start),
+  };
+  if (query.isEmpty) return AppRoutes.batchPlanning;
+  return Uri(path: AppRoutes.batchPlanning, queryParameters: query).toString();
+}
 
 /// La liste « Planifier pour… » : feuille du bas sur un téléphone, boîte de
 /// dialogue de 480 px au plus sur grand écran. Rend le planning choisi, ou

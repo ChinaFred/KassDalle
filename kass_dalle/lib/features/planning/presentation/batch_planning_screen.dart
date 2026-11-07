@@ -80,10 +80,15 @@ enum _ConceptOutcome { done, failed, denied }
 /// le planning contient déjà, la validation et « Reprendre une semaine
 /// passée » lisent le planning visé ; la fenêtre de variété lit tout ce que
 /// l'utilisateur cuisine.
+///
+/// [startDay] : le premier jour de la période affichée par le planning
+/// (`?start=`). Le cycle commence ce jour-là s'il est aujourd'hui ou plus
+/// tard ; absent ou passé, au prochain jour de démarrage du cycle.
 class BatchPlanningScreen extends ConsumerStatefulWidget {
   final String? groupId;
+  final DateTime? startDay;
 
-  const BatchPlanningScreen({super.key, this.groupId});
+  const BatchPlanningScreen({super.key, this.groupId, this.startDay});
 
   @override
   ConsumerState<BatchPlanningScreen> createState() =>
@@ -384,7 +389,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   void _applyPrefs(PlanningPreferences prefs) {
     if (_prefs != null) return;
     _prefs = prefs;
-    final dates = prefs.nextCycleDates();
+    final dates = prefs.nextCycleDates(startDay: widget.startDay);
     _slotDates = dates;
     _slots = {for (int i = 0; i < dates.length; i++) i: null};
     // L'heure d'un créneau est celle de son jour de semaine — la sienne s'il en

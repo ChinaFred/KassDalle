@@ -1062,6 +1062,20 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         );
   }
 
+  /// « Nouveau planning » : le cycle commence au premier jour de la période
+  /// affichée, s'il est aujourd'hui ou plus tard ; une période déjà commencée
+  /// ou passée laisse le prochain cycle, comme avant.
+  Future<void> _openNewPlanning() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final start = _period(today).start;
+    return openNewPlanning(
+      context,
+      ref,
+      start: start.isBefore(today) ? null : start,
+    );
+  }
+
   /// Un repas compte-t-il pour les courses ? Il lui faut une recette ou un
   /// accompagnement qui s'achète : un repas libre sans rien, ou avec un
   /// accompagnement en texte libre, n'apporte aucun article.
@@ -1852,7 +1866,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: FilledButton.icon(
-                  onPressed: () => openNewPlanning(context, ref),
+                  onPressed: _openNewPlanning,
                   icon: const Icon(Icons.auto_awesome_outlined),
                   label: const Text('Nouveau planning'),
                 ),
@@ -1964,7 +1978,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               offset: _fabHidden ? const Offset(0, 2) : Offset.zero,
               duration: const Duration(milliseconds: 200),
               child: FloatingActionButton.extended(
-                onPressed: () => openNewPlanning(context, ref),
+                onPressed: _openNewPlanning,
                 // Étendu, le libellé se lit déjà : l'infobulle le doublerait.
                 tooltip: _fabCompact ? 'Nouveau planning' : null,
                 isExtended: !_fabCompact,
@@ -2224,7 +2238,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
             const SizedBox(height: 24),
             // Bouton principal
             FilledButton.icon(
-              onPressed: () => openNewPlanning(context, ref),
+              onPressed: _openNewPlanning,
               icon: const Icon(Icons.auto_awesome_outlined),
               label: const Text('Générer un nouveau planning'),
             ),

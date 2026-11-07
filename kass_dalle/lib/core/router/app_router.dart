@@ -169,16 +169,34 @@ DateTime? parsePlanningDateParam(String? raw) {
   return date;
 }
 
+/// Un jour écrit `AAAA-MM-JJ`, la forme que [parsePlanningDateParam] relit.
+String planningDayParam(DateTime date) {
+  String two(int n) => n < 10 ? '0$n' : '$n';
+  return '${date.year}-${two(date.month)}-${two(date.day)}';
+}
+
 /// L'adresse du planning ouvert sur la période qui contient [date] :
 /// `/planning?date=AAAA-MM-JJ`.
-String planningLocation({required DateTime date}) {
-  String two(int n) => n < 10 ? '0$n' : '$n';
-  return Uri(
-    path: AppRoutes.planning,
-    queryParameters: {
-      kPlanningDateParam: '${date.year}-${two(date.month)}-${two(date.day)}',
-    },
-  ).toString();
+String planningLocation({required DateTime date}) => Uri(
+  path: AppRoutes.planning,
+  queryParameters: {kPlanningDateParam: planningDayParam(date)},
+).toString();
+
+/// Paramètre de `/planning/batch` : un jour `AAAA-MM-JJ`, le premier de la
+/// période affichée par le planning quand on appuie sur « Nouveau planning ».
+/// Le cycle commence ce jour-là. Absent, illisible ou passé : le prochain
+/// cycle, comme avant.
+const kPlanningStartParam = 'start';
+
+/// Le jour lu dans `?start=AAAA-MM-JJ`, à minuit heure locale ; `null` si le
+/// paramètre manque, est illisible ([parsePlanningDateParam]) ou précède le
+/// jour de [now] (l'horloge par défaut).
+DateTime? parsePlanningStartParam(String? raw, {DateTime? now}) {
+  final day = parsePlanningDateParam(raw);
+  if (day == null) return null;
+  final clock = now ?? DateTime.now();
+  final today = DateTime(clock.year, clock.month, clock.day);
+  return day.isBefore(today) ? null : day;
 }
 
 /// Paramètre de `/search/meal-workshop` : le texte du champ d'Explorer, posé
@@ -666,6 +684,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'batch',
                 builder: (context, state) => BatchPlanningScreen(
                   groupId: state.uri.queryParameters[kPlanningGroupParam],
+                  startDay: parsePlanningStartParam(
+                    state.uri.queryParameters[kPlanningStartParam],
+                  ),
                 ),
               ),
               GoRoute(

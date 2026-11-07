@@ -776,7 +776,78 @@ class PlanningMealTile extends StatelessWidget {
     return const PlanningRecipeNotSharedLine();
   }
 
-  Widget? _buildSubtitle(ThemeData theme, String? subtitle) {
+  /// « Changer les parts », offert comme dans le menu ⋮ : un repas à moi
+  /// qui a une recette ou des accompagnements à mettre à l'échelle.
+  VoidCallback? get _changePortionsAction =>
+      meal.recipeId != null || meal.components.isNotEmpty
+      ? _action(onChangePortions)
+      : null;
+
+  /// « 35 min · 4 parts » : les temps, puis les parts. « 4 parts » s'ouvre
+  /// d'un appui sur « Changer les parts » quand l'action est offerte :
+  /// l'entrée du menu ⋮ seule n'était pas trouvée. Sinon, la ligne reste un
+  /// texte.
+  Widget? _buildTimingLine(ThemeData theme, String? timing, String? portions) {
+    if (timing == null && portions == null) return null;
+    final changePortions = portions == null ? null : _changePortionsAction;
+    if (changePortions == null) {
+      return Text([?timing, ?portions].join(' \u00b7 '));
+    }
+    // Un nœud à part : sans `container`, le bouton se fondait dans la tuile,
+    // dont l'appui ouvre le plat.
+    final button = Semantics(
+      container: true,
+      button: true,
+      child: Tooltip(
+        message: kChangePortionsLabel,
+        child: InkWell(
+          onTap: changePortions,
+          borderRadius: BorderRadius.circular(4),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              widthFactor: 1,
+              // L'icône de l'entrée « Changer les parts » du menu ⋮ : seule
+              // la ligne appuyable la porte.
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.people_outline,
+                    size: AppIconSize.badge,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  // Flexible : à 200 % sur un téléphone étroit, « 4 parts »
+                  // passe sur deux lignes au lieu de déborder.
+                  Flexible(
+                    child: Text(
+                      portions!,
+                      style: const TextStyle(
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (timing == null) {
+      return Align(alignment: AlignmentDirectional.centerStart, child: button);
+    }
+    // Quand la place manque (texte agrandi, petit écran), « 4 parts » passe
+    // à la ligne au lieu de couper les temps sur plusieurs lignes.
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [Text('$timing \u00b7 '), button],
+    );
+  }
+
+  Widget? _buildSubtitle(ThemeData theme, Widget? subtitle) {
     final owner = _buildOwner(theme);
     final locked = _buildLocked(theme);
     final why = _buildWhy(theme);
@@ -798,14 +869,7 @@ class PlanningMealTile extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [
-          ?owner,
-          ?locked,
-          if (subtitle != null) Text(subtitle),
-          ?components,
-          ?sideStatus,
-          ?why,
-        ],
+        children: [?owner, ?locked, ?subtitle, ?components, ?sideStatus, ?why],
       );
     }
 
@@ -820,7 +884,7 @@ class PlanningMealTile extends StatelessWidget {
       children: [
         ?owner,
         ?locked,
-        if (subtitle != null) Text(subtitle),
+        ?subtitle,
         const SizedBox(height: 2),
         Row(
           children: [
@@ -856,24 +920,20 @@ class PlanningMealTile extends StatelessWidget {
     final theme = Theme.of(context);
     final timeStr = DateFormat('HH:mm').format(meal.plannedAt);
 
-    String? subtitle;
+    String? timing;
     if ((meal.prepMinutes ?? 0) > 0 || (meal.cookMinutes ?? 0) > 0) {
       final parts = <String>[];
       if ((meal.prepMinutes ?? 0) > 0) parts.add('${meal.prepMinutes}min prép');
       if ((meal.cookMinutes ?? 0) > 0) {
         parts.add('${meal.cookMinutes}min cuisson');
       }
-      if ((meal.targetPortions ?? 0) > 0) {
-        parts.add('${meal.targetPortions} parts');
-      }
-      subtitle = parts.join(' \u00b7 ');
+      timing = parts.join(' \u00b7 ');
     } else if (meal.durationMinutes > 0) {
-      subtitle = (meal.targetPortions ?? 0) > 0
-          ? '${meal.durationMinutes} min · ${meal.targetPortions} parts'
-          : '${meal.durationMinutes} min';
-    } else if ((meal.targetPortions ?? 0) > 0) {
-      subtitle = '${meal.targetPortions} parts';
+      timing = '${meal.durationMinutes} min';
     }
+    final portions = (meal.targetPortions ?? 0) > 0
+        ? '${meal.targetPortions} parts'
+        : null;
 
     final avatar = CircleAvatar(
       backgroundColor: isPast
@@ -919,7 +979,10 @@ class PlanningMealTile extends StatelessWidget {
                 ? TextStyle(color: theme.colorScheme.onSurfaceVariant)
                 : null,
           ),
-          subtitle: _buildSubtitle(theme, subtitle),
+          subtitle: _buildSubtitle(
+            theme,
+            _buildTimingLine(theme, timing, portions),
+          ),
           trailing: aiLoading
               ? const SizedBox(
                   width: 24,
@@ -977,8 +1040,7 @@ class PlanningMealTile extends StatelessWidget {
       PlanningMealAction.reschedule: ?_action(onReschedule),
       // Un créneau vide n'a rien à mettre à l'échelle ; un repas libre
       // garde l'action pour ses accompagnements.
-      if (meal.recipeId != null || meal.components.isNotEmpty)
-        PlanningMealAction.changePortions: ?_action(onChangePortions),
+      PlanningMealAction.changePortions: ?_changePortionsAction,
       // Un menu se compose toujours. Un plat, ou une recette pas encore
       // classée : pas un dessert, une entrée ni un accompagnement, qui ne
       // reçoivent pas d'accompagnement.
@@ -1040,7 +1102,7 @@ class PlanningMealTile extends StatelessWidget {
       ),
       PlanningMealAction.changePortions => (
         Icons.people_outline,
-        'Changer les parts',
+        kChangePortionsLabel,
       ),
       PlanningMealAction.composeMeal => (
         Icons.restaurant_menu_outlined,
@@ -1118,6 +1180,10 @@ const kRecipeNotSharedLabel = 'Recette non partagée';
 
 /// L'infobulle qui l'explique.
 const kRecipeNotSharedTooltip = 'Son auteur ne l\'a pas partagée avec vous';
+
+/// « Changer les parts » : l'entrée du menu ⋮ d'un repas, et l'infobulle de
+/// sa ligne « 4 parts ».
+const kChangePortionsLabel = 'Changer les parts';
 
 enum PlanningMealAction {
   otherSuggestion,
