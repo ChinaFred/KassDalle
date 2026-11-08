@@ -32,7 +32,7 @@ L'envoi push aux jetons administrateurs est extrait de `notify.ts` dans
 `release_notifications/adminPush.ts`. `tickets/push.ts` et `tickets/pushRules.ts` portent les
 notifications de ticket, déclenchées après la transaction de `applyGithubUpdate` (statuts
 `analyzed` et `delivered`) et de `writeTicketAnalyses` (compléments, marqueur
-`needs_reply_notified_comment_id` dans `admin/analysis`). Aucun paquet ni règle modifiés.
+`needs_reply_notified_comment_id` dans `admin/analysis`). Le jeton de l'appareil est supprimé avant la déconnexion par le menu (`signOutGuarded` → `unregisterThisDevice`). Un titre avec adresse e-mail ou lien est remplacé par « Ticket ». Aucun paquet ni règle modifiés.
 
 ## 2026-11-07
 

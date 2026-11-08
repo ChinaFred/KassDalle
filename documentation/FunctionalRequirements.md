@@ -1094,7 +1094,7 @@ dans les réglages d'Android. Une version déjà notifiée ne l'est pas deux foi
 notification quand un ticket passe à « Analysé » (« Ticket analysé », à valider ou refuser),
 quand l'analyse s'arrête sur des compléments (« Ticket à compléter », une réponse est
 attendue) et quand le développement est livré (« Ticket livré »). Le texte reprend le titre du
-ticket, tronqué à 60 caractères ; un titre qui contient une adresse e-mail est remplacé par
+ticket, tronqué à 60 caractères ; un titre qui contient une adresse e-mail ou un lien est remplacé par
 « Ticket ». Un toucher ouvre le détail du ticket dans Admin › Tickets, application fermée,
 en arrière-plan ou ouverte. Les tickets de l'administrateur lui-même comptent comme les
 autres. Une notification par changement de statut, jamais deux pour le même. Mêmes
