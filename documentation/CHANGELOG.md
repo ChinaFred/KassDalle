@@ -18,6 +18,22 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-08
+
+### v0.24.84 — fonctionnel
+
+Les administrateurs reçoivent une notification Android quand un ticket est analysé, quand
+l'analyse demande des compléments et quand le développement est livré (ticket #235). Un toucher
+ouvre le détail du ticket. Les tickets de l'administrateur comptent comme les autres.
+
+### v0.24.84 — technique
+
+L'envoi push aux jetons administrateurs est extrait de `notify.ts` dans
+`release_notifications/adminPush.ts`. `tickets/push.ts` et `tickets/pushRules.ts` portent les
+notifications de ticket, déclenchées après la transaction de `applyGithubUpdate` (statuts
+`analyzed` et `delivered`) et de `writeTicketAnalyses` (compléments, marqueur
+`needs_reply_notified_comment_id` dans `admin/analysis`). Aucun paquet ni règle modifiés.
+
 ## 2026-11-07
 
 ### v0.24.83 — fonctionnel

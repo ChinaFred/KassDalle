@@ -58,7 +58,10 @@ class _AppShellState extends ConsumerState<AppShell> {
   void _setUpReleaseNotifications() {
     if (!PlatformUtils.isAndroidApp) return;
     final push = _push = PushRegistrationService();
-    push.listenForReleaseTaps(_checkForUpdate);
+    push.listenForTaps(onRelease: _checkForUpdate, onTicket: _openTicket);
+    push.initialTicketId().then((id) {
+      if (id != null) _openTicket(id);
+    });
     ref.listenManual(appUserProvider, (_, next) {
       final user = next.value;
       if (user == null) return;
@@ -70,6 +73,16 @@ class _AppShellState extends ConsumerState<AppShell> {
         push.unregister(user.uid);
       }
     }, fireImmediately: true);
+  }
+
+  /// Ouvre le détail du ticket d'une notification. Une notification de ticket
+  /// n'est envoyée qu'aux appareils d'un administrateur.
+  void _openTicket(String ticketId) {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      GoRouter.of(context).go(AppRoutes.adminTicketDetail(ticketId));
+    });
   }
 
   Future<void> _checkForUpdate() async {

@@ -1090,6 +1090,16 @@ seule fois, après la connexion d'un administrateur ; refusée, rien ne s'affich
 du lancement reste en place. Aucun réglage dans l'application : les notifications se coupent
 dans les réglages d'Android. Une version déjà notifiée ne l'est pas deux fois.
 
+**Notifications de ticket (administrateurs, Android).** Chaque administrateur reçoit une
+notification quand un ticket passe à « Analysé » (« Ticket analysé », à valider ou refuser),
+quand l'analyse s'arrête sur des compléments (« Ticket à compléter », une réponse est
+attendue) et quand le développement est livré (« Ticket livré »). Le texte reprend le titre du
+ticket, tronqué à 60 caractères ; un titre qui contient une adresse e-mail est remplacé par
+« Ticket ». Un toucher ouvre le détail du ticket dans Admin › Tickets, application fermée,
+en arrière-plan ou ouverte. Les tickets de l'administrateur lui-même comptent comme les
+autres. Une notification par changement de statut, jamais deux pour le même. Mêmes
+destinataires, même autorisation et mêmes réglages que la notification de nouvelle version.
+
 ### 5.7 Module Groupes Familiaux (tous les clients)
 
 - Un Editor ou un Admin peut créer un ou plusieurs groupes familiaux (avec un nom de 60 caractères au plus). Un groupe compte 50 invitations en attente au plus.
@@ -1622,7 +1632,7 @@ les rôles. Écran en lecture seule.
   dernière ouverture, ou qu'il ne l'a jamais ouvert, quel que soit le statut sauf « Envoi en
   cours ». Ouvrir le détail du ticket l'efface. Le nombre de la puce additionne les invitations
   de groupe et les tickets à lire. Pour l'Admin, ce sont les tickets à traiter qui comptent, et
-  ses propres tickets non lus n'y entrent pas : « Mes tickets » n'a pas de pastille pour lui. Pas de notification push ni d'e-mail.
+  ses propres tickets non lus n'y entrent pas : « Mes tickets » n'a pas de pastille pour lui. Pas de notification push ni d'e-mail pour le membre ; l'administrateur reçoit une notification push sur Android (voir « Notifications de ticket »).
 - États : chargement « Chargement de vos tickets… » ; liste vide « Aucun ticket pour
   l'instant » — « Un bug, une idée ? Envoyez-les à l'administrateur. », avec
   « Signaler ou proposer » ; erreur « Impossible de charger vos tickets. » avec Réessayer ;

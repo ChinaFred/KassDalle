@@ -1002,7 +1002,7 @@ classDiagram
         <b>TicketAnalysisDoc</b> (<code>tickets/{id}/admin/analysis</code>) porte les analyses de
         l'administrateur relevées sur l'Issue et ses réponses (<code>kind</code> :
         <code>analysis</code> ; <code>reply</code>, « ## Précisions de l'administrateur » dont
-        l'identifiant est dans <code>answer_comment_ids</code>, écrit par le serveur ;
+        l'identifiant est dans <code>answer_comment_ids</code>, écrit par le serveur ; <code>needs_reply_notified_comment_id</code> garde le dernier commentaire de compléments notifié (serveur seul) ;
         <code>unverifiedReply</code>, même titre publié hors de l'application) :
         dix au plus, dans l'ordre chronologique, chacune coupée à 20 000 caractères
         (<code>truncated</code>), et la date du dernier « validé » du mainteneur

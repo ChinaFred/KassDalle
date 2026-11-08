@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,7 @@ import '../../features/admin/presentation/admin_providers.dart'
     show errorReportServiceProvider;
 import '../../features/auth/presentation/auth_providers.dart';
 import '../services/error_reporting.dart';
+import '../services/push_registration_service.dart';
 import '../utils/context_extensions.dart';
 
 /// Ce qu'un écran répond quand on veut le quitter : vrai si on peut partir,
@@ -77,6 +79,8 @@ Future<void> signOutGuarded(BuildContext context, WidgetRef ref) async {
     final guard = ref.read(leaveGuardProvider);
     if (guard != null && !await guard()) return;
     if (!context.mounted) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) await PushRegistrationService().unregisterThisDevice(uid);
     await ref.read(authRepositoryProvider).signOut();
   } catch (error, stackTrace) {
     reportUnexpectedError(
