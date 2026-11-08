@@ -4137,7 +4137,11 @@ sequenceDiagram
         par la référence du ticket : une création réussie dont le numéro n'a pas été écrit n'est
         pas publiée deux fois. La capture part après le ticket et avant le message de succès ;
         son échec n'annule pas le ticket, le message le dit. Elle ne part jamais sur GitHub :
-        l'Issue dit qu'elle est disponible dans Admin › Tickets.
+        l'Issue dit qu'elle est disponible dans Admin › Tickets. Notification push aux
+        administrateurs (v0.24.84) : <code>applyGithubUpdate</code> l'envoie après la transaction
+        quand le statut passe à <code>analyzed</code> ou <code>delivered</code>, et
+        <code>writeTicketAnalyses</code> quand un commentaire « ## Analyse — compléments » récent
+        n'a pas encore été notifié (<code>needs_reply_notified_comment_id</code>).
       </figcaption>
     </figure>
   </section>

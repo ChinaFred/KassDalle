@@ -22,4 +22,23 @@ void main() {
       expect(doc['updated_at'], isA<FieldValue>());
     },
   );
+
+  test('ticketIdFromMessage lit les trois types de ticket', () {
+    for (final type in [
+      'ticket_analyzed',
+      'ticket_needs_reply',
+      'ticket_delivered',
+    ]) {
+      expect(ticketIdFromMessage({'type': type, 'ticket_id': 'abc'}), 'abc');
+    }
+  });
+
+  test('ticketIdFromMessage refuse un autre type ou un identifiant absent', () {
+    expect(ticketIdFromMessage({'type': 'apk_release'}), isNull);
+    expect(ticketIdFromMessage({'type': 'ticket_analyzed'}), isNull);
+    expect(
+      ticketIdFromMessage({'type': 'ticket_analyzed', 'ticket_id': ''}),
+      isNull,
+    );
+  });
 }

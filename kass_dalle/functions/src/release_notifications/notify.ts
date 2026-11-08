@@ -9,28 +9,16 @@
 
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 
-import { COLL_APP_CONFIG, COLL_USERS } from "../config";
+import { COLL_APP_CONFIG } from "../config";
 import { logError, logInfo } from "../logging";
-import {
-  FCM_BATCH_SIZE,
-  chunk,
-  isStaleTokenCode,
-  notificationText,
-  parseApkManifest,
-  releaseKey,
-  type ApkRelease,
-} from "./rules";
+import { adminDevices, sendToDevices } from "./adminPush";
+import { notificationText, parseApkManifest, releaseKey, type ApkRelease } from "./rules";
 
 const MANIFEST_URL = "https://kassdale-6d948.web.app/apk_release.json";
 const DOC_PATH = `${COLL_APP_CONFIG}/apk_notification`;
 
 export type NotifyOutcome =
   "manifest_unreadable" | "already_notified" | "no_device" | "sent" | "send_failed";
-
-interface DeviceRef {
-  token: string;
-  path: string;
-}
 
 async function readManifest(correlationId: string): Promise<ApkRelease | null> {
   try {
@@ -80,22 +68,6 @@ async function restore(previous: unknown): Promise<void> {
   else await ref.set(previous as Record<string, unknown>);
 }
 
-/** Jetons des administrateurs non révoqués, rôle relu dans Firestore. */
-async function adminDevices(): Promise<DeviceRef[]> {
-  const db = getFirestore();
-  const users = await db.collection(COLL_USERS).where("role", "==", "admin").get();
-  const devices: DeviceRef[] = [];
-  for (const user of users.docs) {
-    if (user.data().is_revoked === true) continue;
-    const snap = await user.ref.collection("devices").get();
-    for (const doc of snap.docs) {
-      const token = doc.data().token;
-      if (typeof token === "string" && token !== "") devices.push({ token, path: doc.ref.path });
-    }
-  }
-  return devices;
-}
-
 export async function runReleaseNotification(correlationId: string): Promise<NotifyOutcome> {
   const release = await readManifest(correlationId);
   if (release === null) return "manifest_unreadable";
@@ -115,44 +87,14 @@ export async function runReleaseNotification(correlationId: string): Promise<Not
       return "no_device";
     }
 
-    const { getMessaging } = await import("firebase-admin/messaging");
-    const messaging = getMessaging();
-    const text = notificationText(release);
-    let success = 0;
-    let removed = 0;
-    for (const batch of chunk(devices, FCM_BATCH_SIZE)) {
-      const res = await messaging.sendEachForMulticast({
-        tokens: batch.map((d) => d.token),
-        notification: text,
-        data: { type: "apk_release", version: release.version, build: release.build },
-        android: { priority: "high" },
-      });
-      success += res.successCount;
-      for (const [i, r] of res.responses.entries()) {
-        if (r.success) continue;
-        const device = batch[i];
-        if (isStaleTokenCode(r.error?.code)) {
-          try {
-            await getFirestore().doc(device.path).delete();
-            removed++;
-          } catch (err) {
-            await logError({
-              message: "releaseNotification : jeton périmé non supprimé",
-              errorDescription: err instanceof Error ? err.message : String(err),
-              correlationId,
-              feature: "release_notifications",
-            });
-          }
-        } else {
-          await logError({
-            message: "releaseNotification : envoi refusé pour un appareil",
-            errorDescription: `${r.error?.code ?? "inconnu"} : ${r.error?.message ?? ""}`,
-            correlationId,
-            feature: "release_notifications",
-          });
-        }
-      }
-    }
+    const { success, removed } = await sendToDevices(
+      devices,
+      notificationText(release),
+      { type: "apk_release", version: release.version, build: release.build },
+      "releaseNotification",
+      "release_notifications",
+      correlationId,
+    );
 
     await logInfo({
       message: `releaseNotification : ${key} envoyée à ${success}/${devices.length} appareil(s), ${removed} jeton(s) périmé(s) supprimé(s)`,

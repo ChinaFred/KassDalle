@@ -2210,6 +2210,7 @@ l'administrateur seul, jamais par l'auteur du ticket (§4).
 | `analyses[].updated_at` | `Timestamp?` | Dernière modification du commentaire sur GitHub |
 | `analyses[].truncated` | `bool` | Vrai quand le texte a été coupé : la fiche affiche « Analyse tronquée, voir GitHub. » (« Réponse tronquée, voir GitHub. » sur une réponse) |
 | `answer_comment_ids` | `List<int>?` | Identifiants des commentaires publiés par `answerTicketAnalysis` (v0.23.68, `arrayUnion`, serveur seul). Seuls ces commentaires sont des réponses de l'administrateur. Absent : aucune réponse publiée depuis l'application |
+| `needs_reply_notified_comment_id` | `int?` | Identifiant du dernier commentaire « ## Analyse — compléments » notifié aux administrateurs (v0.24.84, serveur seul, écrit dans la transaction de `writeTicketAnalyses`). Absent : aucune notification de compléments envoyée |
 | `checked_at` | `Timestamp` | Heure serveur du dernier relevé |
 | `validated_at` | `Timestamp?` | Dernier « validé » posé par le mainteneur (v0.23.68). Écrit par `validateTicket` (heure serveur, quand il pose l'étiquette), par le webhook `issues` `labeled` `validé` dont l'expéditeur est `GITHUB_TICKETS_MAINTAINER_ID` (`issue.updated_at`), et par la tâche horaire (dernier événement `labeled validé` de ce compte lu dans `GET /issues/{n}/events`, Issue ouverte seulement ; `null` s'il n'y en a aucun). Toutes ces écritures passent par `updateValidatedAt` (transaction, `nextValidatedAt`) : tant que l'Issue porte `validé`, la date ne recule jamais et ne repasse pas à `null` — une lecture tronquée ne débloque pas un ticket ; étiquette absente, la valeur lue remplace la valeur stockée. Champ absent : date inconnue. `launchTicketDevelopment` lit alors `GET /issues/{n}/events` et écrit le résultat. Sert à la règle « ticket bloqué » (`ticketAwaitingReply`, « Répondre à une analyse, ticket bloqué » dans la section Tickets) |
 
@@ -8371,8 +8372,22 @@ défaut qu'il corrige. Sans manifeste, aucune mise à jour n'est proposée.
 administrateur sur Android seulement (`app_shell.dart`). Le message porte `data.type =
 "apk_release"` ; un toucher en arrière-plan relance `AppUpdateService.check` et ouvre
 `showAppUpdateDialog`. Côté serveur : `releaseNotificationSchedule`, voir le tableau des
-tâches planifiées. Le jeton d'un compte qui se déconnecte reste stocké : le serveur ne lit que
+tâches planifiées. Le jeton d'un compte qui se déconnecte par le menu est supprimé avant la déconnexion ; celui d'un compte dont la session expire reste stocké, et le serveur ne lit que
 ceux des comptes administrateurs au moment de l'envoi.
+
+**Notifications de ticket (v0.24.84).** `release_notifications/adminPush.ts` porte la lecture
+des jetons administrateurs (`adminDevices`) et l'envoi par lots avec suppression des jetons
+périmés (`sendToDevices`), partagés avec `releaseNotificationSchedule`. `tickets/push.ts`
+(`notifyAdminsOfTicket`) envoie `data.type` ∈ `ticket_analyzed`, `ticket_needs_reply`,
+`ticket_delivered` et `data.ticket_id`. Règles pures dans `tickets/pushRules.ts` : titre tronqué
+à 60 caractères, remplacé par « Ticket » s'il contient une adresse e-mail. Déclencheurs :
+`applyGithubUpdate` envoie après la transaction quand le statut passe à `analyzed` ou
+`delivered` (un rejeu ne change plus le statut : pas de second envoi) ; `writeTicketAnalyses`
+envoie `ticket_needs_reply` pour le dernier commentaire « ## Analyse — compléments » de moins
+de 6 h dont l'identifiant diffère de `tickets/{id}/admin/analysis.needs_reply_notified_comment_id`,
+écrit dans la même transaction (serveur seul). Un échec d'envoi est journalisé et n'annule pas
+l'écriture du ticket. Client : `PushRegistrationService.listenForTaps` et `initialTicketId`
+routent vers `/admin/tickets/:id` (`app_shell.dart`), aussi au lancement à froid. `signOutGuarded` supprime le jeton de l'appareil avant la déconnexion (`unregisterThisDevice`) : sur un appareil partagé, un autre compte ne reçoit pas les notifications d'un administrateur. Un titre contenant une adresse e-mail ou un lien est remplacé par « Ticket ». Le marqueur de compléments est écrit avant l'envoi : un envoi FCM en échec n'est pas rejoué (au plus une notification, jamais deux).
 
 À version égale, le numéro de build départage : un APK reconstruit sans changement de
 `version:` porte le même nom de version et un build supérieur.

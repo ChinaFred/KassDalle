@@ -32,6 +32,8 @@ import {
   TICKETS_STATUS_DOC_ID,
 } from "../config";
 import { logError, logInfo, logWarn } from "../logging";
+import { notifyAdminsOfTicket } from "./push";
+import { needsReplyToNotify, pushKindForTransition, type TicketPushKind } from "./pushRules";
 import { recordDeliveredPr, writeDeliveryReports } from "./delivery";
 import {
   GITHUB_REPO_FULL_NAME,
@@ -366,7 +368,9 @@ export interface GithubUpdate {
  */
 export async function applyGithubUpdate(ticketId: string, update: GithubUpdate): Promise<boolean> {
   const ref = ticketRef(ticketId);
-  return getFirestore().runTransaction(async (tx) => {
+  let push: { kind: TicketPushKind; title: unknown } | null = null;
+  const changed = await getFirestore().runTransaction(async (tx) => {
+    push = null;
     const snap = await tx.get(ref);
     if (!snap.exists) return false;
     const data = snap.data() ?? {};
@@ -392,6 +396,8 @@ export async function applyGithubUpdate(ticketId: string, update: GithubUpdate):
     if (next !== current) {
       changes.status = next;
       changes.status_changed_at = FieldValue.serverTimestamp();
+      const kind = pushKindForTransition(current, next);
+      if (kind !== null) push = { kind, title: data.title };
     }
     // Ticket rouvert ou refermé autrement : la PR de livraison est périmée.
     if (
@@ -413,6 +419,11 @@ export async function applyGithubUpdate(ticketId: string, update: GithubUpdate):
     tx.update(ref, changes);
     return true;
   });
+  // Après la validation de la transaction : un rejeu ne change plus le statut.
+  const pending = push as { kind: TicketPushKind; title: unknown } | null;
+  if (changed && pending !== null)
+    await notifyAdminsOfTicket(ticketId, pending.kind, pending.title);
+  return changed;
 }
 
 /** Identifiants des tickets publiés sous ce numéro d'Issue (zéro ou un). */
@@ -459,13 +470,22 @@ export async function writeTicketAnalyses(
   comments: readonly RemoteComment[],
 ): Promise<number> {
   const ref = analysisRef(ticketId);
-  return getFirestore().runTransaction(async (tx) => {
+  let needsReplyId: number | null = null;
+  const count = await getFirestore().runTransaction(async (tx) => {
+    needsReplyId = null;
     const snap = await tx.get(ref);
     const answerIds = readAnswerCommentIds(snap.data()?.answer_comment_ids);
     const entries = analysesFromComments(comments, GITHUB_TICKETS_MAINTAINER_ID, answerIds);
+    const lastNotified = snap.data()?.needs_reply_notified_comment_id;
+    needsReplyId = needsReplyToNotify(
+      entries,
+      typeof lastNotified === "number" ? lastNotified : null,
+      Date.now(),
+    );
     tx.set(
       ref,
       {
+        ...(needsReplyId === null ? {} : { needs_reply_notified_comment_id: needsReplyId }),
         analyses: entries.map((a) => ({
           comment_id: a.comment_id,
           kind: a.kind,
@@ -480,6 +500,11 @@ export async function writeTicketAnalyses(
     );
     return entries.filter((a) => a.kind === "analysis").length;
   });
+  if ((needsReplyId as number | null) !== null) {
+    const ticket = await ticketRef(ticketId).get();
+    await notifyAdminsOfTicket(ticketId, "ticket_needs_reply", ticket.data()?.title);
+  }
+  return count;
 }
 
 /**

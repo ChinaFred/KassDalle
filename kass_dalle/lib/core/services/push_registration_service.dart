@@ -14,6 +14,23 @@ const kApkReleaseMessageType = 'apk_release';
 bool isApkReleaseMessage(Map<String, dynamic> data) =>
     data['type'] == kApkReleaseMessageType;
 
+/// Types des notifications de ticket
+/// (`functions/src/tickets/pushRules.ts`) : analyse publiée, réponse attendue,
+/// développement livré.
+const kTicketMessageTypes = {
+  'ticket_analyzed',
+  'ticket_needs_reply',
+  'ticket_delivered',
+};
+
+/// Identifiant du ticket porté par une notification de ticket, ou `null` si le
+/// message n'en est pas une ou n'a pas d'identifiant exploitable.
+String? ticketIdFromMessage(Map<String, dynamic> data) {
+  if (!kTicketMessageTypes.contains(data['type'])) return null;
+  final id = data['ticket_id'];
+  return id is String && id.isNotEmpty ? id : null;
+}
+
 /// Document `users/{uid}/devices/{token}` : la forme que les règles Firestore
 /// acceptent (`token`, `platform`, `updated_at`, rien d'autre).
 Map<String, dynamic> deviceDocument(String token) => {
@@ -114,15 +131,61 @@ class PushRegistrationService {
     }
   }
 
-  /// Appelle [onTap] quand l'utilisateur touche la notification de nouvelle
-  /// version alors que l'application tourne en arrière-plan. Un lancement à
-  /// froid passe déjà par la vérification faite au démarrage.
-  void listenForReleaseTaps(void Function() onTap) {
+  /// Retire de `users/{uid}/devices` le jeton de cet appareil, avant une
+  /// déconnexion : sur un appareil partagé, un autre compte ne doit pas lire
+  /// les notifications d'un administrateur. Un échec est signalé et n'empêche
+  /// pas la déconnexion.
+  Future<void> unregisterThisDevice(String uid) async {
+    if (!PlatformUtils.isAndroidApp) return;
+    try {
+      final token = _token ?? await _fcm.getToken();
+      if (token == null || token.isEmpty) return;
+      await _deviceRef(uid, token).delete();
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: 'push.unregister_sign_out',
+        error: e,
+        stackTrace: st,
+        context: {'uid': uid},
+      );
+    }
+  }
+
+  /// Appelle [onRelease] quand l'utilisateur touche la notification de
+  /// nouvelle version, [onTicket] avec l'identifiant du ticket quand il touche
+  /// une notification de ticket, alors que l'application tourne en arrière-plan.
+  /// Un lancement à froid : [initialTicketId] pour un ticket, la vérification
+  /// faite au démarrage pour une version.
+  void listenForTaps({
+    required void Function() onRelease,
+    required void Function(String ticketId) onTicket,
+  }) {
     if (!PlatformUtils.isAndroidApp) return;
     _openedSub?.cancel();
     _openedSub = FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      if (isApkReleaseMessage(message.data)) onTap();
+      if (isApkReleaseMessage(message.data)) {
+        onRelease();
+        return;
+      }
+      final ticketId = ticketIdFromMessage(message.data);
+      if (ticketId != null) onTicket(ticketId);
     });
+  }
+
+  /// Ticket de la notification qui a lancé l'application à froid, ou `null`.
+  Future<String?> initialTicketId() async {
+    if (!PlatformUtils.isAndroidApp) return null;
+    try {
+      final message = await _fcm.getInitialMessage();
+      return message == null ? null : ticketIdFromMessage(message.data);
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: 'push.initial_message',
+        error: e,
+        stackTrace: st,
+      );
+      return null;
+    }
   }
 
   Future<void> dispose() async {
