@@ -563,6 +563,15 @@ class PlanningRepository {
     await _prefsDoc.set(data, SetOptions(merge: true));
   }
 
+  /// Enregistre le planning par défaut (`default_planning_target`) : [key]
+  /// vaut `personal` ou l'identifiant d'un groupe. Écriture fusionnée de ce
+  /// seul champ : les autres préférences restent telles qu'en base.
+  Future<void> saveDefaultPlanningTarget(String key) async {
+    await _prefsDoc.set({
+      'default_planning_target': key,
+    }, SetOptions(merge: true));
+  }
+
   /// Lecture ponctuelle du dernier périmètre choisi, pour l'ouverture de
   /// l'écran de génération. `null` tant que rien n'a jamais été enregistré —
   /// l'appelant se rabat alors sur ses recettes validées, l'ensemble de la
@@ -804,6 +813,30 @@ final ownedPlanningGroupsProvider =
           reach: reach,
         ),
       );
+    });
+
+/// Le planning par défaut résolu (`resolveDefaultPlanningTarget`) : « Mon
+/// planning », un groupe où l'on planifie, ou `null` quand aucun défaut
+/// valide n'existe.
+///
+/// En chargement tant que les préférences ou les groupes ne sont pas lus :
+/// un groupe encore inconnu n'est pas un groupe disparu, et la pose
+/// automatique attend une valeur lue.
+final defaultPlanningTargetProvider =
+    Provider.autoDispose<AsyncValue<PlanningTarget?>>((ref) {
+      final prefs = ref.watch(planningPreferencesProvider);
+      final owned = ref.watch(ownedPlanningGroupsProvider);
+      if (prefs.hasValue && owned.hasValue) {
+        return AsyncData(
+          resolveDefaultPlanningTarget(
+            stored: prefs.value!.defaultPlanningTarget,
+            ownedGroups: owned.value!,
+          ),
+        );
+      }
+      if (prefs.hasError) return AsyncError(prefs.error!, prefs.stackTrace!);
+      if (owned.hasError) return AsyncError(owned.error!, owned.stackTrace!);
+      return const AsyncLoading();
     });
 
 // ── Plannings affichés ────────────────────────────────────────────────────────

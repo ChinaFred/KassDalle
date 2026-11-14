@@ -18,6 +18,28 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-14
+
+### v0.24.85 — fonctionnel
+
+Un groupe peut devenir le planning proposé d'office pour planifier (ticket #239). Dans Groupes
+familiaux, le menu d'un groupe possédé propose « Utiliser par défaut pour planifier » ; la tuile
+du groupe par défaut dit « Par défaut » et porte une étoile. Sans défaut valide, le premier
+planning confirmé le devient, « Mon planning » compris, et un message l'annonce. Les feuilles
+« Planifier » et « Poser dans le planning » partent du défaut ; « Planifier pour… » le place en
+tête. Un choix ponctuel ne change pas le défaut.
+
+### v0.24.85 — technique
+
+Nouveau champ `default_planning_target` dans `planning_config/{uid}` : `personal` ou
+l'identifiant d'un groupe. Il est écrit seul, par écriture fusionnée
+(`PlanningRepository.saveDefaultPlanningTarget`), jamais par `PlanningPreferences.toFirestore`.
+`resolveDefaultPlanningTarget` le confronte à `ownedPlanningGroups` ; un groupe disparu vaut
+« aucun défaut ». `defaultPlanningTargetProvider` reste en chargement tant que préférences et
+groupes ne sont pas lus, pour qu'aucune pose automatique ne remplace un défaut encore inconnu.
+`isPlanningConfig` accepte une chaîne de 1 à 128 caractères, avec son test dans
+`rules-tests`. Aucune dépendance modifiée.
+
 ## 2026-11-08
 
 ### v0.24.84 — fonctionnel

@@ -19,6 +19,7 @@ import '../../../planning/domain/meal_component.dart' show MealComponentRole;
 import '../../../planning/domain/planned_meal.dart';
 import '../../../planning/domain/planning_preferences.dart';
 import '../../../planning/domain/planning_target.dart';
+import '../../../planning/presentation/default_planning_target.dart';
 import '../../../planning/presentation/planning_providers.dart';
 import '../../../planning/presentation/schedule_rows.dart';
 import '../../../recipes/domain/recipe.dart';
@@ -77,7 +78,13 @@ class WorkshopPoseSheet extends ConsumerStatefulWidget {
 }
 
 class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
+  /// Le planning visé : le planning par défaut tant que la ligne
+  /// « Planning » n'a pas été touchée ([_targetPicked]), « Mon planning »
+  /// sans défaut. Un choix à la main vaut pour ce repas, sans changer le
+  /// défaut.
   PlanningTarget _target = const PlanningTarget.personal();
+  bool _targetPicked = false;
+  late final ProviderSubscription<AsyncValue<PlanningTarget?>> _defaultSub;
   late DateTime _date;
 
   /// L'heure choisie à la main ; `null` tant qu'elle suit le jour de
@@ -118,8 +125,21 @@ class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
     super.initState();
     final now = DateTime.now();
     _date = DateTime(now.year, now.month, now.day);
+    // Le défaut arrive après l'ouverture : tant que la ligne « Planning »
+    // n'a pas été touchée, il remplace la cible et relit le jour.
+    _defaultSub = ref.listenManual(defaultPlanningTargetProvider, (_, next) {
+      if (_targetPicked) return;
+      _applyTarget(next.value ?? const PlanningTarget.personal());
+    });
+    _target = _defaultSub.read().value ?? const PlanningTarget.personal();
     _readMain();
     _readDay();
+  }
+
+  @override
+  void dispose() {
+    _defaultSub.close();
+    super.dispose();
   }
 
   // ── Lectures ─────────────────────────────────────────────────────────────
@@ -234,6 +254,11 @@ class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
   }
 
   void _selectTarget(PlanningTarget target) {
+    _targetPicked = true;
+    _applyTarget(target);
+  }
+
+  void _applyTarget(PlanningTarget target) {
     if (target == _target) return;
     setState(() {
       _target = target;
@@ -311,9 +336,13 @@ class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
       return;
     }
     if (!mounted) return;
+    // Sans défaut valide, ce planning le devient. Préparé avant la
+    // fermeture ; le message suit celui de la pose.
+    final memo = FirstPlanningTargetMemo.capture(context, ref);
     Navigator.of(
       context,
     ).pop(WorkshopPoseResult(plannedAt: plannedAt, target: target));
+    unawaited(memo.store(target));
   }
 
   // ── Construction ─────────────────────────────────────────────────────────

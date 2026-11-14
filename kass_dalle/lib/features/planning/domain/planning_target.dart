@@ -109,3 +109,46 @@ List<FamilyGroup> ownedPlanningGroups({
   });
   return owned;
 }
+
+/// La valeur stockée dans `default_planning_target` pour [target] :
+/// l'identifiant du groupe, ou [kDefaultPlanningTargetPersonal].
+String defaultPlanningTargetKey(PlanningTarget target) =>
+    target.groupId ?? kDefaultPlanningTargetPersonal;
+
+/// Le planning par défaut, lu depuis `default_planning_target` ([stored]).
+///
+/// [kDefaultPlanningTargetPersonal] donne « Mon planning ». Un identifiant
+/// donne le groupe s'il figure dans [ownedGroups] (`ownedPlanningGroups` :
+/// possédé, non masqué, compte éditeur). Sinon — aucun choix, groupe
+/// supprimé, quitté, en pause, ou compte repassé lecteur — le défaut est
+/// absent (`null`) : l'écran part de « Mon planning », et le prochain
+/// planning confirmé devient le défaut.
+PlanningTarget? resolveDefaultPlanningTarget({
+  required String? stored,
+  required List<FamilyGroup> ownedGroups,
+}) {
+  if (stored == null) return null;
+  if (stored == kDefaultPlanningTargetPersonal) {
+    return const PlanningTarget.personal();
+  }
+  for (final g in ownedGroups) {
+    if (g.id == stored) return PlanningTarget.ofGroup(g);
+  }
+  return null;
+}
+
+/// Les plannings de « Planifier pour… » : « Mon planning » puis les groupes
+/// de [ownedGroups], le planning par défaut ([defaultTarget]) placé en tête.
+List<PlanningTarget> planningTargetsDefaultFirst({
+  required List<FamilyGroup> ownedGroups,
+  required PlanningTarget? defaultTarget,
+}) {
+  final targets = [
+    const PlanningTarget.personal(),
+    for (final g in ownedGroups) PlanningTarget.ofGroup(g),
+  ];
+  if (defaultTarget == null) return targets;
+  final i = targets.indexOf(defaultTarget);
+  if (i <= 0) return targets;
+  return [targets[i], ...targets.sublist(0, i), ...targets.sublist(i + 1)];
+}

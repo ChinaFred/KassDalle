@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +9,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../domain/planning_target.dart';
+import 'default_planning_target.dart';
 import 'planning_providers.dart';
 
 /// « Nouveau planning » : ouvre l'écran de génération sur le planning
@@ -58,14 +61,23 @@ Future<PlanningTarget?> showPlanningTargetSheet(BuildContext context) =>
     );
 
 /// Le contenu de « Planifier pour… » : « Mon planning », puis chaque groupe
-/// dont l'utilisateur est le propriétaire.
+/// dont l'utilisateur est le propriétaire. Le planning par défaut passe en
+/// tête, marqué « Par défaut ».
 class PlanningTargetList extends ConsumerWidget {
   const PlanningTargetList({super.key});
+
+  /// « Par défaut · Planning du groupe · 4 membres », « Par défaut » sur
+  /// « Mon planning » quand c'est lui.
+  static Widget? _subtitle(PlanningTarget target, {required bool isDefault}) {
+    final parts = [if (isDefault) 'Par défaut', ?target.subtitle];
+    return parts.isEmpty ? null : Text(parts.join(' · '));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final owned = ref.watch(ownedPlanningGroupsProvider);
+    final defaultTarget = ref.watch(defaultPlanningTargetProvider);
     final Widget body;
     if (owned.hasError && !owned.hasValue) {
       body = AppErrorState(
@@ -80,10 +92,10 @@ class PlanningTargetList extends ConsumerWidget {
         child: AppLoadingState(),
       );
     } else {
-      final targets = [
-        const PlanningTarget.personal(),
-        for (final g in owned.value!) PlanningTarget.ofGroup(g),
-      ];
+      final targets = planningTargetsDefaultFirst(
+        ownedGroups: owned.value!,
+        defaultTarget: defaultTarget.value,
+      );
       body = Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -95,8 +107,16 @@ class PlanningTargetList extends ConsumerWidget {
                     : Icons.calendar_today_outlined,
               ),
               title: Text(target.title),
-              subtitle: target.subtitle == null ? null : Text(target.subtitle!),
-              onTap: () => Navigator.of(context).pop(target),
+              subtitle: _subtitle(
+                target,
+                isDefault: target == defaultTarget.value,
+              ),
+              onTap: () {
+                // Sans défaut valide, le planning touché le devient.
+                final memo = FirstPlanningTargetMemo.capture(context, ref);
+                Navigator.of(context).pop(target);
+                unawaited(memo.store(target));
+              },
             ),
         ],
       );

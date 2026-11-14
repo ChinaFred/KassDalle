@@ -7,6 +7,9 @@ import 'planning_history.dart';
 
 export 'meal_format.dart';
 
+/// Valeur de `default_planning_target` pour « Mon planning ».
+const kDefaultPlanningTargetPersonal = 'personal';
+
 const Map<int, String> kWeekdayNames = {
   DateTime.monday: 'Lundi',
   DateTime.tuesday: 'Mardi',
@@ -201,6 +204,17 @@ class PlanningPreferences {
   /// groupe absent prend son nombre de membres (`groupDefaultPortions`).
   final Map<String, int> groupPortions;
 
+  /// Planning proposé d'office pour planifier (`default_planning_target`) :
+  /// [kDefaultPlanningTargetPersonal] pour « Mon planning », ou l'identifiant
+  /// d'un groupe dont le compte est propriétaire. `null` tant qu'aucun choix
+  /// n'a été retenu.
+  ///
+  /// Lu ici, jamais écrit par [toFirestore] : l'écran des préférences
+  /// enregistre tout ce qu'il a lu à l'ouverture, et réécrirait une valeur
+  /// posée entre-temps depuis une feuille « Planifier ». Le champ s'écrit
+  /// seul, par `PlanningRepository.saveDefaultPlanningTarget`.
+  final String? defaultPlanningTarget;
+
   const PlanningPreferences({
     this.mealsPerCycle = 7,
     this.cycleStartDay = DateTime.friday,
@@ -215,6 +229,7 @@ class PlanningPreferences {
     this.varietyWindowWeeks = kVarietyWindowDefaultWeeks,
     this.sharedGroupIds = const [],
     this.groupPortions = const {},
+    this.defaultPlanningTarget,
   });
 
   factory PlanningPreferences.fromFirestore(Map<String, dynamic> data) {
@@ -246,7 +261,22 @@ class PlanningPreferences {
       ),
       sharedGroupIds: sharedGroupIdsFrom(data['shared_group_ids']),
       groupPortions: groupPortionsFrom(data['group_portions']),
+      defaultPlanningTarget: defaultPlanningTargetFrom(
+        data['default_planning_target'],
+      ),
     );
+  }
+
+  /// Longueur maximale de `default_planning_target`, la même que celle des
+  /// règles Firestore.
+  static const maxDefaultPlanningTargetLength = 128;
+
+  /// Lit `default_planning_target` : une chaîne de 1 à 128 caractères. Une
+  /// valeur mal formée vaut « aucun choix ».
+  static String? defaultPlanningTargetFrom(Object? raw) {
+    if (raw is! String) return null;
+    if (raw.isEmpty || raw.length > maxDefaultPlanningTargetLength) return null;
+    return raw;
   }
 
   /// Lit `group_portions` : les entrées dont la valeur est un entier
@@ -334,6 +364,7 @@ class PlanningPreferences {
     ),
     sharedGroupIds: sharedGroupIds ?? this.sharedGroupIds,
     groupPortions: groupPortions ?? this.groupPortions,
+    defaultPlanningTarget: defaultPlanningTarget,
   );
 
   /// Heure retenue pour un jour de la semaine : la sienne s'il en a une, celle

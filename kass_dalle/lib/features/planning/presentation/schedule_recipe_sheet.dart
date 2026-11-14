@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +17,7 @@ import '../domain/planning_preferences.dart';
 import '../domain/planning_target.dart';
 import '../services/calendar_service.dart';
 import '../../groups/presentation/group_providers.dart';
+import 'default_planning_target.dart';
 import 'meal_composer.dart';
 import 'meal_staples_providers.dart';
 import 'planning_providers.dart';
@@ -93,9 +96,17 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   late TextEditingController _reminderCtrl;
   bool _loading = false;
 
-  /// Le planning où le repas s'inscrit : « Mon planning » par défaut, ou un
-  /// groupe dont l'utilisateur est le propriétaire.
-  PlanningTarget _target = const PlanningTarget.personal();
+  /// Le planning choisi à la main pour ce repas ; `null` tant que la ligne
+  /// « Planning » n'a pas été touchée. Ce choix ne change pas le défaut.
+  PlanningTarget? _pickedTarget;
+
+  /// Le planning où le repas s'inscrit : le choix de la ligne « Planning »,
+  /// sinon le planning par défaut (`defaultPlanningTargetProvider`), sinon
+  /// « Mon planning ».
+  PlanningTarget get _target =>
+      _pickedTarget ??
+      ref.read(defaultPlanningTargetProvider).value ??
+      const PlanningTarget.personal();
 
   /// Recettes d'accompagnement possibles : les recettes validées du compte et
   /// celles, non privées, des autres membres de la famille — les mêmes
@@ -347,6 +358,11 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
       return;
     }
 
+    // Le repas est enregistré : sans défaut valide, ce planning le devient.
+    // Préparé ici, la feuille se ferme avant la fin de l'écriture.
+    final chosen = _target;
+    final memo = mounted ? FirstPlanningTargetMemo.capture(context, ref) : null;
+
     final reminder =
         int.tryParse(_reminderCtrl.text.trim()) ?? (widget.prepTimeMin ?? 30);
     try {
@@ -366,6 +382,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         Navigator.of(context).pop();
         context.showSuccessSnackBar('$_addedTo et à l\'agenda.');
       }
+      unawaited(memo?.store(chosen));
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'scheduleRecipeSheet.addToCalendar',
@@ -381,6 +398,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           '$_addedTo. L\'agenda n\'a pas reçu l\'événement.',
         );
       }
+      unawaited(memo?.store(chosen));
     }
   }
 
@@ -457,6 +475,8 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
     // sans elle, le repas va dans « Mon planning », comme avant.
     final ownedGroups =
         ref.watch(ownedPlanningGroupsProvider).value ?? const [];
+    // Abonné ici : le défaut arrive après l'ouverture, et `_target` le lit.
+    ref.watch(defaultPlanningTargetProvider);
     return Padding(
       padding: EdgeInsets.only(
         left: 24,
@@ -493,7 +513,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
             PlanningTargetRow(
               target: _target,
               ownedGroups: ownedGroups,
-              onSelected: (target) => setState(() => _target = target),
+              onSelected: (target) => setState(() => _pickedTarget = target),
             ),
             const SizedBox(height: 4),
           ],

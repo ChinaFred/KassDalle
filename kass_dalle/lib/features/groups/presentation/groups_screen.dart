@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/services/error_reporting.dart';
+import '../../admin/presentation/admin_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../planning/domain/planning_target.dart';
+import '../../planning/presentation/default_planning_target.dart';
+import '../../planning/presentation/planning_providers.dart';
 import '../domain/family_group.dart';
 import 'group_providers.dart';
 import '../../../core/router/app_router.dart';
@@ -26,6 +31,18 @@ class GroupsScreen extends ConsumerWidget {
     // Créer un groupe demande le rôle éditeur (règle `create` de `groups`) :
     // un lecteur rejoint un groupe sur invitation d'un proche.
     final canCreate = ref.watch(canEditProvider);
+    // Les groupes où l'on planifie peuvent devenir le planning par défaut ;
+    // celui qui l'est porte « Par défaut ».
+    final planningGroupIds = {
+      for (final g
+          in ref.watch(ownedPlanningGroupsProvider).value ??
+              const <FamilyGroup>[])
+        g.id,
+    };
+    final defaultGroupId = ref
+        .watch(defaultPlanningTargetProvider)
+        .value
+        ?.groupId;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Groupes familiaux')),
@@ -104,6 +121,10 @@ class GroupsScreen extends ConsumerWidget {
                         group: groups[i],
                         myUid: myUid,
                         paused: pausedIds.contains(groups[i].id),
+                        canBeDefault:
+                            planningGroupIds.contains(groups[i].id) &&
+                            !pausedIds.contains(groups[i].id),
+                        isDefault: defaultGroupId == groups[i].id,
                       ),
                     ],
                   ],
@@ -130,7 +151,7 @@ class GroupsScreen extends ConsumerWidget {
 
 // ── Tuile d'un groupe ──────────────────────────────────────────────────────────
 
-class _GroupTile extends ConsumerWidget {
+class _GroupTile extends ConsumerStatefulWidget {
   final FamilyGroup group;
   final String myUid;
 
@@ -138,14 +159,36 @@ class _GroupTile extends ConsumerWidget {
   /// planning, et la tuile le dit (« En pause · … »).
   final bool paused;
 
+  /// Le compte planifie pour ce groupe (`ownedPlanningGroupsProvider`, hors
+  /// pause) : le menu propose d'en faire le planning par défaut.
+  final bool canBeDefault;
+
+  /// Le groupe est le planning par défaut (`default_planning_target`).
+  final bool isDefault;
+
   const _GroupTile({
     required this.group,
     required this.myUid,
     this.paused = false,
+    this.canBeDefault = false,
+    this.isDefault = false,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_GroupTile> createState() => _GroupTileState();
+}
+
+class _GroupTileState extends ConsumerState<_GroupTile> {
+  /// Écriture du planning par défaut en cours : l'entrée du menu est
+  /// désactivée.
+  bool _savingDefault = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final group = widget.group;
+    final myUid = widget.myUid;
+    final paused = widget.paused;
+    final isDefault = widget.isDefault && widget.canBeDefault;
     final isOwner = group.isOwner(myUid);
     // Renommer demande aussi le rôle éditeur (`isManagement` de
     // `firestore.rules`) : un lecteur propriétaire d'un groupe créé avant
@@ -167,6 +210,7 @@ class _GroupTile extends ConsumerWidget {
       subtitle: Text(
         [
           if (paused) 'En pause',
+          if (isDefault) 'Par défaut',
           '${group.memberIds.length} membre(s)',
           if (isOwner && pendingCount > 0)
             '$pendingCount invitation(s) en attente',
@@ -175,6 +219,15 @@ class _GroupTile extends ConsumerWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (isDefault)
+            Tooltip(
+              message: 'Groupe par défaut pour planifier',
+              child: Icon(
+                Icons.star,
+                color: Theme.of(context).colorScheme.primary,
+                semanticLabel: 'Groupe par défaut pour planifier',
+              ),
+            ),
           if (canManage)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
@@ -184,6 +237,9 @@ class _GroupTile extends ConsumerWidget {
           PopupMenuButton<_GroupAction>(
             onSelected: (action) async {
               switch (action) {
+                case _GroupAction.toggleDefault:
+                  await _toggleDefault(group, isDefault: isDefault);
+                  break;
                 case _GroupAction.manageMembers:
                   context.push(AppRoutes.groupMembersPath(group.id));
                   break;
@@ -196,6 +252,21 @@ class _GroupTile extends ConsumerWidget {
               }
             },
             itemBuilder: (_) => [
+              if (widget.canBeDefault)
+                PopupMenuItem(
+                  value: _GroupAction.toggleDefault,
+                  enabled: !_savingDefault,
+                  child: ListTile(
+                    enabled: !_savingDefault,
+                    leading: Icon(isDefault ? Icons.star_outline : Icons.star),
+                    title: Text(
+                      isDefault
+                          ? 'Ne plus utiliser par défaut'
+                          : 'Utiliser par défaut pour planifier',
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
               PopupMenuItem(
                 value: _GroupAction.manageMembers,
                 child: ListTile(
@@ -230,6 +301,41 @@ class _GroupTile extends ConsumerWidget {
       ),
       onTap: () => context.push(AppRoutes.groupMembersPath(group.id)),
     );
+  }
+
+  /// « Utiliser par défaut pour planifier » enregistre ce groupe ; « Ne plus
+  /// utiliser par défaut » rend le défaut à « Mon planning ».
+  Future<void> _toggleDefault(
+    FamilyGroup group, {
+    required bool isDefault,
+  }) async {
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+    final target = isDefault
+        ? const PlanningTarget.personal()
+        : PlanningTarget.ofGroup(group);
+    setState(() => _savingDefault = true);
+    try {
+      await repo.saveDefaultPlanningTarget(defaultPlanningTargetKey(target));
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'groups.defaultPlanningTarget',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'group_id': group.id},
+        service: ref.read(errorReportServiceProvider),
+      );
+      if (mounted) {
+        setState(() => _savingDefault = false);
+        context.showErrorSnackBar(
+          'Le groupe par défaut n\'a pas pu être enregistré.',
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _savingDefault = false);
+    context.showSuccessSnackBar(defaultPlanningTargetMessage(target));
   }
 
   void _showRenameDialog(
@@ -269,7 +375,9 @@ class _GroupTile extends ConsumerWidget {
     );
     if (confirmed != true || !context.mounted) return;
     try {
-      await ref.read(groupRepositoryProvider).removeMember(group.id, myUid);
+      await ref
+          .read(groupRepositoryProvider)
+          .removeMember(group.id, widget.myUid);
     } catch (e) {
       // Signalée au rapport d'erreurs par GroupRepository.
       if (context.mounted) {
@@ -317,7 +425,7 @@ class _GroupTile extends ConsumerWidget {
   }
 }
 
-enum _GroupAction { manageMembers, leave, delete }
+enum _GroupAction { toggleDefault, manageMembers, leave, delete }
 
 // ── Invitation reçue ───────────────────────────────────────────────────────────
 

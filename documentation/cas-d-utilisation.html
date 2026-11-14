@@ -167,6 +167,7 @@
           <tr><td>Partager son planning avec des groupes dont on est membre, en lecture seule (Préférences du planning › « Partager mon planning »)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les plannings partagés avec un groupe dont on est membre, en lecture seule — un invité ne lit rien ; une recette qu'on ne peut pas lire s'affiche par son titre, « Recette non partagée »</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Planifier pour un groupe dont on est le propriétaire (« Nouveau planning » › « Planifier pour… », jour libre, feuille « Planifier », « Poser dans le planning » de l'atelier repas) — le planning du groupe</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Choisir le planning par défaut (Groupes familiaux › « Utiliser par défaut pour planifier » ; sinon posé au premier planning confirmé)</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire le planning d'un groupe dont on est membre, en lecture seule — un invité ne le lit pas ; un groupe dont le propriétaire n'est plus éditeur est en pause : son planning est masqué à tous, sans rien effacer</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Suggérer un plat (recette ou nom libre, un mot facultatif) pour un jour à venir du planning d'un groupe actif dont on est membre sans en être le propriétaire ; retirer sa suggestion — une recette privée suggérée se lit chez le propriétaire par son seul titre ; les titres des recettes validées des livres privés des membres de ses groupes sont proposés dans le sélecteur ; recherche avancée dans un écran dédié (titre, étiquettes, ingrédients principaux, filtres)</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
           <tr><td>Lire les suggestions reçues pour un groupe actif dont on est le propriétaire, et planifier soi-même celle qu'on retient (« Planifier ce jour-là », ou « Chercher » : Explorer en mode choix, puis le jour au calendrier) — un autre membre ne lit pas les suggestions des autres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
@@ -680,7 +681,10 @@ flowchart LR
         planning » demande « Planifier pour… » dès qu'il possède un groupe, un jour libre
         propose « Rien de prévu pour Famille Dupont », la feuille « Planifier » d'une recette et
         la boîte « Poser dans le planning » de l'atelier repas portent une ligne « Planning » ;
-        un repas posé depuis l'atelier prend les parts du menu composé. Les repas du groupe portent <code>group_id</code> ; le
+        un repas posé depuis l'atelier prend les parts du menu composé. Le planning par
+        défaut se choisit dans Groupes familiaux (« Utiliser par défaut pour planifier ») ;
+        sans défaut valide, le premier planning confirmé le devient. Les feuilles « Planifier »
+        et « Poser » en partent, et « Planifier pour… » le place en tête. Les repas du groupe portent <code>group_id</code> ; le
         serveur vérifie à la génération que l'appelant est propriétaire du groupe, et sa
         mémoire des refus, son historique et ses préférences servent, sans poste d'IA de plus.
         <b>Consulter le planning de mon groupe</b> ouvre à chaque membre, lecteur compris, les
