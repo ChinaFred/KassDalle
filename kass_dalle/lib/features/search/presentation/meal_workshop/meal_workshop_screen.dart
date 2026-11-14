@@ -143,6 +143,28 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen>
 
   /// Vrai dès qu'un figement s'est déroulé : le champ est fermé.
   bool _frozen = false;
+
+  /// Vrai quand le figement en cours est celui, implicite, de « Poser dans
+  /// le planning » (rien à rédiger) ; faux après « Figer le repas ».
+  bool _implicitFreeze = false;
+
+  /// Le figement implicite n'a rien écrit : chaque ligne est une recette
+  /// liée relue, lisible ou non. Faux dès que « Rédiger à la place » a
+  /// rédigé un plat. Les parts restent alors réglables, et fermer la boîte
+  /// sans poser défait ce figement.
+  bool get _implicitFreezeWroteNothing =>
+      _implicitFreeze &&
+      (_freezeLines?.every(
+            (l) => l is FreezeLinked || l is FreezeLinkedUnreadable,
+          ) ??
+          false);
+
+  /// Le bouton « N parts » de l'en-tête est inactif : pendant un envoi ou
+  /// un figement, et après un figement qui a rédigé des brouillons pour ces
+  /// parts. Les parts du repas se règlent alors dans « Poser dans le
+  /// planning ».
+  bool get _portionsLocked =>
+      _sending || _freezing || (_frozen && !_implicitFreezeWroteNothing);
   ({String id, String titre})? _book;
 
   /// Le livre choisi dans la boîte ; [_book] est trouvé ou créé à la
@@ -480,6 +502,7 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen>
       _lastOffKind = 0;
       _freezeLines = null;
       _frozen = false;
+      _implicitFreeze = false;
       _book = null;
       _bookChoice = null;
       _poses.clear();
@@ -644,6 +667,7 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen>
 
     _bookChoice = choice.book;
     _book = null;
+    _implicitFreeze = !report;
     // Sans plat à rédiger (tous les doublons liés) : ni appel d'IA, ni livre
     // créé ; les recettes liées sont seulement relues.
     if (menu!.toWriteCount > 0) {
@@ -972,8 +996,26 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen>
         menu: frozenMenu,
         lines: List.unmodifiable(lines),
         workshop: workshop,
+        portions: _portions,
+        onPortionsChanged: (value) {
+          if (!mounted) return;
+          setState(() => _portions = value);
+          _revision.value++;
+        },
       );
-      if (result == null || !mounted) return;
+      if (!mounted) return;
+      if (result == null) {
+        // Boîte fermée sans poser après un figement implicite qui n'a rien
+        // écrit : l'atelier revient à l'état d'avant (champ, parts, mode).
+        if (!_posed && _implicitFreezeWroteNothing) {
+          setState(() {
+            _freezeLines = null;
+            _frozen = false;
+            _implicitFreeze = false;
+          });
+        }
+        return;
+      }
       setState(() => _poses.add(result));
       context.showSuccessSnackBar(
         posedMessage(result.plannedAt, result.target),
@@ -1447,13 +1489,13 @@ class _MealWorkshopScreenState extends ConsumerState<MealWorkshopScreen>
             ),
           ),
           Tooltip(
-            message: 'Nombre de parts',
+            message: _frozen && !_implicitFreezeWroteNothing
+                ? 'Parts réglables au moment de poser le repas'
+                : 'Nombre de parts',
             child: FocusTraversalOrder(
               order: const NumericFocusOrder(4),
               child: OutlinedButton(
-                onPressed: _sending || _freezing || _frozen
-                    ? null
-                    : _changePortions,
+                onPressed: _portionsLocked ? null : _changePortions,
                 child: Text(_portionsLabel),
               ),
             ),

@@ -20,7 +20,7 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-14
 
-### v0.24.85 — fonctionnel
+### v0.24.86 — fonctionnel
 
 Un groupe peut devenir le planning proposé d'office pour planifier (ticket #239). Dans Groupes
 familiaux, le menu d'un groupe possédé propose « Utiliser par défaut pour planifier » ; la tuile
@@ -31,7 +31,7 @@ ne possède aucun groupe ; rien n'est retenu pour un lecteur. Les feuilles
 « Planifier » et « Poser dans le planning » partent du défaut ; « Planifier pour… » le place en
 tête. Un choix ponctuel ne change pas le défaut.
 
-### v0.24.85 — technique
+### v0.24.86 — technique
 
 Nouveau champ `default_planning_target` dans `planning_config/{uid}` : `personal` ou
 l'identifiant d'un groupe. Il est écrit seul, par écriture fusionnée
@@ -41,6 +41,19 @@ l'identifiant d'un groupe. Il est écrit seul, par écriture fusionnée
 groupes ne sont pas lus, pour qu'aucune pose automatique ne remplace un défaut encore inconnu.
 `isPlanningConfig` accepte une chaîne de 1 à 128 caractères, avec son test dans
 `rules-tests`. Aucune dépendance modifiée.
+
+### v0.24.85 — fonctionnel
+
+Atelier repas : les parts se règlent dans la boîte « Poser dans le planning » (ticket #238).
+La ligne « Parts » ouvre « Nombre de parts » (1 à 99) ; le repas posé reçoit ce nombre et les
+quantités se recalculent à l'affichage, sans toucher la recette ni le brouillon. Pour un
+groupe, « Utiliser N » applique ses parts habituelles du jour. Les parts choisies reviennent
+dans l'en-tête de l'atelier, même sans pose.
+
+Correction : ouvrir la boîte puis la fermer sans poser bloquait les parts, le champ et le
+choix Plat / Menu quand le repas ne comptait que des recettes existantes. L'atelier revient
+maintenant à l'état d'avant. Après « Figer le repas », le bouton des parts de l'en-tête reste
+inactif et dit « Parts réglables au moment de poser le repas ».
 
 ## 2026-11-08
 

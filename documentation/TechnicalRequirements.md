@@ -1720,7 +1720,7 @@ Un document par utilisateur (`{uid}`), écrit depuis « Préférences du plannin
 | `variety_window_weeks` | `int` | **Fenêtre de variété**, de 0 à 4 semaines (défaut 2, absent = 2, hors bornes = ramené). Un plat servi dans les N semaines qui précèdent le premier jour du cycle n'est pas reproposé. Le client lit ses propres `planned_meals` sur cette fenêtre (`recentlyServedBefore`, `planning_history.dart`) et envoie la liste à `suggestMealPlanFn` ; le serveur retire ces recettes du corpus tant qu'il en reste au moins autant que de créneaux à remplir, du plus récent au plus ancien ; celles qu'il a dû garder restent candidates avec une note de fraîcheur basse (`applyRecentlyServed`, fixture `planning_slot_rules.json` › `recently_served`). Zéro désactive. Depuis v0.23.18, la fenêtre de variété reste lue par le client ; la **note de fraîcheur** de la présélection, elle, est lue par le serveur sur 90 jours de `planned_meals` (voir §6, « Le planning »). |
 | `shared_group_ids` | `List<String>` | **Partager mon planning** (v0.23.47) : les groupes familiaux dont les membres voient ce planning, en lecture seule. Absent ou vide = rien n'est partagé (aucune migration). Cochés parmi les groupes dont le compte est membre, propriétaire compris ; 50 au plus (règles). Le serveur ignore un identifiant de groupe disparu, quitté ou mal formé (`sharedGroupIdsOf`). Un propriétaire qui n'est plus éditeur ou administrateur, ou révoqué, garde ses groupes en base : le partage est **suspendu**, et reprend s'il redevient éditeur. Un changement déclenche `syncPlanningReachOnConfig` |
 | `group_portions` | `Map<String, int>?` | Parts par défaut des repas de chaque groupe dont le compte est propriétaire (identifiant du groupe → parts). Absent ou groupe absent = nombre de membres du groupe, propriétaire compris (`groupDefaultPortions`). Un jour dont `daily_constraints` règle `target_portions` > 0 garde ses parts : ce réglage ne sert qu'aux jours sans parts (`groupMealPortions`), jamais au planning personnel. 50 entrées au plus (`isPlanningConfig`). Lu par « Nouveau planning », la feuille « Planifier » et un jour libre du planning d'un groupe ; écrit par Préférences du planning › « Parts des groupes » (un champ vidé supprime l'entrée par `FieldValue.delete()`, l'enregistrement fusionnant) |
-| `default_planning_target` | `String?` | **Planning par défaut** (v0.24.85) : `personal` (« Mon planning ») ou l'identifiant d'un groupe dont le compte est propriétaire. Absent = aucun choix. Résolu par `resolveDefaultPlanningTarget` contre `ownedPlanningGroups` (possédé, non masqué, compte éditeur) : un identifiant qui n'y figure plus vaut « aucun défaut ». Lu par la feuille « Planifier », la boîte « Poser dans le planning » et « Planifier pour… » (`defaultPlanningTargetProvider`). Écrit seul, par écriture fusionnée de ce champ (`PlanningRepository.saveDefaultPlanningTarget`) : depuis Groupes familiaux, ou au premier planning confirmé quand aucun défaut valide n'existe (`FirstPlanningTargetMemo`). Jamais écrit par `PlanningPreferences.toFirestore`, pour que l'enregistrement des préférences ne réécrive pas une valeur posée entre-temps. Chaîne de 1 à 128 caractères (`isPlanningConfig`) |
+| `default_planning_target` | `String?` | **Planning par défaut** (v0.24.86) : `personal` (« Mon planning ») ou l'identifiant d'un groupe dont le compte est propriétaire. Absent = aucun choix. Résolu par `resolveDefaultPlanningTarget` contre `ownedPlanningGroups` (possédé, non masqué, compte éditeur) : un identifiant qui n'y figure plus vaut « aucun défaut ». Lu par la feuille « Planifier », la boîte « Poser dans le planning » et « Planifier pour… » (`defaultPlanningTargetProvider`). Écrit seul, par écriture fusionnée de ce champ (`PlanningRepository.saveDefaultPlanningTarget`) : depuis Groupes familiaux, ou au premier planning choisi quand aucun défaut valide n'existe (`FirstPlanningTargetMemo`). Jamais écrit par `PlanningPreferences.toFirestore`, pour que l'enregistrement des préférences ne réécrive pas une valeur posée entre-temps. Chaîne de 1 à 128 caractères (`isPlanningConfig`) |
 
 ---
 
@@ -6125,9 +6125,18 @@ réponse (`workshopPoseBlocker`). La boîte (`showAdaptiveSheet`, 480 px) demand
 (« Mon planning » ou un groupe possédé, ligne affichée seulement à qui possède un groupe,
 `ownedPlanningGroupsProvider`), la date (aujourd'hui à + 730 jours), l'heure de début
 (`PlanningPreferences.mealTimeFor` du jour de semaine tant qu'elle n'est pas changée à la
-main) ; les parts sont celles du menu, planning personnel comme planning de groupe (la boîte
-dit « Famille Dupont cuisine d'habitude pour 4 ce jour-là. » quand `groupMealPortions` du
-jour diffère). **Deux lectures, une écriture** : la recette du plat principal, relue par son
+main) et les parts : ligne `SchedulePickerRow` « Parts », ouverte sur les parts de l'atelier
+(`_portions`) et réglée par `showPortionsInputDialog` (1 à 99), planning personnel comme
+planning de groupe ; la boîte dit « Famille Dupont cuisine d'habitude pour 4 ce jour-là. »
+avec « Utiliser 4 » quand `groupMealPortions` du jour diffère des parts choisies, et
+« Recette pour 6 : … » quand la recette du plat principal, liée ou brouillon, en a d'autres.
+Chaque choix remonte aussitôt à l'atelier (`onPortionsChanged`), que la pose ait lieu ou non.
+Le figement implicite d'une pose (`_implicitFreeze`) qui n'a rien écrit (lignes
+`FreezeLinked` ou `FreezeLinkedUnreadable` seules) est défait quand la boîte se ferme sans
+poser : `_freezeLines = null`, `_frozen = false`, le champ, les parts et le mode se rouvrent ;
+une ligne « Recette plus accessible » garde le figement tant qu'elle n'a pas sa réponse. Après
+« Figer le repas » (brouillons écrits pour `_portions`), le bouton des parts de l'en-tête est
+inactif, infobulle « Parts réglables au moment de poser le repas ». **Deux lectures, une écriture** : la recette du plat principal, relue par son
 identifiant (`MealWorkshopDraftRepository.readForPose` : parts, durées ; introuvable ou
 refusée → repas posé par son titre, `recipe_id` nul, sans `base_portions` ; erreur réseau →
 « La recette du plat n'a pas pu être lue. » et « Réessayer ») ; les repas du planning visé ce
@@ -6136,7 +6145,7 @@ relancée à chaque changement de date ou de planning : « Mar. 12 nov. a déjà
 Blanquette de veau, 19:30. », « Choisir une autre date », « Ajouter quand même » ; rien n'est
 remplacé) ; puis `PlanningRepository.addMeal` du repas bâti par `buildWorkshopMeal` (§3.7 :
 `uid`, `group_id` toujours écrit, `recipe_id`, `recipe_titre`, `planned_at`, durées,
-`base_portions`, `target_portions` = parts du menu, `justification` = `why` du plat,
+`base_portions`, `target_portions` = parts choisies dans la boîte, `justification` = `why` du plat,
 `choice_source: workshop`, `meal_kind`, `components`). Avant d'écrire, la lecture du jour est
 rejouée : un repas apparu depuis l'affichage (écrit côté serveur malgré une coupure) est montré
 au lieu d'être doublé. Erreurs, en snack et répétées dans la boîte (ligne `error`,
@@ -6150,7 +6159,7 @@ dans Mon planning » (une ligne par pose), « Voir le planning » (`/planning?da
 brouillons) ; les lignes du panneau perdent « Réessayer », « Rédiger à la place » et « Retirer
 du repas » (« Non rédigée · posée en texte ») : aucun brouillon ne se crée plus ; l'écran se
 quitte librement et « Nouvelle conversation » ne demande plus de confirmation. Aucune recette
-n'est modifiée : les parts du menu vivent sur le repas (« Redimensionner ne modifie jamais
+n'est modifiée : les parts choisies vivent sur le repas (« Redimensionner ne modifie jamais
 l'originale »). Les lignes « Planning », « Date », « Heure de début » et la ligne
 d'information sont celles de la feuille « Planifier », extraites dans
 `planning/presentation/schedule_rows.dart` (`SchedulePickerRow`, `ScheduleInfoRow`,

@@ -88,8 +88,10 @@ String? workshopMainRecipeId(WorkshopMenu menu, List<FreezeLineState> lines) {
 ///   est introuvable — le repas est alors posé par son titre, sans
 ///   `base_portions`.
 /// - `prep_minutes`, `cook_minutes`, `duration_minutes` et `base_portions`
-///   viennent de cette recette ; `target_portions` sont les parts du menu,
-///   planning personnel comme planning de groupe.
+///   viennent de cette recette ; `target_portions` sont les parts choisies
+///   dans la boîte ([portions]), planning personnel comme planning de
+///   groupe. Ni la recette ni un brouillon ne sont réécrits : les quantités
+///   se recalculent à l'affichage.
 /// - `justification` : le `why` du plat principal ; `choice_source` :
 ///   [MealChoiceSource.workshop].
 /// - `components` : écrits par [MealComposition.toComponents], les services
@@ -113,6 +115,7 @@ PlannedMeal buildWorkshopMeal({
   required String uid,
   required DateTime plannedAt,
   required DateTime now,
+  required int portions,
 }) {
   final mainIndex = workshopMainCourseIndex(menu);
   if (mainIndex < 0) {
@@ -170,7 +173,7 @@ PlannedMeal buildWorkshopMeal({
     prepMinutes: prep,
     cookMinutes: cook,
     basePortions: mainRecipe?.portions,
-    targetPortions: menu.portions,
+    targetPortions: portions,
     justification: main.why,
     components: components,
     mealKind: effectiveMealKind(components),
@@ -260,18 +263,17 @@ const String kMainNoRecipeSentence =
 const String kDraftsForMembersSentence =
     'Les brouillons ne s\'ouvrent pour les membres qu\'une fois validés.';
 
-/// « 6, parts du menu », la valeur de la ligne « Parts ».
-String menuPortionsValue(int portions) =>
-    '$portions, ${portions > 1 ? 'parts' : 'part'} du menu';
-
 /// « Famille Dupont cuisine d'habitude pour 4 ce jour-là. » : quand les
-/// parts du jour du groupe diffèrent des parts du menu.
+/// parts du jour du groupe diffèrent des parts choisies dans la boîte.
 String groupUsualPortionsLine(String groupName, int portions) =>
     '$groupName cuisine d\'habitude pour $portions ce jour-là.';
 
+/// « Utiliser 2 » : le bouton qui applique les parts habituelles du groupe.
+String usePortionsLabel(int portions) => 'Utiliser $portions';
+
 /// « Recette pour 4 : les quantités seront recalculées pour ce repas, la
-/// recette ne change pas. » : une recette liée en plat principal, dont les
-/// parts diffèrent du menu.
+/// recette ne change pas. » : la recette du plat principal (liée ou
+/// brouillon) n'a pas les parts choisies dans la boîte.
 String linkedPortionsLine(int portions) =>
     'Recette pour $portions : les quantités seront recalculées pour ce repas, '
     'la recette ne change pas.';
