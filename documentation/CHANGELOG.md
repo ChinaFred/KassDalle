@@ -25,7 +25,9 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 Un groupe peut devenir le planning proposé d'office pour planifier (ticket #239). Dans Groupes
 familiaux, le menu d'un groupe possédé propose « Utiliser par défaut pour planifier » ; la tuile
 du groupe par défaut dit « Par défaut » et porte une étoile. Sans défaut valide, le premier
-planning confirmé le devient, « Mon planning » compris, et un message l'annonce. Les feuilles
+planning choisi le devient, « Mon planning » compris : un repas enregistré depuis « Planifier »
+ou « Poser », ou une entrée touchée dans « Planifier pour… ». Un message l'annonce, sauf à qui
+ne possède aucun groupe ; rien n'est retenu pour un lecteur. Les feuilles
 « Planifier » et « Poser dans le planning » partent du défaut ; « Planifier pour… » le place en
 tête. Un choix ponctuel ne change pas le défaut.
 
