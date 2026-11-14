@@ -5,6 +5,7 @@ import '../../../core/services/error_report_service.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../admin/presentation/admin_providers.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../domain/planning_target.dart';
 import 'planning_providers.dart';
 
@@ -21,8 +22,8 @@ String defaultPlanningTargetMessage(
 /// cet écran a pu être fermé.
 ///
 /// Rien n'est posé si un défaut valide existe déjà, si le défaut n'est pas
-/// encore lu ([currentDefault] en chargement ou en erreur), ou sans compte
-/// connecté.
+/// encore lu ([currentDefault] en chargement ou en erreur), pour un lecteur,
+/// ou sans compte connecté.
 class FirstPlanningTargetMemo {
   final AsyncValue<PlanningTarget?> currentDefault;
   final PlanningRepository? repository;
@@ -30,12 +31,23 @@ class FirstPlanningTargetMemo {
   final ColorScheme scheme;
   final ErrorReportService? errorReportService;
 
+  /// Le compte peut planifier (éditeur ou administrateur) : un lecteur n'a
+  /// rien à retenir, et la règle Firestore refuserait l'écriture.
+  final bool canPlan;
+
+  /// Le compte possède au moins un groupe où il planifie. Sans groupe, le
+  /// défaut posé (« Mon planning ») ne change rien à l'écran : il est
+  /// enregistré sans message.
+  final bool hasGroups;
+
   FirstPlanningTargetMemo({
     required this.currentDefault,
     required this.repository,
     required this.messenger,
     required this.scheme,
     this.errorReportService,
+    this.canPlan = true,
+    this.hasGroups = true,
   });
 
   /// Lit ce qu'il faut sur [context] et [ref], avant toute fermeture.
@@ -48,10 +60,13 @@ class FirstPlanningTargetMemo {
     messenger: ScaffoldMessenger.maybeOf(context),
     scheme: Theme.of(context).colorScheme,
     errorReportService: ref.read(errorReportServiceProvider),
+    canPlan: ref.read(canEditProvider),
+    hasGroups: ref.read(ownedPlanningGroupsProvider).value?.isNotEmpty ?? false,
   );
 
   /// Vrai si [chosen] deviendra le défaut une fois confirmé.
   bool get applies =>
+      canPlan &&
       repository != null &&
       currentDefault.hasValue &&
       !currentDefault.hasError &&
@@ -76,6 +91,7 @@ class FirstPlanningTargetMemo {
       );
       return;
     }
+    if (!hasGroups) return;
     messenger?.showSuccessMessage(
       defaultPlanningTargetMessage(chosen, automatic: true),
       scheme: scheme,

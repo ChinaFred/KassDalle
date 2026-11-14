@@ -258,7 +258,11 @@ class _GroupTileState extends ConsumerState<_GroupTile> {
                   enabled: !_savingDefault,
                   child: ListTile(
                     enabled: !_savingDefault,
-                    leading: Icon(isDefault ? Icons.star_outline : Icons.star),
+                    leading: Icon(
+                      isDefault
+                          ? Icons.remove_circle_outline
+                          : Icons.star_outline,
+                    ),
                     title: Text(
                       isDefault
                           ? 'Ne plus utiliser par défaut'

@@ -8,6 +8,7 @@ import 'package:kass_dalle/core/services/error_report_service.dart';
 import 'package:kass_dalle/core/services/gemini_service.dart';
 import 'package:kass_dalle/core/utils/short_date_format.dart';
 import 'package:kass_dalle/features/admin/presentation/admin_providers.dart';
+import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/books/data/book_repository.dart';
 import 'package:kass_dalle/features/groups/domain/family_group.dart';
@@ -267,6 +268,7 @@ _pump(
   bool phone = false,
   List<FamilyGroup> ownedGroups = const [],
   PlanningPreferences prefs = const PlanningPreferences(),
+  AppUser? user,
 }) async {
   tester.view.physicalSize = phone
       ? const Size(400, 1200)
@@ -289,7 +291,8 @@ _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        appUserProvider.overrideWith((ref) => Stream.value(null)),
+        appUserProvider.overrideWith((ref) => Stream.value(user)),
+        canEditProvider.overrideWithValue(user?.canEdit ?? false),
         isAdminProvider.overrideWithValue(false),
         errorReportServiceProvider.overrideWithValue(_errors),
         mealWorkshopFunctionsProvider.overrideWithValue(functions),
@@ -658,7 +661,18 @@ void main() {
 
   testWidgets('sans défaut : le premier planning posé devient le défaut, '
       'annoncé une fois', (tester) async {
-    final env = await _pump(tester, ownedGroups: [_group]);
+    final env = await _pump(
+      tester,
+      ownedGroups: [_group],
+      user: AppUser(
+        uid: 'u1',
+        email: 'u1@example.com',
+        displayName: 'Utilisateur',
+        role: UserRole.editor,
+        createdAt: DateTime(2026),
+        lastSeenAt: DateTime(2026),
+      ),
+    );
     env.functions.turns.add(_turn([_course('Bœuf bourguignon')]));
     await _send(tester, 'du bœuf');
     env.functions.writes.add(_recipe('x', 'Bœuf bourguignon'));
