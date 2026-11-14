@@ -22,6 +22,7 @@ import '../../../planning/domain/planning_target.dart';
 import '../../../planning/presentation/planning_providers.dart';
 import '../../../planning/presentation/schedule_rows.dart';
 import '../../../recipes/domain/recipe.dart';
+import '../../../recipes/presentation/detail/portions_input_dialog.dart';
 import '../../domain/meal_workshop_freeze.dart';
 import '../../domain/meal_workshop_menu.dart';
 import '../../domain/meal_workshop_pose.dart';
@@ -42,18 +43,30 @@ class WorkshopPoseResult {
 /// La boîte « Poser dans le planning » : feuille du bas sur téléphone, boîte
 /// de 480 px au plus sur grand écran. Rend la pose faite, ou `null` si elle
 /// est fermée sans poser.
+///
+/// La boîte s'ouvre sur [portions], les parts de l'atelier. Chaque choix de
+/// parts fait dans la boîte est rendu aussitôt par [onPortionsChanged], que
+/// la pose ait lieu ou non : l'atelier reprend la valeur dans son en-tête.
 Future<WorkshopPoseResult?> showWorkshopPoseSheet(
   BuildContext context, {
   required WorkshopMenu menu,
   required List<FreezeLineState> lines,
   required MealWorkshopContext workshop,
+  required int portions,
+  ValueChanged<int>? onPortionsChanged,
 }) => showAdaptiveSheet<WorkshopPoseResult>(
   context,
   maxWidth: 480,
   // Le glisser fermerait la feuille pendant l'écriture sans passer par le
   // `PopScope` : « Annuler » la ferme.
   enableDrag: false,
-  child: WorkshopPoseSheet(menu: menu, lines: lines, workshop: workshop),
+  child: WorkshopPoseSheet(
+    menu: menu,
+    lines: lines,
+    workshop: workshop,
+    portions: portions,
+    onPortionsChanged: onPortionsChanged,
+  ),
 );
 
 /// Le contenu de la boîte : récapitulatif des services, planning, date,
@@ -65,11 +78,19 @@ class WorkshopPoseSheet extends ConsumerStatefulWidget {
   final List<FreezeLineState> lines;
   final MealWorkshopContext workshop;
 
+  /// Les parts à l'ouverture : celles de l'atelier.
+  final int portions;
+
+  /// Appelé à chaque changement de parts dans la boîte.
+  final ValueChanged<int>? onPortionsChanged;
+
   const WorkshopPoseSheet({
     super.key,
     required this.menu,
     required this.lines,
     required this.workshop,
+    required this.portions,
+    this.onPortionsChanged,
   });
 
   @override
@@ -83,6 +104,10 @@ class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
   /// L'heure choisie à la main ; `null` tant qu'elle suit le jour de
   /// semaine (`mealTimeFor`).
   TimeOfDay? _time;
+
+  /// Les parts du repas posé (`target_portions`) : celles de l'atelier à
+  /// l'ouverture, puis celles choisies dans la boîte.
+  late int _portions = widget.portions;
 
   // ── La recette du plat principal ──
   late final String? _mainRecipeId = workshopMainRecipeId(
@@ -233,6 +258,25 @@ class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
     if (picked != null && mounted) setState(() => _time = picked);
   }
 
+  Future<void> _pickPortions() async {
+    final value = await showPortionsInputDialog(
+      context,
+      current: _portions,
+      minPortions: 1,
+      maxPortions: 99,
+      title: 'Nombre de parts',
+      unit: 'parts',
+    );
+    if (value == null || !mounted) return;
+    _setPortions(value);
+  }
+
+  void _setPortions(int value) {
+    if (value == _portions) return;
+    setState(() => _portions = value);
+    widget.onPortionsChanged?.call(value);
+  }
+
   void _selectTarget(PlanningTarget target) {
     if (target == _target) return;
     setState(() {
@@ -286,6 +330,7 @@ class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
           uid: widget.workshop.myUid,
           plannedAt: plannedAt,
           now: DateTime.now(),
+          portions: _portions,
         ),
       );
     } catch (error, stackTrace) {
@@ -336,27 +381,24 @@ class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
     final busy = _dayMeals?.isNotEmpty ?? false;
 
-    // Parts du jour du groupe, quand elles diffèrent des parts du menu.
+    // Parts du jour du groupe, quand elles diffèrent des parts choisies.
     String? groupLine;
+    int? groupUsual;
     if (group != null) {
       final usual = groupMealPortions(
         dayConstraint: prefs.dailyConstraints[_date.weekday],
         groupPortions: prefs.groupPortions,
         group: group,
       );
-      if (usual != _menu.portions) {
+      if (usual != _portions) {
         groupLine = groupUsualPortionsLine(group.name, usual);
+        groupUsual = usual;
       }
     }
-    // Recette liée en plat principal, parts différentes.
+    // Recette du plat principal (liée ou brouillon), parts différentes.
     String? linkedLine;
-    final mainState = _mainIndex >= 0 && _mainIndex < widget.lines.length
-        ? widget.lines[_mainIndex]
-        : null;
     final mainPortions = _mainRecipe?.portions;
-    if (mainState is FreezeLinked &&
-        mainPortions != null &&
-        mainPortions != _menu.portions) {
+    if (mainPortions != null && mainPortions != _portions) {
       linkedLine = linkedPortionsLine(mainPortions);
     }
 
@@ -428,15 +470,28 @@ class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
                 minHeight: 48,
               ),
               const SizedBox(height: 4),
-              ScheduleInfoRow(
+              SchedulePickerRow(
                 icon: Icons.people_outline,
                 label: 'Parts',
-                value: menuPortionsValue(_menu.portions),
+                value: workshopPortionsLabel(_portions),
+                onTap: rowsEnabled ? _pickPortions : null,
+                minHeight: 48,
               ),
               if (groupLine != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-                  child: Text(groupLine, style: small),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(groupLine, style: small)),
+                      if (groupUsual case final usual?)
+                        TextButton(
+                          onPressed: rowsEnabled
+                              ? () => _setPortions(usual)
+                              : null,
+                          child: Text(usePortionsLabel(usual)),
+                        ),
+                    ],
+                  ),
                 ),
               if (linkedLine != null)
                 Padding(

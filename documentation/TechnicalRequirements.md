@@ -6124,9 +6124,18 @@ réponse (`workshopPoseBlocker`). La boîte (`showAdaptiveSheet`, 480 px) demand
 (« Mon planning » ou un groupe possédé, ligne affichée seulement à qui possède un groupe,
 `ownedPlanningGroupsProvider`), la date (aujourd'hui à + 730 jours), l'heure de début
 (`PlanningPreferences.mealTimeFor` du jour de semaine tant qu'elle n'est pas changée à la
-main) ; les parts sont celles du menu, planning personnel comme planning de groupe (la boîte
-dit « Famille Dupont cuisine d'habitude pour 4 ce jour-là. » quand `groupMealPortions` du
-jour diffère). **Deux lectures, une écriture** : la recette du plat principal, relue par son
+main) et les parts : ligne `SchedulePickerRow` « Parts », ouverte sur les parts de l'atelier
+(`_portions`) et réglée par `showPortionsInputDialog` (1 à 99), planning personnel comme
+planning de groupe ; la boîte dit « Famille Dupont cuisine d'habitude pour 4 ce jour-là. »
+avec « Utiliser 4 » quand `groupMealPortions` du jour diffère des parts choisies, et
+« Recette pour 6 : … » quand la recette du plat principal, liée ou brouillon, en a d'autres.
+Chaque choix remonte aussitôt à l'atelier (`onPortionsChanged`), que la pose ait lieu ou non.
+Le figement implicite d'une pose (`_implicitFreeze`) qui n'a rien écrit (lignes
+`FreezeLinked` ou `FreezeLinkedUnreadable` seules) est défait quand la boîte se ferme sans
+poser : `_freezeLines = null`, `_frozen = false`, le champ, les parts et le mode se rouvrent ;
+une ligne « Recette plus accessible » garde le figement tant qu'elle n'a pas sa réponse. Après
+« Figer le repas » (brouillons écrits pour `_portions`), le bouton des parts de l'en-tête est
+inactif, infobulle « Parts réglables au moment de poser le repas ». **Deux lectures, une écriture** : la recette du plat principal, relue par son
 identifiant (`MealWorkshopDraftRepository.readForPose` : parts, durées ; introuvable ou
 refusée → repas posé par son titre, `recipe_id` nul, sans `base_portions` ; erreur réseau →
 « La recette du plat n'a pas pu être lue. » et « Réessayer ») ; les repas du planning visé ce
@@ -6135,7 +6144,7 @@ relancée à chaque changement de date ou de planning : « Mar. 12 nov. a déjà
 Blanquette de veau, 19:30. », « Choisir une autre date », « Ajouter quand même » ; rien n'est
 remplacé) ; puis `PlanningRepository.addMeal` du repas bâti par `buildWorkshopMeal` (§3.7 :
 `uid`, `group_id` toujours écrit, `recipe_id`, `recipe_titre`, `planned_at`, durées,
-`base_portions`, `target_portions` = parts du menu, `justification` = `why` du plat,
+`base_portions`, `target_portions` = parts choisies dans la boîte, `justification` = `why` du plat,
 `choice_source: workshop`, `meal_kind`, `components`). Avant d'écrire, la lecture du jour est
 rejouée : un repas apparu depuis l'affichage (écrit côté serveur malgré une coupure) est montré
 au lieu d'être doublé. Erreurs, en snack et répétées dans la boîte (ligne `error`,
@@ -6149,7 +6158,7 @@ dans Mon planning » (une ligne par pose), « Voir le planning » (`/planning?da
 brouillons) ; les lignes du panneau perdent « Réessayer », « Rédiger à la place » et « Retirer
 du repas » (« Non rédigée · posée en texte ») : aucun brouillon ne se crée plus ; l'écran se
 quitte librement et « Nouvelle conversation » ne demande plus de confirmation. Aucune recette
-n'est modifiée : les parts du menu vivent sur le repas (« Redimensionner ne modifie jamais
+n'est modifiée : les parts choisies vivent sur le repas (« Redimensionner ne modifie jamais
 l'originale »). Les lignes « Planning », « Date », « Heure de début » et la ligne
 d'information sont celles de la feuille « Planifier », extraites dans
 `planning/presentation/schedule_rows.dart` (`SchedulePickerRow`, `ScheduleInfoRow`,
