@@ -7,6 +7,7 @@ import 'package:kass_dalle/features/planning/domain/planning_preferences.dart';
 import 'package:kass_dalle/features/planning/domain/planning_reach.dart';
 import 'package:kass_dalle/features/planning/domain/planning_target.dart';
 import 'package:kass_dalle/features/planning/domain/planning_visibility.dart';
+import 'package:kass_dalle/features/planning/presentation/default_planning_target.dart';
 import 'package:kass_dalle/features/planning/presentation/planning_target_sheet.dart';
 
 /// Planning de groupe : un repas porte `group_id`, le propriétaire du groupe
@@ -186,6 +187,83 @@ void main() {
         {'gd': 4},
       );
       expect(PlanningPreferences.groupPortionsFrom('x'), isEmpty);
+    });
+
+    test('default_planning_target : chaîne de 1 à 128 caractères', () {
+      String? read(Object? raw) => PlanningPreferences.fromFirestore({
+        'default_planning_target': raw,
+      }).defaultPlanningTarget;
+      expect(read('personal'), 'personal');
+      expect(read('gd'), 'gd');
+      expect(read(''), isNull);
+      expect(read('g' * 129), isNull);
+      expect(read(4), isNull);
+      expect(read(null), isNull);
+      // Jamais écrit par l'enregistrement des préférences.
+      final prefs = PlanningPreferences.fromFirestore({
+        'default_planning_target': 'gd',
+      });
+      expect(prefs.toFirestore().containsKey('default_planning_target'), false);
+      expect(prefs.copyWith(mealsPerCycle: 5).defaultPlanningTarget, 'gd');
+    });
+
+    test('planning par défaut : résolu, ou absent quand le groupe manque', () {
+      final owned = [familyGroup('ga', 'Amis'), familyGroup('gd', 'Dupont')];
+      expect(
+        resolveDefaultPlanningTarget(stored: null, ownedGroups: owned),
+        isNull,
+      );
+      expect(
+        resolveDefaultPlanningTarget(stored: 'personal', ownedGroups: owned),
+        const PlanningTarget.personal(),
+      );
+      final dupont = resolveDefaultPlanningTarget(
+        stored: 'gd',
+        ownedGroups: owned,
+      );
+      expect(dupont?.groupId, 'gd');
+      expect(dupont?.title, 'Dupont');
+      // Groupe supprimé, quitté, en pause ou compte lecteur : il n'est plus
+      // dans les groupes où l'on planifie.
+      expect(
+        resolveDefaultPlanningTarget(stored: 'gx', ownedGroups: owned),
+        isNull,
+      );
+      expect(
+        resolveDefaultPlanningTarget(stored: 'gd', ownedGroups: const []),
+        isNull,
+      );
+      expect(
+        defaultPlanningTargetKey(const PlanningTarget.personal()),
+        'personal',
+      );
+      expect(defaultPlanningTargetKey(dupont!), 'gd');
+    });
+
+    test('« Planifier pour… » : le défaut en tête', () {
+      final owned = [familyGroup('ga', 'Amis'), familyGroup('gd', 'Dupont')];
+      List<String?> ids(PlanningTarget? d) => planningTargetsDefaultFirst(
+        ownedGroups: owned,
+        defaultTarget: d,
+      ).map((t) => t.groupId).toList();
+      expect(ids(null), [null, 'ga', 'gd']);
+      expect(ids(const PlanningTarget.personal()), [null, 'ga', 'gd']);
+      expect(ids(PlanningTarget.ofGroup(owned[1])), ['gd', null, 'ga']);
+    });
+
+    test('message du planning par défaut', () {
+      expect(
+        defaultPlanningTargetMessage(const PlanningTarget.personal()),
+        '« Mon planning » sera proposé par défaut pour planifier.',
+      );
+      expect(
+        defaultPlanningTargetMessage(
+          PlanningTarget.ofGroup(familyGroup('gd', 'Dupont')),
+          automatic: true,
+        ),
+        '« Dupont » sera proposé par défaut pour planifier. '
+        'Modifiable dans Groupes familiaux.',
+      );
     });
 
     test('adresse de « Nouveau planning »', () {

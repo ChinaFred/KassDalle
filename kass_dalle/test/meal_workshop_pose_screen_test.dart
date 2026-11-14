@@ -8,6 +8,7 @@ import 'package:kass_dalle/core/services/error_report_service.dart';
 import 'package:kass_dalle/core/services/gemini_service.dart';
 import 'package:kass_dalle/core/utils/short_date_format.dart';
 import 'package:kass_dalle/features/admin/presentation/admin_providers.dart';
+import 'package:kass_dalle/features/auth/domain/app_user.dart';
 import 'package:kass_dalle/features/auth/presentation/auth_providers.dart';
 import 'package:kass_dalle/features/books/data/book_repository.dart';
 import 'package:kass_dalle/features/groups/domain/family_group.dart';
@@ -200,6 +201,13 @@ class _FakePlanning extends PlanningRepository {
 
   final added = <PlannedMeal>[];
   Object? addError;
+  final savedDefaults = <String>[];
+
+  @override
+  Future<void> saveDefaultPlanningTarget(String key) async {
+    savedDefaults.add(key);
+  }
+
   final dayMeals = <PlannedMeal>[];
   int dayReads = 0;
 
@@ -260,6 +268,7 @@ _pump(
   bool phone = false,
   List<FamilyGroup> ownedGroups = const [],
   PlanningPreferences prefs = const PlanningPreferences(),
+  AppUser? user,
 }) async {
   tester.view.physicalSize = phone
       ? const Size(400, 1200)
@@ -282,7 +291,8 @@ _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        appUserProvider.overrideWith((ref) => Stream.value(null)),
+        appUserProvider.overrideWith((ref) => Stream.value(user)),
+        canEditProvider.overrideWithValue(user?.canEdit ?? false),
         isAdminProvider.overrideWithValue(false),
         errorReportServiceProvider.overrideWithValue(_errors),
         mealWorkshopFunctionsProvider.overrideWithValue(functions),
@@ -340,9 +350,13 @@ Future<void> _freeze(WidgetTester tester) async {
   await _snackGone(tester);
 }
 
+/// Attend que les messages en file soient passés : après une première pose,
+/// celui du planning par défaut suit celui de la pose.
 Future<void> _snackGone(WidgetTester tester) async {
-  await tester.pump(const Duration(seconds: 5));
-  await tester.pumpAndSettle();
+  for (var i = 0; i < 3 && find.byType(SnackBar).evaluate().isNotEmpty; i++) {
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  }
 }
 
 Future<void> _menuMode(WidgetTester tester) async {
@@ -622,6 +636,67 @@ void main() {
     expect(meal.targetPortions, 4);
     expect(
       find.text('Posé le ${formatShortDay(_today)} dans Famille Dupont'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('groupe par défaut : la ligne Planning en part, la pose ne '
+      'change pas le défaut', (tester) async {
+    final prefs = PlanningPreferences(defaultPlanningTarget: 'g1');
+    final env = await _pump(tester, ownedGroups: [_group], prefs: prefs);
+    env.functions.turns.add(_turn([_course('Bœuf bourguignon')]));
+    await _send(tester, 'du bœuf');
+    env.functions.writes.add(_recipe('x', 'Bœuf bourguignon'));
+    await _freeze(tester);
+    await tester.tap(_poseButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Planning'), findsOneWidget);
+    expect(find.text('Mon planning'), findsNothing);
+    await tester.tap(_poseConfirm);
+    await tester.pumpAndSettle();
+
+    expect(env.planning.added.single.groupId, 'g1');
+    expect(env.planning.savedDefaults, isEmpty);
+  });
+
+  testWidgets('sans défaut : le premier planning posé devient le défaut, '
+      'annoncé une fois', (tester) async {
+    final env = await _pump(
+      tester,
+      ownedGroups: [_group],
+      user: AppUser(
+        uid: 'u1',
+        email: 'u1@example.com',
+        displayName: 'Utilisateur',
+        role: UserRole.editor,
+        createdAt: DateTime(2026),
+        lastSeenAt: DateTime(2026),
+      ),
+    );
+    env.functions.turns.add(_turn([_course('Bœuf bourguignon')]));
+    await _send(tester, 'du bœuf');
+    env.functions.writes.add(_recipe('x', 'Bœuf bourguignon'));
+    await _freeze(tester);
+    await tester.tap(_poseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Choisir le planning'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Famille Dupont').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Poser'));
+    await tester.pumpAndSettle();
+
+    expect(env.planning.added.single.groupId, 'g1');
+    expect(env.planning.savedDefaults, ['g1']);
+    // Le message de la pose d'abord, puis celui du défaut.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        '« Famille Dupont » sera proposé par défaut pour planifier. '
+        'Modifiable dans Groupes familiaux.',
+      ),
       findsOneWidget,
     );
   });

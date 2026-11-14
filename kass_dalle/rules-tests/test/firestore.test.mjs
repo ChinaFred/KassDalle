@@ -3209,6 +3209,39 @@ describe("plannings partagés — planning_reach et shared_group_ids", () => {
         .set({ group_portions: [4] }),
     );
   });
+
+  it("default_planning_target : chaîne de 1 à 128 caractères", async () => {
+    await assertSucceeds(
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ default_planning_target: "personal" }),
+    );
+    await assertSucceeds(
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ default_planning_target: "g".repeat(128) }),
+    );
+    await assertFails(
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ default_planning_target: "" }),
+    );
+    await assertFails(
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ default_planning_target: "g".repeat(129) }),
+    );
+    await assertFails(
+      db("editor")
+        .doc(`planning_config/${EDITOR}`)
+        .set({ default_planning_target: 4 }),
+    );
+    await assertFails(
+      db("reader")
+        .doc(`planning_config/${READER}`)
+        .set({ default_planning_target: "personal" }),
+    );
+  });
 });
 
 // ── plannings de groupe ──────────────────────────────────────────────────
