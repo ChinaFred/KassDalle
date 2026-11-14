@@ -488,7 +488,12 @@ class _WorkshopPoseSheetState extends ConsumerState<WorkshopPoseSheet> {
                           onPressed: rowsEnabled
                               ? () => _setPortions(usual)
                               : null,
-                          child: Text(usePortionsLabel(usual)),
+                          child: Text(
+                            usePortionsLabel(usual),
+                            semanticsLabel:
+                                '${usePortionsLabel(usual)} '
+                                '${usual > 1 ? 'parts' : 'part'}',
+                          ),
                         ),
                     ],
                   ),
