@@ -5179,7 +5179,7 @@ sequenceDiagram
     Note over S: une recette plus lisible : bouton inactif, « Rédiger à la place » ou « Retirer du repas »
   end
   S->>B: menu, lignes de figement, contexte (uid, garnitures, recettes du périmètre)
-  Note over B: planning (« Mon planning » ou un groupe possédé, ligne affichée à qui possède un groupe), date (aujourd'hui à + 730 j),<br/>heure de début (mealTimeFor du jour de semaine tant qu'elle n'est pas changée), parts du menu
+  Note over B: planning (« Mon planning » ou un groupe possédé, ligne affichée à qui possède un groupe), date (aujourd'hui à + 730 j),<br/>heure de début (mealTimeFor du jour de semaine tant qu'elle n'est pas changée), parts : celles de l'atelier à l'ouverture
   B->>R: readForPose : la recette du plat principal, par son identifiant
   alt lisible
     Note over B: parts et durées du repas ; recette liée pour 6, menu pour 4 : « Recette pour 6 : les quantités seront recalculées… »
@@ -5195,9 +5195,14 @@ sequenceDiagram
     B-->>U: « Poser »
   end
   U->>B: change le planning ou la date (la lecture du jour est relancée), l'heure
+  U->>B: « Parts » (showPortionsInputDialog, 1 à 99) ou « Utiliser N » (parts habituelles du groupe ce jour-là)
+  B-->>S: onPortionsChanged : l'en-tête de l'atelier reprend les parts, pose ou non
+  opt boîte fermée sans poser
+    Note over S: figement implicite qui n'a rien écrit (recettes liées seules) : défait (_freezeLines = null, _frozen = false) ;<br/>champ, parts et mode Plat / Menu rouverts
+  end
   U->>B: « Poser » / « Ajouter quand même » (bouton inactif pendant l'écriture, boîte non fermable)
   B->>P: getMealsBetween rejoué : un repas apparu depuis l'affichage est montré, rien n'est doublé
-  B->>B: buildWorkshopMeal : uid, group_id (null compris), recipe_id du premier plat, recipe_titre, planned_at, durées,<br/>base_portions, target_portions = parts du menu, justification = why du plat, choice_source workshop,<br/>meal_kind, components (MealComposition.toComponents : recette, garniture figée ou texte libre, p2 pour un second plat)
+  B->>B: buildWorkshopMeal : uid, group_id (null compris), recipe_id du premier plat, recipe_titre, planned_at, durées,<br/>base_portions, target_portions = parts choisies dans la boîte, justification = why du plat, choice_source workshop,<br/>meal_kind, components (MealComposition.toComponents : recette, garniture figée ou texte libre, p2 pour un second plat)
   B->>P: addMeal
   alt écrit
     B-->>S: date et planning de la pose
@@ -5212,7 +5217,7 @@ sequenceDiagram
         <b>Aucun appel d'IA, aucune écriture dans <code>recipes</code>.</b> Une pose est une
         écriture <code>planned_meals</code> par le dépôt du planning, précédée de deux lectures :
         la recette du plat principal, pour ses parts et ses durées, et les repas du jour visé,
-        pour prévenir avant d'ajouter un second repas. Les parts du menu vivent sur le repas
+        pour prévenir avant d'ajouter un second repas. Les parts choisies dans la boîte vivent sur le repas
         (<code>target_portions</code>) : une recette liée écrite pour 6 et posée pour 4 s'affiche
         pour 4 depuis le repas et pour 6 depuis sa fiche. Chaque pose crée un repas de plus qui
         pointe les mêmes brouillons ; après la première, le panneau ne crée plus de brouillon.

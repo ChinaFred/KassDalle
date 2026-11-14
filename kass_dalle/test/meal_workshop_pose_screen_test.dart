@@ -503,7 +503,8 @@ void main() {
     expect(find.text(formatShortDate(_today)), findsOneWidget);
     expect(find.text('Heure de début'), findsOneWidget);
     expect(find.textContaining('12:15'), findsOneWidget);
-    expect(find.text('4, parts du menu'), findsOneWidget);
+    // L'en-tête de l'atelier et la ligne « Parts » de la boîte.
+    expect(find.text('4 parts'), findsNWidgets(2));
     expect(find.text('Menu · 3 services'), findsOneWidget);
     expect(_recap('Entrée', 'Velouté · brouillon'), findsOneWidget);
     expect(_recap('Plat', 'Bœuf bourguignon · brouillon'), findsOneWidget);
@@ -903,5 +904,126 @@ void main() {
     await tester.pumpAndSettle();
     expect(env.planning.added, hasLength(1));
     expect(guard().canPop, isTrue);
+  });
+
+  testWidgets('rien à rédiger : boîte fermée sans poser, l\'atelier revient '
+      'à l\'état d\'avant (parts, champ)', (tester) async {
+    final env = await _pump(tester);
+    env.functions.turns.add(
+      _turn([_course('Blanquette de veau', recipeId: 'r1')]),
+    );
+    await _send(tester, 'la blanquette');
+    OutlinedButton header() => tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, '4 parts'),
+    );
+    expect(header().onPressed, isNotNull);
+
+    await tester.tap(_poseButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Date'), findsOneWidget);
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Date'), findsNothing);
+    expect(find.text('Repas figé.'), findsNothing);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(header().onPressed, isNotNull);
+    expect(env.planning.added, isEmpty);
+    // La pose suivante relit de nouveau les recettes liées.
+    await tester.tap(_poseButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Date'), findsOneWidget);
+  });
+
+  testWidgets('parts réglées dans la boîte : la phrase suit, l\'en-tête '
+      'reprend la valeur, même sans poser ; puis le repas les reçoit', (
+    tester,
+  ) async {
+    final env = await _pump(tester);
+    env.functions.turns.add(
+      _turn([_course('Blanquette de veau', recipeId: 'r1')]),
+    );
+    await _send(tester, 'la blanquette');
+    await tester.tap(_poseButton);
+    await tester.pumpAndSettle();
+    const linked6 =
+        'Recette pour 6 : les quantités seront recalculées pour ce repas, la '
+        'recette ne change pas.';
+    expect(find.text(linked6), findsOneWidget);
+
+    // 6 parts : la recette liée a ces parts, la phrase disparaît.
+    await tester.tap(find.text('4 parts').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Nombre de parts'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, '6');
+    await tester.tap(find.widgetWithText(FilledButton, 'Valider'));
+    await tester.pumpAndSettle();
+    expect(find.text(linked6), findsNothing);
+    expect(find.text('6 parts'), findsWidgets);
+
+    // Fermée sans poser : l'en-tête garde 6.
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(OutlinedButton, '6 parts'), findsOneWidget);
+
+    // Rouverte sur 6, réglée à 2, posée.
+    await tester.tap(_poseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('6 parts').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, '2');
+    await tester.tap(find.widgetWithText(FilledButton, 'Valider'));
+    await tester.pumpAndSettle();
+    expect(find.text(linked6), findsOneWidget);
+    await tester.tap(_poseConfirm);
+    await tester.pumpAndSettle();
+    final meal = env.planning.added.single;
+    expect(meal.basePortions, 6);
+    expect(meal.targetPortions, 2);
+    expect(find.widgetWithText(OutlinedButton, '2 parts'), findsOneWidget);
+  });
+
+  testWidgets('groupe : « Utiliser N » applique les parts habituelles', (
+    tester,
+  ) async {
+    final prefs = PlanningPreferences(groupPortions: const {'g1': 7});
+    final env = await _pump(tester, ownedGroups: [_group], prefs: prefs);
+    env.functions.turns.add(_turn([_course('Bœuf bourguignon')]));
+    await _send(tester, 'du bœuf');
+    env.functions.writes.add(_recipe('x', 'Bœuf bourguignon'));
+    await _freeze(tester);
+    await tester.tap(_poseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Choisir le planning'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Famille Dupont').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Utiliser 7'));
+    await tester.pumpAndSettle();
+    expect(find.text('Utiliser 7'), findsNothing);
+    expect(find.textContaining('cuisine d\'habitude'), findsNothing);
+    await tester.tap(_poseConfirm);
+    await tester.pumpAndSettle();
+    final meal = env.planning.added.single;
+    expect(meal.groupId, 'g1');
+    expect(meal.targetPortions, 7);
+  });
+
+  testWidgets('après « Figer le repas » : « N parts » de l\'en-tête inactif, '
+      'avec son infobulle', (tester) async {
+    final env = await _pump(tester);
+    env.functions.turns.add(_turn([_course('Bœuf bourguignon')]));
+    await _send(tester, 'du bœuf');
+    env.functions.writes.add(_recipe('x', 'Bœuf bourguignon'));
+    await _freeze(tester);
+    final header = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, '4 parts'),
+    );
+    expect(header.onPressed, isNull);
+    expect(
+      find.byTooltip('Parts réglables au moment de poser le repas'),
+      findsOneWidget,
+    );
   });
 }

@@ -76,6 +76,7 @@ void main() {
     required List<FreezeLineState> lines,
     Recipe? main,
     PlanningTarget target = const PlanningTarget.personal(),
+    int? portions,
   }) => buildWorkshopMeal(
     menu: m,
     lines: lines,
@@ -85,6 +86,7 @@ void main() {
     uid: 'u1',
     plannedAt: day,
     now: now,
+    portions: portions ?? m.portions,
   );
 
   group('ce que le menu porte', () {
@@ -313,6 +315,20 @@ void main() {
       expect(meal.toFirestore()['group_id'], 'g1');
     });
 
+    test('parts choisies dans la boîte : target_portions, base_portions '
+        'de la recette', () {
+      final m = menu([course('Blanquette')], portions: 4);
+      final meal = build(
+        m: m,
+        lines: const [FreezeLinked('r1')],
+        main: recipe('r1', 'Blanquette', portions: 6),
+        portions: 2,
+      );
+      expect(meal.basePortions, 6);
+      expect(meal.targetPortions, 2);
+      expect(meal.toFirestore()['target_portions'], 2);
+    });
+
     test('sans plat : ArgumentError', () {
       expect(
         () => build(
@@ -525,8 +541,7 @@ void main() {
     });
 
     test('parts', () {
-      expect(menuPortionsValue(6), '6, parts du menu');
-      expect(menuPortionsValue(1), '1, part du menu');
+      expect(usePortionsLabel(2), 'Utiliser 2');
       expect(
         groupUsualPortionsLine('Famille Dupont', 4),
         'Famille Dupont cuisine d\'habitude pour 4 ce jour-là.',

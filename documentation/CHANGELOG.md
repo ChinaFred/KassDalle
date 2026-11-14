@@ -18,6 +18,21 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-14
+
+### v0.24.85 — fonctionnel
+
+Atelier repas : les parts se règlent dans la boîte « Poser dans le planning » (ticket #238).
+La ligne « Parts » ouvre « Nombre de parts » (1 à 99) ; le repas posé reçoit ce nombre et les
+quantités se recalculent à l'affichage, sans toucher la recette ni le brouillon. Pour un
+groupe, « Utiliser N » applique ses parts habituelles du jour. Les parts choisies reviennent
+dans l'en-tête de l'atelier, même sans pose.
+
+Correction : ouvrir la boîte puis la fermer sans poser bloquait les parts, le champ et le
+choix Plat / Menu quand le repas ne comptait que des recettes existantes. L'atelier revient
+maintenant à l'état d'avant. Après « Figer le repas », le bouton des parts de l'en-tête reste
+inactif et dit « Parts réglables au moment de poser le repas ».
+
 ## 2026-11-08
 
 ### v0.24.84 — fonctionnel
