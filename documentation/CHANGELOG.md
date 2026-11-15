@@ -18,6 +18,24 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-15
+
+### v0.24.87 — fonctionnel
+
+Le formulaire « Inviter par e-mail » rappelle qu'une adresse invitée doit aussi être ajoutée
+aux utilisateurs test du projet dans la console Google, faute de quoi Google refuse la
+connexion. Un bouton copie l'adresse saisie et ouvre directement la bonne page de la console :
+il reste à la coller. Google ne permet pas d'ajouter cette adresse automatiquement.
+
+### v0.24.87 — technique
+
+Nouveau widget `GoogleTestUsersLink` (`features/admin/presentation/google_test_users_link.dart`),
+placé sous l'adresse dans `invite_by_email_screen.dart`. Il ouvre
+`console.cloud.google.com/auth/audience?project=kassdale-6d948` par
+`openGoogleConsoleProvider` (`url_launcher`, déjà présent), remplacé dans
+`test/google_test_users_link_test.dart`. Échecs rapportés sous `admin.consoleLink` et
+`admin.invitations` (`step: copy_test_user_email`), sans l'adresse. Aucune dépendance ajoutée.
+
 ## 2026-11-14
 
 ### v0.24.86 — fonctionnel

@@ -760,6 +760,11 @@ du déploiement. Tant que l'écran de consentement est en mode « Test », seuls
 ajoutés comme testeurs se connectent. Le passer « En production » ouvre la connexion à tout
 compte Google ; les autorisations sensibles demandent alors la validation de Google.
 
+En mode « Test », chaque invité s'ajoute à la main dans Google Auth Platform › **Audience** ›
+« Utilisateurs test » : Google ne fournit aucune API pour le faire. Le formulaire « Inviter par
+e-mail » copie l'adresse saisie et ouvre cette page (« Copier l'adresse et ouvrir la console
+Google »).
+
 Console › **API et services › Écran de consentement OAuth** (Google Auth Platform) :
 
 | Champ | Valeur |
