@@ -15,6 +15,7 @@ import '../../groups/domain/family_group.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../domain/email_invitation.dart';
 import 'admin_providers.dart';
+import 'google_test_users_link.dart';
 
 /// Adresse publique de l'application, citée dans l'e-mail et copiée par
 /// « Copier le lien ».
@@ -478,7 +479,9 @@ class _InviteByEmailScreenState extends ConsumerState<InviteByEmailScreen> {
                 label: const Text('Renvoyer l\'invitation'),
               ),
             ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
+          GoogleTestUsersLink(emailController: _emailCtrl),
+          const SizedBox(height: 12),
           Text('Rôle', style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           SegmentedButton<UserRole>(

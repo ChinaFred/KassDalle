@@ -1159,7 +1159,10 @@ flowchart LR
         <b>Inviter un proche par e-mail</b> se fait dans Gestion des utilisateurs, bouton
         « Inviter par e-mail » : adresse Google, rôle Lecteur ou Éditeur (jamais Administrateur),
         un groupe dont l'administrateur est propriétaire ou membre, et un message de 500 caractères
-        au plus. Le serveur enregistre l'invitation, puis envoie l'e-mail. S'il ne part pas,
+        au plus. Tant que l'écran de consentement OAuth est en mode « Test », l'adresse doit aussi
+        être ajoutée aux utilisateurs test du projet : le formulaire copie l'adresse et ouvre la
+        page de la console Google, où l'administrateur la colle à la main.
+        Le serveur enregistre l'invitation, puis envoie l'e-mail. S'il ne part pas,
         l'invitation reste en « Envoi échoué » et se renvoie depuis l'onglet Invitations ; si
         Gmail refuse l'adresse, elle est annulée, avec le motif « Adresse refusée par Gmail ».
         Renvoyer exige d'être encore membre du groupe. Une
