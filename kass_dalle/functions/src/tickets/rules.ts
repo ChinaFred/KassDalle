@@ -824,19 +824,32 @@ export const ANSWER_EMAIL_MESSAGE = "Retirez l'adresse e-mail avant de publier."
 /** Caractères invisibles retirés avant la recherche d'une adresse. */
 const INVISIBLE_CHARS = /[\u200B-\u200D\u2060]/g;
 
-const EMAIL_PATTERN =
-  /[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}/;
+/** Point idéographique (U+3002), séparateur d'étiquettes d'un domaine. */
+const IDEOGRAPHIC_FULL_STOP = /\u3002/g;
 
 /**
- * Vrai si le texte contient une adresse e-mail : partie locale ASCII, `@`,
- * domaine à étiquettes, suffixe d'au moins deux lettres. Une mention
- * (`@ChinaFred`) n'en est pas une. Le texte perd d'abord ses caractères
- * invisibles (U+200B à U+200D, U+2060), puis passe en NFKC : `jean＠exemple．fr`
- * ou `jean\u200b@exemple.fr` sont des adresses. Pure ; fixture
- * `ticket_answer_text.json`.
+ * Lettres et chiffres de tout alphabet, marques diacritiques comprises : un
+ * domaine accentué (`exemplé.fr`) ou en alphabet non latin (`пример.рф`) est
+ * une adresse. Suffixe : deux lettres au moins (un suffixe punycode `xn--…`
+ * commence par deux lettres et en fait partie).
+ */
+const EMAIL_PATTERN =
+  /[\p{L}\p{M}\p{N}._%+-]+@[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}-]*[\p{L}\p{M}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}-]*[\p{L}\p{M}\p{N}])?)*\.\p{L}[\p{L}\p{M}]+/u;
+
+/**
+ * Vrai si le texte contient une adresse e-mail : partie locale, `@`, domaine
+ * à étiquettes, suffixe d'au moins deux lettres (punycode compris), en lettres et
+ * chiffres de tout alphabet. Une mention (`@ChinaFred`) n'en est pas une. Le
+ * texte perd d'abord ses caractères invisibles (U+200B à U+200D, U+2060),
+ * puis passe en NFKC (U+FF61 et U+FE12 deviennent U+3002), et le point
+ * idéographique devient « . » :
+ * `jean＠exemple．fr`, `jean\u200b@exemple.fr` ou `li@例子。中国` sont des
+ * adresses. Pure ; fixture `ticket_answer_text.json`.
  */
 export function containsEmailAddress(text: string): boolean {
-  return EMAIL_PATTERN.test(text.replace(INVISIBLE_CHARS, "").normalize("NFKC"));
+  return EMAIL_PATTERN.test(
+    text.replace(INVISIBLE_CHARS, "").normalize("NFKC").replace(IDEOGRAPHIC_FULL_STOP, "."),
+  );
 }
 
 /**

@@ -4254,7 +4254,10 @@ adresses que GitHub intègre seul (`github.com/user-attachments/`,
 `github.com/<owner>/<repo>/assets/`, `user-images.githubusercontent.com/`). La recherche
 d'adresse e-mail de « Répondre », de la clôture et du refus tourne sur le texte saisi **et**
 sur le texte publié : retirer un commentaire peut recoller une adresse
-(`jean<!-- x -->@gmail.com`). Le même nettoyage (`publicText`) s'applique au titre,
+(`jean<!-- x -->@gmail.com`). Le motif (`containsEmailAddress`) accepte les lettres et
+chiffres de tout alphabet, marques diacritiques comprises, dans la partie locale et le domaine,
+et un suffixe de deux lettres au moins, punycode `xn--…` compris : `max@exemplé.fr`, `иван@пример.рф`
+et `li@例子。中国` sont refusées. Le même nettoyage (`publicText`) s'applique au titre,
 au motif d'un refus, à « Répondre » et au commentaire de clôture. Le texte stocké dans
 `tickets/{id}`, que l'application affiche, reste celui du membre. Le numéro et l'adresse de l'Issue sont
 écrits avec `status: received` avant que l'envoi soit tenu pour fait. En échec :
