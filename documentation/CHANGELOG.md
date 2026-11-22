@@ -18,6 +18,22 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-22
+
+### v0.24.88 — technique
+
+La recherche d'adresse e-mail avant publication sur GitHub (titre et description d'un ticket,
+« Répondre », motif d'un refus, commentaire de clôture) ne reconnaissait que des lettres ASCII
+après le `@`. Une adresse à domaine accentué (`max@exemplé.fr`) ou en alphabet non latin
+(`иван@пример.рф`, `li@例子.中国`) n'était pas détectée et partait sur le dépôt public. Le motif
+accepte maintenant les lettres, chiffres et marques diacritiques de tout alphabet dans la partie
+locale et le domaine ; le point idéographique U+3002 et ses formes U+FF61 et U+FE12 séparent
+les étiquettes. Logique dupliquée : `containsEmailAddress`
+(`functions/src/tickets/rules.ts`) et `ticketTextContainsEmail`
+(`lib/features/tickets/domain/ticket_answer.dart`), quatorze cas ajoutés à
+`test-fixtures/ticket_answer_text.json` (dont trois négatifs). Défaut relevé par l'agent
+`securite` pendant l'étude multilingue.
+
 ## 2026-11-15
 
 ### v0.24.87 — fonctionnel

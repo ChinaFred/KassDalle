@@ -1,5 +1,5 @@
 {
-  "_comment": "Texte d'une réponse de l'administrateur à une analyse (« Répondre », callable answerTicketAnalysis). Le client valide le champ avant l'appel (lib/features/tickets/domain/ticket_answer.dart : kTicketAnswerMinChars, kTicketAnswerMaxChars, ticketTextContainsEmail) ; le serveur refait le contrôle (functions/src/tickets/rules.ts : ANSWER_MIN_CHARS, ANSWER_MAX_CHARS, containsEmailAddress, readAnswerText). min_chars et max_chars : bornes après retrait des espaces de bord. email_cases : contains_email vrai quand le texte contient une adresse e-mail — partie locale ASCII (lettres, chiffres, . _ % + -), @, domaine en étiquettes séparées par des points, suffixe d'au moins deux lettres. Une mention « @ChinaFred », un @ entouré d'espaces ou un domaine sans suffixe ne sont pas des adresses. Le texte part sur un dépôt GitHub public : une adresse y est refusée (« Retirez l'adresse e-mail avant de publier. »). Rejouée par test/ticket_decisions_test.dart et functions/src/tests/ticketDecisions.test.ts. Avant le contrôle, le texte perd ses caractères invisibles U+200B à U+200D et U+2060, puis passe en forme NFKC (serveur : String.normalize('NFKC')). Le client n'a pas de NFKC : il ramène les seuls caractères dont la forme NFKC tombe dans l'alphabet d'une adresse — formes pleine chasse U+FF01 à U+FF5E, petites formes U+FE52 (.), U+FE62 (+), U+FE63 (-), U+FE6A (%), U+FE6B (@), et U+2024 (.). Le serveur, plus large, reste le contrôle qui décide ; les cas ci-dessous sont couverts par les deux.",
+  "_comment": "Texte d'une réponse de l'administrateur à une analyse (« Répondre », callable answerTicketAnalysis). Le client valide le champ avant l'appel (lib/features/tickets/domain/ticket_answer.dart : kTicketAnswerMinChars, kTicketAnswerMaxChars, ticketTextContainsEmail) ; le serveur refait le contrôle (functions/src/tickets/rules.ts : ANSWER_MIN_CHARS, ANSWER_MAX_CHARS, containsEmailAddress, readAnswerText). min_chars et max_chars : bornes après retrait des espaces de bord. email_cases : contains_email vrai quand le texte contient une adresse e-mail — partie locale en lettres et chiffres de tout alphabet (marques diacritiques comprises) et . _ % + -, @, domaine en étiquettes séparées par des points (lettres et chiffres de tout alphabet, marques diacritiques, tirets internes ; un domaine accentué comme exemplé.fr, en punycode xn--… ou en alphabet non latin est une adresse), suffixe d'au moins deux lettres de tout alphabet (un suffixe punycode xn--… en fait partie). Le point idéographique U+3002, sa forme demi-chasse U+FF61 et sa forme verticale U+FE12 séparent aussi les étiquettes (serveur : NFKC ramène U+FF61 et U+FE12 à U+3002, puis U+3002 devient « . » ; client : les trois ramenés à « . »). Une mention « @ChinaFred », un @ entouré d'espaces ou un domaine sans suffixe ne sont pas des adresses. Le texte part sur un dépôt GitHub public : une adresse y est refusée (« Retirez l'adresse e-mail avant de publier. »). Rejouée par test/ticket_decisions_test.dart et functions/src/tests/ticketDecisions.test.ts. Avant le contrôle, le texte perd ses caractères invisibles U+200B à U+200D et U+2060, puis passe en forme NFKC (serveur : String.normalize('NFKC')). Le client n'a pas de NFKC : il ramène les seuls caractères dont la forme NFKC tombe dans l'alphabet d'une adresse — formes pleine chasse U+FF01 à U+FF5E, petites formes U+FE52 (.), U+FE62 (+), U+FE63 (-), U+FE6A (%), U+FE6B (@), et U+2024 (.). Le serveur, plus large, reste le contrôle qui décide ; les cas ci-dessous sont couverts par les deux.",
   "min_chars": 5,
   "max_chars": 4000,
   "email_cases": [
@@ -97,6 +97,62 @@
     },
     {
       "text": "＠ChinaFred",
+      "contains_email": false
+    },
+    {
+      "text": "Écrivez à max@exemplé.fr, merci.",
+      "contains_email": true
+    },
+    {
+      "text": "max@café.exemple.fr",
+      "contains_email": true
+    },
+    {
+      "text": "max@exemplé.fr",
+      "contains_email": true
+    },
+    {
+      "text": "max@xn--exempl-gva.fr",
+      "contains_email": true
+    },
+    {
+      "text": "max@exemple.xn--p1ai",
+      "contains_email": true
+    },
+    {
+      "text": "ivan@пример.рф",
+      "contains_email": true
+    },
+    {
+      "text": "иван@пример.рф",
+      "contains_email": true
+    },
+    {
+      "text": "li@例子.中国",
+      "contains_email": true
+    },
+    {
+      "text": "li@例子。中国",
+      "contains_email": true
+    },
+    {
+      "text": "li@例子｡中国",
+      "contains_email": true
+    },
+    {
+      "text": "max@exemple︒fr",
+      "contains_email": true
+    },
+    {
+      "text": "Merci @Chinafréd pour l'analyse.",
+      "contains_email": false
+    },
+    {
+      "text": "rendez-vous à 12h@café",
+      "contains_email": false
+    },
+    {
+      "text": "a@é.f",
       "contains_email": false
     }
   ]

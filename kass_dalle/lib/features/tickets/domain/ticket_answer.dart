@@ -23,9 +23,10 @@ final _invisibleChars = RegExp('[\u200B-\u200D\u2060]');
 
 /// Ramène les caractères dont la forme NFKC tombe dans l'alphabet d'une
 /// adresse : formes pleine chasse U+FF01 à U+FF5E, petites formes U+FE52
-/// (.), U+FE62 (+), U+FE63 (-), U+FE6A (%), U+FE6B (@), et U+2024 (.). Dart
-/// n'a pas de NFKC : le serveur, qui l'applique en entier, reste le contrôle
-/// qui décide.
+/// (.), U+FE62 (+), U+FE63 (-), U+FE6A (%), U+FE6B (@), et U+2024 (.). Le
+/// point idéographique U+3002, sa forme demi-chasse U+FF61 et sa forme
+/// verticale U+FE12 deviennent aussi « . ». Dart n'a pas de NFKC : le serveur, qui l'applique en entier, reste
+/// le contrôle qui décide.
 String _foldForEmail(String text) {
   final out = StringBuffer();
   for (final rune in text.replaceAll(_invisibleChars, '').runes) {
@@ -33,7 +34,7 @@ String _foldForEmail(String text) {
       out.writeCharCode(rune - 0xFEE0);
     } else {
       out.writeCharCode(switch (rune) {
-        0xFE52 || 0x2024 => 0x2E,
+        0xFE52 || 0x2024 || 0x3002 || 0xFF61 || 0xFE12 => 0x2E,
         0xFE62 => 0x2B,
         0xFE63 => 0x2D,
         0xFE6A => 0x25,
@@ -45,16 +46,23 @@ String _foldForEmail(String text) {
   return out.toString();
 }
 
+/// Lettres et chiffres de tout alphabet, marques diacritiques comprises : un
+/// domaine accentué (`exemplé.fr`) ou en alphabet non latin (`пример.рф`) est
+/// une adresse. Suffixe : deux lettres au moins (un suffixe punycode `xn--…`
+/// commence par deux lettres et en fait partie). Même motif que `EMAIL_PATTERN` côté serveur.
 final _emailPattern = RegExp(
-  r'[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?'
-  r'(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}',
+  r'[\p{L}\p{M}\p{N}._%+-]+@[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}-]*[\p{L}\p{M}\p{N}])?'
+  r'(?:\.[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}-]*[\p{L}\p{M}\p{N}])?)*'
+  r'\.\p{L}[\p{L}\p{M}]+',
+  unicode: true,
 );
 
-/// Vrai si [text] contient une adresse e-mail : partie locale ASCII, `@`,
-/// domaine à étiquettes, suffixe d'au moins deux lettres. Une mention
-/// (`@ChinaFred`) n'en est pas une. Même règle que `containsEmailAddress` :
-/// caractères invisibles retirés, formes pleine chasse et petites formes
-/// ramenées avant la recherche.
+/// Vrai si [text] contient une adresse e-mail : partie locale, `@`, domaine à
+/// étiquettes, suffixe d'au moins deux lettres (punycode compris), en lettres et
+/// chiffres de tout alphabet. Une mention (`@ChinaFred`) n'en est pas une.
+/// Même règle que `containsEmailAddress` : caractères invisibles retirés,
+/// formes pleine chasse, petites formes et point idéographique ramenés avant
+/// la recherche.
 bool ticketTextContainsEmail(String text) =>
     _emailPattern.hasMatch(_foldForEmail(text));
 
