@@ -4534,7 +4534,9 @@ lancement en cours hors ticket bloqué : l'analyse sur Reçu, le développement 
 un ticket Reçu, la réponse publie les précisions sans toucher au statut ni aux étiquettes, et
 chaque envoi publie (pas de reconnaissance d'une réponse déjà publiée), et le client vérifie le texte avant l'appel (5 caractères au moins, aucune adresse
 e-mail : `ticketAnswerFieldError`, `ticketTextContainsEmail`). L'adresse se cherche après
-retrait des caractères invisibles U+200B à U+200D et U+2060 ; le serveur applique ensuite NFKC
+retrait des caractères invisibles (tout `Default_Ignorable_Code_Point` d'Unicode, dont U+00AD,
+U+200B à U+200F, U+202A à U+202E, U+2060 à U+206F et U+FEFF, les contrôles C0 hors tabulation et sauts de
+ligne, DEL, les contrôles C1 U+0080 à U+009F, et U+FFF9 à U+FFFB : GitHub les affiche sans largeur) ; le serveur applique ensuite NFKC
 (`jean＠exemple．fr` est une adresse), le client, sans NFKC en Dart, ramène les seules formes
 pleine chasse et petites formes de l'alphabet d'une adresse. Le serveur décide.
 

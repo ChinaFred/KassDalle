@@ -821,8 +821,16 @@ export const ANSWER_PARTIAL_REASON = "answer_published_labels_failed";
 
 export const ANSWER_EMAIL_MESSAGE = "Retirez l'adresse e-mail avant de publier.";
 
-/** Caractères invisibles retirés avant la recherche d'une adresse. */
-const INVISIBLE_CHARS = /[\u200B-\u200D\u2060]/g;
+/**
+ * Caractères invisibles retirés avant la recherche d'une adresse : tout point
+ * de code `Default_Ignorable_Code_Point` d'Unicode (U+00AD, U+200B à U+200F,
+ * U+202A à U+202E, U+2060 à U+206F, U+FEFF, étiquettes U+E0000 à U+E0FFF…) et
+ * les contrôles C0 hors tabulation et sauts de ligne, DEL et C1 (U+0080 à
+ * U+009F), et les ancres d'annotation U+FFF9 à U+FFFB. GitHub les affiche sans
+ * largeur : une adresse coupée par l'un d'eux s'y lit en entier. Un saut de
+ * ligne reste : le retirer recollerait deux lignes en adresse.
+ */
+const INVISIBLE_CHARS = /(?![\t\n\r])[\p{Default_Ignorable_Code_Point}\p{Cc}\uFFF9-\uFFFB]/gu;
 
 /** Point idéographique (U+3002), séparateur d'étiquettes d'un domaine. */
 const IDEOGRAPHIC_FULL_STOP = /\u3002/g;
@@ -840,7 +848,7 @@ const EMAIL_PATTERN =
  * Vrai si le texte contient une adresse e-mail : partie locale, `@`, domaine
  * à étiquettes, suffixe d'au moins deux lettres (punycode compris), en lettres et
  * chiffres de tout alphabet. Une mention (`@ChinaFred`) n'en est pas une. Le
- * texte perd d'abord ses caractères invisibles (U+200B à U+200D, U+2060),
+ * texte perd d'abord ses caractères invisibles (`INVISIBLE_CHARS`),
  * puis passe en NFKC (U+FF61 et U+FE12 deviennent U+3002), et le point
  * idéographique devient « . » :
  * `jean＠exemple．fr`, `jean\u200b@exemple.fr` ou `li@例子。中国` sont des

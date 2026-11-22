@@ -17,9 +17,16 @@ const kTicketAnswerTooShortMessage =
     'La réponse doit faire au moins 5 caractères.';
 const kTicketAnswerEmailMessage = 'Retirez l\'adresse e-mail avant de publier.';
 
-/// Caractères invisibles retirés avant la recherche (U+200B à U+200D,
-/// U+2060).
-final _invisibleChars = RegExp('[\u200B-\u200D\u2060]');
+/// Caractères invisibles retirés avant la recherche : tout point de code
+/// `Default_Ignorable_Code_Point` d'Unicode (U+00AD, U+200B à U+200F, U+202A
+/// à U+202E, U+2060 à U+206F, U+FEFF, étiquettes U+E0000 à U+E0FFF…) et les
+/// contrôles C0 hors tabulation et sauts de ligne, DEL et C1 (U+0080 à
+/// U+009F), et les ancres d'annotation U+FFF9 à U+FFFB. Même liste que
+/// `INVISIBLE_CHARS` côté serveur.
+final _invisibleChars = RegExp(
+  r'(?![\t\n\r])[\p{Default_Ignorable_Code_Point}\p{Cc}\uFFF9-\uFFFB]',
+  unicode: true,
+);
 
 /// Ramène les caractères dont la forme NFKC tombe dans l'alphabet d'une
 /// adresse : formes pleine chasse U+FF01 à U+FF5E, petites formes U+FE52
