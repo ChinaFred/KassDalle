@@ -20,6 +20,21 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ## 2026-11-22
 
+### v0.24.89 — technique
+
+La recherche d'adresse e-mail avant publication sur GitHub ne retirait que U+200B à U+200D et
+U+2060. Un autre caractère invisible glissé dans une adresse (trait d'union conditionnel
+U+00AD, U+FEFF, marques de direction U+200E et U+202E, U+2063, U+180E, étiquettes U+E0000 à
+U+E0FFF, contrôle C1 U+0085) la faisait passer, et l'Issue publique l'affichait en entier.
+Le serveur (`INVISIBLE_CHARS`, `functions/src/tickets/rules.ts`) et le client
+(`_invisibleChars`, `lib/features/tickets/domain/ticket_answer.dart`) retirent maintenant
+tout point de code `Default_Ignorable_Code_Point` d'Unicode, les contrôles C0 hors tabulation
+et sauts de ligne (un titre ne les retirait pas), DEL, les contrôles C1 U+0080 à U+009F et les
+ancres d'annotation U+FFF9 à U+FFFB. Un saut de ligne reste : `jean@exemple`, saut de ligne,
+`.fr` n'est pas une adresse. Treize cas ajoutés à `test-fixtures/ticket_answer_text.json`,
+dont deux négatifs (`@` + U+00AD + `ChinaFred`, et ce saut de ligne). Défaut relevé par l'agent
+`securite` à la relecture de la v0.24.88.
+
 ### v0.24.88 — technique
 
 La recherche d'adresse e-mail avant publication sur GitHub (titre et description d'un ticket,
