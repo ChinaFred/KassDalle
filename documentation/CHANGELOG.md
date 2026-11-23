@@ -30,9 +30,10 @@ Le serveur (`INVISIBLE_CHARS`, `functions/src/tickets/rules.ts`) et le client
 (`_invisibleChars`, `lib/features/tickets/domain/ticket_answer.dart`) retirent maintenant
 tout point de code `Default_Ignorable_Code_Point` d'Unicode, les contrôles C0 hors tabulation
 et sauts de ligne (un titre ne les retirait pas), DEL, les contrôles C1 U+0080 à U+009F et les
-ancres d'annotation U+FFF9 à U+FFFB. Douze cas ajoutés à `test-fixtures/ticket_answer_text.json`, dont un négatif
-(`@` + U+00AD + `ChinaFred`). Défaut relevé par l'agent `securite` à la relecture de la
-v0.24.88.
+ancres d'annotation U+FFF9 à U+FFFB. Un saut de ligne reste : `jean@exemple`, saut de ligne,
+`.fr` n'est pas une adresse. Treize cas ajoutés à `test-fixtures/ticket_answer_text.json`,
+dont deux négatifs (`@` + U+00AD + `ChinaFred`, et ce saut de ligne). Défaut relevé par l'agent
+`securite` à la relecture de la v0.24.88.
 
 ### v0.24.88 — technique
 
