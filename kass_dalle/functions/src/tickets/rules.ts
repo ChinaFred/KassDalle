@@ -165,11 +165,29 @@ function singleLine(value: string): string {
 }
 
 /**
- * Caractères de contrôle retirés d'un texte multiligne, sauf retour à la ligne
- * et tabulation ; fins de ligne Windows ramenées à `\n`.
+ * Caractères invisibles retirés d'un texte saisi avant qu'il soit enregistré
+ * et publié : tout `Default_Ignorable_Code_Point` d'Unicode (dont U+202E, qui
+ * inverse l'affichage d'un titre, et les étiquettes U+E0000 à U+E0FFF, qui
+ * portent un texte que personne ne voit), les contrôles C0 et C1 hors
+ * tabulation, sauts de ligne, `\v` et `\f` (un titre les change en espace,
+ * `cleanMultiline` les retire), et U+FFF9 à U+FFFB. U+200D et U+FE0F restent :
+ * ils composent les emoji. Les espaces sans largeur que `publicText` pose
+ * ensuite ne passent pas par ici.
+ */
+const STORED_INVISIBLE_CHARS =
+  /(?!\t|\n|\v|\f|\r|\u200D|\uFE0F)[\p{Default_Ignorable_Code_Point}\p{Cc}\uFFF9-\uFFFB]/gu;
+
+function stripInvisible(value: string): string {
+  return value.replace(STORED_INVISIBLE_CHARS, "");
+}
+
+/**
+ * Caractères invisibles et de contrôle retirés d'un texte multiligne
+ * (`stripInvisible`), sauf retour à la ligne et tabulation ; fins de ligne
+ * Windows ramenées à `\n`.
  */
 function cleanMultiline(value: string): string {
-  const unixLines = value.replace(/\r\n?/g, "\n");
+  const unixLines = stripInvisible(value.replace(/\r\n?/g, "\n"));
   let out = "";
   for (const char of unixLines) {
     const code = char.charCodeAt(0);
@@ -220,7 +238,7 @@ export function readTicketInput(raw: Record<string, unknown>): TicketInput {
   if (typeof raw.title !== "string") {
     throw new TicketInputError("title", "Le titre est requis.");
   }
-  const title = singleLine(raw.title);
+  const title = singleLine(stripInvisible(raw.title));
   if (title.length < TICKET_TITLE_MIN) {
     throw new TicketInputError("title", "Le titre doit faire au moins 5 caractères.");
   }

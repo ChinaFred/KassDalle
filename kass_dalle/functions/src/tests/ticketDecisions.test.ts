@@ -269,6 +269,13 @@ describe("readRefusalReason", () => {
     );
   });
 
+  test("motif : caractères invisibles retirés, emoji gardés", () => {
+    assert.equal(
+      readRefusalReason("Hors\u202e sujet\u{E0041} \u2764\ufe0f"),
+      "Hors sujet \u2764\ufe0f",
+    );
+  });
+
   test("nettoie, garde les retours à la ligne, neutralise mentions et renvois", () => {
     assert.equal(
       readRefusalReason("  Hors du périmètre.\r\nVoir @ChinaFred et #12.\u0007  "),
@@ -822,6 +829,13 @@ describe("readAnswerText", () => {
     assert.equal(
       readAnswerText("  Oui, voir @ChinaFred et #12.\r\nMerci.\u0007 "),
       `Oui, voir @${ZWSP}ChinaFred et #${ZWSP}12.\nMerci.`,
+    );
+  });
+
+  test("retire les caractères invisibles, garde les emoji", () => {
+    assert.equal(
+      readAnswerText("Oui\u00ad, d'accord\u200e.\u{E0041} \u{1F44D}\u200d"),
+      "Oui, d'accord. \u{1F44D}\u200d",
     );
   });
 

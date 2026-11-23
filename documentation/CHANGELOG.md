@@ -18,6 +18,23 @@ la v0.23.2 ont été écrites après coup, depuis l'historique git.
 
 ---
 
+## 2026-11-23
+
+### v0.24.90 — technique
+
+Les caractères invisibles sont maintenant retirés du texte d'un ticket avant son enregistrement
+et sa publication sur GitHub, et plus seulement avant la recherche d'adresse e-mail. Avant,
+U+202E inversait l'affichage d'un titre d'Issue, et des étiquettes U+E0020 à U+E007F portaient
+un texte que personne ne voyait, ni sur GitHub ni dans l'application, mais que la session
+d'analyse lisait. `stripInvisible` (`functions/src/tickets/rules.ts`) retire tout
+`Default_Ignorable_Code_Point` d'Unicode, les contrôles C0 et C1 hors tabulation et sauts de
+ligne, et U+FFF9 à U+FFFB. Il garde U+200D et U+FE0F, qui composent les emoji. Il s'applique au
+titre et à la description d'un ticket, à « Répondre », au motif d'un refus et au commentaire de
+clôture. Serveur seul : le client ne fait que valider, et le serveur reste le contrôle qui
+décide ; l'écart sur la longueur mesurée est déclaré dans le tableau « Logique dupliquée ».
+Les tickets déjà enregistrés ne sont pas repris. Tests ajoutés à `tickets.test.ts` et
+`ticketDecisions.test.ts`.
+
 ## 2026-11-22
 
 ### v0.24.89 — technique

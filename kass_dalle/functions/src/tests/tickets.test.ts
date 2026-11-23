@@ -80,6 +80,35 @@ describe("readTicketInput", () => {
     assert.equal(input.screenReplaced, false);
   });
 
+  test("retire les caractères invisibles du titre et de la description enregistrés", () => {
+    const input = readTicketInput(
+      validInput({
+        title: "Titre\u202e inversé\u00ad\u0001",
+        description: "Ligne un\ufeff\nLigne deux\u{E0041}\u{E0042}\u2063",
+      }),
+    );
+    assert.equal(input.title, "Titre inversé");
+    assert.equal(input.description, "Ligne un\nLigne deux");
+  });
+
+  test("un titre change \\v et \\f en espace, sans recoller les mots", () => {
+    assert.equal(readTicketInput(validInput({ title: "mot\vmot\fmot" })).title, "mot mot mot");
+  });
+
+  test("garde U+200D et U+FE0F, qui composent les emoji", () => {
+    const family = "\u{1F468}\u200d\u{1F469}\u200d\u{1F467}";
+    const heart = "\u2764\ufe0f";
+    const input = readTicketInput(validInput({ description: `Bravo ${family} ${heart}` }));
+    assert.equal(input.description, `Bravo ${family} ${heart}`);
+  });
+
+  test("refuse un titre qui n'a plus 5 caractères une fois les invisibles retirés", () => {
+    assert.throws(
+      () => readTicketInput(validInput({ title: "ab\u200b\u200b\u200bcd" })),
+      /au moins 5/,
+    );
+  });
+
   test("refuse un type inconnu, un titre trop court ou trop long", () => {
     assert.throws(() => readTicketInput(validInput({ type: "spam" })), TicketInputError);
     assert.throws(() => readTicketInput(validInput({ title: "abcd" })), /au moins 5/);
